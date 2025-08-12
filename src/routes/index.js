@@ -1,0 +1,211 @@
+/**
+ * API Routes Registry
+ */
+
+import { checkDatabaseHealth, getDatabaseStats } from '../config/db-utils.js';
+
+// Health and monitoring routes
+export const healthRoutes = async fastify => {
+  // Health check
+  fastify.get(
+    '/health',
+    {
+      schema: {
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              status: { type: 'string' },
+              timestamp: { type: 'string' },
+              uptime: { type: 'number' },
+              version: { type: 'string' },
+              memory: {
+                type: 'object',
+                properties: {
+                  used: { type: 'number' },
+                  total: { type: 'number' },
+                  percentage: { type: 'number' }
+                }
+              },
+              database: {
+                type: 'object',
+                properties: {
+                  healthy: { type: 'boolean' },
+                  version: { type: 'string' },
+                  connections: { type: 'number' }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    async (_request, _reply) => {
+      const memUsage = process.memoryUsage();
+      const memTotal = memUsage.heapTotal;
+      const memUsed = memUsage.heapUsed;
+
+      // Get database info using the Prisma client directly
+      let dbInfo = { healthy: false };
+
+      try {
+        const dbHealth = await checkDatabaseHealth(fastify.prisma);
+        dbInfo = { healthy: dbHealth.healthy };
+
+        if (dbHealth.healthy) {
+          try {
+            const dbStats = await getDatabaseStats();
+            dbInfo = {
+              healthy: true,
+              version: 'PostgreSQL',
+              connections: dbStats.database.activeConnections,
+              tableCount: dbStats.tables.total
+            };
+          } catch (error) {
+            fastify.log.warn('Could not fetch database stats for health check:', error.message);
+          }
+        }
+      } catch (error) {
+        fastify.log.error('Database health check failed:', error.message);
+        dbInfo = { healthy: false, error: 'Database unavailable' };
+      }
+
+      return {
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        version: process.env.npm_package_version || '1.0.0',
+        memory: {
+          used: Math.round((memUsed / 1024 / 1024) * 100) / 100, // MB
+          total: Math.round((memTotal / 1024 / 1024) * 100) / 100, // MB
+          percentage: Math.round((memUsed / memTotal) * 10000) / 100
+        },
+        database: dbInfo
+      };
+    }
+  );
+
+  // Ready check for load balancers
+  fastify.get('/ready', async (_request, _reply) => {
+    try {
+      const dbHealth = await checkDatabaseHealth(fastify.prisma);
+      if (dbHealth.healthy) {
+        return {
+          status: 'ready',
+          timestamp: new Date().toISOString(),
+          checks: {
+            database: 'healthy'
+          }
+        };
+      } else {
+        throw fastify.httpErrors.serviceUnavailable('Database unavailable');
+      }
+    } catch (error) {
+      fastify.log.error('Readiness check failed:', error.message);
+      throw fastify.httpErrors.serviceUnavailable('Database unavailable');
+    }
+  });
+
+  // Liveness check
+  fastify.get('/live', async (_request, _reply) => {
+    return {
+      status: 'alive',
+      timestamp: new Date().toISOString(),
+      pid: process.pid
+    };
+  });
+
+  // Database statistics endpoint (development/monitoring)
+  fastify.get('/db-stats', async (_request, _reply) => {
+    try {
+      const stats = await getDatabaseStats();
+      return {
+        success: true,
+        data: stats
+      };
+    } catch (error) {
+      fastify.log.error('Failed to get database statistics:', error);
+      throw fastify.httpErrors.internalServerError('Failed to retrieve database statistics');
+    }
+  });
+};
+
+// API versioning routes
+export const apiRoutes = async fastify => {
+  // API info
+  fastify.get(
+    '/api',
+    {
+      schema: {
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              version: { type: 'string' },
+              description: { type: 'string' },
+              endpoints: {
+                type: 'object',
+                properties: {
+                  health: { type: 'string' },
+                  ready: { type: 'string' },
+                  live: { type: 'string' }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    async (request, _reply) => {
+      const baseUrl = `${request.protocol}://${request.hostname}`;
+
+      return {
+        name: 'Accounting API',
+        version: process.env.npm_package_version || '1.0.0',
+        description: 'Production-ready accounting API with Fastify, Prisma, and Zod validation',
+        endpoints: {
+          health: `${baseUrl}/health`,
+          ready: `${baseUrl}/ready`,
+          live: `${baseUrl}/live`,
+          users: `${baseUrl}/api/v1/users`
+        }
+      };
+    }
+  );
+
+  // Register v1 API routes
+  await fastify.register(
+    async fastify => {
+      fastify.get('/', async (_request, _reply) => {
+        return {
+          message: 'Accounting API v1 with Zod Validation',
+          version: '1.0.0',
+          timestamp: new Date().toISOString(),
+          features: [
+            'Type-safe validation with Zod',
+            'Comprehensive error handling',
+            'Schema-driven development',
+            'Full CRUD operations',
+            'Pagination and filtering'
+          ]
+        };
+      });
+
+      // Import and register user routes
+      const { userRoutes } = await import('./users.js');
+      await fastify.register(userRoutes, { prefix: '/users' });
+
+      // Add more route registrations here as you create them:
+      // const { accountRoutes } = await import('./accounts.js');
+      // await fastify.register(accountRoutes, { prefix: '/accounts' });
+
+      // const { ledgerRoutes } = await import('./ledgers.js');
+      // await fastify.register(ledgerRoutes, { prefix: '/ledgers' });
+
+      // const { reportRoutes } = await import('./reports.js');
+      // await fastify.register(reportRoutes, { prefix: '/reports' });
+    },
+    { prefix: '/api/v1' }
+  );
+};

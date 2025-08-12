@@ -1,0 +1,145 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountCategory {
+  ASSET
+  HUTANG
+  MODAL
+  PENDAPATAN
+  BIAYA
+}
+
+enum AccountType {
+  GENERAL
+  DETAIL
+}
+
+enum LedgerType {
+  KAS_MASUK
+  KAS_KELUAR
+}
+
+enum PostingStatus {
+  PENDING
+  POSTED
+}
+
+enum ReportType {
+  NERACA
+  LABA_RUGI
+}
+
+enum Role {
+  NASABAH
+  KASIR
+  KOLEKTOR
+  MANAJER
+  ADMIN
+  AKUNTAN
+}
+
+enum TransactionType {
+  DEBIT
+  CREDIT
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model User {
+  id        String     @id
+  username  String     @unique
+  password  String
+  name      String
+  role      Role       @default(NASABAH)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime
+  status    UserStatus @default(ACTIVE)
+
+  @@map("users")
+}
+
+model AccountDetail {
+  id               String          @id
+  accountNumber    String          @unique
+  accountName      String
+  accountType      AccountType     @default(DETAIL)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime
+  createdBy        String
+  updatedBy        String
+  accountGeneralId String
+  accountCategory  AccountCategory
+  amountCredit     Decimal         @db.Decimal(10, 2)
+  amountDebit      Decimal         @db.Decimal(10, 2)
+  deletedAt        DateTime?
+  reportType       ReportType
+  transactionType  TransactionType
+  accountGeneral   AccountGeneral  @relation(fields: [accountGeneralId], references: [id])
+  ledgers          Ledger[]
+
+  @@map("accounts_detail")
+}
+
+model AccountGeneral {
+  id              String          @id
+  accountNumber   String          @unique
+  accountName     String
+  accountType     AccountType     @default(GENERAL)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime
+  createdBy       String
+  updatedBy       String
+  accountCategory AccountCategory
+  amountCredit    Decimal         @db.Decimal(10, 2)
+  amountDebit     Decimal         @db.Decimal(10, 2)
+  deletedAt       DateTime?
+  reportType      ReportType
+  transactionType TransactionType
+  accountsDetail  AccountDetail[]
+  ledgers         Ledger[]
+
+  @@map("accounts_general")
+}
+
+model Balances {
+  id        String   @id
+  amount    Decimal  @db.Decimal(10, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  createdBy String
+  updatedBy String
+
+  @@map("balances")
+}
+
+model Ledger {
+  id               String          @id
+  referenceNumber  String          
+  amount           Decimal         @db.Decimal(10, 2)
+  description      String
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime
+  createdBy        String
+  updatedBy        String
+  accountDetailId  String
+  ledgerType       LedgerType
+  transactionType  TransactionType
+  postingStatus    PostingStatus   @default(PENDING)
+  postingAt        DateTime?
+  accountGeneralId String
+  deletedAt        DateTime?
+  ledgerDate       DateTime
+  accountDetail    AccountDetail   @relation(fields: [accountDetailId], references: [id])
+  accountGeneral   AccountGeneral  @relation(fields: [accountGeneralId], references: [id])
+
+  @@map("ledgers")
+}
