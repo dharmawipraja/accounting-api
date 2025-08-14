@@ -31,7 +31,7 @@ export const UserStatusSchema = z.enum(['ACTIVE', 'INACTIVE']);
 // Base Schemas
 // =================
 
-export const UUIDSchema = z.string().uuid('Invalid UUID format');
+export const UUIDSchema = z.uuid('Invalid UUID format');
 
 export const PositiveDecimalSchema = z
   .number()
