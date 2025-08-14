@@ -132,6 +132,21 @@ export const healthRoutes = async fastify => {
 
 // API versioning routes
 export const apiRoutes = async fastify => {
+  // Register JWT
+  await fastify.register(import('@fastify/jwt'), {
+    secret: process.env.JWT_SECRET || 'your-secret-key'
+  });
+
+  // Add JWT authentication helper
+  fastify.decorate('authenticate', async (request, reply) => {
+    try {
+      await request.jwtVerify();
+    } catch (err) {
+      fastify.log.warn('JWT verification failed:', err.message);
+      throw reply.unauthorized('Authentication required');
+    }
+  });
+
   // API info
   fastify.get(
     '/api',
@@ -149,7 +164,9 @@ export const apiRoutes = async fastify => {
                 properties: {
                   health: { type: 'string' },
                   ready: { type: 'string' },
-                  live: { type: 'string' }
+                  live: { type: 'string' },
+                  auth: { type: 'string' },
+                  users: { type: 'string' }
                 }
               }
             }
@@ -163,11 +180,13 @@ export const apiRoutes = async fastify => {
       return {
         name: 'Accounting API',
         version: process.env.npm_package_version || '1.0.0',
-        description: 'Production-ready accounting API with Fastify, Prisma, and Zod validation',
+        description:
+          'Production-ready accounting API with Fastify, Prisma, Zod validation, and JWT authentication',
         endpoints: {
           health: `${baseUrl}/health`,
           ready: `${baseUrl}/ready`,
           live: `${baseUrl}/live`,
+          auth: `${baseUrl}/api/v1/auth`,
           users: `${baseUrl}/api/v1/users`
         }
       };
@@ -179,10 +198,12 @@ export const apiRoutes = async fastify => {
     async fastify => {
       fastify.get('/', async (_request, _reply) => {
         return {
-          message: 'Accounting API v1 with Zod Validation',
+          message: 'Accounting API v1 with Zod Validation and JWT Authentication',
           version: '1.0.0',
           timestamp: new Date().toISOString(),
           features: [
+            'JWT Authentication',
+            'Role-based Access Control',
             'Type-safe validation with Zod',
             'Comprehensive error handling',
             'Schema-driven development',
@@ -191,6 +212,10 @@ export const apiRoutes = async fastify => {
           ]
         };
       });
+
+      // Import and register auth routes
+      const { authRoutes } = await import('./auth.js');
+      await fastify.register(authRoutes, { prefix: '/auth' });
 
       // Import and register user routes
       const { userRoutes } = await import('./users.js');

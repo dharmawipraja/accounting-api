@@ -63,6 +63,29 @@ export const PaginationSchema = z.object({
 });
 
 // =================
+// Authentication Schemas
+// =================
+
+export const LoginSchema = z.object({
+  username: z
+    .string()
+    .min(3, 'Username must be at least 3 characters')
+    .max(50, 'Username must be less than 50 characters'),
+  password: z.string().min(1, 'Password is required')
+});
+
+export const AuthResponseSchema = z.object({
+  token: z.string(),
+  user: z.object({
+    id: UUIDSchema,
+    username: z.string(),
+    name: z.string(),
+    role: RoleSchema
+  }),
+  expiresIn: z.string()
+});
+
+// =================
 // User Schemas
 // =================
 

@@ -40,3 +40,16 @@ export {
   default as validation,
   validationPreHandler
 } from './validation.js';
+
+// Export authentication middleware
+export {
+  authenticate,
+  authorize,
+  canManageUsers,
+  checkNotDeleted,
+  hashPassword,
+  requireAdmin,
+  requireAdminOrManager,
+  requireOwnerOrAdmin,
+  verifyPassword
+} from './auth.js';
