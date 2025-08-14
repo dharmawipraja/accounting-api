@@ -19,6 +19,7 @@ import {
   TransactionTypeSchema,
   UUIDSchema
 } from '../schemas/index.js';
+import { roundMoney } from '../utils/index.js';
 
 /**
  * Authorization middleware for account detail operations
@@ -193,10 +194,8 @@ export const accountDetailRoutes = async fastify => {
           }
           const validatedData = validation.data;
           // Round monetary amounts to 2 decimals
-          validatedData.amountCredit =
-            Math.round(Number(validatedData.amountCredit || 0) * 100) / 100;
-          validatedData.amountDebit =
-            Math.round(Number(validatedData.amountDebit || 0) * 100) / 100;
+          validatedData.amountCredit = roundMoney(validatedData.amountCredit);
+          validatedData.amountDebit = roundMoney(validatedData.amountDebit);
 
           // Check if account number already exists
           const existingAccount = await fastify.prisma.accountDetail.findUnique({
@@ -800,10 +799,10 @@ export const accountDetailRoutes = async fastify => {
 
           // Round monetary amounts if provided
           if (typeof updateData.amountCredit === 'number') {
-            updateData.amountCredit = Math.round(Number(updateData.amountCredit) * 100) / 100;
+            updateData.amountCredit = roundMoney(updateData.amountCredit);
           }
           if (typeof updateData.amountDebit === 'number') {
-            updateData.amountDebit = Math.round(Number(updateData.amountDebit) * 100) / 100;
+            updateData.amountDebit = roundMoney(updateData.amountDebit);
           }
 
           // Check if account detail exists and is not deleted

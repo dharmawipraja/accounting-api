@@ -15,6 +15,7 @@ import {
   IdParamSchema,
   ReportTypeSchema
 } from '../schemas/index.js';
+import { roundMoney } from '../utils/index.js';
 
 /**
  * Authorization middleware for account general operations
@@ -188,8 +189,8 @@ export const accountGeneralRoutes = async fastify => {
           // Round monetary amounts to 2 decimals
           const roundedAccountData = {
             ...accountData,
-            amountCredit: Math.round(Number(accountData.amountCredit || 0) * 100) / 100,
-            amountDebit: Math.round(Number(accountData.amountDebit || 0) * 100) / 100
+            amountCredit: roundMoney(accountData.amountCredit),
+            amountDebit: roundMoney(accountData.amountDebit)
           };
 
           // Check if account number already exists
@@ -630,10 +631,10 @@ export const accountGeneralRoutes = async fastify => {
           const updateData = {
             ...validatedBody,
             ...(typeof validatedBody.amountCredit === 'number' && {
-              amountCredit: Math.round(Number(validatedBody.amountCredit) * 100) / 100
+              amountCredit: roundMoney(validatedBody.amountCredit)
             }),
             ...(typeof validatedBody.amountDebit === 'number' && {
-              amountDebit: Math.round(Number(validatedBody.amountDebit) * 100) / 100
+              amountDebit: roundMoney(validatedBody.amountDebit)
             })
           };
 

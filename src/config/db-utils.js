@@ -5,6 +5,7 @@
  * for the accounting API application.
  */
 
+import _ from 'lodash';
 import { prisma } from './database.js';
 
 /**
@@ -28,8 +29,8 @@ export const checkDatabaseHealth = async (prismaClient = prisma) => {
  * Pagination helper for database queries
  */
 export const paginate = ({ page = 1, limit = 10 } = {}) => {
-  const parsedPage = Math.max(1, parseInt(page) || 1);
-  const parsedLimit = Math.min(100, Math.max(1, parseInt(limit) || 10));
+  const parsedPage = _.clamp(_.toInteger(page) || 1, 1, Number.MAX_SAFE_INTEGER);
+  const parsedLimit = _.clamp(_.toInteger(limit) || 10, 1, 100);
   const skip = (parsedPage - 1) * parsedLimit;
 
   return {
@@ -151,16 +152,13 @@ export const findById = async (model, id, includeSoftDeleted = false) => {
  */
 export const bulkCreate = async (model, data, batchSize = 100) => {
   const results = [];
-
-  for (let i = 0; i < data.length; i += batchSize) {
-    const batch = data.slice(i, i + batchSize);
+  for (const batch of _.chunk(data, batchSize)) {
     const batchResult = await prisma[model].createMany({
       data: batch,
       skipDuplicates: true
     });
     results.push(batchResult);
   }
-
   return results;
 };
 
@@ -380,13 +378,15 @@ export const getTrialBalance = async (asOfDate = new Date()) => {
     });
 
     const trialBalance = accounts.map(account => {
-      const totalDebits = account.ledgers
-        .filter(l => l.transactionType === 'DEBIT')
-        .reduce((sum, l) => sum + Number(l.amount), 0);
+      const totalDebits = _.sumBy(
+        account.ledgers.filter(l => l.transactionType === 'DEBIT'),
+        l => Number(l.amount)
+      );
 
-      const totalCredits = account.ledgers
-        .filter(l => l.transactionType === 'CREDIT')
-        .reduce((sum, l) => sum + Number(l.amount), 0);
+      const totalCredits = _.sumBy(
+        account.ledgers.filter(l => l.transactionType === 'CREDIT'),
+        l => Number(l.amount)
+      );
 
       return {
         accountId: account.id,

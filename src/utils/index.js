@@ -2,6 +2,7 @@
  * Common utility functions
  */
 
+import _ from 'lodash';
 import { PaginationSchema } from '../schemas/index.js';
 
 // Success response builder
@@ -52,3 +53,6 @@ export const validatePagination = query => {
 export const isDevelopment = () => process.env.NODE_ENV === 'development';
 export const isProduction = () => process.env.NODE_ENV === 'production';
 export const isTest = () => process.env.NODE_ENV === 'test';
+
+// Monetary rounding helper (2 decimals by default)
+export const roundMoney = (value, precision = 2) => _.round(Number(value || 0), precision);

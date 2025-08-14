@@ -30,10 +30,7 @@ const generateReferenceNumber = () => {
   return `${prefix}-${timestamp}-${randomId}`;
 };
 
-/**
- * Round a number to 2 decimal places safely
- */
-const round2 = value => Math.round(Number(value) * 100) / 100;
+import { roundMoney } from '../utils/index.js';
 
 /**
  * Ledger Routes Plugin
@@ -262,9 +259,9 @@ export const ledgerRoutes = async fastify => {
         // Double-entry check: DEBIT total must equal CREDIT total
         const totals = ledgers.reduce(
           (acc, l) => {
-            const amt = round2(l.amount);
-            if (l.transactionType === 'DEBIT') acc.debit = round2(acc.debit + amt);
-            if (l.transactionType === 'CREDIT') acc.credit = round2(acc.credit + amt);
+            const amt = roundMoney(l.amount);
+            if (l.transactionType === 'DEBIT') acc.debit = roundMoney(acc.debit + amt);
+            if (l.transactionType === 'CREDIT') acc.credit = roundMoney(acc.credit + amt);
             return acc;
           },
           { debit: 0, credit: 0 }
@@ -292,7 +289,7 @@ export const ledgerRoutes = async fastify => {
         // Prepare ledger data for bulk insert
         const ledgerData = ledgers.map(ledger => ({
           referenceNumber,
-          amount: round2(ledger.amount),
+          amount: roundMoney(ledger.amount),
           description: ledger.description.trim(),
           accountDetailId: ledger.accountDetailId,
           accountGeneralId: ledger.accountGeneralId,
@@ -913,7 +910,7 @@ export const ledgerRoutes = async fastify => {
           data: {
             ...updateData,
             ...(typeof updateData.amount === 'number' && {
-              amount: round2(updateData.amount)
+              amount: roundMoney(updateData.amount)
             }),
             ...(updateData.description && { description: updateData.description.trim() }),
             ...(updateData.ledgerDate && { ledgerDate: new Date(updateData.ledgerDate) }),
