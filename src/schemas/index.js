@@ -31,7 +31,12 @@ export const UserStatusSchema = z.enum(['ACTIVE', 'INACTIVE']);
 // Base Schemas
 // =================
 
-export const UUIDSchema = z.uuid('Invalid UUID format');
+// IDs are generated with nanoid() in Prisma; accept generic string IDs (nanoid-compatible)
+export const UUIDSchema = z
+  .string()
+  .min(1, 'Invalid ID')
+  // Permissive nanoid-ish pattern (alphanumeric, underscore, hyphen)
+  .regex(/^[a-zA-Z0-9_-]+$/, 'Invalid ID format');
 
 export const PositiveDecimalSchema = z
   .number()

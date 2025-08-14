@@ -60,7 +60,6 @@ export const accountDetailRoutes = async fastify => {
               },
               accountGeneralId: {
                 type: 'string',
-                format: 'uuid',
                 description: 'ID of the parent general account'
               },
               accountCategory: {
@@ -111,11 +110,11 @@ export const accountDetailRoutes = async fastify => {
                 data: {
                   type: 'object',
                   properties: {
-                    id: { type: 'string', format: 'uuid' },
+                    id: { type: 'string' },
                     accountNumber: { type: 'string' },
                     accountName: { type: 'string' },
                     accountType: { type: 'string' },
-                    accountGeneralId: { type: 'string', format: 'uuid' },
+                    accountGeneralId: { type: 'string' },
                     accountCategory: { type: 'string' },
                     reportType: { type: 'string' },
                     transactionType: { type: 'string' },
@@ -123,8 +122,8 @@ export const accountDetailRoutes = async fastify => {
                     amountDebit: { type: 'number' },
                     createdAt: { type: 'string', format: 'date-time' },
                     updatedAt: { type: 'string', format: 'date-time' },
-                    createdBy: { type: 'string', format: 'uuid' },
-                    updatedBy: { type: 'string', format: 'uuid' }
+                    createdBy: { type: 'string' },
+                    updatedBy: { type: 'string' }
                   }
                 }
               }
@@ -286,7 +285,6 @@ export const accountDetailRoutes = async fastify => {
               },
               accountGeneralId: {
                 type: 'string',
-                format: 'uuid',
                 description: 'Filter by parent general account'
               },
               includeDeleted: {
@@ -307,11 +305,11 @@ export const accountDetailRoutes = async fastify => {
                   items: {
                     type: 'object',
                     properties: {
-                      id: { type: 'string', format: 'uuid' },
+                      id: { type: 'string' },
                       accountNumber: { type: 'string' },
                       accountName: { type: 'string' },
                       accountType: { type: 'string' },
-                      accountGeneralId: { type: 'string', format: 'uuid' },
+                      accountGeneralId: { type: 'string' },
                       accountCategory: { type: 'string' },
                       reportType: { type: 'string' },
                       transactionType: { type: 'string' },
@@ -326,7 +324,7 @@ export const accountDetailRoutes = async fastify => {
                       accountGeneral: {
                         type: 'object',
                         properties: {
-                          id: { type: 'string', format: 'uuid' },
+                          id: { type: 'string' },
                           accountNumber: { type: 'string' },
                           accountName: { type: 'string' }
                         }
@@ -454,7 +452,6 @@ export const accountDetailRoutes = async fastify => {
             properties: {
               id: {
                 type: 'string',
-                format: 'uuid',
                 description: 'Account detail ID'
               }
             },
@@ -484,11 +481,11 @@ export const accountDetailRoutes = async fastify => {
                 data: {
                   type: 'object',
                   properties: {
-                    id: { type: 'string', format: 'uuid' },
+                    id: { type: 'string' },
                     accountNumber: { type: 'string' },
                     accountName: { type: 'string' },
                     accountType: { type: 'string' },
-                    accountGeneralId: { type: 'string', format: 'uuid' },
+                    accountGeneralId: { type: 'string' },
                     accountCategory: { type: 'string' },
                     reportType: { type: 'string' },
                     transactionType: { type: 'string' },
@@ -503,7 +500,7 @@ export const accountDetailRoutes = async fastify => {
                     accountGeneral: {
                       type: 'object',
                       properties: {
-                        id: { type: 'string', format: 'uuid' },
+                        id: { type: 'string' },
                         accountNumber: { type: 'string' },
                         accountName: { type: 'string' },
                         accountCategory: { type: 'string' },
@@ -516,7 +513,7 @@ export const accountDetailRoutes = async fastify => {
                       items: {
                         type: 'object',
                         properties: {
-                          id: { type: 'string', format: 'uuid' },
+                          id: { type: 'string' },
                           referenceNumber: { type: 'string' },
                           amount: { type: 'number' },
                           description: { type: 'string' },
@@ -634,7 +631,6 @@ export const accountDetailRoutes = async fastify => {
             properties: {
               id: {
                 type: 'string',
-                format: 'uuid',
                 description: 'Account detail ID'
               }
             },
@@ -689,11 +685,11 @@ export const accountDetailRoutes = async fastify => {
                 data: {
                   type: 'object',
                   properties: {
-                    id: { type: 'string', format: 'uuid' },
+                    id: { type: 'string' },
                     accountNumber: { type: 'string' },
                     accountName: { type: 'string' },
                     accountType: { type: 'string' },
-                    accountGeneralId: { type: 'string', format: 'uuid' },
+                    accountGeneralId: { type: 'string' },
                     accountCategory: { type: 'string' },
                     reportType: { type: 'string' },
                     transactionType: { type: 'string' },
@@ -701,7 +697,7 @@ export const accountDetailRoutes = async fastify => {
                     amountDebit: { type: 'number' },
                     createdAt: { type: 'string', format: 'date-time' },
                     updatedAt: { type: 'string', format: 'date-time' },
-                    updatedBy: { type: 'string', format: 'uuid' }
+                    updatedBy: { type: 'string' }
                   }
                 }
               }
@@ -820,7 +816,6 @@ export const accountDetailRoutes = async fastify => {
             properties: {
               id: {
                 type: 'string',
-                format: 'uuid',
                 description: 'Account detail ID'
               }
             },
@@ -835,7 +830,7 @@ export const accountDetailRoutes = async fastify => {
                 data: {
                   type: 'object',
                   properties: {
-                    id: { type: 'string', format: 'uuid' },
+                    id: { type: 'string' },
                     accountNumber: { type: 'string' },
                     accountName: { type: 'string' },
                     deletedAt: { type: 'string', format: 'date-time' }

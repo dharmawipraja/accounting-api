@@ -5,7 +5,7 @@
  * Access restricted to Admin, Manager (MANAJER), and Accountant (AKUNTAN) roles.
  */
 
-import { authorize, validate } from '../middleware/index.js';
+import { authorize } from '../middleware/index.js';
 import {
   AccountGeneralCreateSchema,
   AccountGeneralUpdateSchema,
@@ -143,19 +143,17 @@ export const accountGeneralRoutes = async fastify => {
       },
       async (request, reply) => {
         try {
-          // Validate request data
-          const validatedData = validate({
-            body: AccountGeneralCreateSchema.omit({ createdBy: true, updatedBy: true })
-          })(request);
-
+          // Validate request data using Zod directly
           const userId = request.user.id;
-          const accountData = validatedData.body;
+          const accountData = AccountGeneralCreateSchema.omit({
+            createdBy: true,
+            updatedBy: true
+          }).parse(request.body);
 
           // Check if account number already exists
           const existingAccount = await fastify.prisma.accountGeneral.findUnique({
             where: {
-              accountNumber: accountData.accountNumber,
-              deletedAt: null
+              accountNumber: accountData.accountNumber
             }
           });
 
@@ -360,7 +358,7 @@ export const accountGeneralRoutes = async fastify => {
           params: {
             type: 'object',
             properties: {
-              id: { type: 'string', format: 'uuid' }
+              id: { type: 'string' }
             },
             required: ['id']
           },
@@ -478,7 +476,7 @@ export const accountGeneralRoutes = async fastify => {
           params: {
             type: 'object',
             properties: {
-              id: { type: 'string', format: 'uuid' }
+              id: { type: 'string' }
             },
             required: ['id']
           },
@@ -557,26 +555,16 @@ export const accountGeneralRoutes = async fastify => {
       },
       async (request, reply) => {
         try {
-          // Validate request data
-          const validatedParams = validate({
-            params: UUIDSchema.transform(id => ({ id }))
-          })(request);
-          const validatedBody = validate({
-            body: AccountGeneralUpdateSchema.omit({ updatedBy: true })
-          })(request);
-
-          const { id } = validatedParams.params;
+          // Validate params and body using Zod directly
+          const id = UUIDSchema.parse(request.params.id);
+          const validatedBody = AccountGeneralUpdateSchema.omit({ updatedBy: true }).parse(
+            request.body
+          );
           const userId = request.user.id;
-          const updateData = validatedBody.body;
+          const updateData = validatedBody;
 
           // Validate UUID format
-          const validation = UUIDSchema.safeParse(id);
-          if (!validation.success) {
-            return reply.status(400).send({
-              success: false,
-              message: 'Invalid account ID format'
-            });
-          }
+          // id already parsed by Zod above
 
           // Check if account exists and not deleted
           const existingAccount = await request.server.prisma.accountGeneral.findFirst({
@@ -636,7 +624,7 @@ export const accountGeneralRoutes = async fastify => {
           params: {
             type: 'object',
             properties: {
-              id: { type: 'string', format: 'uuid' }
+              id: { type: 'string' }
             },
             required: ['id']
           },

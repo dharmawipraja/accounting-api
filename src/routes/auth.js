@@ -65,7 +65,7 @@ export const authRoutes = async fastify => {
 
       try {
         // Find user by username
-        const user = await fastify.prisma.user.findUnique({
+        const user = await fastify.prisma.user.findFirst({
           where: {
             username,
             status: 'ACTIVE' // Only active users can login

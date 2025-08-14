@@ -77,12 +77,10 @@ export const ledgerRoutes = async fastify => {
                   },
                   accountDetailId: {
                     type: 'string',
-                    format: 'uuid',
                     description: 'Account detail ID'
                   },
                   accountGeneralId: {
                     type: 'string',
-                    format: 'uuid',
                     description: 'Account general ID'
                   },
                   ledgerType: {
@@ -197,7 +195,7 @@ export const ledgerRoutes = async fastify => {
               id: { in: accountDetailIds },
               deletedAt: null
             },
-            select: { id: true }
+            select: { id: true, accountGeneralId: true }
           }),
           fastify.prisma.accountGeneral.findMany({
             where: {
@@ -209,10 +207,12 @@ export const ledgerRoutes = async fastify => {
         ]);
 
         // Validate all accounts exist
-        const foundDetailIds = new Set(existingAccountDetails.map(acc => acc.id));
+        const detailMap = new Map(
+          existingAccountDetails.map(acc => [acc.id, acc.accountGeneralId])
+        );
         const foundGeneralIds = new Set(existingAccountGenerals.map(acc => acc.id));
 
-        const missingDetailIds = accountDetailIds.filter(id => !foundDetailIds.has(id));
+        const missingDetailIds = accountDetailIds.filter(id => !detailMap.has(id));
         const missingGeneralIds = accountGeneralIds.filter(id => !foundGeneralIds.has(id));
 
         if (missingDetailIds.length > 0 || missingGeneralIds.length > 0) {
@@ -231,6 +231,56 @@ export const ledgerRoutes = async fastify => {
               ]
             }
           });
+        }
+
+        // Verify each detail belongs to the provided general
+        const mismatches = [];
+        for (const item of ledgers) {
+          const expectedGeneral = detailMap.get(item.accountDetailId);
+          if (!expectedGeneral || expectedGeneral !== item.accountGeneralId) {
+            mismatches.push(
+              `Detail ${item.accountDetailId} does not belong to General ${item.accountGeneralId}`
+            );
+          }
+        }
+        if (mismatches.length) {
+          return reply.code(400).send({
+            success: false,
+            error: {
+              code: 'ACCOUNT_RELATION_MISMATCH',
+              message: 'Account detail and general mismatch',
+              details: mismatches
+            }
+          });
+        }
+
+        // Double-entry check: DEBIT total must equal CREDIT total
+        const totals = ledgers.reduce(
+          (acc, l) => {
+            if (l.transactionType === 'DEBIT') acc.debit += Number(l.amount);
+            if (l.transactionType === 'CREDIT') acc.credit += Number(l.amount);
+            return acc;
+          },
+          { debit: 0, credit: 0 }
+        );
+        if (Math.round((totals.debit - totals.credit) * 100) !== 0) {
+          return reply.code(400).send({
+            success: false,
+            error: {
+              code: 'UNBALANCED_JOURNAL',
+              message: `Unbalanced entries: debit ${totals.debit.toFixed(2)} != credit ${totals.credit.toFixed(2)}`
+            }
+          });
+        }
+
+        // Check reference number uniqueness within the transaction
+        const existingRef = await prisma.ledger.findFirst({
+          where: { referenceNumber },
+          select: { id: true }
+        });
+
+        if (existingRef) {
+          throw new Error('Reference number already exists');
         }
 
         // Prepare ledger data for bulk insert
@@ -253,16 +303,6 @@ export const ledgerRoutes = async fastify => {
 
         // Create all ledgers in a transaction
         const createdLedgers = await fastify.prisma.$transaction(async prisma => {
-          // Check reference number uniqueness within the transaction
-          const existingRef = await prisma.ledger.findFirst({
-            where: { referenceNumber },
-            select: { id: true }
-          });
-
-          if (existingRef) {
-            throw new Error('Reference number already exists');
-          }
-
           // Create all ledger entries
           const results = [];
           for (const data of ledgerData) {
@@ -312,6 +352,20 @@ export const ledgerRoutes = async fastify => {
           });
         }
 
+        if (
+          error.code === 'P2002' &&
+          Array.isArray(error.meta?.target) &&
+          error.meta.target.includes('referenceNumber')
+        ) {
+          return reply.code(409).send({
+            success: false,
+            error: {
+              code: 'REFERENCE_NUMBER_EXISTS',
+              message: 'Reference number already exists, please retry'
+            }
+          });
+        }
+
         reply.code(500).send({
           success: false,
           error: {
@@ -341,13 +395,13 @@ export const ledgerRoutes = async fastify => {
         querystring: {
           type: 'object',
           properties: {
-            page: {
-              type: 'string',
-              description: 'Page number (default: 1)'
-            },
+            page: { type: 'integer', minimum: 1, default: 1, description: 'Page number' },
             limit: {
-              type: 'string',
-              description: 'Items per page (default: 10, max: 100)'
+              type: 'integer',
+              minimum: 1,
+              maximum: 100,
+              default: 10,
+              description: 'Items per page'
             },
             search: {
               type: 'string',
@@ -370,12 +424,10 @@ export const ledgerRoutes = async fastify => {
             },
             accountDetailId: {
               type: 'string',
-              format: 'uuid',
               description: 'Filter by account detail ID'
             },
             accountGeneralId: {
               type: 'string',
-              format: 'uuid',
               description: 'Filter by account general ID'
             },
             startDate: {
@@ -575,7 +627,6 @@ export const ledgerRoutes = async fastify => {
           properties: {
             id: {
               type: 'string',
-              format: 'uuid',
               description: 'Ledger ID'
             }
           },
@@ -722,7 +773,6 @@ export const ledgerRoutes = async fastify => {
           properties: {
             id: {
               type: 'string',
-              format: 'uuid',
               description: 'Ledger ID'
             }
           },
@@ -900,7 +950,6 @@ export const ledgerRoutes = async fastify => {
           properties: {
             id: {
               type: 'string',
-              format: 'uuid',
               description: 'Ledger ID'
             }
           },
@@ -1009,7 +1058,6 @@ export const ledgerRoutes = async fastify => {
           properties: {
             id: {
               type: 'string',
-              format: 'uuid',
               description: 'Ledger ID'
             }
           },
@@ -1135,7 +1183,6 @@ export const ledgerRoutes = async fastify => {
           properties: {
             id: {
               type: 'string',
-              format: 'uuid',
               description: 'Ledger ID'
             }
           },

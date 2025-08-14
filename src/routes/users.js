@@ -24,7 +24,11 @@ export const userRoutes = async fastify => {
   fastify.post(
     '/register',
     {
-      preHandler: [fastify.authenticate, requireAdminOrManager],
+      preHandler: [
+        fastify.authenticate,
+        requireAdminOrManager,
+        validate({ body: UserCreateSchema })
+      ],
       schema: {
         description: 'Register a new user (Admin and Manager only)',
         tags: ['users'],
@@ -76,8 +80,7 @@ export const userRoutes = async fastify => {
       }
     },
     async (request, reply) => {
-      const validatedData = validate({ body: UserCreateSchema })(request);
-      const { username, password, name, role = 'NASABAH', status = 'ACTIVE' } = validatedData.body;
+      const { username, password, name, role = 'NASABAH', status = 'ACTIVE' } = request.body;
 
       try {
         // Check if username already exists
@@ -255,7 +258,7 @@ export const userRoutes = async fastify => {
         params: {
           type: 'object',
           properties: {
-            id: { type: 'string', format: 'uuid' }
+            id: { type: 'string' }
           },
           required: ['id']
         },
@@ -349,7 +352,7 @@ export const userRoutes = async fastify => {
         params: {
           type: 'object',
           properties: {
-            id: { type: 'string', format: 'uuid' }
+            id: { type: 'string' }
           },
           required: ['id']
         },
@@ -450,7 +453,7 @@ export const userRoutes = async fastify => {
         params: {
           type: 'object',
           properties: {
-            id: { type: 'string', format: 'uuid' }
+            id: { type: 'string' }
           },
           required: ['id']
         },
