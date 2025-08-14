@@ -318,6 +318,16 @@ export const UserQuerySchema = PaginationSchema.extend({
 });
 
 // =================
+// Common helpers
+// =================
+
+// Coerce boolean-like query values (true/false, 'true'/'false', '1'/'0', 1/0)
+export const BooleanishSchema = z
+  .union([z.boolean(), z.string(), z.number()])
+  .optional()
+  .transform(val => val === true || val === 'true' || val === '1' || val === 1);
+
+// =================
 // Response Wrapper Schemas
 // =================
 

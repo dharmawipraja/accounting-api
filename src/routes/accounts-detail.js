@@ -6,10 +6,17 @@
  */
 
 import { nanoid } from 'nanoid';
+import { z } from 'zod';
 import { authorize } from '../middleware/index.js';
 import {
+  AccountCategorySchema,
   AccountDetailCreateSchema,
   AccountDetailUpdateSchema,
+  BooleanishSchema,
+  IdParamSchema,
+  PaginationSchema,
+  ReportTypeSchema,
+  TransactionTypeSchema,
   UUIDSchema
 } from '../schemas/index.js';
 
@@ -27,6 +34,20 @@ export const accountDetailRoutes = async fastify => {
   await fastify.register(async fastify => {
     // Apply authentication middleware to all routes in this group
     fastify.addHook('onRequest', requireAccountDetailAccess);
+
+    const AccountDetailListQuerySchema = PaginationSchema.extend({
+      search: z.string().optional(),
+      accountCategory: AccountCategorySchema.optional(),
+      reportType: ReportTypeSchema.optional(),
+      transactionType: TransactionTypeSchema.optional(),
+      accountGeneralId: UUIDSchema.optional(),
+      includeDeleted: BooleanishSchema
+    });
+
+    const AccountDetailGetQuerySchema = z.object({
+      includeDeleted: BooleanishSchema.default(false),
+      includeLedgers: BooleanishSchema.default(false)
+    });
 
     /**
      * Create Account Detail
@@ -162,7 +183,15 @@ export const accountDetailRoutes = async fastify => {
 
         try {
           // Validate the request body
-          const validatedData = AccountDetailCreateSchema.parse(accountDetailData);
+          const validation = AccountDetailCreateSchema.safeParse(accountDetailData);
+          if (!validation.success) {
+            return reply.status(400).send({
+              success: false,
+              message: 'Validation failed',
+              errors: validation.error.errors
+            });
+          }
+          const validatedData = validation.data;
           // Round monetary amounts to 2 decimals
           validatedData.amountCredit =
             Math.round(Number(validatedData.amountCredit || 0) * 100) / 100;
@@ -217,14 +246,6 @@ export const accountDetailRoutes = async fastify => {
           });
         } catch (error) {
           request.log.error('Account detail creation failed:', error);
-
-          if (error.name === 'ZodError') {
-            return reply.status(400).send({
-              success: false,
-              message: 'Validation failed',
-              errors: error.errors
-            });
-          }
 
           if (error.code === 'P2002') {
             return reply.status(409).send({
@@ -356,19 +377,27 @@ export const accountDetailRoutes = async fastify => {
       },
       async (request, reply) => {
         try {
+          // Validate and normalize query params
+          const qValidation = AccountDetailListQuerySchema.safeParse(request.query);
+          if (!qValidation.success) {
+            return reply.status(400).send({
+              success: false,
+              message: 'Invalid query parameters',
+              errors: qValidation.error.errors
+            });
+          }
           const {
-            page = 1,
-            limit = 10,
+            page,
+            limit,
             search,
             accountCategory,
             reportType,
             transactionType,
             accountGeneralId,
-            includeDeleted = false
-          } = request.query;
+            includeDeleted
+          } = qValidation.data;
 
-          const includeDeletedBool =
-            includeDeleted === true || includeDeleted === 'true' || includeDeleted === 1;
+          const includeDeletedBool = !!includeDeleted;
 
           const skip = (page - 1) * limit;
 
@@ -550,19 +579,30 @@ export const accountDetailRoutes = async fastify => {
       },
       async (request, reply) => {
         try {
-          const { id } = request.params;
-          const { includeDeleted = false, includeLedgers = false } = request.query;
-          const includeDeletedBool =
-            includeDeleted === true || includeDeleted === 'true' || includeDeleted === 1;
-          const includeLedgersBool =
-            includeLedgers === true || includeLedgers === 'true' || includeLedgers === 1;
+          // Validate params and query
+          const paramsValidation = IdParamSchema.safeParse(request.params);
+          if (!paramsValidation.success) {
+            return reply.status(400).send({
+              success: false,
+              message: 'Invalid account detail ID format'
+            });
+          }
+          const { id } = paramsValidation.data;
 
-          // Validate UUID format
-          const validatedId = UUIDSchema.parse(id);
+          const queryValidation = AccountDetailGetQuerySchema.safeParse(request.query);
+          if (!queryValidation.success) {
+            return reply.status(400).send({
+              success: false,
+              message: 'Invalid query parameters',
+              errors: queryValidation.error.errors
+            });
+          }
+          const { includeDeleted: includeDeletedBool, includeLedgers: includeLedgersBool } =
+            queryValidation.data;
 
           const accountDetail = await fastify.prisma.accountDetail.findFirst({
             where: {
-              id: validatedId,
+              id,
               ...(includeDeletedBool ? {} : { deletedAt: null })
             },
             include: {
@@ -611,13 +651,6 @@ export const accountDetailRoutes = async fastify => {
           });
         } catch (error) {
           request.log.error('Failed to retrieve account detail:', error);
-
-          if (error.name === 'ZodError') {
-            return reply.status(400).send({
-              success: false,
-              message: 'Invalid account detail ID format'
-            });
-          }
 
           throw error;
         }
@@ -738,18 +771,32 @@ export const accountDetailRoutes = async fastify => {
       },
       async (request, reply) => {
         try {
-          const { id } = request.params;
           const userId = request.user.id;
 
-          // Validate UUID format
-          const validatedId = UUIDSchema.parse(id);
+          // Validate params
+          const paramsValidation = IdParamSchema.safeParse(request.params);
+          if (!paramsValidation.success) {
+            return reply.status(400).send({
+              success: false,
+              message: 'Invalid account detail ID format'
+            });
+          }
+          const { id } = paramsValidation.data;
 
           // Validate update data
-          const updateData = AccountDetailUpdateSchema.parse({
+          const updateValidation = AccountDetailUpdateSchema.safeParse({
             ...request.body,
             updatedBy: userId,
             updatedAt: new Date()
           });
+          if (!updateValidation.success) {
+            return reply.status(400).send({
+              success: false,
+              message: 'Validation failed',
+              errors: updateValidation.error.errors
+            });
+          }
+          const updateData = updateValidation.data;
 
           // Round monetary amounts if provided
           if (typeof updateData.amountCredit === 'number') {
@@ -762,7 +809,7 @@ export const accountDetailRoutes = async fastify => {
           // Check if account detail exists and is not deleted
           const existingAccountDetail = await fastify.prisma.accountDetail.findFirst({
             where: {
-              id: validatedId,
+              id,
               deletedAt: null
             }
           });
@@ -776,7 +823,7 @@ export const accountDetailRoutes = async fastify => {
 
           // Update the account detail
           const updatedAccountDetail = await fastify.prisma.accountDetail.update({
-            where: { id: validatedId },
+            where: { id },
             data: updateData,
             include: {
               accountGeneral: {
@@ -796,14 +843,6 @@ export const accountDetailRoutes = async fastify => {
           });
         } catch (error) {
           request.log.error('Account detail update failed:', error);
-
-          if (error.name === 'ZodError') {
-            return reply.status(400).send({
-              success: false,
-              message: 'Validation failed',
-              errors: error.errors
-            });
-          }
 
           if (error.code === 'P2025') {
             return reply.status(404).send({
@@ -878,15 +917,20 @@ export const accountDetailRoutes = async fastify => {
       },
       async (request, reply) => {
         try {
-          const { id } = request.params;
-
-          // Validate UUID format
-          const validatedId = UUIDSchema.parse(id);
+          // Validate params
+          const paramsValidation = IdParamSchema.safeParse(request.params);
+          if (!paramsValidation.success) {
+            return reply.status(400).send({
+              success: false,
+              message: 'Invalid account detail ID format'
+            });
+          }
+          const { id } = paramsValidation.data;
 
           // Check if account detail exists and is not already deleted
           const existingAccountDetail = await fastify.prisma.accountDetail.findFirst({
             where: {
-              id: validatedId,
+              id,
               deletedAt: null
             }
           });
@@ -901,7 +945,7 @@ export const accountDetailRoutes = async fastify => {
           // Check if account detail has related ledger entries
           const relatedLedgers = await fastify.prisma.ledger.findFirst({
             where: {
-              accountDetailId: validatedId,
+              accountDetailId: id,
               deletedAt: null
             }
           });
@@ -916,7 +960,7 @@ export const accountDetailRoutes = async fastify => {
 
           // Perform soft delete
           const deletedAccountDetail = await fastify.prisma.accountDetail.update({
-            where: { id: validatedId },
+            where: { id },
             data: {
               accountNumber: `${existingAccountDetail.accountNumber}-DELETED-${nanoid(6)}`,
               deletedAt: new Date(),
@@ -938,13 +982,6 @@ export const accountDetailRoutes = async fastify => {
           });
         } catch (error) {
           request.log.error('Account detail deletion failed:', error);
-
-          if (error.name === 'ZodError') {
-            return reply.status(400).send({
-              success: false,
-              message: 'Invalid account detail ID format'
-            });
-          }
 
           if (error.code === 'P2025') {
             return reply.status(404).send({

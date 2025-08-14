@@ -6,11 +6,14 @@
  */
 
 import { nanoid } from 'nanoid';
+import { z } from 'zod';
 import { authorize } from '../middleware/index.js';
 import {
+  AccountCategorySchema,
   AccountGeneralCreateSchema,
   AccountGeneralUpdateSchema,
-  UUIDSchema
+  IdParamSchema,
+  ReportTypeSchema
 } from '../schemas/index.js';
 
 /**
@@ -27,6 +30,25 @@ export const accountGeneralRoutes = async fastify => {
   await fastify.register(async fastify => {
     // Apply authentication middleware to all routes in this group
     fastify.addHook('onRequest', requireAccountGeneralAccess);
+
+    // Local query schema with default limit 20 to preserve current API behavior
+    const GeneralListQuerySchema = z.object({
+      page: z
+        .string()
+        .or(z.number())
+        .optional()
+        .transform(val => (val ? parseInt(String(val)) : 1))
+        .refine(val => val >= 1, 'Page must be >= 1'),
+      limit: z
+        .string()
+        .or(z.number())
+        .optional()
+        .transform(val => (val ? parseInt(String(val)) : 20))
+        .refine(val => val >= 1 && val <= 100, 'Limit must be between 1 and 100'),
+      accountCategory: AccountCategorySchema.optional(),
+      reportType: ReportTypeSchema.optional(),
+      search: z.string().optional()
+    });
 
     /**
      * Create Account General
@@ -117,7 +139,9 @@ export const accountGeneralRoutes = async fastify => {
                     amountCredit: { type: 'number' },
                     amountDebit: { type: 'number' },
                     createdAt: { type: 'string' },
-                    createdBy: { type: 'string' }
+                    createdBy: { type: 'string' },
+                    updatedAt: { type: 'string' },
+                    updatedBy: { type: 'string' }
                   }
                 }
               }
@@ -144,12 +168,22 @@ export const accountGeneralRoutes = async fastify => {
       },
       async (request, reply) => {
         try {
-          // Validate request data using Zod directly
           const userId = request.user.id;
-          const accountData = AccountGeneralCreateSchema.omit({
+
+          // Validate request body
+          const bodyValidation = AccountGeneralCreateSchema.omit({
             createdBy: true,
             updatedBy: true
-          }).parse(request.body);
+          }).safeParse(request.body);
+          if (!bodyValidation.success) {
+            return reply.status(400).send({
+              success: false,
+              message: 'Validation failed',
+              errors: bodyValidation.error.errors
+            });
+          }
+
+          const accountData = bodyValidation.data;
 
           // Round monetary amounts to 2 decimals
           const roundedAccountData = {
@@ -287,7 +321,17 @@ export const accountGeneralRoutes = async fastify => {
       },
       async (request, reply) => {
         try {
-          const { page = 1, limit = 20, accountCategory, reportType, search } = request.query;
+          // Validate and normalize query params
+          const qValidation = GeneralListQuerySchema.safeParse(request.query);
+          if (!qValidation.success) {
+            return reply.status(400).send({
+              success: false,
+              message: 'Invalid query parameters',
+              errors: qValidation.error.errors
+            });
+          }
+
+          const { page, limit, accountCategory, reportType, search } = qValidation.data;
           const skip = (page - 1) * limit;
 
           // Build where clause
@@ -332,8 +376,8 @@ export const accountGeneralRoutes = async fastify => {
             message: 'Account general list retrieved successfully',
             data: accounts,
             pagination: {
-              page: parseInt(page),
-              limit: parseInt(limit),
+              page,
+              limit,
               total,
               totalPages: Math.ceil(total / limit)
             }
@@ -417,16 +461,15 @@ export const accountGeneralRoutes = async fastify => {
       },
       async (request, reply) => {
         try {
-          const { id } = request.params;
-
-          // Validate UUID format
-          const validation = UUIDSchema.safeParse(id);
-          if (!validation.success) {
+          // Validate params
+          const parsed = IdParamSchema.safeParse(request.params);
+          if (!parsed.success) {
             return reply.status(400).send({
               success: false,
               message: 'Invalid account ID format'
             });
           }
+          const { id } = parsed.data;
 
           // Get account general with related counts
           const account = await fastify.prisma.accountGeneral.findFirst({
@@ -563,11 +606,26 @@ export const accountGeneralRoutes = async fastify => {
       },
       async (request, reply) => {
         try {
-          // Validate params and body using Zod directly
-          const id = UUIDSchema.parse(request.params.id);
-          const validatedBody = AccountGeneralUpdateSchema.omit({ updatedBy: true }).parse(
+          // Validate params and body
+          const paramsValidation = IdParamSchema.safeParse(request.params);
+          const bodyValidation = AccountGeneralUpdateSchema.omit({ updatedBy: true }).safeParse(
             request.body
           );
+
+          if (!paramsValidation.success || !bodyValidation.success) {
+            return reply.status(400).send({
+              success: false,
+              message: 'Validation failed',
+              errors: [
+                ...(paramsValidation.error?.errors || []),
+                ...(bodyValidation.error?.errors || [])
+              ]
+            });
+          }
+
+          const { id } = paramsValidation.data;
+          const validatedBody = bodyValidation.data;
+
           const userId = request.user.id;
           const updateData = {
             ...validatedBody,
@@ -578,9 +636,6 @@ export const accountGeneralRoutes = async fastify => {
               amountDebit: Math.round(Number(validatedBody.amountDebit) * 100) / 100
             })
           };
-
-          // Validate UUID format
-          // id already parsed by Zod above
 
           // Check if account exists and not deleted
           const existingAccount = await request.server.prisma.accountGeneral.findFirst({
@@ -675,16 +730,15 @@ export const accountGeneralRoutes = async fastify => {
       },
       async (request, reply) => {
         try {
-          const { id } = request.params;
-
-          // Validate UUID format
-          const validation = UUIDSchema.safeParse(id);
-          if (!validation.success) {
+          // Validate params
+          const parsed = IdParamSchema.safeParse(request.params);
+          if (!parsed.success) {
             return reply.status(400).send({
               success: false,
               message: 'Invalid account ID format'
             });
           }
+          const { id } = parsed.data;
 
           // Check if account exists and not already deleted
           const existingAccount = await fastify.prisma.accountGeneral.findFirst({
