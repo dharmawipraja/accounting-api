@@ -5,6 +5,7 @@
  * Access restricted to Admin, Manager (MANAJER), and Accountant (AKUNTAN) roles.
  */
 
+import { nanoid } from 'nanoid';
 import { authorize } from '../middleware/index.js';
 import {
   AccountDetailCreateSchema,
@@ -162,6 +163,11 @@ export const accountDetailRoutes = async fastify => {
         try {
           // Validate the request body
           const validatedData = AccountDetailCreateSchema.parse(accountDetailData);
+          // Round monetary amounts to 2 decimals
+          validatedData.amountCredit =
+            Math.round(Number(validatedData.amountCredit || 0) * 100) / 100;
+          validatedData.amountDebit =
+            Math.round(Number(validatedData.amountDebit || 0) * 100) / 100;
 
           // Check if account number already exists
           const existingAccount = await fastify.prisma.accountDetail.findUnique({
@@ -288,7 +294,7 @@ export const accountDetailRoutes = async fastify => {
                 description: 'Filter by parent general account'
               },
               includeDeleted: {
-                type: 'boolean',
+                type: ['boolean', 'string'],
                 default: false,
                 description: 'Include soft deleted records'
               }
@@ -361,11 +367,14 @@ export const accountDetailRoutes = async fastify => {
             includeDeleted = false
           } = request.query;
 
+          const includeDeletedBool =
+            includeDeleted === true || includeDeleted === 'true' || includeDeleted === 1;
+
           const skip = (page - 1) * limit;
 
           // Build where clause
           const where = {
-            ...(includeDeleted ? {} : { deletedAt: null }),
+            ...(includeDeletedBool ? {} : { deletedAt: null }),
             ...(accountCategory && { accountCategory }),
             ...(reportType && { reportType }),
             ...(transactionType && { transactionType }),
@@ -461,12 +470,12 @@ export const accountDetailRoutes = async fastify => {
             type: 'object',
             properties: {
               includeDeleted: {
-                type: 'boolean',
+                type: ['boolean', 'string'],
                 default: false,
                 description: 'Include if the record is soft deleted'
               },
               includeLedgers: {
-                type: 'boolean',
+                type: ['boolean', 'string'],
                 default: false,
                 description: 'Include related ledger entries'
               }
@@ -543,6 +552,10 @@ export const accountDetailRoutes = async fastify => {
         try {
           const { id } = request.params;
           const { includeDeleted = false, includeLedgers = false } = request.query;
+          const includeDeletedBool =
+            includeDeleted === true || includeDeleted === 'true' || includeDeleted === 1;
+          const includeLedgersBool =
+            includeLedgers === true || includeLedgers === 'true' || includeLedgers === 1;
 
           // Validate UUID format
           const validatedId = UUIDSchema.parse(id);
@@ -550,7 +563,7 @@ export const accountDetailRoutes = async fastify => {
           const accountDetail = await fastify.prisma.accountDetail.findFirst({
             where: {
               id: validatedId,
-              ...(includeDeleted ? {} : { deletedAt: null })
+              ...(includeDeletedBool ? {} : { deletedAt: null })
             },
             include: {
               accountGeneral: {
@@ -563,7 +576,7 @@ export const accountDetailRoutes = async fastify => {
                   transactionType: true
                 }
               },
-              ...(includeLedgers && {
+              ...(includeLedgersBool && {
                 ledgers: {
                   where: { deletedAt: null },
                   select: {
@@ -738,6 +751,14 @@ export const accountDetailRoutes = async fastify => {
             updatedAt: new Date()
           });
 
+          // Round monetary amounts if provided
+          if (typeof updateData.amountCredit === 'number') {
+            updateData.amountCredit = Math.round(Number(updateData.amountCredit) * 100) / 100;
+          }
+          if (typeof updateData.amountDebit === 'number') {
+            updateData.amountDebit = Math.round(Number(updateData.amountDebit) * 100) / 100;
+          }
+
           // Check if account detail exists and is not deleted
           const existingAccountDetail = await fastify.prisma.accountDetail.findFirst({
             where: {
@@ -897,6 +918,7 @@ export const accountDetailRoutes = async fastify => {
           const deletedAccountDetail = await fastify.prisma.accountDetail.update({
             where: { id: validatedId },
             data: {
+              accountNumber: `${existingAccountDetail.accountNumber}-DELETED-${nanoid(6)}`,
               deletedAt: new Date(),
               updatedBy: request.user.id,
               updatedAt: new Date()

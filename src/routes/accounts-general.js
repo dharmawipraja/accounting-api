@@ -5,6 +5,7 @@
  * Access restricted to Admin, Manager (MANAJER), and Accountant (AKUNTAN) roles.
  */
 
+import { nanoid } from 'nanoid';
 import { authorize } from '../middleware/index.js';
 import {
   AccountGeneralCreateSchema,
@@ -150,10 +151,17 @@ export const accountGeneralRoutes = async fastify => {
             updatedBy: true
           }).parse(request.body);
 
+          // Round monetary amounts to 2 decimals
+          const roundedAccountData = {
+            ...accountData,
+            amountCredit: Math.round(Number(accountData.amountCredit || 0) * 100) / 100,
+            amountDebit: Math.round(Number(accountData.amountDebit || 0) * 100) / 100
+          };
+
           // Check if account number already exists
           const existingAccount = await fastify.prisma.accountGeneral.findUnique({
             where: {
-              accountNumber: accountData.accountNumber
+              accountNumber: roundedAccountData.accountNumber
             }
           });
 
@@ -167,7 +175,7 @@ export const accountGeneralRoutes = async fastify => {
           // Create account general
           const newAccount = await fastify.prisma.accountGeneral.create({
             data: {
-              ...accountData,
+              ...roundedAccountData,
               accountType: 'GENERAL',
               createdBy: userId,
               updatedBy: userId,
@@ -296,10 +304,10 @@ export const accountGeneralRoutes = async fastify => {
           };
 
           // Get total count
-          const total = await request.server.prisma.accountGeneral.count({ where });
+          const total = await fastify.prisma.accountGeneral.count({ where });
 
           // Get paginated data
-          const accounts = await request.server.prisma.accountGeneral.findMany({
+          const accounts = await fastify.prisma.accountGeneral.findMany({
             where,
             skip,
             take: limit,
@@ -421,7 +429,7 @@ export const accountGeneralRoutes = async fastify => {
           }
 
           // Get account general with related counts
-          const account = await request.server.prisma.accountGeneral.findFirst({
+          const account = await fastify.prisma.accountGeneral.findFirst({
             where: {
               id,
               deletedAt: null
@@ -561,7 +569,15 @@ export const accountGeneralRoutes = async fastify => {
             request.body
           );
           const userId = request.user.id;
-          const updateData = validatedBody;
+          const updateData = {
+            ...validatedBody,
+            ...(typeof validatedBody.amountCredit === 'number' && {
+              amountCredit: Math.round(Number(validatedBody.amountCredit) * 100) / 100
+            }),
+            ...(typeof validatedBody.amountDebit === 'number' && {
+              amountDebit: Math.round(Number(validatedBody.amountDebit) * 100) / 100
+            })
+          };
 
           // Validate UUID format
           // id already parsed by Zod above
@@ -671,7 +687,7 @@ export const accountGeneralRoutes = async fastify => {
           }
 
           // Check if account exists and not already deleted
-          const existingAccount = await request.server.prisma.accountGeneral.findFirst({
+          const existingAccount = await fastify.prisma.accountGeneral.findFirst({
             where: {
               id,
               deletedAt: null
@@ -706,9 +722,11 @@ export const accountGeneralRoutes = async fastify => {
           }
 
           // Soft delete the account
+          // Archive account number to free uniqueness before soft delete
           await fastify.prisma.accountGeneral.update({
             where: { id },
             data: {
+              accountNumber: `${existingAccount.accountNumber}-DELETED-${nanoid(6)}`,
               deletedAt: new Date()
             }
           });

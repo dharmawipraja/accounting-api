@@ -31,6 +31,11 @@ const generateReferenceNumber = () => {
 };
 
 /**
+ * Round a number to 2 decimal places safely
+ */
+const round2 = value => Math.round(Number(value) * 100) / 100;
+
+/**
  * Ledger Routes Plugin
  */
 export const ledgerRoutes = async fastify => {
@@ -257,8 +262,9 @@ export const ledgerRoutes = async fastify => {
         // Double-entry check: DEBIT total must equal CREDIT total
         const totals = ledgers.reduce(
           (acc, l) => {
-            if (l.transactionType === 'DEBIT') acc.debit += Number(l.amount);
-            if (l.transactionType === 'CREDIT') acc.credit += Number(l.amount);
+            const amt = round2(l.amount);
+            if (l.transactionType === 'DEBIT') acc.debit = round2(acc.debit + amt);
+            if (l.transactionType === 'CREDIT') acc.credit = round2(acc.credit + amt);
             return acc;
           },
           { debit: 0, credit: 0 }
@@ -274,7 +280,7 @@ export const ledgerRoutes = async fastify => {
         }
 
         // Check reference number uniqueness within the transaction
-        const existingRef = await prisma.ledger.findFirst({
+        const existingRef = await fastify.prisma.ledger.findFirst({
           where: { referenceNumber },
           select: { id: true }
         });
@@ -286,7 +292,7 @@ export const ledgerRoutes = async fastify => {
         // Prepare ledger data for bulk insert
         const ledgerData = ledgers.map(ledger => ({
           referenceNumber,
-          amount: ledger.amount,
+          amount: round2(ledger.amount),
           description: ledger.description.trim(),
           accountDetailId: ledger.accountDetailId,
           accountGeneralId: ledger.accountGeneralId,
@@ -491,7 +497,9 @@ export const ledgerRoutes = async fastify => {
                       total: { type: 'number' },
                       totalPages: { type: 'number' },
                       hasNext: { type: 'boolean' },
-                      hasPrev: { type: 'boolean' }
+                      hasPrev: { type: 'boolean' },
+                      nextPage: { type: ['number', 'null'] },
+                      prevPage: { type: ['number', 'null'] }
                     }
                   }
                 }
@@ -529,6 +537,16 @@ export const ledgerRoutes = async fastify => {
           endDate
         } = validation.data;
 
+        // Normalize date range to day boundaries when both provided
+        const normalizedStart = startDate ? new Date(startDate) : undefined;
+        const normalizedEnd = endDate ? new Date(endDate) : undefined;
+        if (normalizedStart) {
+          normalizedStart.setHours(0, 0, 0, 0);
+        }
+        if (normalizedEnd) {
+          normalizedEnd.setHours(23, 59, 59, 999);
+        }
+
         // Build where clause
         const where = {
           deletedAt: null,
@@ -543,10 +561,10 @@ export const ledgerRoutes = async fastify => {
           ...(postingStatus && { postingStatus }),
           ...(accountDetailId && { accountDetailId }),
           ...(accountGeneralId && { accountGeneralId }),
-          ...((startDate || endDate) && {
+          ...((normalizedStart || normalizedEnd) && {
             ledgerDate: {
-              ...(startDate && { gte: startDate }),
-              ...(endDate && { lte: endDate })
+              ...(normalizedStart && { gte: normalizedStart }),
+              ...(normalizedEnd && { lte: normalizedEnd })
             }
           })
         };
@@ -894,6 +912,9 @@ export const ledgerRoutes = async fastify => {
           where: { id },
           data: {
             ...updateData,
+            ...(typeof updateData.amount === 'number' && {
+              amount: round2(updateData.amount)
+            }),
             ...(updateData.description && { description: updateData.description.trim() }),
             ...(updateData.ledgerDate && { ledgerDate: new Date(updateData.ledgerDate) }),
             updatedBy: request.user.id,

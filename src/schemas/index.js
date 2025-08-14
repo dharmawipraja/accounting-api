@@ -306,6 +306,9 @@ export const LedgerQuerySchema = PaginationSchema.extend({
   accountDetailId: UUIDSchema.optional(),
   accountGeneralId: UUIDSchema.optional(),
   ...DateRangeQuerySchema.shape
+}).refine(v => !(v.startDate && v.endDate) || v.startDate <= v.endDate, {
+  message: 'startDate must be less than or equal to endDate',
+  path: ['startDate']
 });
 
 export const UserQuerySchema = PaginationSchema.extend({
