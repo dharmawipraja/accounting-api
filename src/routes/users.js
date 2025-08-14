@@ -10,7 +10,6 @@
  * - Profile: Every user can see their own detail
  */
 
-import { randomUUID } from 'crypto';
 import { hashPassword, requireAdminOrManager, validate } from '../middleware/index.js';
 import {
   IdParamSchema,
@@ -96,7 +95,6 @@ export const userRoutes = async fastify => {
         // Create user
         const newUser = await fastify.prisma.user.create({
           data: {
-            id: randomUUID(),
             username,
             password: hashedPassword,
             name,

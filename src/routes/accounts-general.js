@@ -1,0 +1,744 @@
+/**
+ * Account General Routes
+ *
+ * Routes for managing account general (chart of accounts).
+ * Access restricted to Admin, Manager (MANAJER), and Accountant (AKUNTAN) roles.
+ */
+
+import { authorize, validate } from '../middleware/index.js';
+import {
+  AccountGeneralCreateSchema,
+  AccountGeneralUpdateSchema,
+  UUIDSchema
+} from '../schemas/index.js';
+
+/**
+ * Authorization middleware for account general operations
+ * Only Admin, Manager, and Accountant can manage account general
+ */
+const requireAccountGeneralAccess = authorize('ADMIN', 'MANAJER', 'AKUNTAN');
+
+/**
+ * Account General Routes Plugin
+ */
+export const accountGeneralRoutes = async fastify => {
+  // Prefix all routes with /accounts-general
+  await fastify.register(async fastify => {
+    // Apply authentication middleware to all routes in this group
+    fastify.addHook('onRequest', requireAccountGeneralAccess);
+
+    /**
+     * Create Account General
+     * POST /accounts-general
+     *
+     * Creates a new account general entry.
+     * Only accessible by Admin, Manager, and Accountant.
+     */
+    fastify.post(
+      '/',
+      {
+        schema: {
+          tags: ['Account General'],
+          summary: 'Create a new account general',
+          description:
+            'Creates a new account general entry. Requires Admin, Manager, or Accountant role.',
+          body: {
+            type: 'object',
+            properties: {
+              accountNumber: {
+                type: 'string',
+                minLength: 1,
+                maxLength: 20,
+                pattern: '^[0-9\\-]+$',
+                description: 'Account number (numbers and hyphens only)'
+              },
+              accountName: {
+                type: 'string',
+                minLength: 3,
+                maxLength: 100,
+                description: 'Account name'
+              },
+              accountCategory: {
+                type: 'string',
+                enum: ['ASSET', 'HUTANG', 'MODAL', 'PENDAPATAN', 'BIAYA'],
+                description: 'Account category'
+              },
+              reportType: {
+                type: 'string',
+                enum: ['NERACA', 'LABA_RUGI'],
+                description: 'Report type'
+              },
+              transactionType: {
+                type: 'string',
+                enum: ['DEBIT', 'CREDIT'],
+                description: 'Transaction type'
+              },
+              amountCredit: {
+                type: 'number',
+                minimum: 0,
+                maximum: 99999999.99,
+                default: 0,
+                description: 'Credit amount'
+              },
+              amountDebit: {
+                type: 'number',
+                minimum: 0,
+                maximum: 99999999.99,
+                default: 0,
+                description: 'Debit amount'
+              }
+            },
+            required: [
+              'accountNumber',
+              'accountName',
+              'accountCategory',
+              'reportType',
+              'transactionType'
+            ]
+          },
+          response: {
+            201: {
+              description: 'Account general created successfully',
+              type: 'object',
+              properties: {
+                success: { type: 'boolean' },
+                message: { type: 'string' },
+                data: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    accountNumber: { type: 'string' },
+                    accountName: { type: 'string' },
+                    accountCategory: { type: 'string' },
+                    accountType: { type: 'string' },
+                    reportType: { type: 'string' },
+                    transactionType: { type: 'string' },
+                    amountCredit: { type: 'number' },
+                    amountDebit: { type: 'number' },
+                    createdAt: { type: 'string' },
+                    createdBy: { type: 'string' }
+                  }
+                }
+              }
+            },
+            400: {
+              description: 'Validation error',
+              type: 'object',
+              properties: {
+                success: { type: 'boolean' },
+                message: { type: 'string' },
+                errors: { type: 'array' }
+              }
+            },
+            409: {
+              description: 'Account number already exists',
+              type: 'object',
+              properties: {
+                success: { type: 'boolean' },
+                message: { type: 'string' }
+              }
+            }
+          }
+        }
+      },
+      async (request, reply) => {
+        try {
+          // Validate request data
+          const validatedData = validate({
+            body: AccountGeneralCreateSchema.omit({ createdBy: true, updatedBy: true })
+          })(request);
+
+          const userId = request.user.id;
+          const accountData = validatedData.body;
+
+          // Check if account number already exists
+          const existingAccount = await fastify.prisma.accountGeneral.findUnique({
+            where: {
+              accountNumber: accountData.accountNumber,
+              deletedAt: null
+            }
+          });
+
+          if (existingAccount) {
+            return reply.status(409).send({
+              success: false,
+              message: 'Account number already exists'
+            });
+          }
+
+          // Create account general
+          const newAccount = await fastify.prisma.accountGeneral.create({
+            data: {
+              ...accountData,
+              accountType: 'GENERAL',
+              createdBy: userId,
+              updatedBy: userId,
+              updatedAt: new Date()
+            }
+          });
+
+          return reply.status(201).send({
+            success: true,
+            message: 'Account general created successfully',
+            data: newAccount
+          });
+        } catch (error) {
+          request.log.error('Error creating account general:', error);
+          return reply.status(500).send({
+            success: false,
+            message: 'Internal server error'
+          });
+        }
+      }
+    );
+
+    /**
+     * Get All Account General
+     * GET /accounts-general
+     *
+     * Retrieves all account general entries with pagination.
+     * Only accessible by Admin, Manager, and Accountant.
+     */
+    fastify.get(
+      '/',
+      {
+        schema: {
+          tags: ['Account General'],
+          summary: 'Get all account general',
+          description:
+            'Retrieves all account general entries with pagination. Requires Admin, Manager, or Accountant role.',
+          querystring: {
+            type: 'object',
+            properties: {
+              page: {
+                type: 'integer',
+                minimum: 1,
+                default: 1,
+                description: 'Page number'
+              },
+              limit: {
+                type: 'integer',
+                minimum: 1,
+                maximum: 100,
+                default: 20,
+                description: 'Items per page'
+              },
+              accountCategory: {
+                type: 'string',
+                enum: ['ASSET', 'HUTANG', 'MODAL', 'PENDAPATAN', 'BIAYA'],
+                description: 'Filter by account category'
+              },
+              reportType: {
+                type: 'string',
+                enum: ['NERACA', 'LABA_RUGI'],
+                description: 'Filter by report type'
+              },
+              search: {
+                type: 'string',
+                description: 'Search in account number or account name'
+              }
+            }
+          },
+          response: {
+            200: {
+              description: 'Account general list retrieved successfully',
+              type: 'object',
+              properties: {
+                success: { type: 'boolean' },
+                message: { type: 'string' },
+                data: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      id: { type: 'string' },
+                      accountNumber: { type: 'string' },
+                      accountName: { type: 'string' },
+                      accountCategory: { type: 'string' },
+                      accountType: { type: 'string' },
+                      reportType: { type: 'string' },
+                      transactionType: { type: 'string' },
+                      amountCredit: { type: 'number' },
+                      amountDebit: { type: 'number' },
+                      createdAt: { type: 'string' },
+                      updatedAt: { type: 'string' }
+                    }
+                  }
+                },
+                pagination: {
+                  type: 'object',
+                  properties: {
+                    page: { type: 'number' },
+                    limit: { type: 'number' },
+                    total: { type: 'number' },
+                    totalPages: { type: 'number' }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      async (request, reply) => {
+        try {
+          const { page = 1, limit = 20, accountCategory, reportType, search } = request.query;
+          const skip = (page - 1) * limit;
+
+          // Build where clause
+          const where = {
+            deletedAt: null,
+            ...(accountCategory && { accountCategory }),
+            ...(reportType && { reportType }),
+            ...(search && {
+              OR: [
+                { accountNumber: { contains: search, mode: 'insensitive' } },
+                { accountName: { contains: search, mode: 'insensitive' } }
+              ]
+            })
+          };
+
+          // Get total count
+          const total = await request.server.prisma.accountGeneral.count({ where });
+
+          // Get paginated data
+          const accounts = await request.server.prisma.accountGeneral.findMany({
+            where,
+            skip,
+            take: limit,
+            orderBy: { accountNumber: 'asc' },
+            select: {
+              id: true,
+              accountNumber: true,
+              accountName: true,
+              accountCategory: true,
+              accountType: true,
+              reportType: true,
+              transactionType: true,
+              amountCredit: true,
+              amountDebit: true,
+              createdAt: true,
+              updatedAt: true
+            }
+          });
+
+          return reply.send({
+            success: true,
+            message: 'Account general list retrieved successfully',
+            data: accounts,
+            pagination: {
+              page: parseInt(page),
+              limit: parseInt(limit),
+              total,
+              totalPages: Math.ceil(total / limit)
+            }
+          });
+        } catch (error) {
+          request.log.error('Error retrieving account general list:', error);
+          return reply.status(500).send({
+            success: false,
+            message: 'Internal server error'
+          });
+        }
+      }
+    );
+
+    /**
+     * Get Account General by ID
+     * GET /accounts-general/:id
+     *
+     * Retrieves account general details by ID.
+     * Only accessible by Admin, Manager, and Accountant.
+     */
+    fastify.get(
+      '/:id',
+      {
+        schema: {
+          tags: ['Account General'],
+          summary: 'Get account general by ID',
+          description:
+            'Retrieves account general details by ID. Requires Admin, Manager, or Accountant role.',
+          params: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', format: 'uuid' }
+            },
+            required: ['id']
+          },
+          response: {
+            200: {
+              description: 'Account general details retrieved successfully',
+              type: 'object',
+              properties: {
+                success: { type: 'boolean' },
+                message: { type: 'string' },
+                data: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    accountNumber: { type: 'string' },
+                    accountName: { type: 'string' },
+                    accountCategory: { type: 'string' },
+                    accountType: { type: 'string' },
+                    reportType: { type: 'string' },
+                    transactionType: { type: 'string' },
+                    amountCredit: { type: 'number' },
+                    amountDebit: { type: 'number' },
+                    createdAt: { type: 'string' },
+                    updatedAt: { type: 'string' },
+                    createdBy: { type: 'string' },
+                    updatedBy: { type: 'string' },
+                    _count: {
+                      type: 'object',
+                      properties: {
+                        accountsDetail: { type: 'number' },
+                        ledgers: { type: 'number' }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            404: {
+              description: 'Account general not found',
+              type: 'object',
+              properties: {
+                success: { type: 'boolean' },
+                message: { type: 'string' }
+              }
+            }
+          }
+        }
+      },
+      async (request, reply) => {
+        try {
+          const { id } = request.params;
+
+          // Validate UUID format
+          const validation = UUIDSchema.safeParse(id);
+          if (!validation.success) {
+            return reply.status(400).send({
+              success: false,
+              message: 'Invalid account ID format'
+            });
+          }
+
+          // Get account general with related counts
+          const account = await request.server.prisma.accountGeneral.findFirst({
+            where: {
+              id,
+              deletedAt: null
+            },
+            include: {
+              _count: {
+                select: {
+                  accountsDetail: true,
+                  ledgers: true
+                }
+              }
+            }
+          });
+
+          if (!account) {
+            return reply.status(404).send({
+              success: false,
+              message: 'Account general not found'
+            });
+          }
+
+          return reply.send({
+            success: true,
+            message: 'Account general details retrieved successfully',
+            data: account
+          });
+        } catch (error) {
+          request.log.error('Error retrieving account general:', error);
+          return reply.status(500).send({
+            success: false,
+            message: 'Internal server error'
+          });
+        }
+      }
+    );
+
+    /**
+     * Update Account General
+     * PUT /accounts-general/:id
+     *
+     * Updates account general information.
+     * Only accessible by Admin, Manager, and Accountant.
+     */
+    fastify.put(
+      '/:id',
+      {
+        schema: {
+          tags: ['Account General'],
+          summary: 'Update account general',
+          description:
+            'Updates account general information. Requires Admin, Manager, or Accountant role.',
+          params: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', format: 'uuid' }
+            },
+            required: ['id']
+          },
+          body: {
+            type: 'object',
+            properties: {
+              accountName: {
+                type: 'string',
+                minLength: 3,
+                maxLength: 100,
+                description: 'Account name'
+              },
+              accountCategory: {
+                type: 'string',
+                enum: ['ASSET', 'HUTANG', 'MODAL', 'PENDAPATAN', 'BIAYA'],
+                description: 'Account category'
+              },
+              reportType: {
+                type: 'string',
+                enum: ['NERACA', 'LABA_RUGI'],
+                description: 'Report type'
+              },
+              transactionType: {
+                type: 'string',
+                enum: ['DEBIT', 'CREDIT'],
+                description: 'Transaction type'
+              },
+              amountCredit: {
+                type: 'number',
+                minimum: 0,
+                maximum: 99999999.99,
+                description: 'Credit amount'
+              },
+              amountDebit: {
+                type: 'number',
+                minimum: 0,
+                maximum: 99999999.99,
+                description: 'Debit amount'
+              }
+            }
+          },
+          response: {
+            200: {
+              description: 'Account general updated successfully',
+              type: 'object',
+              properties: {
+                success: { type: 'boolean' },
+                message: { type: 'string' },
+                data: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    accountNumber: { type: 'string' },
+                    accountName: { type: 'string' },
+                    accountCategory: { type: 'string' },
+                    accountType: { type: 'string' },
+                    reportType: { type: 'string' },
+                    transactionType: { type: 'string' },
+                    amountCredit: { type: 'number' },
+                    amountDebit: { type: 'number' },
+                    updatedAt: { type: 'string' }
+                  }
+                }
+              }
+            },
+            404: {
+              description: 'Account general not found',
+              type: 'object',
+              properties: {
+                success: { type: 'boolean' },
+                message: { type: 'string' }
+              }
+            }
+          }
+        }
+      },
+      async (request, reply) => {
+        try {
+          // Validate request data
+          const validatedParams = validate({
+            params: UUIDSchema.transform(id => ({ id }))
+          })(request);
+          const validatedBody = validate({
+            body: AccountGeneralUpdateSchema.omit({ updatedBy: true })
+          })(request);
+
+          const { id } = validatedParams.params;
+          const userId = request.user.id;
+          const updateData = validatedBody.body;
+
+          // Validate UUID format
+          const validation = UUIDSchema.safeParse(id);
+          if (!validation.success) {
+            return reply.status(400).send({
+              success: false,
+              message: 'Invalid account ID format'
+            });
+          }
+
+          // Check if account exists and not deleted
+          const existingAccount = await request.server.prisma.accountGeneral.findFirst({
+            where: {
+              id,
+              deletedAt: null
+            }
+          });
+
+          if (!existingAccount) {
+            return reply.status(404).send({
+              success: false,
+              message: 'Account general not found'
+            });
+          }
+
+          // Update account general
+          const updatedAccount = await fastify.prisma.accountGeneral.update({
+            where: { id },
+            data: {
+              ...updateData,
+              updatedBy: userId,
+              updatedAt: new Date()
+            }
+          });
+
+          return reply.send({
+            success: true,
+            message: 'Account general updated successfully',
+            data: updatedAccount
+          });
+        } catch (error) {
+          request.log.error('Error updating account general:', error);
+          return reply.status(500).send({
+            success: false,
+            message: 'Internal server error'
+          });
+        }
+      }
+    );
+
+    /**
+     * Delete Account General (Soft Delete)
+     * DELETE /accounts-general/:id
+     *
+     * Soft deletes an account general by setting deletedAt timestamp.
+     * Only accessible by Admin, Manager, and Accountant.
+     */
+    fastify.delete(
+      '/:id',
+      {
+        schema: {
+          tags: ['Account General'],
+          summary: 'Delete account general',
+          description:
+            'Soft deletes an account general. Requires Admin, Manager, or Accountant role.',
+          params: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', format: 'uuid' }
+            },
+            required: ['id']
+          },
+          response: {
+            200: {
+              description: 'Account general deleted successfully',
+              type: 'object',
+              properties: {
+                success: { type: 'boolean' },
+                message: { type: 'string' }
+              }
+            },
+            404: {
+              description: 'Account general not found',
+              type: 'object',
+              properties: {
+                success: { type: 'boolean' },
+                message: { type: 'string' }
+              }
+            },
+            409: {
+              description: 'Cannot delete account with associated records',
+              type: 'object',
+              properties: {
+                success: { type: 'boolean' },
+                message: { type: 'string' },
+                details: { type: 'string' }
+              }
+            }
+          }
+        }
+      },
+      async (request, reply) => {
+        try {
+          const { id } = request.params;
+
+          // Validate UUID format
+          const validation = UUIDSchema.safeParse(id);
+          if (!validation.success) {
+            return reply.status(400).send({
+              success: false,
+              message: 'Invalid account ID format'
+            });
+          }
+
+          // Check if account exists and not already deleted
+          const existingAccount = await request.server.prisma.accountGeneral.findFirst({
+            where: {
+              id,
+              deletedAt: null
+            },
+            include: {
+              _count: {
+                select: {
+                  accountsDetail: true,
+                  ledgers: true
+                }
+              }
+            }
+          });
+
+          if (!existingAccount) {
+            return reply.status(404).send({
+              success: false,
+              message: 'Account general not found'
+            });
+          }
+
+          // Check if account has associated records
+          const hasAssociatedRecords =
+            existingAccount._count.accountsDetail > 0 || existingAccount._count.ledgers > 0;
+
+          if (hasAssociatedRecords) {
+            return reply.status(409).send({
+              success: false,
+              message: 'Cannot delete account with associated records',
+              details: `Account has ${existingAccount._count.accountsDetail} detail accounts and ${existingAccount._count.ledgers} ledger entries`
+            });
+          }
+
+          // Soft delete the account
+          await fastify.prisma.accountGeneral.update({
+            where: { id },
+            data: {
+              deletedAt: new Date()
+            }
+          });
+
+          return reply.send({
+            success: true,
+            message: 'Account general deleted successfully'
+          });
+        } catch (error) {
+          request.log.error('Error deleting account general:', error);
+          return reply.status(500).send({
+            success: false,
+            message: 'Internal server error'
+          });
+        }
+      }
+    );
+  });
+};
+
+export default accountGeneralRoutes;

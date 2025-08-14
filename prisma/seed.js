@@ -5,7 +5,6 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { randomUUID } from 'crypto';
 import { hashPassword } from '../src/middleware/auth.js';
 
 const prisma = new PrismaClient();
@@ -30,7 +29,6 @@ async function main() {
 
     const adminUser = await prisma.user.create({
       data: {
-        id: randomUUID(),
         username: 'admin',
         password: hashedPassword,
         name: 'System Administrator',
@@ -52,7 +50,6 @@ async function main() {
 
     const managerUser = await prisma.user.create({
       data: {
-        id: randomUUID(),
         username: 'manager',
         password: hashedManagerPassword,
         name: 'Sample Manager',
@@ -74,7 +71,6 @@ async function main() {
 
     const regularUser = await prisma.user.create({
       data: {
-        id: randomUUID(),
         username: 'nasabah1',
         password: hashedUserPassword,
         name: 'Sample Nasabah',

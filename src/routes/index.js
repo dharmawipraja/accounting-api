@@ -221,6 +221,10 @@ export const apiRoutes = async fastify => {
       const { userRoutes } = await import('./users.js');
       await fastify.register(userRoutes, { prefix: '/users' });
 
+      // Import and register account general routes
+      const { accountGeneralRoutes } = await import('./accounts-general.js');
+      await fastify.register(accountGeneralRoutes, { prefix: '/accounts-general' });
+
       // Add more route registrations here as you create them:
       // const { accountRoutes } = await import('./accounts.js');
       // await fastify.register(accountRoutes, { prefix: '/accounts' });

@@ -5,7 +5,6 @@
  * for the accounting API application.
  */
 
-import { randomUUID } from 'crypto';
 import { prisma } from './database.js';
 
 /**
@@ -339,7 +338,6 @@ export const createLedgerEntry = async (entryData, userId) => {
 
   return await prisma.ledger.create({
     data: {
-      id: randomUUID(),
       referenceNumber,
       amount,
       description,
