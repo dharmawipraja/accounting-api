@@ -740,5 +740,3 @@ export const accountGeneralRoutes = async fastify => {
     );
   });
 };
-
-export default accountGeneralRoutes;

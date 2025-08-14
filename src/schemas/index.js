@@ -197,12 +197,8 @@ export const AccountResponseSchema = z.object({
 // Ledger Schemas
 // =================
 
-export const LedgerCreateSchema = z.object({
-  referenceNumber: z
-    .string()
-    .min(1, 'Reference number is required')
-    .max(50, 'Reference number must be less than 50 characters')
-    .trim(),
+// Single ledger item for bulk creation (no referenceNumber as it will be generated)
+export const LedgerItemSchema = z.object({
   amount: PositiveDecimalSchema,
   description: z
     .string()
@@ -213,17 +209,28 @@ export const LedgerCreateSchema = z.object({
   accountGeneralId: UUIDSchema,
   ledgerType: LedgerTypeSchema,
   transactionType: TransactionTypeSchema,
-  ledgerDate: DateSchema,
-  createdBy: UUIDSchema,
-  updatedBy: UUIDSchema
+  ledgerDate: DateSchema
 });
 
-export const LedgerUpdateSchema = LedgerCreateSchema.partial().omit({
-  referenceNumber: true,
-  accountDetailId: true,
-  accountGeneralId: true,
-  createdBy: true
+// Bulk ledger creation schema (array of ledger items)
+export const LedgerBulkCreateSchema = z.object({
+  ledgers: z
+    .array(LedgerItemSchema)
+    .min(1, 'At least one ledger entry is required')
+    .max(100, 'Maximum 100 ledger entries allowed per batch')
 });
+
+// Single ledger creation schema (for individual creation if needed)
+export const LedgerCreateSchema = LedgerItemSchema.extend({
+  referenceNumber: z
+    .string()
+    .min(1, 'Reference number is required')
+    .max(50, 'Reference number must be less than 50 characters')
+    .regex(/^[A-Z0-9]+$/, 'Reference number must be uppercase alphanumeric only')
+    .trim()
+});
+
+export const LedgerUpdateSchema = LedgerItemSchema.partial();
 
 export const LedgerResponseSchema = z.object({
   id: UUIDSchema,
@@ -242,6 +249,11 @@ export const LedgerResponseSchema = z.object({
   deletedAt: OptionalDateSchema,
   accountDetailId: z.string(),
   accountGeneralId: z.string()
+});
+
+// Posting status update schemas
+export const LedgerPostingSchema = z.object({
+  postingStatus: PostingStatusSchema
 });
 
 // =================

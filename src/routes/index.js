@@ -229,12 +229,13 @@ export const apiRoutes = async fastify => {
       const { accountDetailRoutes } = await import('./accounts-detail.js');
       await fastify.register(accountDetailRoutes, { prefix: '/accounts-detail' });
 
+      // Import and register ledger routes
+      const { ledgerRoutes } = await import('./ledgers.js');
+      await fastify.register(ledgerRoutes, { prefix: '/ledgers' });
+
       // Add more route registrations here as you create them:
       // const { accountRoutes } = await import('./accounts.js');
       // await fastify.register(accountRoutes, { prefix: '/accounts' });
-
-      // const { ledgerRoutes } = await import('./ledgers.js');
-      // await fastify.register(ledgerRoutes, { prefix: '/ledgers' });
 
       // const { reportRoutes } = await import('./reports.js');
       // await fastify.register(reportRoutes, { prefix: '/reports' });
