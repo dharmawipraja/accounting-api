@@ -5,10 +5,15 @@
  * for the accounting API application.
  */
 
+import { endOfDay, parseISO, startOfDay } from 'date-fns';
+import dateFnsTz from 'date-fns-tz';
 import Decimal from 'decimal.js';
 import _ from 'lodash';
 import { roundMoney, toDecimal } from '../utils/index.js';
 import { prisma } from './database.js';
+import config from './index.js';
+const { zonedTimeToUtc } = dateFnsTz;
+const APP_TIMEZONE = config.appConfig?.timezone || 'Asia/Makassar';
 
 /**
  * Database connection health check
@@ -91,11 +96,24 @@ export const buildDateRangeFilter = (field, startDate, endDate) => {
     filter[field] = {};
 
     if (startDate) {
-      filter[field].gte = new Date(startDate);
+      try {
+        // interpret startDate at local midnight in app timezone, then convert to UTC
+        const localStart = startOfDay(parseISO(startDate));
+        filter[field].gte = zonedTimeToUtc(localStart, APP_TIMEZONE);
+      } catch {
+        // fallback to Date if parseISO fails
+        filter[field].gte = new Date(startDate);
+      }
     }
 
     if (endDate) {
-      filter[field].lte = new Date(endDate);
+      try {
+        // interpret endDate at local end of day in app timezone, then convert to UTC
+        const localEnd = endOfDay(parseISO(endDate));
+        filter[field].lte = zonedTimeToUtc(localEnd, APP_TIMEZONE);
+      } catch {
+        filter[field].lte = new Date(endDate);
+      }
     }
   }
 
@@ -357,8 +375,14 @@ export const createLedgerEntry = async (entryData, userId) => {
     ledgerType,
     transactionType,
     referenceNumber,
-    ledgerDate = new Date()
+    ledgerDate = null
   } = entryData;
+
+  const resolvedLedgerDate = ledgerDate
+    ? typeof ledgerDate === 'string'
+      ? zonedTimeToUtc(parseISO(ledgerDate), APP_TIMEZONE)
+      : ledgerDate
+    : new Date();
 
   return await prisma.ledger.create({
     data: {
@@ -369,7 +393,7 @@ export const createLedgerEntry = async (entryData, userId) => {
       accountGeneralId,
       ledgerType,
       transactionType,
-      ledgerDate,
+      ledgerDate: resolvedLedgerDate,
       createdBy: userId,
       updatedBy: userId,
       createdAt: new Date(),
@@ -381,8 +405,14 @@ export const createLedgerEntry = async (entryData, userId) => {
 /**
  * Reporting utilities
  */
-export const getTrialBalance = async (asOfDate = new Date()) => {
+export const getTrialBalance = async (asOfDate = null) => {
   try {
+    const resolvedAsOf = asOfDate
+      ? typeof asOfDate === 'string'
+        ? zonedTimeToUtc(parseISO(asOfDate), APP_TIMEZONE)
+        : asOfDate
+      : new Date();
+
     const accounts = await prisma.accountDetail.findMany({
       where: {
         deletedAt: null
@@ -391,7 +421,7 @@ export const getTrialBalance = async (asOfDate = new Date()) => {
         ledgers: {
           where: {
             ledgerDate: {
-              lte: asOfDate
+              lte: resolvedAsOf
             },
             postingStatus: 'POSTED',
             deletedAt: null

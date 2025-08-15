@@ -36,7 +36,12 @@ const generateReferenceNumber = () => {
   return `${prefix}-${timestamp}-${randomId}`;
 };
 
+import { endOfDay, parseISO, startOfDay } from 'date-fns';
+import dateFnsTz from 'date-fns-tz';
+import config from '../config/index.js';
 import { formatMoneyForDb, roundMoney, toDecimal } from '../utils/index.js';
+const { zonedTimeToUtc } = dateFnsTz;
+const APP_TIMEZONE = config.appConfig?.timezone || 'Asia/Makassar';
 
 /**
  * Ledger Routes Plugin
@@ -199,7 +204,9 @@ export const ledgerRoutes = async fastify => {
           accountGeneralId: ledger.accountGeneralId,
           ledgerType: ledger.ledgerType,
           transactionType: ledger.transactionType,
-          ledgerDate: new Date(ledger.ledgerDate),
+          ledgerDate: ledger.ledgerDate
+            ? zonedTimeToUtc(parseISO(ledger.ledgerDate), APP_TIMEZONE)
+            : new Date(),
           postingStatus: 'PENDING',
           postingAt: null,
           createdBy: userId,
@@ -324,15 +331,14 @@ export const ledgerRoutes = async fastify => {
           endDate
         } = request.query;
 
-        // Normalize date range to day boundaries when both provided
-        const normalizedStart = startDate ? new Date(startDate) : undefined;
-        const normalizedEnd = endDate ? new Date(endDate) : undefined;
-        if (normalizedStart) {
-          normalizedStart.setHours(0, 0, 0, 0);
-        }
-        if (normalizedEnd) {
-          normalizedEnd.setHours(23, 59, 59, 999);
-        }
+        // Normalize date range to day boundaries when provided using date-fns
+        // Interpret incoming date strings in the app timezone and convert to UTC instants
+        const normalizedStart = startDate
+          ? zonedTimeToUtc(startOfDay(parseISO(startDate)), APP_TIMEZONE)
+          : undefined;
+        const normalizedEnd = endDate
+          ? zonedTimeToUtc(endOfDay(parseISO(endDate)), APP_TIMEZONE)
+          : undefined;
 
         // Build where clause
         const where = {
@@ -533,7 +539,12 @@ export const ledgerRoutes = async fastify => {
               amount: roundMoney(updateData.amount)
             }),
             ...(updateData.description && { description: updateData.description.trim() }),
-            ...(updateData.ledgerDate && { ledgerDate: new Date(updateData.ledgerDate) }),
+            ...(updateData.ledgerDate && {
+              ledgerDate:
+                typeof updateData.ledgerDate === 'string'
+                  ? zonedTimeToUtc(parseISO(updateData.ledgerDate), APP_TIMEZONE)
+                  : updateData.ledgerDate
+            }),
             updatedBy: request.user.id,
             updatedAt: new Date()
           },

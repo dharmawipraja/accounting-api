@@ -239,8 +239,18 @@ export const envSchema = {
     // Features
     ENABLE_SWAGGER: { type: 'string' },
     ENABLE_METRICS: { type: 'string' },
-    ENABLE_COMPRESSION: { type: 'string', default: 'true' }
+    ENABLE_COMPRESSION: { type: 'string', default: 'true' },
+    // Application timezone (IANA name)
+    APP_TIMEZONE: { type: 'string', default: 'Asia/Makassar' }
   }
+};
+
+/**
+ * Application-level config
+ */
+export const appConfig = {
+  // IANA timezone name used for date parsing/normalization
+  timezone: process.env.APP_TIMEZONE || 'Asia/Makassar'
 };
 
 /**
@@ -257,6 +267,7 @@ export const getConfig = () => {
     security: securityConfig,
     redis: redisConfig,
     features: featuresConfig,
+    app: appConfig,
 
     // Environment helpers
     isDevelopment: isDevelopment(),
@@ -310,5 +321,6 @@ export default {
   loggingConfig,
   securityConfig,
   redisConfig,
-  featuresConfig
+  featuresConfig,
+  appConfig
 };
