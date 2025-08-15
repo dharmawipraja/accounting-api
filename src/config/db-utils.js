@@ -5,7 +5,9 @@
  * for the accounting API application.
  */
 
+import Decimal from 'decimal.js';
 import _ from 'lodash';
+import { roundMoney, toDecimal } from '../utils/index.js';
 import { prisma } from './database.js';
 
 /**
@@ -263,15 +265,18 @@ export const getAccountBalance = async accountId => {
       throw new Error(`Account with ID ${accountId} not found`);
     }
 
-    // Calculate current balance based on transaction type
-    const balance =
-      account.transactionType === 'DEBIT'
-        ? account.amountDebit - account.amountCredit
-        : account.amountCredit - account.amountDebit;
+    // Calculate current balance using Decimal to avoid float errors
+    const creditDec = toDecimal(account.amountCredit);
+    const debitDec = toDecimal(account.amountDebit);
+
+    const balanceDec =
+      account.transactionType === 'DEBIT' ? debitDec.minus(creditDec) : creditDec.minus(debitDec);
 
     return {
       ...account,
-      currentBalance: balance
+      amountCredit: roundMoney(account.amountCredit),
+      amountDebit: roundMoney(account.amountDebit),
+      currentBalance: Number(balanceDec.toFixed(2))
     };
   } catch (error) {
     console.error('Failed to get account balance:', error);
@@ -378,15 +383,20 @@ export const getTrialBalance = async (asOfDate = new Date()) => {
     });
 
     const trialBalance = accounts.map(account => {
-      const totalDebits = _.sumBy(
-        account.ledgers.filter(l => l.transactionType === 'DEBIT'),
-        l => Number(l.amount)
+      const debits = account.ledgers.filter(l => l.transactionType === 'DEBIT');
+      const credits = account.ledgers.filter(l => l.transactionType === 'CREDIT');
+
+      const totalDebitsDec = debits.reduce(
+        (acc, l) => acc.plus(toDecimal(l.amount)),
+        new Decimal(0)
+      );
+      const totalCreditsDec = credits.reduce(
+        (acc, l) => acc.plus(toDecimal(l.amount)),
+        new Decimal(0)
       );
 
-      const totalCredits = _.sumBy(
-        account.ledgers.filter(l => l.transactionType === 'CREDIT'),
-        l => Number(l.amount)
-      );
+      const totalDebits = Number(totalDebitsDec.toFixed(2));
+      const totalCredits = Number(totalCreditsDec.toFixed(2));
 
       return {
         accountId: account.id,
@@ -395,7 +405,7 @@ export const getTrialBalance = async (asOfDate = new Date()) => {
         accountCategory: account.accountCategory,
         debitBalance: totalDebits,
         creditBalance: totalCredits,
-        netBalance: totalDebits - totalCredits
+        netBalance: Number(totalDebitsDec.minus(totalCreditsDec).toFixed(2))
       };
     });
 

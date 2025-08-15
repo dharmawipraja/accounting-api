@@ -19,7 +19,7 @@ import {
   ReportTypeSchema,
   SuccessResponseSchema
 } from '../schemas/index.js';
-import { roundMoney } from '../utils/index.js';
+import { formatMoneyForDb, roundMoney } from '../utils/index.js';
 
 /**
  * Authorization middleware for account general operations
@@ -91,6 +91,7 @@ export const accountGeneralRoutes = async fastify => {
           // Round monetary amounts to 2 decimals
           const roundedAccountData = {
             ...accountData,
+            // Keep rounded values for API-level numbers, but store precise strings to DB
             amountCredit: roundMoney(accountData.amountCredit),
             amountDebit: roundMoney(accountData.amountDebit)
           };
@@ -113,6 +114,9 @@ export const accountGeneralRoutes = async fastify => {
           const newAccount = await fastify.prisma.accountGeneral.create({
             data: {
               ...roundedAccountData,
+              // Write precise decimal strings to the DB
+              amountCredit: formatMoneyForDb(roundedAccountData.amountCredit),
+              amountDebit: formatMoneyForDb(roundedAccountData.amountDebit),
               accountType: 'GENERAL',
               createdBy: userId,
               updatedBy: userId,
@@ -123,7 +127,11 @@ export const accountGeneralRoutes = async fastify => {
           return reply.status(201).send({
             success: true,
             message: 'Account general created successfully',
-            data: newAccount
+            data: {
+              ...newAccount,
+              amountCredit: roundMoney(newAccount.amountCredit),
+              amountDebit: roundMoney(newAccount.amountDebit)
+            }
           });
         } catch (error) {
           request.log.error('Error creating account general:', error);
@@ -205,7 +213,11 @@ export const accountGeneralRoutes = async fastify => {
           return reply.send({
             success: true,
             message: 'Account general list retrieved successfully',
-            data: accounts,
+            data: accounts.map(a => ({
+              ...a,
+              amountCredit: roundMoney(a.amountCredit),
+              amountDebit: roundMoney(a.amountDebit)
+            })),
             pagination: {
               page,
               limit,
@@ -278,7 +290,11 @@ export const accountGeneralRoutes = async fastify => {
           return reply.send({
             success: true,
             message: 'Account general details retrieved successfully',
-            data: account
+            data: {
+              ...account,
+              amountCredit: roundMoney(account.amountCredit),
+              amountDebit: roundMoney(account.amountDebit)
+            }
           });
         } catch (error) {
           request.log.error('Error retrieving account general:', error);
@@ -362,7 +378,11 @@ export const accountGeneralRoutes = async fastify => {
           return reply.send({
             success: true,
             message: 'Account general updated successfully',
-            data: updatedAccount
+            data: {
+              ...updatedAccount,
+              amountCredit: roundMoney(updatedAccount.amountCredit),
+              amountDebit: roundMoney(updatedAccount.amountDebit)
+            }
           });
         } catch (error) {
           request.log.error('Error updating account general:', error);

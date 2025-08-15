@@ -35,7 +35,7 @@ const generateReferenceNumber = () => {
   return `${prefix}-${timestamp}-${randomId}`;
 };
 
-import { roundMoney } from '../utils/index.js';
+import { formatMoneyForDb, roundMoney, toDecimal } from '../utils/index.js';
 
 /**
  * Ledger Routes Plugin
@@ -154,16 +154,23 @@ export const ledgerRoutes = async fastify => {
         }
 
         // Double-entry check: DEBIT total must equal CREDIT total
-        const totals = ledgers.reduce(
+        // Use Decimal for accurate balancing checks
+        const totalsDec = ledgers.reduce(
           (acc, l) => {
-            const amt = roundMoney(l.amount);
-            if (l.transactionType === 'DEBIT') acc.debit = roundMoney(acc.debit + amt);
-            if (l.transactionType === 'CREDIT') acc.credit = roundMoney(acc.credit + amt);
+            const amtDec = toDecimal(l.amount);
+            if (l.transactionType === 'DEBIT') acc.debit = acc.debit.plus(amtDec);
+            if (l.transactionType === 'CREDIT') acc.credit = acc.credit.plus(amtDec);
             return acc;
           },
-          { debit: 0, credit: 0 }
+          { debit: toDecimal(0), credit: toDecimal(0) }
         );
-        if (Math.round((totals.debit - totals.credit) * 100) !== 0) {
+
+        const totals = {
+          debit: Number(totalsDec.debit.toFixed(2)),
+          credit: Number(totalsDec.credit.toFixed(2))
+        };
+
+        if (!totalsDec.debit.minus(totalsDec.credit).equals(0)) {
           return reply.code(400).send({
             success: false,
             error: {
@@ -186,7 +193,8 @@ export const ledgerRoutes = async fastify => {
         // Prepare ledger data for bulk insert
         const ledgerData = ledgers.map(ledger => ({
           referenceNumber,
-          amount: roundMoney(ledger.amount),
+          // Store precise decimal string for Prisma Decimal fields
+          amount: formatMoneyForDb(ledger.amount),
           description: ledger.description.trim(),
           accountDetailId: ledger.accountDetailId,
           accountGeneralId: ledger.accountGeneralId,
@@ -236,7 +244,7 @@ export const ledgerRoutes = async fastify => {
           data: {
             referenceNumber,
             totalEntries: createdLedgers.length,
-            ledgers: createdLedgers
+            ledgers: createdLedgers.map(l => ({ ...l, amount: roundMoney(l.amount) }))
           }
         });
       } catch (error) {
@@ -377,7 +385,7 @@ export const ledgerRoutes = async fastify => {
 
         reply.send({
           success: true,
-          data: ledgers,
+          data: ledgers.map(l => ({ ...l, amount: roundMoney(l.amount) })),
           meta: {
             pagination: {
               page,
@@ -447,7 +455,7 @@ export const ledgerRoutes = async fastify => {
           });
         }
 
-        reply.send({ success: true, data: ledger });
+        reply.send({ success: true, data: { ...ledger, amount: roundMoney(ledger.amount) } });
       } catch (error) {
         request.log.error('Error fetching ledger:', error);
         reply.code(500).send({
@@ -546,7 +554,7 @@ export const ledgerRoutes = async fastify => {
         reply.send({
           success: true,
           message: 'Ledger entry updated successfully',
-          data: updatedLedger
+          data: { ...updatedLedger, amount: roundMoney(updatedLedger.amount) }
         });
       } catch (error) {
         request.log.error('Error updating ledger:', error);

@@ -23,7 +23,7 @@ import {
   TransactionTypeSchema,
   UUIDSchema
 } from '../schemas/index.js';
-import { roundMoney } from '../utils/index.js';
+import { formatMoneyForDb, roundMoney } from '../utils/index.js';
 
 /**
  * Authorization middleware for account detail operations
@@ -92,7 +92,7 @@ export const accountDetailRoutes = async fastify => {
 
         try {
           // request.body is already validated by fastify-type-provider-zod via route schema
-          // Round monetary amounts to 2 decimals
+          // Round monetary amounts for API and prepare DB-friendly strings
           validatedData.amountCredit = roundMoney(validatedData.amountCredit);
           validatedData.amountDebit = roundMoney(validatedData.amountDebit);
 
@@ -125,7 +125,11 @@ export const accountDetailRoutes = async fastify => {
 
           // Create the account detail
           const accountDetail = await fastify.prisma.accountDetail.create({
-            data: validatedData,
+            data: {
+              ...validatedData,
+              amountCredit: formatMoneyForDb(validatedData.amountCredit),
+              amountDebit: formatMoneyForDb(validatedData.amountDebit)
+            },
             include: {
               accountGeneral: {
                 select: {
@@ -140,7 +144,11 @@ export const accountDetailRoutes = async fastify => {
           reply.status(201).send({
             success: true,
             message: 'Account detail created successfully',
-            data: accountDetail
+            data: {
+              ...accountDetail,
+              amountCredit: roundMoney(accountDetail.amountCredit),
+              amountDebit: roundMoney(accountDetail.amountDebit)
+            }
           });
         } catch (error) {
           request.log.error('Account detail creation failed:', error);
@@ -250,7 +258,11 @@ export const accountDetailRoutes = async fastify => {
           reply.send({
             success: true,
             message: 'Account details retrieved successfully',
-            data: accountDetails,
+            data: accountDetails.map(a => ({
+              ...a,
+              amountCredit: roundMoney(a.amountCredit),
+              amountDebit: roundMoney(a.amountDebit)
+            })),
             pagination: {
               page,
               limit,
@@ -346,7 +358,17 @@ export const accountDetailRoutes = async fastify => {
           reply.send({
             success: true,
             message: 'Account detail retrieved successfully',
-            data: accountDetail
+            data: {
+              ...accountDetail,
+              amountCredit: roundMoney(accountDetail.amountCredit),
+              amountDebit: roundMoney(accountDetail.amountDebit),
+              ...(accountDetail.ledgers && {
+                ledgers: accountDetail.ledgers.map(l => ({
+                  ...l,
+                  amount: roundMoney(l.amount)
+                }))
+              })
+            }
           });
         } catch (error) {
           request.log.error('Failed to retrieve account detail:', error);
@@ -397,9 +419,11 @@ export const accountDetailRoutes = async fastify => {
           // Round monetary amounts if provided
           if (typeof updateData.amountCredit === 'number') {
             updateData.amountCredit = roundMoney(updateData.amountCredit);
+            updateData.amountCredit = formatMoneyForDb(updateData.amountCredit);
           }
           if (typeof updateData.amountDebit === 'number') {
             updateData.amountDebit = roundMoney(updateData.amountDebit);
+            updateData.amountDebit = formatMoneyForDb(updateData.amountDebit);
           }
 
           // Check if account detail exists and is not deleted
@@ -435,7 +459,11 @@ export const accountDetailRoutes = async fastify => {
           reply.send({
             success: true,
             message: 'Account detail updated successfully',
-            data: updatedAccountDetail
+            data: {
+              ...updatedAccountDetail,
+              amountCredit: roundMoney(updatedAccountDetail.amountCredit),
+              amountDebit: roundMoney(updatedAccountDetail.amountDebit)
+            }
           });
         } catch (error) {
           request.log.error('Account detail update failed:', error);
