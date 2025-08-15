@@ -189,6 +189,18 @@ export async function build(opts = {}) {
 
   await app.register(import('fastify-response-time'));
 
+  // HTTP caching (ETag/Cache-Control) for idempotent GET endpoints
+  // Use a sensible default TTL (seconds) from redis/default cache config
+  const defaultTtlSeconds = appConfig.redis?.defaultTTL ?? 300;
+  await app.register(import('@fastify/caching'), {
+    // privacy: 'public' is suitable for GET endpoints that return public data
+    privacy: 'public',
+    // expiresIn expects milliseconds
+    expiresIn: defaultTtlSeconds * 1000,
+    // Small in-memory cache size to avoid unbounded memory growth in small deployments
+    cacheSize: 1000
+  });
+
   // Register routes
   await app.register(healthRoutes);
   await app.register(apiRoutes);

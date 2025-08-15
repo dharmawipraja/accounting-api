@@ -163,9 +163,15 @@ export const apiRoutes = async fastify => {
         }
       }
     },
-    async (request, _reply) => {
+    async (request, reply) => {
       const baseUrl = `${request.protocol}://${request.hostname}`;
-
+      // Cache public API info for a short duration to reduce load
+      // Respect the plugin's ETag handling; set Cache-Control for downstream caches
+      try {
+        reply.header('Cache-Control', 'public, max-age=300');
+      } catch {
+        /* ignore if reply not available */
+      }
       return {
         name: 'Accounting API',
         version: process.env.npm_package_version || '1.0.0',
@@ -185,7 +191,14 @@ export const apiRoutes = async fastify => {
   // Register v1 API routes
   await fastify.register(
     async fastify => {
-      fastify.get('/', async (_request, _reply) => {
+      fastify.get('/', async (_request, reply) => {
+        // Small public cache for the root API summary
+        try {
+          reply.header('Cache-Control', 'public, max-age=300');
+        } catch {
+          /* ignore */
+        }
+
         return {
           message: 'Accounting API v1 with Zod Validation and JWT Authentication',
           version: '1.0.0',

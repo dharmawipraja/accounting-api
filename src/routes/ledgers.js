@@ -7,6 +7,7 @@
 
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
+import { cacheControl } from '../middleware/caching.js';
 import { authorize } from '../middleware/index.js';
 import { zodToJsonSchema } from '../middleware/validation.js';
 import {
@@ -293,6 +294,7 @@ export const ledgerRoutes = async fastify => {
   fastify.get(
     '/',
     {
+      preHandler: [cacheControl(60, 'private')],
       schema: {
         tags: ['Ledgers'],
         summary: 'Get all ledger entries',
@@ -419,6 +421,7 @@ export const ledgerRoutes = async fastify => {
   fastify.get(
     '/:id',
     {
+      preHandler: [cacheControl(60, 'private')],
       schema: {
         tags: ['Ledgers'],
         summary: 'Get ledger by ID',

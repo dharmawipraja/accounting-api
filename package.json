@@ -45,6 +45,7 @@
     "fastify": "^5.5.0",
     "fastify-type-provider-zod": "^5.0.3",
     "lodash": "^4.17.21",
+    "@fastify/caching": "^8.0.0",
     "fastify-request-id": "^1.0.1",
     "fastify-response-time": "^1.1.0",
     "decimal.js": "^10.5.0",

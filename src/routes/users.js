@@ -11,6 +11,7 @@
  */
 
 import { z } from 'zod';
+import { cacheControl } from '../middleware/caching.js';
 import { hashPassword, requireAdminOrManager } from '../middleware/index.js';
 import { zodToJsonSchema } from '../middleware/validation.js';
 import {
@@ -97,7 +98,7 @@ export const userRoutes = async fastify => {
   fastify.get(
     '/',
     {
-      preHandler: [fastify.authenticate, requireAdminOrManager],
+      preHandler: [fastify.authenticate, requireAdminOrManager, cacheControl(120, 'private')],
       schema: {
         description: 'Get all users with pagination and filtering (Admin and Manager only)',
         tags: ['users'],
@@ -158,7 +159,7 @@ export const userRoutes = async fastify => {
   fastify.get(
     '/:id',
     {
-      preHandler: [fastify.authenticate, requireAdminOrManager],
+      preHandler: [fastify.authenticate, requireAdminOrManager, cacheControl(120, 'private')],
       schema: {
         description: 'Get user by ID (Admin and Manager only)',
         tags: ['users'],
