@@ -6,6 +6,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { createSoftDeleteExtension } from 'prisma-extension-soft-delete';
 import { isDevelopment, isProduction, isTest } from '../utils/index.js';
 
 /**
@@ -67,27 +68,31 @@ const createPrismaClient = () => {
   const config = getDatabaseConfig();
   const prisma = new PrismaClient(config);
 
-  // Enhanced query logging in development
-  if (isDevelopment()) {
-    prisma.$on('query', e => {
-      console.log('\n🔍 Database Query:');
-      console.log(`Query: ${e.query}`);
-      console.log(`Params: ${e.params}`);
-      console.log(`Duration: ${e.duration}ms`);
-      console.log('---');
-    });
-  }
-
-  // Error and warning event listeners
-  prisma.$on('warn', e => {
-    console.warn('⚠️ Database Warning:', e);
+  // Apply prisma-extension-soft-delete to configured models that use soft deletes
+  const softDeleteExt = createSoftDeleteExtension({
+    models: {
+      AccountDetail: true,
+      AccountGeneral: true,
+      Ledger: true
+    },
+    defaultConfig: {
+      field: 'deletedAt',
+      createValue: deleted => (deleted ? new Date() : null)
+    }
   });
 
-  prisma.$on('error', e => {
-    console.error('❌ Database Error:', e);
-  });
+  // Extend the client instance with the soft-delete extension
+  const extended = prisma.$extends(softDeleteExt);
 
-  return prisma;
+  // Use the extended client from here on
+  // Note: return the extended client so other modules using `prisma` get the extended API
+  const client = extended;
+  // helper to run a callback against the raw client (explicit opt-out)
+  client.withSoftDeleted = fn => {
+    if (typeof fn !== 'function') throw new TypeError('withSoftDeleted expects a function');
+    return fn(prisma);
+  };
+  return client;
 };
 
 /**

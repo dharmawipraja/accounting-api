@@ -108,11 +108,10 @@ export const accountDetailRoutes = async fastify => {
             });
           }
 
-          // Verify the general account exists and is not deleted
+          // Verify the general account exists
           const generalAccount = await fastify.prisma.accountGeneral.findFirst({
             where: {
-              id: validatedData.accountGeneralId,
-              deletedAt: null
+              id: validatedData.accountGeneralId
             }
           });
 
@@ -208,7 +207,6 @@ export const accountDetailRoutes = async fastify => {
 
           // Build where clause
           const where = {
-            ...(includeDeletedBool ? {} : { deletedAt: null }),
             ...(accountCategory && { accountCategory }),
             ...(reportType && { reportType }),
             ...(transactionType && { transactionType }),
@@ -232,26 +230,48 @@ export const accountDetailRoutes = async fastify => {
           };
 
           // Get total count for pagination
-          const total = await fastify.prisma.accountDetail.count({
-            where
-          });
+          // Use raw client if includeDeleted requested to bypass the soft-delete extension
+          const total = includeDeletedBool
+            ? await fastify.prisma.withSoftDeleted(p => p.accountDetail.count({ where }))
+            : await fastify.prisma.accountDetail.count({ where });
 
           // Get account details with relations
-          const accountDetails = await fastify.prisma.accountDetail.findMany({
-            where,
-            include: {
-              accountGeneral: {
-                select: {
-                  id: true,
-                  accountNumber: true,
-                  accountName: true
+          let accountDetails;
+          if (includeDeletedBool) {
+            accountDetails = await fastify.prisma.withSoftDeleted(p =>
+              p.accountDetail.findMany({
+                where,
+                include: {
+                  accountGeneral: {
+                    select: {
+                      id: true,
+                      accountNumber: true,
+                      accountName: true
+                    }
+                  }
+                },
+                orderBy: [{ accountNumber: 'asc' }, { accountName: 'asc' }],
+                skip,
+                take: limit
+              })
+            );
+          } else {
+            accountDetails = await fastify.prisma.accountDetail.findMany({
+              where,
+              include: {
+                accountGeneral: {
+                  select: {
+                    id: true,
+                    accountNumber: true,
+                    accountName: true
+                  }
                 }
-              }
-            },
-            orderBy: [{ accountNumber: 'asc' }, { accountName: 'asc' }],
-            skip,
-            take: limit
-          });
+              },
+              orderBy: [{ accountNumber: 'asc' }, { accountName: 'asc' }],
+              skip,
+              take: limit
+            });
+          }
 
           const totalPages = Math.ceil(total / limit);
 
@@ -311,42 +331,74 @@ export const accountDetailRoutes = async fastify => {
           const { includeDeleted: includeDeletedBool, includeLedgers: includeLedgersBool } =
             request.query;
 
-          const accountDetail = await fastify.prisma.accountDetail.findFirst({
-            where: {
-              id,
-              ...(includeDeletedBool ? {} : { deletedAt: null })
-            },
-            include: {
-              accountGeneral: {
-                select: {
-                  id: true,
-                  accountNumber: true,
-                  accountName: true,
-                  accountCategory: true,
-                  reportType: true,
-                  transactionType: true
-                }
-              },
-              ...(includeLedgersBool && {
-                ledgers: {
-                  where: { deletedAt: null },
-                  select: {
-                    id: true,
-                    referenceNumber: true,
-                    amount: true,
-                    description: true,
-                    ledgerType: true,
-                    transactionType: true,
-                    postingStatus: true,
-                    ledgerDate: true,
-                    createdAt: true
+          // When includeDeletedBool is true we need to bypass the extension to include deleted rows
+          const accountDetail = includeDeletedBool
+            ? await fastify.prisma.withSoftDeleted(p =>
+                p.accountDetail.findUnique({
+                  where: { id },
+                  include: {
+                    accountGeneral: {
+                      select: {
+                        id: true,
+                        accountNumber: true,
+                        accountName: true,
+                        accountCategory: true,
+                        reportType: true,
+                        transactionType: true
+                      }
+                    },
+                    ...(includeLedgersBool && {
+                      ledgers: {
+                        select: {
+                          id: true,
+                          referenceNumber: true,
+                          amount: true,
+                          description: true,
+                          ledgerType: true,
+                          transactionType: true,
+                          postingStatus: true,
+                          ledgerDate: true,
+                          createdAt: true
+                        },
+                        orderBy: { createdAt: 'desc' },
+                        take: 10
+                      }
+                    })
+                  }
+                })
+              )
+            : await fastify.prisma.accountDetail.findFirst({
+                where: { id },
+                include: {
+                  accountGeneral: {
+                    select: {
+                      id: true,
+                      accountNumber: true,
+                      accountName: true,
+                      accountCategory: true,
+                      reportType: true,
+                      transactionType: true
+                    }
                   },
-                  orderBy: { createdAt: 'desc' },
-                  take: 10 // Limit to recent 10 ledger entries
+                  ...(includeLedgersBool && {
+                    ledgers: {
+                      select: {
+                        id: true,
+                        referenceNumber: true,
+                        amount: true,
+                        description: true,
+                        ledgerType: true,
+                        transactionType: true,
+                        postingStatus: true,
+                        ledgerDate: true,
+                        createdAt: true
+                      },
+                      orderBy: { createdAt: 'desc' },
+                      take: 10
+                    }
+                  })
                 }
-              })
-            }
-          });
+              });
 
           if (!accountDetail) {
             return reply.status(404).send({
@@ -429,8 +481,7 @@ export const accountDetailRoutes = async fastify => {
           // Check if account detail exists and is not deleted
           const existingAccountDetail = await fastify.prisma.accountDetail.findFirst({
             where: {
-              id,
-              deletedAt: null
+              id
             }
           });
 
@@ -510,11 +561,10 @@ export const accountDetailRoutes = async fastify => {
           // request.params is validated by fastify-type-provider-zod
           const { id } = request.params;
 
-          // Check if account detail exists and is not already deleted
+          // Check if account detail exists
           const existingAccountDetail = await fastify.prisma.accountDetail.findFirst({
             where: {
-              id,
-              deletedAt: null
+              id
             }
           });
 
@@ -528,8 +578,7 @@ export const accountDetailRoutes = async fastify => {
           // Check if account detail has related ledger entries
           const relatedLedgers = await fastify.prisma.ledger.findFirst({
             where: {
-              accountDetailId: id,
-              deletedAt: null
+              accountDetailId: id
             }
           });
 

@@ -133,10 +133,30 @@ export const restoreSoftDeleted = async (model, id, userId) => {
 /**
  * Check if record exists and is not soft deleted
  */
-export const recordExists = async (model, where, includeSoftDeleted = false) => {
-  const filter = includeSoftDeleted ? where : { ...where, deletedAt: null };
+/**
+ * Run a custom action against the raw (unextended) Prisma client.
+ * Use this only when you explicitly need to bypass the soft-delete extension.
+ * Example: prisma.withSoftDeleted(p => p.accountDetail.findMany({ where }))
+ */
+export const withSoftDeleted = async fn => {
+  return await prisma.withSoftDeleted(fn);
+};
 
-  const count = await prisma[model].count({ where: filter });
+export const countWithDeleted = async (model, args = {}) => {
+  return await prisma.withSoftDeleted(p => p[model].count(args));
+};
+
+export const findWithDeleted = async (model, args = {}) => {
+  return await prisma.withSoftDeleted(p => p[model].findMany(args));
+};
+
+export const recordExists = async (model, where, includeSoftDeleted = false) => {
+  if (includeSoftDeleted) {
+    const count = await countWithDeleted(model, { where });
+    return count > 0;
+  }
+
+  const count = await prisma[model].count({ where });
   return count > 0;
 };
 
@@ -144,9 +164,11 @@ export const recordExists = async (model, where, includeSoftDeleted = false) => 
  * Get record by ID with soft delete check
  */
 export const findById = async (model, id, includeSoftDeleted = false) => {
-  const where = includeSoftDeleted ? { id } : { id, deletedAt: null };
+  if (includeSoftDeleted) {
+    return await prisma.withSoftDeleted(p => p[model].findUnique({ where: { id } }));
+  }
 
-  return await prisma[model].findUnique({ where });
+  return await prisma[model].findUnique({ where: { id } });
 };
 
 /**
@@ -293,7 +315,6 @@ export const getAccountLedgerEntries = async (accountId, options = {}) => {
 
   const where = {
     accountDetailId: accountId,
-    deletedAt: null,
     ...(startDate || endDate ? buildDateRangeFilter('ledgerDate', startDate, endDate) : {})
   };
 

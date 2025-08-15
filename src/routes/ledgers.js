@@ -91,15 +91,13 @@ export const ledgerRoutes = async fastify => {
         const [existingAccountDetails, existingAccountGenerals] = await Promise.all([
           fastify.prisma.accountDetail.findMany({
             where: {
-              id: { in: accountDetailIds },
-              deletedAt: null
+              id: { in: accountDetailIds }
             },
             select: { id: true, accountGeneralId: true }
           }),
           fastify.prisma.accountGeneral.findMany({
             where: {
-              id: { in: accountGeneralIds },
-              deletedAt: null
+              id: { in: accountGeneralIds }
             },
             select: { id: true }
           })
@@ -336,7 +334,6 @@ export const ledgerRoutes = async fastify => {
 
         // Build where clause
         const where = {
-          deletedAt: null,
           ...(search && {
             OR: [
               { referenceNumber: { contains: search, mode: 'insensitive' } },
@@ -441,7 +438,7 @@ export const ledgerRoutes = async fastify => {
         const { id } = request.params; // validated by fastify-type-provider-zod
 
         const ledger = await fastify.prisma.ledger.findFirst({
-          where: { id, deletedAt: null },
+          where: { id },
           include: {
             accountDetail: { select: { id: true, accountNumber: true, accountName: true } },
             accountGeneral: { select: { id: true, accountNumber: true, accountName: true } }
@@ -499,8 +496,7 @@ export const ledgerRoutes = async fastify => {
         // Check if ledger exists and is not deleted
         const existingLedger = await fastify.prisma.ledger.findFirst({
           where: {
-            id,
-            deletedAt: null
+            id
           }
         });
 
@@ -600,8 +596,7 @@ export const ledgerRoutes = async fastify => {
         // Check if ledger exists and is not already deleted
         const existingLedger = await fastify.prisma.ledger.findFirst({
           where: {
-            id,
-            deletedAt: null
+            id
           }
         });
 
@@ -691,8 +686,7 @@ export const ledgerRoutes = async fastify => {
         // Check if ledger exists and is not deleted
         const existingLedger = await fastify.prisma.ledger.findFirst({
           where: {
-            id,
-            deletedAt: null
+            id
           }
         });
 
@@ -797,11 +791,10 @@ export const ledgerRoutes = async fastify => {
         // request.params validated by fastify-type-provider-zod
         const { id } = request.params;
 
-        // Check if ledger exists and is not deleted
+        // Check if ledger exists
         const existingLedger = await fastify.prisma.ledger.findFirst({
           where: {
-            id,
-            deletedAt: null
+            id
           }
         });
 

@@ -175,7 +175,6 @@ export const accountGeneralRoutes = async fastify => {
 
           // Build where clause
           const where = {
-            deletedAt: null,
             ...(accountCategory && { accountCategory }),
             ...(reportType && { reportType }),
             ...(search && {
@@ -267,8 +266,7 @@ export const accountGeneralRoutes = async fastify => {
           // Get account general with related counts
           const account = await fastify.prisma.accountGeneral.findFirst({
             where: {
-              id,
-              deletedAt: null
+              id
             },
             include: {
               _count: {
@@ -353,8 +351,7 @@ export const accountGeneralRoutes = async fastify => {
           // Check if account exists and not deleted
           const existingAccount = await request.server.prisma.accountGeneral.findFirst({
             where: {
-              id,
-              deletedAt: null
+              id
             }
           });
 
@@ -427,8 +424,7 @@ export const accountGeneralRoutes = async fastify => {
           // Check if account exists and not already deleted
           const existingAccount = await fastify.prisma.accountGeneral.findFirst({
             where: {
-              id,
-              deletedAt: null
+              id
             },
             include: {
               _count: {
