@@ -3,8 +3,6 @@ import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod
 import { databaseMiddleware, queryPerformanceMiddleware } from './config/database.js';
 import { checkDatabaseHealth } from './config/db-utils.js';
 import config, { envSchema } from './config/index.js';
-// Replace custom request/timing plugins with battle-tested community plugins
-// `fastify-request-id` and `fastify-response-time` will be registered below.
 import { apiRoutes, healthRoutes } from './routes/index.js';
 
 export async function build(opts = {}) {
@@ -29,8 +27,7 @@ export async function build(opts = {}) {
     headersTimeout: appConfig.server.headersTimeout
   });
 
-  // Use fastify-type-provider-zod's validator and serializer compilers
-  // so route schemas written with Zod are validated/serialized automatically.
+  // Use fastify-type-provider-zod validators/serializers for Zod route schemas
   if (typeof app.setValidatorCompiler === 'function') {
     app.setValidatorCompiler(validatorCompiler);
   }
@@ -38,24 +35,23 @@ export async function build(opts = {}) {
     app.setSerializerCompiler(serializerCompiler);
   }
 
-  // The runtime type provider helper can be used when defining routes:
   // app.withTypeProvider<ZodTypeProvider>().route({ ... })
 
-  // Environment variables validation using the centralized schema
+  // Validate environment variables
   await app.register(import('@fastify/env'), {
     confKey: 'config',
     schema: envSchema
   });
 
-  // Register database middleware (must be early in the setup)
+  // Register database middleware
   await app.register(databaseMiddleware);
 
-  // Register database performance monitoring in development
+  // Query performance monitoring in development
   if (appConfig.isDevelopment) {
     await app.register(queryPerformanceMiddleware);
   }
 
-  // Security: Helmet for security headers
+  // Helmet for security headers
   await app.register(import('@fastify/helmet'), {
     crossOriginEmbedderPolicy: false,
     contentSecurityPolicy: appConfig.features.enableCSP
@@ -77,7 +73,7 @@ export async function build(opts = {}) {
       : false
   });
 
-  // CORS configuration using centralized config
+  // CORS
   if (appConfig.features.enableCors) {
     await app.register(import('@fastify/cors'), {
       origin: (origin, callback) => {
@@ -101,7 +97,7 @@ export async function build(opts = {}) {
     });
   }
 
-  // Rate limiting using centralized config
+  // Rate limiting
   await app.register(import('@fastify/rate-limit'), {
     max: appConfig.security.rateLimitMax,
     timeWindow: appConfig.security.rateLimitWindow,
@@ -122,7 +118,7 @@ export async function build(opts = {}) {
     }
   });
 
-  // Compression for better performance
+  // Compression
   if (appConfig.features.enableCompression) {
     await app.register(import('@fastify/compress'), {
       global: true,
@@ -131,15 +127,13 @@ export async function build(opts = {}) {
     });
   }
 
-  // Register sensible plugin for common utilities
+  // Register @fastify/sensible
   await app.register(import('@fastify/sensible'));
 
-  // Lightweight in-repo pagination plugin (standardizes page/limit parsing and response meta)
+  // In-repo pagination plugin
   await app.register(import('./plugins/pagination.js'));
 
-  // Register under-pressure for health, readiness and load-shedding protection.
-  // Keep existing `/health` and `/ready` endpoints, but let under-pressure
-  // return 503 when the server is under high load or when the DB health check fails.
+  // Register under-pressure for health and load protection
   await app.register(import('@fastify/under-pressure'), {
     // sensible defaults; can be overridden by appConfig.health in the future
     maxEventLoopDelay: appConfig.health?.maxEventLoopDelay ?? 1000,
@@ -153,7 +147,7 @@ export async function build(opts = {}) {
     statusRoute: {
       url: '/status'
     },
-    // Integrate Prisma DB health check so that under-pressure will mark the server unhealthy when DB is down
+    // Integrate Prisma DB health check
     healthCheck: async () => {
       const dbHealth = await checkDatabaseHealth(app.prisma);
       if (!dbHealth || !dbHealth.healthy) {
@@ -163,7 +157,7 @@ export async function build(opts = {}) {
     }
   });
 
-  // Conditional Swagger/OpenAPI registration
+  // Swagger/OpenAPI (optional)
   if (appConfig.features.enableSwagger) {
     // Register swagger and swagger-ui; the repo already includes @fastify/swagger
     await app.register(import('@fastify/swagger'), {
@@ -185,15 +179,14 @@ export async function build(opts = {}) {
     });
   }
 
-  // Register standard request-id and response-time plugins
+  // Request-id and response-time
   await app.register(import('fastify-request-id'), {
     headerName: 'x-request-id'
   });
 
   await app.register(import('fastify-response-time'));
 
-  // HTTP caching (ETag/Cache-Control) for idempotent GET endpoints
-  // Use a sensible default TTL (seconds) from redis/default cache config
+  // HTTP caching (ETag/Cache-Control)
   const defaultTtlSeconds = appConfig.redis?.defaultTTL ?? 300;
   await app.register(import('@fastify/caching'), {
     // privacy: 'public' is suitable for GET endpoints that return public data

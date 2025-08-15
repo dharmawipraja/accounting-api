@@ -1,10 +1,6 @@
 import { createSuccessResponse } from '../utils/index.js';
 
-/**
- * Lightweight pagination plugin
- * - request.getPagination() -> { page, limit, skip }
- * - reply.paginate(data, total, extraMeta) -> sends standardized success response with pagination meta
- */
+// Pagination plugin: request.getPagination() and reply.paginate(...)
 export default async function paginationPlugin(fastify, opts = {}) {
   const defaultLimit = Number(opts.defaultLimit ?? 20);
   const maxLimit = Number(opts.maxLimit ?? 100);
@@ -24,7 +20,6 @@ export default async function paginationPlugin(fastify, opts = {}) {
   });
 
   fastify.decorateReply('paginate', function paginate(data, total, extraMeta = {}) {
-    // Use request.getPagination() to compute meta
     const { page, limit } = this.request.getPagination();
     const totalPages = Math.ceil(total / limit) || 0;
     const hasNext = page < totalPages;

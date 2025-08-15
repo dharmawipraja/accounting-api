@@ -1,19 +1,11 @@
-/**
- * Database Utilities
- *
- * Common database operations, query builders, and helper functions
- * for the accounting API application.
- */
-
-import { endOfDay, parseISO, startOfDay } from 'date-fns';
-import dateFnsTz from 'date-fns-tz';
+/** Database utilities: query builders, helpers, and reporting */
 import Decimal from 'decimal.js';
 import _ from 'lodash';
 import { ulid } from 'ulid';
+import { toUtcFromLocal } from '../utils/date.js';
 import { roundMoney, toDecimal } from '../utils/index.js';
 import { prisma } from './database.js';
 import config from './index.js';
-const { zonedTimeToUtc } = dateFnsTz;
 const APP_TIMEZONE = config.appConfig?.timezone || 'Asia/Makassar';
 
 /**
@@ -99,10 +91,8 @@ export const buildDateRangeFilter = (field, startDate, endDate) => {
     if (startDate) {
       try {
         // interpret startDate at local midnight in app timezone, then convert to UTC
-        const localStart = startOfDay(parseISO(startDate));
-        filter[field].gte = zonedTimeToUtc(localStart, APP_TIMEZONE);
+        filter[field].gte = toUtcFromLocal(startDate, APP_TIMEZONE, { mode: 'startOfDay' });
       } catch {
-        // fallback to Date if parseISO fails
         filter[field].gte = new Date(startDate);
       }
     }
@@ -110,8 +100,7 @@ export const buildDateRangeFilter = (field, startDate, endDate) => {
     if (endDate) {
       try {
         // interpret endDate at local end of day in app timezone, then convert to UTC
-        const localEnd = endOfDay(parseISO(endDate));
-        filter[field].lte = zonedTimeToUtc(localEnd, APP_TIMEZONE);
+        filter[field].lte = toUtcFromLocal(endDate, APP_TIMEZONE, { mode: 'endOfDay' });
       } catch {
         filter[field].lte = new Date(endDate);
       }
@@ -212,11 +201,7 @@ export const executeRawQuery = async (query, params = []) => {
   try {
     return await prisma.$queryRawUnsafe(query, ...params);
   } catch (error) {
-    console.error('Raw query execution failed:', {
-      query,
-      params,
-      error: error.message
-    });
+    console.error('Raw query execution failed:', { query, params, error: error.message });
     throw error;
   }
 };
@@ -255,19 +240,12 @@ export const getTableCounts = async () => {
 export const getDatabaseStats = async () => {
   try {
     const tableCounts = await getTableCounts();
-
-    // Get database size (PostgreSQL specific)
     const [sizeResult] = await prisma.$queryRaw`
       SELECT pg_size_pretty(pg_database_size(current_database())) as size
     `;
-
-    // Get connection info
     const [connectionResult] = await prisma.$queryRaw`
-      SELECT 
-        count(*) as active_connections,
-        current_database() as database_name
-      FROM pg_stat_activity 
-      WHERE state = 'active'
+      SELECT count(*) as active_connections, current_database() as database_name
+      FROM pg_stat_activity WHERE state = 'active'
     `;
 
     return {
@@ -302,14 +280,10 @@ export const getAccountBalance = async accountId => {
       }
     });
 
-    if (!account) {
-      throw new Error(`Account with ID ${accountId} not found`);
-    }
+    if (!account) throw new Error(`Account with ID ${accountId} not found`);
 
-    // Calculate current balance using Decimal to avoid float errors
     const creditDec = toDecimal(account.amountCredit);
     const debitDec = toDecimal(account.amountDebit);
-
     const balanceDec =
       account.transactionType === 'DEBIT' ? debitDec.minus(creditDec) : creditDec.minus(debitDec);
 
@@ -381,7 +355,7 @@ export const createLedgerEntry = async (entryData, userId) => {
 
   const resolvedLedgerDate = ledgerDate
     ? typeof ledgerDate === 'string'
-      ? zonedTimeToUtc(parseISO(ledgerDate), APP_TIMEZONE)
+      ? toUtcFromLocal(ledgerDate, APP_TIMEZONE, { mode: 'exact' })
       : ledgerDate
     : new Date();
 
@@ -411,7 +385,7 @@ export const getTrialBalance = async (asOfDate = null) => {
   try {
     const resolvedAsOf = asOfDate
       ? typeof asOfDate === 'string'
-        ? zonedTimeToUtc(parseISO(asOfDate), APP_TIMEZONE)
+        ? toUtcFromLocal(asOfDate, APP_TIMEZONE, { mode: 'exact' })
         : asOfDate
       : new Date();
 

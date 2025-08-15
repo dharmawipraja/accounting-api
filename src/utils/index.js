@@ -9,10 +9,7 @@ import Decimal from 'decimal.js';
 export const createSuccessResponse = (data, meta = {}) => ({
   success: true,
   data,
-  meta: {
-    timestamp: new Date().toISOString(),
-    ...meta
-  }
+  meta: { timestamp: new Date().toISOString(), ...meta }
 });
 
 // Pagination helper using Zod validation

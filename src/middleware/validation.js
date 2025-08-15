@@ -1,17 +1,8 @@
-/**
- * Zod Validation Middleware
- *
- * Provides validation middleware functions for Fastify using Zod schemas
- * with enhanced error handling and type safety.
- */
-
 import * as zodToOpenapiPkg from '@asteasolutions/zod-to-openapi';
 import { extendZodWithOpenApi, getRefId, OpenApiGeneratorV3 } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 
-/**
- * Safe parsing utility that returns success/error result
- */
+// Validate and return structured result
 export const safeParse = (schema, data) => {
   try {
     const result = schema.parse(data);
@@ -34,10 +25,7 @@ export const safeParse = (schema, data) => {
   }
 };
 
-/**
- * Create Fastify schema from Zod schema for OpenAPI/Swagger documentation
- * This helps maintain compatibility with Fastify's built-in schema system
- */
+// Convert Zod schema to JSON Schema/OpenAPI components
 export const zodToJsonSchema = (zodSchema, opts = {}) => {
   try {
     // Ensure the Zod extension is applied once so `.openapi()` is available
@@ -51,7 +39,7 @@ export const zodToJsonSchema = (zodSchema, opts = {}) => {
       globalThis.__zodToOpenApiExtended = true;
     }
 
-    // Compatibility: use generateSchema if the package exposes it (older API), else use Generator
+    // Use direct generateSchema if available
     const generateSchemaFn = zodToOpenapiPkg && zodToOpenapiPkg.generateSchema;
     if (typeof generateSchemaFn === 'function') {
       // Some versions expose a helper that directly converts a Zod schema

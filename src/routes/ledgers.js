@@ -37,11 +37,10 @@ const generateReferenceNumber = () => {
   return `${prefix}-${timestamp}-${randomId}`;
 };
 
-import { endOfDay, parseISO, startOfDay } from 'date-fns';
-import dateFnsTz from 'date-fns-tz';
 import config from '../config/index.js';
+import { toUtcFromLocal } from '../utils/date.js';
 import { formatMoneyForDb, roundMoney, toDecimal } from '../utils/index.js';
-const { zonedTimeToUtc } = dateFnsTz;
+const zonedTimeToUtc = (v, tz) => toUtcFromLocal(v, tz, { mode: 'exact' });
 const APP_TIMEZONE = config.appConfig?.timezone || 'Asia/Makassar';
 
 /**
@@ -206,7 +205,7 @@ export const ledgerRoutes = async fastify => {
           ledgerType: ledger.ledgerType,
           transactionType: ledger.transactionType,
           ledgerDate: ledger.ledgerDate
-            ? zonedTimeToUtc(parseISO(ledger.ledgerDate), APP_TIMEZONE)
+            ? toUtcFromLocal(ledger.ledgerDate, APP_TIMEZONE, { mode: 'exact' })
             : new Date(),
           postingStatus: 'PENDING',
           postingAt: null,
@@ -341,10 +340,10 @@ export const ledgerRoutes = async fastify => {
         // Normalize date range to day boundaries when provided using date-fns
         // Interpret incoming date strings in the app timezone and convert to UTC instants
         const normalizedStart = startDate
-          ? zonedTimeToUtc(startOfDay(parseISO(startDate)), APP_TIMEZONE)
+          ? toUtcFromLocal(startDate, APP_TIMEZONE, { mode: 'startOfDay' })
           : undefined;
         const normalizedEnd = endDate
-          ? zonedTimeToUtc(endOfDay(parseISO(endDate)), APP_TIMEZONE)
+          ? toUtcFromLocal(endDate, APP_TIMEZONE, { mode: 'endOfDay' })
           : undefined;
 
         // Build where clause
@@ -534,7 +533,7 @@ export const ledgerRoutes = async fastify => {
             ...(updateData.ledgerDate && {
               ledgerDate:
                 typeof updateData.ledgerDate === 'string'
-                  ? zonedTimeToUtc(parseISO(updateData.ledgerDate), APP_TIMEZONE)
+                  ? toUtcFromLocal(updateData.ledgerDate, APP_TIMEZONE, { mode: 'exact' })
                   : updateData.ledgerDate
             }),
             updatedBy: request.user.id,

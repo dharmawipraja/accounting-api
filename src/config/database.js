@@ -1,9 +1,4 @@
-/**
- * Database Configuration and Connection Management
- *
- * This module provides centralized database configuration for the accounting API,
- * including connection pooling, health checks, error handling, and monitoring.
- */
+/** Database configuration and Prisma client setup */
 
 import { PrismaClient } from '@prisma/client';
 import { createSoftDeleteExtension } from 'prisma-extension-soft-delete';
@@ -67,26 +62,12 @@ const getDatabaseConfig = () => {
 const createPrismaClient = () => {
   const config = getDatabaseConfig();
   const prisma = new PrismaClient(config);
-
-  // Apply prisma-extension-soft-delete to configured models that use soft deletes
+  // soft-delete extension for models with 'deletedAt' field
   const softDeleteExt = createSoftDeleteExtension({
-    models: {
-      AccountDetail: true,
-      AccountGeneral: true,
-      Ledger: true
-    },
-    defaultConfig: {
-      field: 'deletedAt',
-      createValue: deleted => (deleted ? new Date() : null)
-    }
+    models: { AccountDetail: true, AccountGeneral: true, Ledger: true },
+    defaultConfig: { field: 'deletedAt', createValue: deleted => (deleted ? new Date() : null) }
   });
-
-  // Extend the client instance with the soft-delete extension
-  const extended = prisma.$extends(softDeleteExt);
-
-  // Use the extended client from here on
-  // Note: return the extended client so other modules using `prisma` get the extended API
-  const client = extended;
+  const client = prisma.$extends(softDeleteExt);
   // helper to run a callback against the raw client (explicit opt-out)
   client.withSoftDeleted = fn => {
     if (typeof fn !== 'function') throw new TypeError('withSoftDeleted expects a function');
@@ -144,17 +125,11 @@ export const getDatabaseInfo = async prisma => {
 export const disconnectDatabase = async (prisma, logger) => {
   try {
     await prisma.$disconnect();
-    if (logger) {
-      logger.info('✅ Database connection closed gracefully');
-    } else {
-      console.log('✅ Database connection closed gracefully');
-    }
+    if (logger) logger.info('Database connection closed');
+    else console.log('Database connection closed');
   } catch (error) {
-    if (logger) {
-      logger.error('❌ Error closing database connection:', error);
-    } else {
-      console.error('❌ Error closing database connection:', error);
-    }
+    if (logger) logger.error('Error closing database connection:', error);
+    else console.error('Error closing database connection:', error);
   }
 };
 
@@ -168,22 +143,17 @@ export const databaseMiddleware = async fastify => {
   // Test initial connection
   try {
     const healthCheck = await checkDatabaseHealth(prisma);
-    if (!healthCheck.healthy) {
-      throw new Error(`Database health check failed: ${healthCheck.error}`);
-    }
-
-    fastify.log.info('✅ Database connection established successfully');
-
-    // Log database info in development
+    if (!healthCheck.healthy) throw new Error(`Database health check failed: ${healthCheck.error}`);
+    fastify.log.info('Database connection established');
     if (isDevelopment()) {
       const dbInfo = await getDatabaseInfo(prisma);
-      fastify.log.info('📊 Database Info:', {
+      fastify.log.info('Database Info:', {
         version: dbInfo.version,
         environment: dbInfo.pool.environment
       });
     }
   } catch (error) {
-    fastify.log.error('❌ Failed to establish database connection:', error);
+    fastify.log.error('Failed to establish database connection:', error);
     throw error;
   }
 
@@ -206,15 +176,11 @@ export const databaseMiddleware = async fastify => {
     await disconnectDatabase(instance.prisma, instance.log);
   });
 
-  // Request-level database connection check (optional, for critical operations)
   if (isProduction()) {
     fastify.addHook('onRequest', async request => {
-      // Only check for database-dependent routes
       if (request.url.startsWith('/api/')) {
         const isHealthy = await request.server.checkDatabaseConnection();
-        if (!isHealthy) {
-          throw request.server.httpErrors.serviceUnavailable('Database connection unavailable');
-        }
+        if (!isHealthy) throw request.server.httpErrors.serviceUnavailable('Database unavailable');
       }
     });
   }

@@ -252,7 +252,7 @@ References
 
 ---
 
-### 13) ID/reference generation (sortable IDs)
+### 13) ID/reference generation (sortable IDs) ✅
 
 - Current
   - `nanoid` for general IDs; ledger reference via `timestamp + nanoid`
