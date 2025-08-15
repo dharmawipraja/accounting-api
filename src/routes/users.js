@@ -10,11 +10,16 @@
  * - Profile: Every user can see their own detail
  */
 
-import { hashPassword, requireAdminOrManager, validate } from '../middleware/index.js';
+import { z } from 'zod';
+import { hashPassword, requireAdminOrManager } from '../middleware/index.js';
+import { zodToJsonSchema } from '../middleware/validation.js';
 import {
+  ErrorResponseSchema,
   IdParamSchema,
+  SuccessResponseSchema,
   UserCreateSchema,
   UserQuerySchema,
+  UserResponseSchema,
   UserUpdateSchema
 } from '../schemas/index.js';
 import { createSuccessResponse, getPaginationMeta } from '../utils/index.js';
@@ -24,58 +29,17 @@ export const userRoutes = async fastify => {
   fastify.post(
     '/register',
     {
-      preHandler: [
-        fastify.authenticate,
-        requireAdminOrManager,
-        validate({ body: UserCreateSchema })
-      ],
+      preHandler: [fastify.authenticate, requireAdminOrManager],
       schema: {
         description: 'Register a new user (Admin and Manager only)',
         tags: ['users'],
         security: [{ bearerAuth: [] }],
-        body: {
-          type: 'object',
-          required: ['username', 'password', 'name'],
-          properties: {
-            username: {
-              type: 'string',
-              minLength: 3,
-              maxLength: 50,
-              pattern: '^[a-zA-Z0-9_]+$'
-            },
-            password: { type: 'string', minLength: 8, maxLength: 100 },
-            name: { type: 'string', minLength: 2, maxLength: 100 },
-            role: {
-              type: 'string',
-              enum: ['NASABAH', 'KASIR', 'KOLEKTOR', 'MANAJER', 'ADMIN', 'AKUNTAN'],
-              default: 'NASABAH'
-            },
-            status: {
-              type: 'string',
-              enum: ['ACTIVE', 'INACTIVE'],
-              default: 'ACTIVE'
-            }
-          }
-        },
+        // Use Zod schema for request body validation
+        body: UserCreateSchema,
         response: {
-          201: {
-            type: 'object',
-            properties: {
-              success: { type: 'boolean' },
-              data: {
-                type: 'object',
-                properties: {
-                  id: { type: 'string' },
-                  username: { type: 'string' },
-                  name: { type: 'string' },
-                  role: { type: 'string' },
-                  status: { type: 'string' },
-                  createdAt: { type: 'string', format: 'date-time' },
-                  updatedAt: { type: 'string', format: 'date-time' }
-                }
-              }
-            }
-          }
+          201: zodToJsonSchema(SuccessResponseSchema(UserResponseSchema), {
+            title: 'UserRegisterResponse'
+          })
         }
       }
     },
@@ -133,69 +97,17 @@ export const userRoutes = async fastify => {
   fastify.get(
     '/',
     {
-      preHandler: [
-        fastify.authenticate,
-        requireAdminOrManager,
-        validate({ query: UserQuerySchema })
-      ],
+      preHandler: [fastify.authenticate, requireAdminOrManager],
       schema: {
         description: 'Get all users with pagination and filtering (Admin and Manager only)',
         tags: ['users'],
         security: [{ bearerAuth: [] }],
-        querystring: {
-          type: 'object',
-          properties: {
-            page: { type: 'integer', minimum: 1, default: 1 },
-            limit: { type: 'integer', minimum: 1, maximum: 100, default: 10 },
-            search: { type: 'string' },
-            role: {
-              type: 'string',
-              enum: ['NASABAH', 'KASIR', 'KOLEKTOR', 'MANAJER', 'ADMIN', 'AKUNTAN']
-            },
-            status: { type: 'string', enum: ['ACTIVE', 'INACTIVE'] }
-          }
-        },
+        // Use Zod schema for querystring validation
+        querystring: UserQuerySchema,
         response: {
-          200: {
-            type: 'object',
-            properties: {
-              success: { type: 'boolean' },
-              data: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    id: { type: 'string' },
-                    username: { type: 'string' },
-                    name: { type: 'string' },
-                    role: { type: 'string' },
-                    status: { type: 'string' },
-                    createdAt: { type: 'string' },
-                    updatedAt: { type: 'string' }
-                  }
-                }
-              },
-              meta: {
-                type: 'object',
-                properties: {
-                  timestamp: { type: 'string' },
-                  pagination: {
-                    type: 'object',
-                    properties: {
-                      page: { type: 'integer' },
-                      limit: { type: 'integer' },
-                      total: { type: 'integer' },
-                      totalPages: { type: 'integer' },
-                      hasNext: { type: 'boolean' },
-                      hasPrev: { type: 'boolean' },
-                      nextPage: { type: ['integer', 'null'] },
-                      prevPage: { type: ['integer', 'null'] }
-                    }
-                  }
-                }
-              }
-            }
-          }
+          200: zodToJsonSchema(SuccessResponseSchema(z.array(UserResponseSchema)), {
+            title: 'UserListResponse'
+          })
         }
       }
     },
@@ -246,60 +158,18 @@ export const userRoutes = async fastify => {
   fastify.get(
     '/:id',
     {
-      preHandler: [
-        fastify.authenticate,
-        requireAdminOrManager,
-        validate({ params: IdParamSchema })
-      ],
+      preHandler: [fastify.authenticate, requireAdminOrManager],
       schema: {
         description: 'Get user by ID (Admin and Manager only)',
         tags: ['users'],
         security: [{ bearerAuth: [] }],
-        params: {
-          type: 'object',
-          properties: {
-            id: { type: 'string' }
-          },
-          required: ['id']
-        },
+        // Use Zod schema for params validation
+        params: IdParamSchema,
         response: {
-          200: {
-            type: 'object',
-            properties: {
-              success: { type: 'boolean' },
-              data: {
-                type: 'object',
-                properties: {
-                  id: { type: 'string' },
-                  username: { type: 'string' },
-                  name: { type: 'string' },
-                  role: { type: 'string' },
-                  status: { type: 'string' },
-                  createdAt: { type: 'string' },
-                  updatedAt: { type: 'string' }
-                }
-              },
-              meta: {
-                type: 'object',
-                properties: {
-                  timestamp: { type: 'string' }
-                }
-              }
-            }
-          },
-          404: {
-            type: 'object',
-            properties: {
-              success: { type: 'boolean' },
-              error: {
-                type: 'object',
-                properties: {
-                  code: { type: 'string' },
-                  message: { type: 'string' }
-                }
-              }
-            }
-          }
+          200: zodToJsonSchema(SuccessResponseSchema(UserResponseSchema), {
+            title: 'UserGetResponse'
+          }),
+          404: zodToJsonSchema(ErrorResponseSchema, { title: 'UserNotFoundResponse' })
         }
       }
     },
@@ -337,59 +207,18 @@ export const userRoutes = async fastify => {
   fastify.put(
     '/:id',
     {
-      preHandler: [
-        fastify.authenticate,
-        requireAdminOrManager,
-        validate({
-          params: IdParamSchema,
-          body: UserUpdateSchema
-        })
-      ],
+      preHandler: [fastify.authenticate, requireAdminOrManager],
       schema: {
         description: 'Update user by ID (Admin and Manager only)',
         tags: ['users'],
         security: [{ bearerAuth: [] }],
-        params: {
-          type: 'object',
-          properties: {
-            id: { type: 'string' }
-          },
-          required: ['id']
-        },
-        body: {
-          type: 'object',
-          properties: {
-            password: { type: 'string', minLength: 8, maxLength: 100 },
-            name: { type: 'string', minLength: 2, maxLength: 100 },
-            role: {
-              type: 'string',
-              enum: ['NASABAH', 'KASIR', 'KOLEKTOR', 'MANAJER', 'ADMIN', 'AKUNTAN']
-            },
-            status: {
-              type: 'string',
-              enum: ['ACTIVE', 'INACTIVE']
-            }
-          }
-        },
+        // Use Zod schemas for params and body validation
+        params: IdParamSchema,
+        body: UserUpdateSchema,
         response: {
-          200: {
-            type: 'object',
-            properties: {
-              success: { type: 'boolean' },
-              data: {
-                type: 'object',
-                properties: {
-                  id: { type: 'string' },
-                  username: { type: 'string' },
-                  name: { type: 'string' },
-                  role: { type: 'string' },
-                  status: { type: 'string' },
-                  createdAt: { type: 'string' },
-                  updatedAt: { type: 'string' }
-                }
-              }
-            }
-          }
+          200: zodToJsonSchema(SuccessResponseSchema(UserResponseSchema), {
+            title: 'UserUpdateResponse'
+          })
         }
       }
     },
@@ -441,35 +270,17 @@ export const userRoutes = async fastify => {
   fastify.delete(
     '/:id',
     {
-      preHandler: [
-        fastify.authenticate,
-        requireAdminOrManager,
-        validate({ params: IdParamSchema })
-      ],
+      preHandler: [fastify.authenticate, requireAdminOrManager],
       schema: {
         description: 'Delete user by ID using soft delete (Admin and Manager only)',
         tags: ['users'],
         security: [{ bearerAuth: [] }],
-        params: {
-          type: 'object',
-          properties: {
-            id: { type: 'string' }
-          },
-          required: ['id']
-        },
+        // Use Zod schema for params validation
+        params: IdParamSchema,
         response: {
-          200: {
-            type: 'object',
-            properties: {
-              success: { type: 'boolean' },
-              data: {
-                type: 'object',
-                properties: {
-                  message: { type: 'string' }
-                }
-              }
-            }
-          }
+          200: zodToJsonSchema(SuccessResponseSchema(z.object({ message: z.string() })), {
+            title: 'UserDeleteResponse'
+          })
         }
       }
     },
@@ -526,24 +337,9 @@ export const userRoutes = async fastify => {
         tags: ['users'],
         security: [{ bearerAuth: [] }],
         response: {
-          200: {
-            type: 'object',
-            properties: {
-              success: { type: 'boolean' },
-              data: {
-                type: 'object',
-                properties: {
-                  id: { type: 'string' },
-                  username: { type: 'string' },
-                  name: { type: 'string' },
-                  role: { type: 'string' },
-                  status: { type: 'string' },
-                  createdAt: { type: 'string', format: 'date-time' },
-                  updatedAt: { type: 'string', format: 'date-time' }
-                }
-              }
-            }
-          }
+          200: zodToJsonSchema(SuccessResponseSchema(UserResponseSchema), {
+            title: 'UserProfileResponse'
+          })
         }
       }
     },

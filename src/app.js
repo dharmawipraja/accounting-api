@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
 import { databaseMiddleware, queryPerformanceMiddleware } from './config/database.js';
 import config, { envSchema } from './config/index.js';
 import { requestIdPlugin, timingPlugin } from './middleware/index.js';
@@ -25,6 +26,18 @@ export async function build(opts = {}) {
     // Headers timeout
     headersTimeout: appConfig.server.headersTimeout
   });
+
+  // Use fastify-type-provider-zod's validator and serializer compilers
+  // so route schemas written with Zod are validated/serialized automatically.
+  if (typeof app.setValidatorCompiler === 'function') {
+    app.setValidatorCompiler(validatorCompiler);
+  }
+  if (typeof app.setSerializerCompiler === 'function') {
+    app.setSerializerCompiler(serializerCompiler);
+  }
+
+  // The runtime type provider helper can be used when defining routes:
+  // app.withTypeProvider<ZodTypeProvider>().route({ ... })
 
   // Environment variables validation using the centralized schema
   await app.register(import('@fastify/env'), {
@@ -118,6 +131,28 @@ export async function build(opts = {}) {
 
   // Register sensible plugin for common utilities
   await app.register(import('@fastify/sensible'));
+
+  // Conditional Swagger/OpenAPI registration
+  if (appConfig.features.enableSwagger) {
+    // Register swagger and swagger-ui; the repo already includes @fastify/swagger
+    await app.register(import('@fastify/swagger'), {
+      swagger: {
+        info: {
+          title: 'Accounting API',
+          description: 'Accounting API OpenAPI documentation',
+          version: '1.0.0'
+        }
+      },
+      exposeRoute: true
+    });
+
+    await app.register(import('@fastify/swagger-ui'), {
+      routePrefix: '/docs',
+      uiConfig: {
+        docExpansion: 'list'
+      }
+    });
+  }
 
   // Register custom middleware plugins
   await app.register(requestIdPlugin);

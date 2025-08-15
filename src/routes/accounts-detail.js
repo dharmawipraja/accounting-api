@@ -8,14 +8,18 @@
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { authorize } from '../middleware/index.js';
+import { zodToJsonSchema } from '../middleware/validation.js';
 import {
   AccountCategorySchema,
   AccountDetailCreateSchema,
   AccountDetailUpdateSchema,
+  AccountResponseSchema,
   BooleanishSchema,
+  ErrorResponseSchema,
   IdParamSchema,
   PaginationSchema,
   ReportTypeSchema,
+  SuccessResponseSchema,
   TransactionTypeSchema,
   UUIDSchema
 } from '../schemas/index.js';
@@ -65,116 +69,20 @@ export const accountDetailRoutes = async fastify => {
           summary: 'Create a new account detail',
           description:
             'Creates a new account detail entry under a general account. Requires Admin, Manager, or Accountant role.',
-          body: {
-            type: 'object',
-            properties: {
-              accountNumber: {
-                type: 'string',
-                minLength: 1,
-                maxLength: 20,
-                pattern: '^[0-9\\-]+$',
-                description: 'Account number (numbers and hyphens only)'
-              },
-              accountName: {
-                type: 'string',
-                minLength: 3,
-                maxLength: 100,
-                description: 'Account name'
-              },
-              accountGeneralId: {
-                type: 'string',
-                description: 'ID of the parent general account'
-              },
-              accountCategory: {
-                type: 'string',
-                enum: ['ASSET', 'HUTANG', 'MODAL', 'PENDAPATAN', 'BIAYA'],
-                description: 'Account category'
-              },
-              reportType: {
-                type: 'string',
-                enum: ['NERACA', 'LABA_RUGI'],
-                description: 'Report type'
-              },
-              transactionType: {
-                type: 'string',
-                enum: ['DEBIT', 'CREDIT'],
-                description: 'Transaction type'
-              },
-              amountCredit: {
-                type: 'number',
-                minimum: 0,
-                maximum: 99999999.99,
-                default: 0,
-                description: 'Credit amount'
-              },
-              amountDebit: {
-                type: 'number',
-                minimum: 0,
-                maximum: 99999999.99,
-                default: 0,
-                description: 'Debit amount'
-              }
-            },
-            required: [
-              'accountNumber',
-              'accountName',
-              'accountGeneralId',
-              'accountCategory',
-              'reportType',
-              'transactionType'
-            ]
-          },
+          // Use Zod route-level schema (fastify-type-provider-zod)
+          body: AccountDetailCreateSchema.omit({ createdBy: true, updatedBy: true }),
           response: {
-            201: {
-              type: 'object',
-              properties: {
-                success: { type: 'boolean' },
-                message: { type: 'string' },
-                data: {
-                  type: 'object',
-                  properties: {
-                    id: { type: 'string' },
-                    accountNumber: { type: 'string' },
-                    accountName: { type: 'string' },
-                    accountType: { type: 'string' },
-                    accountGeneralId: { type: 'string' },
-                    accountCategory: { type: 'string' },
-                    reportType: { type: 'string' },
-                    transactionType: { type: 'string' },
-                    amountCredit: { type: 'number' },
-                    amountDebit: { type: 'number' },
-                    createdAt: { type: 'string', format: 'date-time' },
-                    updatedAt: { type: 'string', format: 'date-time' },
-                    createdBy: { type: 'string' },
-                    updatedBy: { type: 'string' }
-                  }
-                }
-              }
-            },
-            400: {
-              type: 'object',
-              properties: {
-                success: { type: 'boolean', default: false },
-                message: { type: 'string' },
-                errors: {
-                  type: 'array',
-                  items: { type: 'object' }
-                }
-              }
-            },
-            409: {
-              type: 'object',
-              properties: {
-                success: { type: 'boolean', default: false },
-                message: { type: 'string' }
-              }
-            }
+            201: zodToJsonSchema(SuccessResponseSchema(AccountResponseSchema), {
+              title: 'AccountDetailCreateResponse'
+            }),
+            400: zodToJsonSchema(ErrorResponseSchema, { title: 'ValidationError' }),
+            409: zodToJsonSchema(ErrorResponseSchema, { title: 'ConflictResponse' })
           }
         }
       },
       async (request, reply) => {
         const userId = request.user.id;
-        const accountDetailData = {
+        const validatedData = {
           ...request.body,
           accountType: 'DETAIL', // Always set to DETAIL for account details
           createdBy: userId,
@@ -183,16 +91,7 @@ export const accountDetailRoutes = async fastify => {
         };
 
         try {
-          // Validate the request body
-          const validation = AccountDetailCreateSchema.safeParse(accountDetailData);
-          if (!validation.success) {
-            return reply.status(400).send({
-              success: false,
-              message: 'Validation failed',
-              errors: validation.error.errors
-            });
-          }
-          const validatedData = validation.data;
+          // request.body is already validated by fastify-type-provider-zod via route schema
           // Round monetary amounts to 2 decimals
           validatedData.amountCredit = roundMoney(validatedData.amountCredit);
           validatedData.amountDebit = roundMoney(validatedData.amountDebit);
@@ -273,128 +172,27 @@ export const accountDetailRoutes = async fastify => {
           summary: 'Get all account details',
           description:
             'Retrieves all account details with optional filtering and pagination. Requires Admin, Manager, or Accountant role.',
-          querystring: {
-            type: 'object',
-            properties: {
-              page: {
-                type: 'integer',
-                minimum: 1,
-                default: 1,
-                description: 'Page number for pagination'
-              },
-              limit: {
-                type: 'integer',
-                minimum: 1,
-                maximum: 100,
-                default: 10,
-                description: 'Number of items per page'
-              },
-              search: {
-                type: 'string',
-                minLength: 1,
-                description: 'Search in account number or name'
-              },
-              accountCategory: {
-                type: 'string',
-                enum: ['ASSET', 'HUTANG', 'MODAL', 'PENDAPATAN', 'BIAYA'],
-                description: 'Filter by account category'
-              },
-              reportType: {
-                type: 'string',
-                enum: ['NERACA', 'LABA_RUGI'],
-                description: 'Filter by report type'
-              },
-              transactionType: {
-                type: 'string',
-                enum: ['DEBIT', 'CREDIT'],
-                description: 'Filter by transaction type'
-              },
-              accountGeneralId: {
-                type: 'string',
-                description: 'Filter by parent general account'
-              },
-              includeDeleted: {
-                type: ['boolean', 'string'],
-                default: false,
-                description: 'Include soft deleted records'
-              }
-            }
-          },
+          querystring: AccountDetailListQuerySchema,
           response: {
-            200: {
-              type: 'object',
-              properties: {
-                success: { type: 'boolean' },
-                message: { type: 'string' },
-                data: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      id: { type: 'string' },
-                      accountNumber: { type: 'string' },
-                      accountName: { type: 'string' },
-                      accountType: { type: 'string' },
-                      accountGeneralId: { type: 'string' },
-                      accountCategory: { type: 'string' },
-                      reportType: { type: 'string' },
-                      transactionType: { type: 'string' },
-                      amountCredit: { type: 'number' },
-                      amountDebit: { type: 'number' },
-                      createdAt: { type: 'string', format: 'date-time' },
-                      updatedAt: { type: 'string', format: 'date-time' },
-                      deletedAt: {
-                        type: ['string', 'null'],
-                        format: 'date-time'
-                      },
-                      accountGeneral: {
-                        type: 'object',
-                        properties: {
-                          id: { type: 'string' },
-                          accountNumber: { type: 'string' },
-                          accountName: { type: 'string' }
-                        }
-                      }
-                    }
-                  }
-                },
-                pagination: {
-                  type: 'object',
-                  properties: {
-                    page: { type: 'integer' },
-                    limit: { type: 'integer' },
-                    total: { type: 'integer' },
-                    totalPages: { type: 'integer' },
-                    hasNextPage: { type: 'boolean' },
-                    hasPreviousPage: { type: 'boolean' }
-                  }
-                }
-              }
-            }
+            200: zodToJsonSchema(SuccessResponseSchema(z.array(AccountResponseSchema)), {
+              title: 'AccountDetailListResponse'
+            })
           }
         }
       },
       async (request, reply) => {
         try {
-          // Validate and normalize query params
-          const qValidation = AccountDetailListQuerySchema.safeParse(request.query);
-          if (!qValidation.success) {
-            return reply.status(400).send({
-              success: false,
-              message: 'Invalid query parameters',
-              errors: qValidation.error.errors
-            });
-          }
+          // request.query is validated/coerced by fastify-type-provider-zod via route schema
           const {
-            page,
-            limit,
+            page = 1,
+            limit = 10,
             search,
             accountCategory,
             reportType,
             transactionType,
             accountGeneralId,
             includeDeleted
-          } = qValidation.data;
+          } = request.query;
 
           const includeDeletedBool = !!includeDeleted;
 
@@ -484,120 +282,22 @@ export const accountDetailRoutes = async fastify => {
           summary: 'Get account detail by ID',
           description:
             'Retrieves a specific account detail by ID. Requires Admin, Manager, or Accountant role.',
-          params: {
-            type: 'object',
-            properties: {
-              id: {
-                type: 'string',
-                description: 'Account detail ID'
-              }
-            },
-            required: ['id']
-          },
-          querystring: {
-            type: 'object',
-            properties: {
-              includeDeleted: {
-                type: ['boolean', 'string'],
-                default: false,
-                description: 'Include if the record is soft deleted'
-              },
-              includeLedgers: {
-                type: ['boolean', 'string'],
-                default: false,
-                description: 'Include related ledger entries'
-              }
-            }
-          },
+          params: IdParamSchema,
+          querystring: AccountDetailGetQuerySchema,
           response: {
-            200: {
-              type: 'object',
-              properties: {
-                success: { type: 'boolean' },
-                message: { type: 'string' },
-                data: {
-                  type: 'object',
-                  properties: {
-                    id: { type: 'string' },
-                    accountNumber: { type: 'string' },
-                    accountName: { type: 'string' },
-                    accountType: { type: 'string' },
-                    accountGeneralId: { type: 'string' },
-                    accountCategory: { type: 'string' },
-                    reportType: { type: 'string' },
-                    transactionType: { type: 'string' },
-                    amountCredit: { type: 'number' },
-                    amountDebit: { type: 'number' },
-                    createdAt: { type: 'string', format: 'date-time' },
-                    updatedAt: { type: 'string', format: 'date-time' },
-                    deletedAt: {
-                      type: ['string', 'null'],
-                      format: 'date-time'
-                    },
-                    accountGeneral: {
-                      type: 'object',
-                      properties: {
-                        id: { type: 'string' },
-                        accountNumber: { type: 'string' },
-                        accountName: { type: 'string' },
-                        accountCategory: { type: 'string' },
-                        reportType: { type: 'string' },
-                        transactionType: { type: 'string' }
-                      }
-                    },
-                    ledgers: {
-                      type: 'array',
-                      items: {
-                        type: 'object',
-                        properties: {
-                          id: { type: 'string' },
-                          referenceNumber: { type: 'string' },
-                          amount: { type: 'number' },
-                          description: { type: 'string' },
-                          ledgerType: { type: 'string' },
-                          transactionType: { type: 'string' },
-                          postingStatus: { type: 'string' },
-                          ledgerDate: { type: 'string', format: 'date-time' },
-                          createdAt: { type: 'string', format: 'date-time' }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            },
-            404: {
-              type: 'object',
-              properties: {
-                success: { type: 'boolean', default: false },
-                message: { type: 'string' }
-              }
-            }
+            200: zodToJsonSchema(SuccessResponseSchema(AccountResponseSchema), {
+              title: 'AccountDetailGetResponse'
+            }),
+            404: zodToJsonSchema(ErrorResponseSchema, { title: 'NotFoundResponse' })
           }
         }
       },
       async (request, reply) => {
         try {
-          // Validate params and query
-          const paramsValidation = IdParamSchema.safeParse(request.params);
-          if (!paramsValidation.success) {
-            return reply.status(400).send({
-              success: false,
-              message: 'Invalid account detail ID format'
-            });
-          }
-          const { id } = paramsValidation.data;
-
-          const queryValidation = AccountDetailGetQuerySchema.safeParse(request.query);
-          if (!queryValidation.success) {
-            return reply.status(400).send({
-              success: false,
-              message: 'Invalid query parameters',
-              errors: queryValidation.error.errors
-            });
-          }
+          // request.params and request.query are validated/coerced by fastify-type-provider-zod
+          const { id } = request.params;
           const { includeDeleted: includeDeletedBool, includeLedgers: includeLedgersBool } =
-            queryValidation.data;
+            request.query;
 
           const accountDetail = await fastify.prisma.accountDetail.findFirst({
             where: {
@@ -671,100 +371,14 @@ export const accountDetailRoutes = async fastify => {
           summary: 'Update account detail',
           description:
             'Updates an existing account detail. Requires Admin, Manager, or Accountant role.',
-          params: {
-            type: 'object',
-            properties: {
-              id: {
-                type: 'string',
-                description: 'Account detail ID'
-              }
-            },
-            required: ['id']
-          },
-          body: {
-            type: 'object',
-            properties: {
-              accountName: {
-                type: 'string',
-                minLength: 3,
-                maxLength: 100,
-                description: 'Account name'
-              },
-              accountCategory: {
-                type: 'string',
-                enum: ['ASSET', 'HUTANG', 'MODAL', 'PENDAPATAN', 'BIAYA'],
-                description: 'Account category'
-              },
-              reportType: {
-                type: 'string',
-                enum: ['NERACA', 'LABA_RUGI'],
-                description: 'Report type'
-              },
-              transactionType: {
-                type: 'string',
-                enum: ['DEBIT', 'CREDIT'],
-                description: 'Transaction type'
-              },
-              amountCredit: {
-                type: 'number',
-                minimum: 0,
-                maximum: 99999999.99,
-                description: 'Credit amount'
-              },
-              amountDebit: {
-                type: 'number',
-                minimum: 0,
-                maximum: 99999999.99,
-                description: 'Debit amount'
-              }
-            },
-            minProperties: 1,
-            additionalProperties: false
-          },
+          params: IdParamSchema,
+          body: AccountDetailUpdateSchema,
           response: {
-            200: {
-              type: 'object',
-              properties: {
-                success: { type: 'boolean' },
-                message: { type: 'string' },
-                data: {
-                  type: 'object',
-                  properties: {
-                    id: { type: 'string' },
-                    accountNumber: { type: 'string' },
-                    accountName: { type: 'string' },
-                    accountType: { type: 'string' },
-                    accountGeneralId: { type: 'string' },
-                    accountCategory: { type: 'string' },
-                    reportType: { type: 'string' },
-                    transactionType: { type: 'string' },
-                    amountCredit: { type: 'number' },
-                    amountDebit: { type: 'number' },
-                    createdAt: { type: 'string', format: 'date-time' },
-                    updatedAt: { type: 'string', format: 'date-time' },
-                    updatedBy: { type: 'string' }
-                  }
-                }
-              }
-            },
-            400: {
-              type: 'object',
-              properties: {
-                success: { type: 'boolean', default: false },
-                message: { type: 'string' },
-                errors: {
-                  type: 'array',
-                  items: { type: 'object' }
-                }
-              }
-            },
-            404: {
-              type: 'object',
-              properties: {
-                success: { type: 'boolean', default: false },
-                message: { type: 'string' }
-              }
-            }
+            200: zodToJsonSchema(SuccessResponseSchema(AccountResponseSchema), {
+              title: 'AccountDetailUpdateResponse'
+            }),
+            400: zodToJsonSchema(ErrorResponseSchema, { title: 'ValidationError' }),
+            404: zodToJsonSchema(ErrorResponseSchema, { title: 'NotFoundResponse' })
           }
         }
       },
@@ -772,30 +386,13 @@ export const accountDetailRoutes = async fastify => {
         try {
           const userId = request.user.id;
 
-          // Validate params
-          const paramsValidation = IdParamSchema.safeParse(request.params);
-          if (!paramsValidation.success) {
-            return reply.status(400).send({
-              success: false,
-              message: 'Invalid account detail ID format'
-            });
-          }
-          const { id } = paramsValidation.data;
-
-          // Validate update data
-          const updateValidation = AccountDetailUpdateSchema.safeParse({
+          // request.params and request.body are validated/coerced by fastify-type-provider-zod
+          const { id } = request.params;
+          const updateData = {
             ...request.body,
             updatedBy: userId,
             updatedAt: new Date()
-          });
-          if (!updateValidation.success) {
-            return reply.status(400).send({
-              success: false,
-              message: 'Validation failed',
-              errors: updateValidation.error.errors
-            });
-          }
-          const updateData = updateValidation.data;
+          };
 
           // Round monetary amounts if provided
           if (typeof updateData.amountCredit === 'number') {
@@ -870,61 +467,20 @@ export const accountDetailRoutes = async fastify => {
           summary: 'Soft delete account detail',
           description:
             'Soft deletes an account detail by setting deletedAt timestamp. Requires Admin, Manager, or Accountant role.',
-          params: {
-            type: 'object',
-            properties: {
-              id: {
-                type: 'string',
-                description: 'Account detail ID'
-              }
-            },
-            required: ['id']
-          },
+          params: IdParamSchema,
           response: {
-            200: {
-              type: 'object',
-              properties: {
-                success: { type: 'boolean' },
-                message: { type: 'string' },
-                data: {
-                  type: 'object',
-                  properties: {
-                    id: { type: 'string' },
-                    accountNumber: { type: 'string' },
-                    accountName: { type: 'string' },
-                    deletedAt: { type: 'string', format: 'date-time' }
-                  }
-                }
-              }
-            },
-            400: {
-              type: 'object',
-              properties: {
-                success: { type: 'boolean', default: false },
-                message: { type: 'string' }
-              }
-            },
-            404: {
-              type: 'object',
-              properties: {
-                success: { type: 'boolean', default: false },
-                message: { type: 'string' }
-              }
-            }
+            200: zodToJsonSchema(SuccessResponseSchema(AccountResponseSchema), {
+              title: 'AccountDetailDeleteResponse'
+            }),
+            400: zodToJsonSchema(ErrorResponseSchema, { title: 'ValidationError' }),
+            404: zodToJsonSchema(ErrorResponseSchema, { title: 'NotFoundResponse' })
           }
         }
       },
       async (request, reply) => {
         try {
-          // Validate params
-          const paramsValidation = IdParamSchema.safeParse(request.params);
-          if (!paramsValidation.success) {
-            return reply.status(400).send({
-              success: false,
-              message: 'Invalid account detail ID format'
-            });
-          }
-          const { id } = paramsValidation.data;
+          // request.params is validated by fastify-type-provider-zod
+          const { id } = request.params;
 
           // Check if account detail exists and is not already deleted
           const existingAccountDetail = await fastify.prisma.accountDetail.findFirst({

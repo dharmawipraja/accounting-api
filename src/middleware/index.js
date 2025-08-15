@@ -30,16 +30,7 @@ export const timingPlugin = async fastify => {
 };
 
 // Export validation middleware
-export {
-  safeParse,
-  validate,
-  validateBody,
-  validateParams,
-  validateQuery,
-  validateResponse,
-  default as validation,
-  validationPreHandler
-} from './validation.js';
+export { safeParse } from './validation.js';
 
 // Export authentication middleware
 export {

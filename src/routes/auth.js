@@ -2,8 +2,14 @@
  * Authentication Routes
  */
 
-import { validate, verifyPassword } from '../middleware/index.js';
-import { LoginSchema } from '../schemas/index.js';
+import { verifyPassword } from '../middleware/index.js';
+import { zodToJsonSchema } from '../middleware/validation.js';
+import {
+  AuthResponseSchema,
+  LoginSchema,
+  SuccessResponseSchema,
+  UserResponseSchema
+} from '../schemas/index.js';
 import { createSuccessResponse } from '../utils/index.js';
 
 export const authRoutes = async fastify => {
@@ -11,52 +17,16 @@ export const authRoutes = async fastify => {
   fastify.post(
     '/login',
     {
-      preHandler: validate({ body: LoginSchema }),
+      // Keep authentication/other preHandlers here if needed
       schema: {
         description: 'User login with username and password',
         tags: ['auth'],
-        body: {
-          type: 'object',
-          required: ['username', 'password'],
-          properties: {
-            username: { type: 'string', minLength: 3, maxLength: 50 },
-            password: { type: 'string', minLength: 1 }
-          }
-        },
+        // Use Zod schema for request body so fastify-type-provider-zod handles validation
+        body: LoginSchema,
         response: {
-          200: {
-            type: 'object',
-            properties: {
-              success: { type: 'boolean' },
-              data: {
-                type: 'object',
-                properties: {
-                  token: { type: 'string' },
-                  user: {
-                    type: 'object',
-                    properties: {
-                      id: { type: 'string' },
-                      username: { type: 'string' },
-                      name: { type: 'string' },
-                      role: {
-                        type: 'string',
-                        enum: ['NASABAH', 'KASIR', 'KOLEKTOR', 'MANAJER', 'ADMIN', 'AKUNTAN']
-                      }
-                    }
-                  },
-                  expiresIn: { type: 'string' }
-                }
-              }
-            }
-          },
-          401: {
-            type: 'object',
-            properties: {
-              statusCode: { type: 'number' },
-              error: { type: 'string' },
-              message: { type: 'string' }
-            }
-          }
+          200: zodToJsonSchema(SuccessResponseSchema(AuthResponseSchema), {
+            title: 'AuthLoginResponse'
+          })
         }
       }
     },
@@ -127,27 +97,9 @@ export const authRoutes = async fastify => {
         tags: ['auth'],
         security: [{ bearerAuth: [] }],
         response: {
-          200: {
-            type: 'object',
-            properties: {
-              success: { type: 'boolean' },
-              data: {
-                type: 'object',
-                properties: {
-                  id: { type: 'string' },
-                  username: { type: 'string' },
-                  name: { type: 'string' },
-                  role: {
-                    type: 'string',
-                    enum: ['NASABAH', 'KASIR', 'KOLEKTOR', 'MANAJER', 'ADMIN', 'AKUNTAN']
-                  },
-                  status: { type: 'string', enum: ['ACTIVE', 'INACTIVE'] },
-                  createdAt: { type: 'string', format: 'date-time' },
-                  updatedAt: { type: 'string', format: 'date-time' }
-                }
-              }
-            }
-          }
+          200: zodToJsonSchema(SuccessResponseSchema(UserResponseSchema), {
+            title: 'AuthMeResponse'
+          })
         }
       }
     },

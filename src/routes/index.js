@@ -2,7 +2,9 @@
  * API Routes Registry
  */
 
+import { z } from 'zod';
 import { checkDatabaseHealth, getDatabaseStats } from '../config/db-utils.js';
+import { zodToJsonSchema } from '../middleware/validation.js';
 
 // Health and monitoring routes
 export const healthRoutes = async fastify => {
@@ -12,31 +14,21 @@ export const healthRoutes = async fastify => {
     {
       schema: {
         response: {
-          200: {
-            type: 'object',
-            properties: {
-              status: { type: 'string' },
-              timestamp: { type: 'string' },
-              uptime: { type: 'number' },
-              version: { type: 'string' },
-              memory: {
-                type: 'object',
-                properties: {
-                  used: { type: 'number' },
-                  total: { type: 'number' },
-                  percentage: { type: 'number' }
-                }
-              },
-              database: {
-                type: 'object',
-                properties: {
-                  healthy: { type: 'boolean' },
-                  version: { type: 'string' },
-                  connections: { type: 'number' }
-                }
-              }
-            }
-          }
+          200: zodToJsonSchema(
+            z.object({
+              status: z.string(),
+              timestamp: z.string(),
+              uptime: z.number(),
+              version: z.string(),
+              memory: z.object({ used: z.number(), total: z.number(), percentage: z.number() }),
+              database: z.object({
+                healthy: z.boolean(),
+                version: z.string().optional(),
+                connections: z.number().optional()
+              })
+            }),
+            { title: 'HealthResponse' }
+          )
         }
       }
     },
@@ -153,24 +145,21 @@ export const apiRoutes = async fastify => {
     {
       schema: {
         response: {
-          200: {
-            type: 'object',
-            properties: {
-              name: { type: 'string' },
-              version: { type: 'string' },
-              description: { type: 'string' },
-              endpoints: {
-                type: 'object',
-                properties: {
-                  health: { type: 'string' },
-                  ready: { type: 'string' },
-                  live: { type: 'string' },
-                  auth: { type: 'string' },
-                  users: { type: 'string' }
-                }
-              }
-            }
-          }
+          200: zodToJsonSchema(
+            z.object({
+              name: z.string(),
+              version: z.string(),
+              description: z.string(),
+              endpoints: z.object({
+                health: z.string(),
+                ready: z.string(),
+                live: z.string(),
+                auth: z.string(),
+                users: z.string()
+              })
+            }),
+            { title: 'ApiInfoResponse' }
+          )
         }
       }
     },

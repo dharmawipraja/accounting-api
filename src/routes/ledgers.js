@@ -6,12 +6,17 @@
  */
 
 import { nanoid } from 'nanoid';
+import { z } from 'zod';
 import { authorize } from '../middleware/index.js';
+import { zodToJsonSchema } from '../middleware/validation.js';
 import {
+  ErrorResponseSchema,
   IdParamSchema,
   LedgerBulkCreateSchema,
   LedgerQuerySchema,
-  LedgerUpdateSchema
+  LedgerResponseSchema,
+  LedgerUpdateSchema,
+  SuccessResponseSchema
 } from '../schemas/index.js';
 
 /**
@@ -55,134 +60,26 @@ export const ledgerRoutes = async fastify => {
         summary: 'Create bulk ledger entries',
         description:
           'Creates multiple ledger entries in a single transaction. All entries share the same reference number. Requires Admin, Manager, or Accountant role.',
-        body: {
-          type: 'object',
-          properties: {
-            ledgers: {
-              type: 'array',
-              minItems: 1,
-              maxItems: 100,
-              items: {
-                type: 'object',
-                properties: {
-                  amount: {
-                    type: 'number',
-                    minimum: 0.01,
-                    maximum: 99999999.99,
-                    description: 'Ledger amount'
-                  },
-                  description: {
-                    type: 'string',
-                    minLength: 3,
-                    maxLength: 500,
-                    description: 'Ledger description'
-                  },
-                  accountDetailId: {
-                    type: 'string',
-                    description: 'Account detail ID'
-                  },
-                  accountGeneralId: {
-                    type: 'string',
-                    description: 'Account general ID'
-                  },
-                  ledgerType: {
-                    type: 'string',
-                    enum: ['KAS_MASUK', 'KAS_KELUAR'],
-                    description: 'Ledger type'
-                  },
-                  transactionType: {
-                    type: 'string',
-                    enum: ['DEBIT', 'CREDIT'],
-                    description: 'Transaction type'
-                  },
-                  ledgerDate: {
-                    type: 'string',
-                    format: 'date-time',
-                    description: 'Ledger date'
-                  }
-                },
-                required: [
-                  'amount',
-                  'description',
-                  'accountDetailId',
-                  'accountGeneralId',
-                  'ledgerType',
-                  'transactionType',
-                  'ledgerDate'
-                ]
-              }
-            }
-          },
-          required: ['ledgers']
-        },
+        body: LedgerBulkCreateSchema,
         response: {
-          201: {
-            type: 'object',
-            properties: {
-              success: { type: 'boolean' },
-              message: { type: 'string' },
-              data: {
-                type: 'object',
-                properties: {
-                  referenceNumber: { type: 'string' },
-                  totalEntries: { type: 'number' },
-                  ledgers: {
-                    type: 'array',
-                    items: {
-                      type: 'object',
-                      properties: {
-                        id: { type: 'string' },
-                        referenceNumber: { type: 'string' },
-                        amount: { type: 'number' },
-                        description: { type: 'string' },
-                        ledgerType: { type: 'string' },
-                        transactionType: { type: 'string' },
-                        postingStatus: { type: 'string' },
-                        ledgerDate: { type: 'string' },
-                        accountDetailId: { type: 'string' },
-                        accountGeneralId: { type: 'string' },
-                        createdAt: { type: 'string' },
-                        createdBy: { type: 'string' }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          400: {
-            type: 'object',
-            properties: {
-              success: { type: 'boolean' },
-              error: {
-                type: 'object',
-                properties: {
-                  code: { type: 'string' },
-                  message: { type: 'string' },
-                  details: { type: 'array', items: { type: 'string' } }
-                }
-              }
-            }
-          }
+          201: zodToJsonSchema(
+            SuccessResponseSchema(
+              z.object({
+                referenceNumber: z.string(),
+                totalEntries: z.number(),
+                ledgers: z.array(LedgerResponseSchema)
+              })
+            ),
+            { title: 'LedgerBulkCreateResponse' }
+          ),
+          400: zodToJsonSchema(ErrorResponseSchema, { title: 'ValidationError' })
         }
       }
     },
     async (request, reply) => {
       try {
-        // Validate request body
-        const validation = LedgerBulkCreateSchema.safeParse(request.body);
-        if (!validation.success) {
-          return reply.code(400).send({
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'Invalid input data',
-              details: validation.error.errors.map(err => `${err.path.join('.')}: ${err.message}`)
-            }
-          });
-        }
-
-        const { ledgers } = validation.data;
+        // request.body is validated by fastify-type-provider-zod via route schema
+        const { ledgers } = request.body;
         const referenceNumber = generateReferenceNumber();
         const userId = request.user.id;
         const now = new Date();
@@ -395,135 +292,20 @@ export const ledgerRoutes = async fastify => {
         summary: 'Get all ledger entries',
         description:
           'Retrieves all ledger entries with pagination and optional filtering. Requires Admin, Manager, or Accountant role.',
-        querystring: {
-          type: 'object',
-          properties: {
-            page: { type: 'integer', minimum: 1, default: 1, description: 'Page number' },
-            limit: {
-              type: 'integer',
-              minimum: 1,
-              maximum: 100,
-              default: 10,
-              description: 'Items per page'
-            },
-            search: {
-              type: 'string',
-              description: 'Search in reference number and description'
-            },
-            ledgerType: {
-              type: 'string',
-              enum: ['KAS_MASUK', 'KAS_KELUAR'],
-              description: 'Filter by ledger type'
-            },
-            transactionType: {
-              type: 'string',
-              enum: ['DEBIT', 'CREDIT'],
-              description: 'Filter by transaction type'
-            },
-            postingStatus: {
-              type: 'string',
-              enum: ['PENDING', 'POSTED'],
-              description: 'Filter by posting status'
-            },
-            accountDetailId: {
-              type: 'string',
-              description: 'Filter by account detail ID'
-            },
-            accountGeneralId: {
-              type: 'string',
-              description: 'Filter by account general ID'
-            },
-            startDate: {
-              type: 'string',
-              format: 'date',
-              description: 'Start date for filtering'
-            },
-            endDate: {
-              type: 'string',
-              format: 'date',
-              description: 'End date for filtering'
-            }
-          }
-        },
+        querystring: LedgerQuerySchema,
         response: {
-          200: {
-            type: 'object',
-            properties: {
-              success: { type: 'boolean' },
-              data: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    id: { type: 'string' },
-                    referenceNumber: { type: 'string' },
-                    amount: { type: 'number' },
-                    description: { type: 'string' },
-                    ledgerType: { type: 'string' },
-                    transactionType: { type: 'string' },
-                    postingStatus: { type: 'string' },
-                    ledgerDate: { type: 'string' },
-                    postingAt: { type: ['string', 'null'] },
-                    createdAt: { type: 'string' },
-                    updatedAt: { type: 'string' },
-                    accountDetail: {
-                      type: 'object',
-                      properties: {
-                        accountNumber: { type: 'string' },
-                        accountName: { type: 'string' }
-                      }
-                    },
-                    accountGeneral: {
-                      type: 'object',
-                      properties: {
-                        accountNumber: { type: 'string' },
-                        accountName: { type: 'string' }
-                      }
-                    }
-                  }
-                }
-              },
-              meta: {
-                type: 'object',
-                properties: {
-                  pagination: {
-                    type: 'object',
-                    properties: {
-                      page: { type: 'number' },
-                      limit: { type: 'number' },
-                      total: { type: 'number' },
-                      totalPages: { type: 'number' },
-                      hasNext: { type: 'boolean' },
-                      hasPrev: { type: 'boolean' },
-                      nextPage: { type: ['number', 'null'] },
-                      prevPage: { type: ['number', 'null'] }
-                    }
-                  }
-                }
-              }
-            }
-          }
+          200: zodToJsonSchema(SuccessResponseSchema(z.array(LedgerResponseSchema)), {
+            title: 'LedgerListResponse'
+          })
         }
       }
     },
     async (request, reply) => {
       try {
-        // Validate query parameters
-        const validation = LedgerQuerySchema.safeParse(request.query);
-        if (!validation.success) {
-          return reply.code(400).send({
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'Invalid query parameters',
-              details: validation.error.errors.map(err => `${err.path.join('.')}: ${err.message}`)
-            }
-          });
-        }
-
+        // request.query is validated/coerced by fastify-type-provider-zod via route schema
         const {
-          page,
-          limit,
+          page = 1,
+          limit = 10,
           search,
           ledgerType,
           transactionType,
@@ -532,7 +314,7 @@ export const ledgerRoutes = async fastify => {
           accountGeneralId,
           startDate,
           endDate
-        } = validation.data;
+        } = request.query;
 
         // Normalize date range to day boundaries when both provided
         const normalizedStart = startDate ? new Date(startDate) : undefined;
@@ -637,132 +419,40 @@ export const ledgerRoutes = async fastify => {
         summary: 'Get ledger by ID',
         description:
           'Retrieves a specific ledger entry by ID. Requires Admin, Manager, or Accountant role.',
-        params: {
-          type: 'object',
-          properties: {
-            id: {
-              type: 'string',
-              description: 'Ledger ID'
-            }
-          },
-          required: ['id']
-        },
+        params: IdParamSchema,
         response: {
-          200: {
-            type: 'object',
-            properties: {
-              success: { type: 'boolean' },
-              data: {
-                type: 'object',
-                properties: {
-                  id: { type: 'string' },
-                  referenceNumber: { type: 'string' },
-                  amount: { type: 'number' },
-                  description: { type: 'string' },
-                  ledgerType: { type: 'string' },
-                  transactionType: { type: 'string' },
-                  postingStatus: { type: 'string' },
-                  ledgerDate: { type: 'string' },
-                  postingAt: { type: ['string', 'null'] },
-                  createdAt: { type: 'string' },
-                  updatedAt: { type: 'string' },
-                  accountDetail: {
-                    type: 'object',
-                    properties: {
-                      id: { type: 'string' },
-                      accountNumber: { type: 'string' },
-                      accountName: { type: 'string' }
-                    }
-                  },
-                  accountGeneral: {
-                    type: 'object',
-                    properties: {
-                      id: { type: 'string' },
-                      accountNumber: { type: 'string' },
-                      accountName: { type: 'string' }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          404: {
-            type: 'object',
-            properties: {
-              success: { type: 'boolean' },
-              error: {
-                type: 'object',
-                properties: {
-                  code: { type: 'string' },
-                  message: { type: 'string' }
-                }
-              }
-            }
-          }
+          200: zodToJsonSchema(SuccessResponseSchema(LedgerResponseSchema), {
+            title: 'LedgerGetResponse'
+          }),
+          404: zodToJsonSchema(ErrorResponseSchema, { title: 'NotFoundResponse' })
         }
       }
     },
     async (request, reply) => {
       try {
-        // Validate params
-        const validation = IdParamSchema.safeParse(request.params);
-        if (!validation.success) {
-          return reply.code(400).send({
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'Invalid ledger ID format'
-            }
-          });
-        }
-
-        const { id } = validation.data;
+        const { id } = request.params; // validated by fastify-type-provider-zod
 
         const ledger = await fastify.prisma.ledger.findFirst({
-          where: {
-            id,
-            deletedAt: null
-          },
+          where: { id, deletedAt: null },
           include: {
-            accountDetail: {
-              select: {
-                id: true,
-                accountNumber: true,
-                accountName: true
-              }
-            },
-            accountGeneral: {
-              select: {
-                id: true,
-                accountNumber: true,
-                accountName: true
-              }
-            }
+            accountDetail: { select: { id: true, accountNumber: true, accountName: true } },
+            accountGeneral: { select: { id: true, accountNumber: true, accountName: true } }
           }
         });
 
         if (!ledger) {
           return reply.code(404).send({
             success: false,
-            error: {
-              code: 'LEDGER_NOT_FOUND',
-              message: 'Ledger entry not found'
-            }
+            error: { code: 'LEDGER_NOT_FOUND', message: 'Ledger entry not found' }
           });
         }
 
-        reply.send({
-          success: true,
-          data: ledger
-        });
+        reply.send({ success: true, data: ledger });
       } catch (error) {
         request.log.error('Error fetching ledger:', error);
         reply.code(500).send({
           success: false,
-          error: {
-            code: 'INTERNAL_SERVER_ERROR',
-            message: 'Failed to fetch ledger entry'
-          }
+          error: { code: 'INTERNAL_SERVER_ERROR', message: 'Failed to fetch ledger entry' }
         });
       }
     }
@@ -783,97 +473,20 @@ export const ledgerRoutes = async fastify => {
         summary: 'Update ledger entry',
         description:
           'Updates a specific ledger entry. Requires Admin, Manager, or Accountant role.',
-        params: {
-          type: 'object',
-          properties: {
-            id: {
-              type: 'string',
-              description: 'Ledger ID'
-            }
-          },
-          required: ['id']
-        },
-        body: {
-          type: 'object',
-          properties: {
-            amount: {
-              type: 'number',
-              minimum: 0.01,
-              maximum: 99999999.99,
-              description: 'Ledger amount'
-            },
-            description: {
-              type: 'string',
-              minLength: 3,
-              maxLength: 500,
-              description: 'Ledger description'
-            },
-            ledgerType: {
-              type: 'string',
-              enum: ['KAS_MASUK', 'KAS_KELUAR'],
-              description: 'Ledger type'
-            },
-            transactionType: {
-              type: 'string',
-              enum: ['DEBIT', 'CREDIT'],
-              description: 'Transaction type'
-            },
-            ledgerDate: {
-              type: 'string',
-              format: 'date-time',
-              description: 'Ledger date'
-            }
-          }
-        },
+        params: IdParamSchema,
+        body: LedgerUpdateSchema,
         response: {
-          200: {
-            type: 'object',
-            properties: {
-              success: { type: 'boolean' },
-              message: { type: 'string' },
-              data: {
-                type: 'object',
-                properties: {
-                  id: { type: 'string' },
-                  referenceNumber: { type: 'string' },
-                  amount: { type: 'number' },
-                  description: { type: 'string' },
-                  ledgerType: { type: 'string' },
-                  transactionType: { type: 'string' },
-                  updatedAt: { type: 'string' }
-                }
-              }
-            }
-          }
+          200: zodToJsonSchema(SuccessResponseSchema(LedgerResponseSchema), {
+            title: 'LedgerUpdateResponse'
+          })
         }
       }
     },
     async (request, reply) => {
       try {
-        // Validate params and body
-        const paramsValidation = IdParamSchema.safeParse(request.params);
-        const bodyValidation = LedgerUpdateSchema.safeParse(request.body);
-
-        if (!paramsValidation.success || !bodyValidation.success) {
-          return reply.code(400).send({
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'Invalid input data',
-              details: [
-                ...(paramsValidation.error?.errors.map(
-                  err => `params.${err.path.join('.')}: ${err.message}`
-                ) || []),
-                ...(bodyValidation.error?.errors.map(
-                  err => `body.${err.path.join('.')}: ${err.message}`
-                ) || [])
-              ]
-            }
-          });
-        }
-
-        const { id } = paramsValidation.data;
-        const updateData = bodyValidation.data;
+        // request.params and request.body are validated by fastify-type-provider-zod
+        const { id } = request.params;
+        const updateData = request.body;
 
         // Check if ledger exists and is not deleted
         const existingLedger = await fastify.prisma.ledger.findFirst({
@@ -963,42 +576,18 @@ export const ledgerRoutes = async fastify => {
         summary: 'Delete ledger entry',
         description:
           'Soft deletes a specific ledger entry. Requires Admin, Manager, or Accountant role.',
-        params: {
-          type: 'object',
-          properties: {
-            id: {
-              type: 'string',
-              description: 'Ledger ID'
-            }
-          },
-          required: ['id']
-        },
+        params: IdParamSchema,
         response: {
-          200: {
-            type: 'object',
-            properties: {
-              success: { type: 'boolean' },
-              message: { type: 'string' }
-            }
-          }
+          200: zodToJsonSchema(SuccessResponseSchema(z.object({ message: z.string() })), {
+            title: 'LedgerDeleteResponse'
+          })
         }
       }
     },
     async (request, reply) => {
       try {
-        // Validate params
-        const validation = IdParamSchema.safeParse(request.params);
-        if (!validation.success) {
-          return reply.code(400).send({
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'Invalid ledger ID format'
-            }
-          });
-        }
-
-        const { id } = validation.data;
+        // request.params validated by fastify-type-provider-zod
+        const { id } = request.params;
 
         // Check if ledger exists and is not already deleted
         const existingLedger = await fastify.prisma.ledger.findFirst({
@@ -1071,50 +660,25 @@ export const ledgerRoutes = async fastify => {
         summary: 'Post ledger entry',
         description:
           'Changes ledger status from PENDING to POSTED and sets postingAt timestamp. Requires Admin, Manager, or Accountant role.',
-        params: {
-          type: 'object',
-          properties: {
-            id: {
-              type: 'string',
-              description: 'Ledger ID'
-            }
-          },
-          required: ['id']
-        },
+        params: IdParamSchema,
         response: {
-          200: {
-            type: 'object',
-            properties: {
-              success: { type: 'boolean' },
-              message: { type: 'string' },
-              data: {
-                type: 'object',
-                properties: {
-                  id: { type: 'string' },
-                  postingStatus: { type: 'string' },
-                  postingAt: { type: 'string' }
-                }
-              }
-            }
-          }
+          200: zodToJsonSchema(
+            SuccessResponseSchema(
+              z.object({
+                id: z.string(),
+                postingStatus: z.string(),
+                postingAt: z.string()
+              })
+            ),
+            { title: 'LedgerPostResponse' }
+          )
         }
       }
     },
     async (request, reply) => {
       try {
-        // Validate params
-        const validation = IdParamSchema.safeParse(request.params);
-        if (!validation.success) {
-          return reply.code(400).send({
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'Invalid ledger ID format'
-            }
-          });
-        }
-
-        const { id } = validation.data;
+        // request.params validated by fastify-type-provider-zod
+        const { id } = request.params;
 
         // Check if ledger exists and is not deleted
         const existingLedger = await fastify.prisma.ledger.findFirst({
@@ -1207,39 +771,23 @@ export const ledgerRoutes = async fastify => {
           required: ['id']
         },
         response: {
-          200: {
-            type: 'object',
-            properties: {
-              success: { type: 'boolean' },
-              message: { type: 'string' },
-              data: {
-                type: 'object',
-                properties: {
-                  id: { type: 'string' },
-                  postingStatus: { type: 'string' },
-                  postingAt: { type: ['string', 'null'] }
-                }
-              }
-            }
-          }
+          200: zodToJsonSchema(
+            SuccessResponseSchema(
+              z.object({
+                id: z.string(),
+                postingStatus: z.string(),
+                postingAt: z.string().nullable()
+              })
+            ),
+            { title: 'LedgerUnpostResponse' }
+          )
         }
       }
     },
     async (request, reply) => {
       try {
-        // Validate params
-        const validation = IdParamSchema.safeParse(request.params);
-        if (!validation.success) {
-          return reply.code(400).send({
-            success: false,
-            error: {
-              code: 'VALIDATION_ERROR',
-              message: 'Invalid ledger ID format'
-            }
-          });
-        }
-
-        const { id } = validation.data;
+        // request.params validated by fastify-type-provider-zod
+        const { id } = request.params;
 
         // Check if ledger exists and is not deleted
         const existingLedger = await fastify.prisma.ledger.findFirst({

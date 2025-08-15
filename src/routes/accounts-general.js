@@ -8,12 +8,16 @@
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { authorize } from '../middleware/index.js';
+import { zodToJsonSchema } from '../middleware/validation.js';
 import {
   AccountCategorySchema,
   AccountGeneralCreateSchema,
   AccountGeneralUpdateSchema,
+  AccountResponseSchema,
+  ErrorResponseSchema,
   IdParamSchema,
-  ReportTypeSchema
+  ReportTypeSchema,
+  SuccessResponseSchema
 } from '../schemas/index.js';
 import { roundMoney } from '../utils/index.js';
 
@@ -66,104 +70,14 @@ export const accountGeneralRoutes = async fastify => {
           summary: 'Create a new account general',
           description:
             'Creates a new account general entry. Requires Admin, Manager, or Accountant role.',
-          body: {
-            type: 'object',
-            properties: {
-              accountNumber: {
-                type: 'string',
-                minLength: 1,
-                maxLength: 20,
-                pattern: '^[0-9\\-]+$',
-                description: 'Account number (numbers and hyphens only)'
-              },
-              accountName: {
-                type: 'string',
-                minLength: 3,
-                maxLength: 100,
-                description: 'Account name'
-              },
-              accountCategory: {
-                type: 'string',
-                enum: ['ASSET', 'HUTANG', 'MODAL', 'PENDAPATAN', 'BIAYA'],
-                description: 'Account category'
-              },
-              reportType: {
-                type: 'string',
-                enum: ['NERACA', 'LABA_RUGI'],
-                description: 'Report type'
-              },
-              transactionType: {
-                type: 'string',
-                enum: ['DEBIT', 'CREDIT'],
-                description: 'Transaction type'
-              },
-              amountCredit: {
-                type: 'number',
-                minimum: 0,
-                maximum: 99999999.99,
-                default: 0,
-                description: 'Credit amount'
-              },
-              amountDebit: {
-                type: 'number',
-                minimum: 0,
-                maximum: 99999999.99,
-                default: 0,
-                description: 'Debit amount'
-              }
-            },
-            required: [
-              'accountNumber',
-              'accountName',
-              'accountCategory',
-              'reportType',
-              'transactionType'
-            ]
-          },
+          // Use Zod schema for request body validation
+          body: AccountGeneralCreateSchema.omit({ createdBy: true, updatedBy: true }),
           response: {
-            201: {
-              description: 'Account general created successfully',
-              type: 'object',
-              properties: {
-                success: { type: 'boolean' },
-                message: { type: 'string' },
-                data: {
-                  type: 'object',
-                  properties: {
-                    id: { type: 'string' },
-                    accountNumber: { type: 'string' },
-                    accountName: { type: 'string' },
-                    accountCategory: { type: 'string' },
-                    accountType: { type: 'string' },
-                    reportType: { type: 'string' },
-                    transactionType: { type: 'string' },
-                    amountCredit: { type: 'number' },
-                    amountDebit: { type: 'number' },
-                    createdAt: { type: 'string' },
-                    createdBy: { type: 'string' },
-                    updatedAt: { type: 'string' },
-                    updatedBy: { type: 'string' }
-                  }
-                }
-              }
-            },
-            400: {
-              description: 'Validation error',
-              type: 'object',
-              properties: {
-                success: { type: 'boolean' },
-                message: { type: 'string' },
-                errors: { type: 'array' }
-              }
-            },
-            409: {
-              description: 'Account number already exists',
-              type: 'object',
-              properties: {
-                success: { type: 'boolean' },
-                message: { type: 'string' }
-              }
-            }
+            201: zodToJsonSchema(SuccessResponseSchema(AccountResponseSchema), {
+              title: 'AccountGeneralCreateResponse'
+            }),
+            400: zodToJsonSchema(ErrorResponseSchema, { title: 'ValidationError' }),
+            409: zodToJsonSchema(ErrorResponseSchema, { title: 'ConflictResponse' })
           }
         }
       },
@@ -171,20 +85,8 @@ export const accountGeneralRoutes = async fastify => {
         try {
           const userId = request.user.id;
 
-          // Validate request body
-          const bodyValidation = AccountGeneralCreateSchema.omit({
-            createdBy: true,
-            updatedBy: true
-          }).safeParse(request.body);
-          if (!bodyValidation.success) {
-            return reply.status(400).send({
-              success: false,
-              message: 'Validation failed',
-              errors: bodyValidation.error.errors
-            });
-          }
-
-          const accountData = bodyValidation.data;
+          // Request body is validated by fastify-type-provider-zod and available as request.body
+          const accountData = request.body;
 
           // Round monetary amounts to 2 decimals
           const roundedAccountData = {
@@ -248,91 +150,19 @@ export const accountGeneralRoutes = async fastify => {
           summary: 'Get all account general',
           description:
             'Retrieves all account general entries with pagination. Requires Admin, Manager, or Accountant role.',
-          querystring: {
-            type: 'object',
-            properties: {
-              page: {
-                type: 'integer',
-                minimum: 1,
-                default: 1,
-                description: 'Page number'
-              },
-              limit: {
-                type: 'integer',
-                minimum: 1,
-                maximum: 100,
-                default: 20,
-                description: 'Items per page'
-              },
-              accountCategory: {
-                type: 'string',
-                enum: ['ASSET', 'HUTANG', 'MODAL', 'PENDAPATAN', 'BIAYA'],
-                description: 'Filter by account category'
-              },
-              reportType: {
-                type: 'string',
-                enum: ['NERACA', 'LABA_RUGI'],
-                description: 'Filter by report type'
-              },
-              search: {
-                type: 'string',
-                description: 'Search in account number or account name'
-              }
-            }
-          },
+          // Use Zod schema for querystring validation and transformation
+          querystring: GeneralListQuerySchema,
           response: {
-            200: {
-              description: 'Account general list retrieved successfully',
-              type: 'object',
-              properties: {
-                success: { type: 'boolean' },
-                message: { type: 'string' },
-                data: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      id: { type: 'string' },
-                      accountNumber: { type: 'string' },
-                      accountName: { type: 'string' },
-                      accountCategory: { type: 'string' },
-                      accountType: { type: 'string' },
-                      reportType: { type: 'string' },
-                      transactionType: { type: 'string' },
-                      amountCredit: { type: 'number' },
-                      amountDebit: { type: 'number' },
-                      createdAt: { type: 'string' },
-                      updatedAt: { type: 'string' }
-                    }
-                  }
-                },
-                pagination: {
-                  type: 'object',
-                  properties: {
-                    page: { type: 'number' },
-                    limit: { type: 'number' },
-                    total: { type: 'number' },
-                    totalPages: { type: 'number' }
-                  }
-                }
-              }
-            }
+            200: zodToJsonSchema(SuccessResponseSchema(z.array(AccountResponseSchema)), {
+              title: 'AccountGeneralListResponse'
+            })
           }
         }
       },
       async (request, reply) => {
         try {
-          // Validate and normalize query params
-          const qValidation = GeneralListQuerySchema.safeParse(request.query);
-          if (!qValidation.success) {
-            return reply.status(400).send({
-              success: false,
-              message: 'Invalid query parameters',
-              errors: qValidation.error.errors
-            });
-          }
-
-          const { page, limit, accountCategory, reportType, search } = qValidation.data;
+          // Query params validated and transformed by fastify-type-provider-zod
+          const { page, limit, accountCategory, reportType, search } = request.query;
           const skip = (page - 1) * limit;
 
           // Build where clause
@@ -408,69 +238,19 @@ export const accountGeneralRoutes = async fastify => {
           summary: 'Get account general by ID',
           description:
             'Retrieves account general details by ID. Requires Admin, Manager, or Accountant role.',
-          params: {
-            type: 'object',
-            properties: {
-              id: { type: 'string' }
-            },
-            required: ['id']
-          },
+          params: IdParamSchema,
           response: {
-            200: {
-              description: 'Account general details retrieved successfully',
-              type: 'object',
-              properties: {
-                success: { type: 'boolean' },
-                message: { type: 'string' },
-                data: {
-                  type: 'object',
-                  properties: {
-                    id: { type: 'string' },
-                    accountNumber: { type: 'string' },
-                    accountName: { type: 'string' },
-                    accountCategory: { type: 'string' },
-                    accountType: { type: 'string' },
-                    reportType: { type: 'string' },
-                    transactionType: { type: 'string' },
-                    amountCredit: { type: 'number' },
-                    amountDebit: { type: 'number' },
-                    createdAt: { type: 'string' },
-                    updatedAt: { type: 'string' },
-                    createdBy: { type: 'string' },
-                    updatedBy: { type: 'string' },
-                    _count: {
-                      type: 'object',
-                      properties: {
-                        accountsDetail: { type: 'number' },
-                        ledgers: { type: 'number' }
-                      }
-                    }
-                  }
-                }
-              }
-            },
-            404: {
-              description: 'Account general not found',
-              type: 'object',
-              properties: {
-                success: { type: 'boolean' },
-                message: { type: 'string' }
-              }
-            }
+            200: zodToJsonSchema(SuccessResponseSchema(AccountResponseSchema), {
+              title: 'AccountGeneralGetResponse'
+            }),
+            404: zodToJsonSchema(ErrorResponseSchema, { title: 'NotFoundResponse' })
           }
         }
       },
       async (request, reply) => {
         try {
-          // Validate params
-          const parsed = IdParamSchema.safeParse(request.params);
-          if (!parsed.success) {
-            return reply.status(400).send({
-              success: false,
-              message: 'Invalid account ID format'
-            });
-          }
-          const { id } = parsed.data;
+          // request.params validated by fastify-type-provider-zod via route schema
+          const { id } = request.params;
 
           // Get account general with related counts
           const account = await fastify.prisma.accountGeneral.findFirst({
@@ -525,107 +305,23 @@ export const accountGeneralRoutes = async fastify => {
           summary: 'Update account general',
           description:
             'Updates account general information. Requires Admin, Manager, or Accountant role.',
-          params: {
-            type: 'object',
-            properties: {
-              id: { type: 'string' }
-            },
-            required: ['id']
-          },
-          body: {
-            type: 'object',
-            properties: {
-              accountName: {
-                type: 'string',
-                minLength: 3,
-                maxLength: 100,
-                description: 'Account name'
-              },
-              accountCategory: {
-                type: 'string',
-                enum: ['ASSET', 'HUTANG', 'MODAL', 'PENDAPATAN', 'BIAYA'],
-                description: 'Account category'
-              },
-              reportType: {
-                type: 'string',
-                enum: ['NERACA', 'LABA_RUGI'],
-                description: 'Report type'
-              },
-              transactionType: {
-                type: 'string',
-                enum: ['DEBIT', 'CREDIT'],
-                description: 'Transaction type'
-              },
-              amountCredit: {
-                type: 'number',
-                minimum: 0,
-                maximum: 99999999.99,
-                description: 'Credit amount'
-              },
-              amountDebit: {
-                type: 'number',
-                minimum: 0,
-                maximum: 99999999.99,
-                description: 'Debit amount'
-              }
-            }
-          },
+          params: IdParamSchema,
+          // Use Zod schema for request body validation
+          body: AccountGeneralUpdateSchema.omit({ updatedBy: true }),
+
           response: {
-            200: {
-              description: 'Account general updated successfully',
-              type: 'object',
-              properties: {
-                success: { type: 'boolean' },
-                message: { type: 'string' },
-                data: {
-                  type: 'object',
-                  properties: {
-                    id: { type: 'string' },
-                    accountNumber: { type: 'string' },
-                    accountName: { type: 'string' },
-                    accountCategory: { type: 'string' },
-                    accountType: { type: 'string' },
-                    reportType: { type: 'string' },
-                    transactionType: { type: 'string' },
-                    amountCredit: { type: 'number' },
-                    amountDebit: { type: 'number' },
-                    updatedAt: { type: 'string' }
-                  }
-                }
-              }
-            },
-            404: {
-              description: 'Account general not found',
-              type: 'object',
-              properties: {
-                success: { type: 'boolean' },
-                message: { type: 'string' }
-              }
-            }
+            200: zodToJsonSchema(SuccessResponseSchema(AccountResponseSchema), {
+              title: 'AccountGeneralUpdateResponse'
+            }),
+            404: zodToJsonSchema(ErrorResponseSchema, { title: 'NotFoundResponse' })
           }
         }
       },
       async (request, reply) => {
         try {
-          // Validate params and body
-          const paramsValidation = IdParamSchema.safeParse(request.params);
-          const bodyValidation = AccountGeneralUpdateSchema.omit({ updatedBy: true }).safeParse(
-            request.body
-          );
-
-          if (!paramsValidation.success || !bodyValidation.success) {
-            return reply.status(400).send({
-              success: false,
-              message: 'Validation failed',
-              errors: [
-                ...(paramsValidation.error?.errors || []),
-                ...(bodyValidation.error?.errors || [])
-              ]
-            });
-          }
-
-          const { id } = paramsValidation.data;
-          const validatedBody = bodyValidation.data;
+          // request.params and request.body are validated by fastify-type-provider-zod via route schema
+          const { id } = request.params;
+          const validatedBody = request.body;
 
           const userId = request.user.id;
           const updateData = {
@@ -693,53 +389,20 @@ export const accountGeneralRoutes = async fastify => {
           summary: 'Delete account general',
           description:
             'Soft deletes an account general. Requires Admin, Manager, or Accountant role.',
-          params: {
-            type: 'object',
-            properties: {
-              id: { type: 'string' }
-            },
-            required: ['id']
-          },
+          params: IdParamSchema,
           response: {
-            200: {
-              description: 'Account general deleted successfully',
-              type: 'object',
-              properties: {
-                success: { type: 'boolean' },
-                message: { type: 'string' }
-              }
-            },
-            404: {
-              description: 'Account general not found',
-              type: 'object',
-              properties: {
-                success: { type: 'boolean' },
-                message: { type: 'string' }
-              }
-            },
-            409: {
-              description: 'Cannot delete account with associated records',
-              type: 'object',
-              properties: {
-                success: { type: 'boolean' },
-                message: { type: 'string' },
-                details: { type: 'string' }
-              }
-            }
+            200: zodToJsonSchema(SuccessResponseSchema(z.object({ message: z.string() })), {
+              title: 'AccountGeneralDeleteResponse'
+            }),
+            404: zodToJsonSchema(ErrorResponseSchema, { title: 'NotFoundResponse' }),
+            409: zodToJsonSchema(ErrorResponseSchema, { title: 'ConflictResponse' })
           }
         }
       },
       async (request, reply) => {
         try {
-          // Validate params
-          const parsed = IdParamSchema.safeParse(request.params);
-          if (!parsed.success) {
-            return reply.status(400).send({
-              success: false,
-              message: 'Invalid account ID format'
-            });
-          }
-          const { id } = parsed.data;
+          // Params are validated by route-level Zod schema
+          const { id } = request.params;
 
           // Check if account exists and not already deleted
           const existingAccount = await fastify.prisma.accountGeneral.findFirst({
