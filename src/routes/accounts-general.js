@@ -5,11 +5,11 @@
  * Access restricted to Admin, Manager (MANAJER), and Accountant (AKUNTAN) roles.
  */
 
-import { ulid } from 'ulid';
 import { z } from 'zod';
 import { cacheControl } from '../middleware/caching.js';
 import { authorize } from '../middleware/index.js';
 // ...existing code...
+import { accountsGeneralController } from '../controllers/accountsGeneralController.js';
 import {
   AccountCategorySchema,
   AccountGeneralCreateSchema,
@@ -20,7 +20,6 @@ import {
   ReportTypeSchema,
   SuccessResponseSchema
 } from '../schemas/index.js';
-import { formatMoneyForDb, roundMoney } from '../utils/index.js';
 
 /**
  * Authorization middleware for account general operations
@@ -80,67 +79,7 @@ export const accountGeneralRoutes = async fastify => {
           }
         }
       },
-      async (request, reply) => {
-        try {
-          const userId = request.user.id;
-
-          // Request body is validated by fastify-type-provider-zod and available as request.body
-          const accountData = request.body;
-
-          // Round monetary amounts to 2 decimals
-          const roundedAccountData = {
-            ...accountData,
-            // Keep rounded values for API-level numbers, but store precise strings to DB
-            amountCredit: roundMoney(accountData.amountCredit),
-            amountDebit: roundMoney(accountData.amountDebit)
-          };
-
-          // Check if account number already exists
-          const existingAccount = await fastify.prisma.accountGeneral.findUnique({
-            where: {
-              accountNumber: roundedAccountData.accountNumber
-            }
-          });
-
-          if (existingAccount) {
-            return reply.status(409).send({
-              success: false,
-              message: 'Account number already exists'
-            });
-          }
-
-          // Create account general
-          const newAccount = await fastify.prisma.accountGeneral.create({
-            data: {
-              id: ulid(),
-              ...roundedAccountData,
-              // Write precise decimal strings to the DB
-              amountCredit: formatMoneyForDb(roundedAccountData.amountCredit),
-              amountDebit: formatMoneyForDb(roundedAccountData.amountDebit),
-              accountType: 'GENERAL',
-              createdBy: userId,
-              updatedBy: userId,
-              updatedAt: new Date()
-            }
-          });
-
-          return reply.status(201).send({
-            success: true,
-            message: 'Account general created successfully',
-            data: {
-              ...newAccount,
-              amountCredit: roundMoney(newAccount.amountCredit),
-              amountDebit: roundMoney(newAccount.amountDebit)
-            }
-          });
-        } catch (error) {
-          request.log.error('Error creating account general:', error);
-          return reply.status(500).send({
-            success: false,
-            message: 'Internal server error'
-          });
-        }
-      }
+      accountsGeneralController.create
     );
 
     /**
@@ -166,64 +105,7 @@ export const accountGeneralRoutes = async fastify => {
           }
         }
       },
-      async (request, reply) => {
-        try {
-          // Use pagination helper
-          const { limit, skip } = request.getPagination();
-          const { accountCategory, reportType, search } = request.query;
-
-          // Build where clause
-          const where = {
-            ...(accountCategory && { accountCategory }),
-            ...(reportType && { reportType }),
-            ...(search && {
-              OR: [
-                { accountNumber: { contains: search, mode: 'insensitive' } },
-                { accountName: { contains: search, mode: 'insensitive' } }
-              ]
-            })
-          };
-
-          // Get total count
-          const total = await fastify.prisma.accountGeneral.count({ where });
-
-          // Get paginated data
-          const accounts = await fastify.prisma.accountGeneral.findMany({
-            where,
-            skip,
-            take: limit,
-            orderBy: { accountNumber: 'asc' },
-            select: {
-              id: true,
-              accountNumber: true,
-              accountName: true,
-              accountCategory: true,
-              accountType: true,
-              reportType: true,
-              transactionType: true,
-              amountCredit: true,
-              amountDebit: true,
-              createdAt: true,
-              updatedAt: true
-            }
-          });
-
-          return reply.paginate(
-            accounts.map(a => ({
-              ...a,
-              amountCredit: roundMoney(a.amountCredit),
-              amountDebit: roundMoney(a.amountDebit)
-            })),
-            total
-          );
-        } catch (error) {
-          request.log.error('Error retrieving account general list:', error);
-          return reply.status(500).send({
-            success: false,
-            message: 'Internal server error'
-          });
-        }
-      }
+      accountsGeneralController.list
     );
 
     /**
@@ -249,50 +131,7 @@ export const accountGeneralRoutes = async fastify => {
           }
         }
       },
-      async (request, reply) => {
-        try {
-          // request.params validated by fastify-type-provider-zod via route schema
-          const { id } = request.params;
-
-          // Get account general with related counts
-          const account = await fastify.prisma.accountGeneral.findFirst({
-            where: {
-              id
-            },
-            include: {
-              _count: {
-                select: {
-                  accountsDetail: true,
-                  ledgers: true
-                }
-              }
-            }
-          });
-
-          if (!account) {
-            return reply.status(404).send({
-              success: false,
-              message: 'Account general not found'
-            });
-          }
-
-          return reply.send({
-            success: true,
-            message: 'Account general details retrieved successfully',
-            data: {
-              ...account,
-              amountCredit: roundMoney(account.amountCredit),
-              amountDebit: roundMoney(account.amountDebit)
-            }
-          });
-        } catch (error) {
-          request.log.error('Error retrieving account general:', error);
-          return reply.status(500).send({
-            success: false,
-            message: 'Internal server error'
-          });
-        }
-      }
+      accountsGeneralController.getById
     );
 
     /**
@@ -320,64 +159,7 @@ export const accountGeneralRoutes = async fastify => {
           }
         }
       },
-      async (request, reply) => {
-        try {
-          // request.params and request.body are validated by fastify-type-provider-zod via route schema
-          const { id } = request.params;
-          const validatedBody = request.body;
-
-          const userId = request.user.id;
-          const updateData = {
-            ...validatedBody,
-            ...(typeof validatedBody.amountCredit === 'number' && {
-              amountCredit: roundMoney(validatedBody.amountCredit)
-            }),
-            ...(typeof validatedBody.amountDebit === 'number' && {
-              amountDebit: roundMoney(validatedBody.amountDebit)
-            })
-          };
-
-          // Check if account exists and not deleted
-          const existingAccount = await request.server.prisma.accountGeneral.findFirst({
-            where: {
-              id
-            }
-          });
-
-          if (!existingAccount) {
-            return reply.status(404).send({
-              success: false,
-              message: 'Account general not found'
-            });
-          }
-
-          // Update account general
-          const updatedAccount = await fastify.prisma.accountGeneral.update({
-            where: { id },
-            data: {
-              ...updateData,
-              updatedBy: userId,
-              updatedAt: new Date()
-            }
-          });
-
-          return reply.send({
-            success: true,
-            message: 'Account general updated successfully',
-            data: {
-              ...updatedAccount,
-              amountCredit: roundMoney(updatedAccount.amountCredit),
-              amountDebit: roundMoney(updatedAccount.amountDebit)
-            }
-          });
-        } catch (error) {
-          request.log.error('Error updating account general:', error);
-          return reply.status(500).send({
-            success: false,
-            message: 'Internal server error'
-          });
-        }
-      }
+      accountsGeneralController.update
     );
 
     /**
@@ -403,67 +185,7 @@ export const accountGeneralRoutes = async fastify => {
           }
         }
       },
-      async (request, reply) => {
-        try {
-          // Params are validated by route-level Zod schema
-          const { id } = request.params;
-
-          // Check if account exists and not already deleted
-          const existingAccount = await fastify.prisma.accountGeneral.findFirst({
-            where: {
-              id
-            },
-            include: {
-              _count: {
-                select: {
-                  accountsDetail: true,
-                  ledgers: true
-                }
-              }
-            }
-          });
-
-          if (!existingAccount) {
-            return reply.status(404).send({
-              success: false,
-              message: 'Account general not found'
-            });
-          }
-
-          // Check if account has associated records
-          const hasAssociatedRecords =
-            existingAccount._count.accountsDetail > 0 || existingAccount._count.ledgers > 0;
-
-          if (hasAssociatedRecords) {
-            return reply.status(409).send({
-              success: false,
-              message: 'Cannot delete account with associated records',
-              details: `Account has ${existingAccount._count.accountsDetail} detail accounts and ${existingAccount._count.ledgers} ledger entries`
-            });
-          }
-
-          // Soft delete the account
-          // Archive account number to free uniqueness before soft delete
-          await fastify.prisma.accountGeneral.update({
-            where: { id },
-            data: {
-              accountNumber: `${existingAccount.accountNumber}-DELETED-${ulid().slice(-6).toUpperCase()}`,
-              deletedAt: new Date()
-            }
-          });
-
-          return reply.send({
-            success: true,
-            message: 'Account general deleted successfully'
-          });
-        } catch (error) {
-          request.log.error('Error deleting account general:', error);
-          return reply.status(500).send({
-            success: false,
-            message: 'Internal server error'
-          });
-        }
-      }
+      accountsGeneralController.remove
     );
   });
 };
