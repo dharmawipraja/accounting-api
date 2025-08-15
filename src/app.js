@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
 import { databaseMiddleware, queryPerformanceMiddleware } from './config/database.js';
+import { checkDatabaseHealth } from './config/db-utils.js';
 import config, { envSchema } from './config/index.js';
 // Replace custom request/timing plugins with battle-tested community plugins
 // `fastify-request-id` and `fastify-response-time` will be registered below.
@@ -132,6 +133,32 @@ export async function build(opts = {}) {
 
   // Register sensible plugin for common utilities
   await app.register(import('@fastify/sensible'));
+
+  // Register under-pressure for health, readiness and load-shedding protection.
+  // Keep existing `/health` and `/ready` endpoints, but let under-pressure
+  // return 503 when the server is under high load or when the DB health check fails.
+  await app.register(import('@fastify/under-pressure'), {
+    // sensible defaults; can be overridden by appConfig.health in the future
+    maxEventLoopDelay: appConfig.health?.maxEventLoopDelay ?? 1000,
+    maxHeapUsedBytes: appConfig.health?.maxHeapUsedBytes ?? 200 * 1024 * 1024,
+    maxRssBytes: appConfig.health?.maxRssBytes ?? 300 * 1024 * 1024,
+    sampleInterval: appConfig.health?.sampleInterval ?? 5000,
+    message: 'Server is under heavy load, please try again later',
+    // Expose a lightweight under-pressure status route for quick probe checks.
+    // This is mapped to `/status` and complements the richer `/health` and `/ready` endpoints.
+    exposeStatusRoute: true,
+    statusRoute: {
+      url: '/status'
+    },
+    // Integrate Prisma DB health check so that under-pressure will mark the server unhealthy when DB is down
+    healthCheck: async () => {
+      const dbHealth = await checkDatabaseHealth(app.prisma);
+      if (!dbHealth || !dbHealth.healthy) {
+        throw new Error('Database unavailable');
+      }
+      return true;
+    }
+  });
 
   // Conditional Swagger/OpenAPI registration
   if (appConfig.features.enableSwagger) {
