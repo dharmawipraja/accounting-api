@@ -55,7 +55,7 @@ enum UserStatus {
 }
 
 model User {
-  id        String     @id @default(nanoid())
+  id        String     @id
   username  String     @unique
   password  String
   name      String
@@ -68,7 +68,7 @@ model User {
 }
 
 model AccountDetail {
-  id               String          @id @default(nanoid())
+  id               String          @id
   accountNumber    String          @unique
   accountName      String
   accountType      AccountType     @default(DETAIL)
@@ -90,7 +90,7 @@ model AccountDetail {
 }
 
 model AccountGeneral {
-  id              String          @id @default(nanoid())
+  id              String          @id
   accountNumber   String          @unique
   accountName     String
   accountType     AccountType     @default(GENERAL)
@@ -111,7 +111,7 @@ model AccountGeneral {
 }
 
 model Balances {
-  id        String   @id @default(nanoid())
+  id        String   @id
   amount    Decimal  @db.Decimal(10, 2)
   createdAt DateTime @default(now())
   updatedAt DateTime
@@ -122,7 +122,7 @@ model Balances {
 }
 
 model Ledger {
-  id               String          @id @default(nanoid())
+  id               String          @id
   referenceNumber  String          
   amount           Decimal         @db.Decimal(10, 2)
   description      String

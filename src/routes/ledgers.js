@@ -5,7 +5,7 @@
  * Access restricted to Admin, Manager (MANAJER), and Accountant (AKUNTAN) roles.
  */
 
-import { nanoid } from 'nanoid';
+import { ulid } from 'ulid';
 import { z } from 'zod';
 import { cacheControl } from '../middleware/caching.js';
 import { authorize } from '../middleware/index.js';
@@ -32,7 +32,8 @@ const requireLedgerAccess = authorize('ADMIN', 'MANAJER', 'AKUNTAN');
 const generateReferenceNumber = () => {
   const prefix = 'LED';
   const timestamp = Date.now().toString(36).toUpperCase();
-  const randomId = nanoid(6).toUpperCase();
+  // use a short suffix from ULID to preserve compactness while being sortable
+  const randomId = ulid().slice(-6).toUpperCase();
   return `${prefix}-${timestamp}-${randomId}`;
 };
 
@@ -221,7 +222,10 @@ export const ledgerRoutes = async fastify => {
           const results = [];
           for (const data of ledgerData) {
             const created = await prisma.ledger.create({
-              data,
+              data: {
+                id: ulid(),
+                ...data
+              },
               select: {
                 id: true,
                 referenceNumber: true,

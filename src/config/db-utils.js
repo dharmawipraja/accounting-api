@@ -9,6 +9,7 @@ import { endOfDay, parseISO, startOfDay } from 'date-fns';
 import dateFnsTz from 'date-fns-tz';
 import Decimal from 'decimal.js';
 import _ from 'lodash';
+import { ulid } from 'ulid';
 import { roundMoney, toDecimal } from '../utils/index.js';
 import { prisma } from './database.js';
 import config from './index.js';
@@ -386,6 +387,7 @@ export const createLedgerEntry = async (entryData, userId) => {
 
   return await prisma.ledger.create({
     data: {
+      id: ulid(),
       referenceNumber,
       amount,
       description,

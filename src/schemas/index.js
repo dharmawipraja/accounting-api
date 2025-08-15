@@ -31,12 +31,13 @@ export const UserStatusSchema = z.enum(['ACTIVE', 'INACTIVE']);
 // Base Schemas
 // =================
 
-// IDs are generated with nanoid() in Prisma; accept generic string IDs (nanoid-compatible)
+// IDs use ULID (26-character Crockford Base32). We accept ULID values (case-insensitive).
+// NOTE: existing data using other id formats must be migrated to ULID for validation to pass.
 export const UUIDSchema = z
   .string()
-  .min(1, 'Invalid ID')
-  // Permissive nanoid-ish pattern (alphanumeric, underscore, hyphen)
-  .regex(/^[a-zA-Z0-9_-]+$/, 'Invalid ID format');
+  .length(26, 'Invalid ID length; expected ULID (26 chars)')
+  // Crockford Base32 (no I, L, O, U) - allow case-insensitive match
+  .regex(/^[0-9A-HJKMNP-TV-Z]{26}$/i, 'Invalid ULID format');
 
 export const PositiveDecimalSchema = z
   .number()

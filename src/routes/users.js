@@ -10,6 +10,7 @@
  * - Profile: Every user can see their own detail
  */
 
+import { ulid } from 'ulid';
 import { z } from 'zod';
 import { cacheControl } from '../middleware/caching.js';
 import { hashPassword, requireAdminOrManager } from '../middleware/index.js';
@@ -63,6 +64,7 @@ export const userRoutes = async fastify => {
         // Create user
         const newUser = await fastify.prisma.user.create({
           data: {
+            id: ulid(),
             username,
             password: hashedPassword,
             name,

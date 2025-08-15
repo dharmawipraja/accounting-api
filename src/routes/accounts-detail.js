@@ -5,7 +5,7 @@
  * Access restricted to Admin, Manager (MANAJER), and Accountant (AKUNTAN) roles.
  */
 
-import { nanoid } from 'nanoid';
+import { ulid } from 'ulid';
 import { z } from 'zod';
 import { cacheControl } from '../middleware/caching.js';
 import { authorize } from '../middleware/index.js';
@@ -126,6 +126,7 @@ export const accountDetailRoutes = async fastify => {
           // Create the account detail
           const accountDetail = await fastify.prisma.accountDetail.create({
             data: {
+              id: ulid(),
               ...validatedData,
               amountCredit: formatMoneyForDb(validatedData.amountCredit),
               amountDebit: formatMoneyForDb(validatedData.amountDebit)
@@ -586,7 +587,7 @@ export const accountDetailRoutes = async fastify => {
           const deletedAccountDetail = await fastify.prisma.accountDetail.update({
             where: { id },
             data: {
-              accountNumber: `${existingAccountDetail.accountNumber}-DELETED-${nanoid(6)}`,
+              accountNumber: `${existingAccountDetail.accountNumber}-DELETED-${ulid().slice(-6).toUpperCase()}`,
               deletedAt: new Date(),
               updatedBy: request.user.id,
               updatedAt: new Date()
