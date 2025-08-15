@@ -27,10 +27,12 @@ export async function build(opts = {}) {
     headersTimeout: appConfig.server.headersTimeout
   });
 
-  // Use fastify-type-provider-zod validators/serializers for Zod route schemas
+  // Always use the Zod serializer: routes must provide Zod schemas for
+  // validation and serialization when using the fastify-type-provider-zod.
   if (typeof app.setValidatorCompiler === 'function') {
     app.setValidatorCompiler(validatorCompiler);
   }
+
   if (typeof app.setSerializerCompiler === 'function') {
     app.setSerializerCompiler(serializerCompiler);
   }
@@ -184,7 +186,32 @@ export async function build(opts = {}) {
     headerName: 'x-request-id'
   });
 
-  await app.register(import('fastify-response-time'));
+  // Instead of registering the external `fastify-response-time` plugin we
+  // implement a minimal, compatible response-time header using Fastify hooks.
+  // This avoids runtime incompatibilities where the upstream plugin reads
+  // internal response symbols that may be undefined for some Fastify versions
+  // and caused 500 errors on monitoring routes.
+
+  // Store high-resolution start time on the request
+  app.addHook('onRequest', async request => {
+    request.raw.__startHrTime = process.hrtime();
+  });
+
+  // Calculate duration and set header just before sending the response
+  app.addHook('onSend', async (request, reply, payload) => {
+    try {
+      const start = request.raw.__startHrTime;
+      if (start) {
+        const hrDuration = process.hrtime(start);
+        const durationMs = (hrDuration[0] * 1e3 + hrDuration[1] / 1e6).toFixed(2);
+        reply.header('X-Response-Time', durationMs);
+      }
+    } catch (e) {
+      // Swallow errors here to ensure monitoring endpoints don't fail
+      request.log?.warn('response-time hook failed:', e?.message || e);
+    }
+    return payload;
+  });
 
   // HTTP caching (ETag/Cache-Control)
   const defaultTtlSeconds = appConfig.redis?.defaultTTL ?? 300;

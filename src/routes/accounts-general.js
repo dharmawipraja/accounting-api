@@ -9,7 +9,7 @@ import { ulid } from 'ulid';
 import { z } from 'zod';
 import { cacheControl } from '../middleware/caching.js';
 import { authorize } from '../middleware/index.js';
-import { zodToJsonSchema } from '../middleware/validation.js';
+// ...existing code...
 import {
   AccountCategorySchema,
   AccountGeneralCreateSchema,
@@ -74,11 +74,9 @@ export const accountGeneralRoutes = async fastify => {
           // Use Zod schema for request body validation
           body: AccountGeneralCreateSchema.omit({ createdBy: true, updatedBy: true }),
           response: {
-            201: zodToJsonSchema(SuccessResponseSchema(AccountResponseSchema), {
-              title: 'AccountGeneralCreateResponse'
-            }),
-            400: zodToJsonSchema(ErrorResponseSchema, { title: 'ValidationError' }),
-            409: zodToJsonSchema(ErrorResponseSchema, { title: 'ConflictResponse' })
+            201: SuccessResponseSchema(AccountResponseSchema),
+            400: ErrorResponseSchema,
+            409: ErrorResponseSchema
           }
         }
       },
@@ -164,9 +162,7 @@ export const accountGeneralRoutes = async fastify => {
           // Use Zod schema for querystring validation and transformation
           querystring: GeneralListQuerySchema,
           response: {
-            200: zodToJsonSchema(SuccessResponseSchema(z.array(AccountResponseSchema)), {
-              title: 'AccountGeneralListResponse'
-            })
+            200: SuccessResponseSchema(z.array(AccountResponseSchema))
           }
         }
       },
@@ -248,10 +244,8 @@ export const accountGeneralRoutes = async fastify => {
             'Retrieves account general details by ID. Requires Admin, Manager, or Accountant role.',
           params: IdParamSchema,
           response: {
-            200: zodToJsonSchema(SuccessResponseSchema(AccountResponseSchema), {
-              title: 'AccountGeneralGetResponse'
-            }),
-            404: zodToJsonSchema(ErrorResponseSchema, { title: 'NotFoundResponse' })
+            200: SuccessResponseSchema(AccountResponseSchema),
+            404: ErrorResponseSchema
           }
         }
       },
@@ -321,10 +315,8 @@ export const accountGeneralRoutes = async fastify => {
           body: AccountGeneralUpdateSchema.omit({ updatedBy: true }),
 
           response: {
-            200: zodToJsonSchema(SuccessResponseSchema(AccountResponseSchema), {
-              title: 'AccountGeneralUpdateResponse'
-            }),
-            404: zodToJsonSchema(ErrorResponseSchema, { title: 'NotFoundResponse' })
+            200: SuccessResponseSchema(AccountResponseSchema),
+            404: ErrorResponseSchema
           }
         }
       },
@@ -405,11 +397,9 @@ export const accountGeneralRoutes = async fastify => {
             'Soft deletes an account general. Requires Admin, Manager, or Accountant role.',
           params: IdParamSchema,
           response: {
-            200: zodToJsonSchema(SuccessResponseSchema(z.object({ message: z.string() })), {
-              title: 'AccountGeneralDeleteResponse'
-            }),
-            404: zodToJsonSchema(ErrorResponseSchema, { title: 'NotFoundResponse' }),
-            409: zodToJsonSchema(ErrorResponseSchema, { title: 'ConflictResponse' })
+            200: SuccessResponseSchema(z.object({ message: z.string() })),
+            404: ErrorResponseSchema,
+            409: ErrorResponseSchema
           }
         }
       },

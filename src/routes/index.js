@@ -4,7 +4,7 @@
 
 import { z } from 'zod';
 import { checkDatabaseHealth, getDatabaseStats } from '../config/db-utils.js';
-import { zodToJsonSchema } from '../middleware/validation.js';
+// ...existing code...
 
 // Health and monitoring routes
 export const healthRoutes = async fastify => {
@@ -14,21 +14,18 @@ export const healthRoutes = async fastify => {
     {
       schema: {
         response: {
-          200: zodToJsonSchema(
-            z.object({
-              status: z.string(),
-              timestamp: z.string(),
-              uptime: z.number(),
-              version: z.string(),
-              memory: z.object({ used: z.number(), total: z.number(), percentage: z.number() }),
-              database: z.object({
-                healthy: z.boolean(),
-                version: z.string().optional(),
-                connections: z.number().optional()
-              })
-            }),
-            { title: 'HealthResponse' }
-          )
+          200: z.object({
+            status: z.string(),
+            timestamp: z.string(),
+            uptime: z.number(),
+            version: z.string(),
+            memory: z.object({ used: z.number(), total: z.number(), percentage: z.number() }),
+            database: z.object({
+              healthy: z.boolean(),
+              version: z.string().optional(),
+              connections: z.number().optional()
+            })
+          })
         }
       }
     },
@@ -145,21 +142,18 @@ export const apiRoutes = async fastify => {
     {
       schema: {
         response: {
-          200: zodToJsonSchema(
-            z.object({
-              name: z.string(),
-              version: z.string(),
-              description: z.string(),
-              endpoints: z.object({
-                health: z.string(),
-                ready: z.string(),
-                live: z.string(),
-                auth: z.string(),
-                users: z.string()
-              })
-            }),
-            { title: 'ApiInfoResponse' }
-          )
+          200: z.object({
+            name: z.string(),
+            version: z.string(),
+            description: z.string(),
+            endpoints: z.object({
+              health: z.string(),
+              ready: z.string(),
+              live: z.string(),
+              auth: z.string(),
+              users: z.string()
+            })
+          })
         }
       }
     },

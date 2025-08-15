@@ -9,7 +9,7 @@ import { ulid } from 'ulid';
 import { z } from 'zod';
 import { cacheControl } from '../middleware/caching.js';
 import { authorize } from '../middleware/index.js';
-import { zodToJsonSchema } from '../middleware/validation.js';
+// ...existing code...
 import {
   AccountCategorySchema,
   AccountDetailCreateSchema,
@@ -73,11 +73,9 @@ export const accountDetailRoutes = async fastify => {
           // Use Zod route-level schema (fastify-type-provider-zod)
           body: AccountDetailCreateSchema.omit({ createdBy: true, updatedBy: true }),
           response: {
-            201: zodToJsonSchema(SuccessResponseSchema(AccountResponseSchema), {
-              title: 'AccountDetailCreateResponse'
-            }),
-            400: zodToJsonSchema(ErrorResponseSchema, { title: 'ValidationError' }),
-            409: zodToJsonSchema(ErrorResponseSchema, { title: 'ConflictResponse' })
+            201: SuccessResponseSchema(AccountResponseSchema),
+            400: ErrorResponseSchema,
+            409: ErrorResponseSchema
           }
         }
       },
@@ -184,9 +182,7 @@ export const accountDetailRoutes = async fastify => {
             'Retrieves all account details with optional filtering and pagination. Requires Admin, Manager, or Accountant role.',
           querystring: AccountDetailListQuerySchema,
           response: {
-            200: zodToJsonSchema(SuccessResponseSchema(z.array(AccountResponseSchema)), {
-              title: 'AccountDetailListResponse'
-            })
+            200: SuccessResponseSchema(z.array(AccountResponseSchema))
           }
         }
       },
@@ -310,10 +306,8 @@ export const accountDetailRoutes = async fastify => {
           params: IdParamSchema,
           querystring: AccountDetailGetQuerySchema,
           response: {
-            200: zodToJsonSchema(SuccessResponseSchema(AccountResponseSchema), {
-              title: 'AccountDetailGetResponse'
-            }),
-            404: zodToJsonSchema(ErrorResponseSchema, { title: 'NotFoundResponse' })
+            200: SuccessResponseSchema(AccountResponseSchema),
+            404: ErrorResponseSchema
           }
         }
       },
@@ -441,11 +435,9 @@ export const accountDetailRoutes = async fastify => {
           params: IdParamSchema,
           body: AccountDetailUpdateSchema,
           response: {
-            200: zodToJsonSchema(SuccessResponseSchema(AccountResponseSchema), {
-              title: 'AccountDetailUpdateResponse'
-            }),
-            400: zodToJsonSchema(ErrorResponseSchema, { title: 'ValidationError' }),
-            404: zodToJsonSchema(ErrorResponseSchema, { title: 'NotFoundResponse' })
+            200: SuccessResponseSchema(AccountResponseSchema),
+            400: ErrorResponseSchema,
+            404: ErrorResponseSchema
           }
         }
       },
@@ -541,11 +533,9 @@ export const accountDetailRoutes = async fastify => {
             'Soft deletes an account detail by setting deletedAt timestamp. Requires Admin, Manager, or Accountant role.',
           params: IdParamSchema,
           response: {
-            200: zodToJsonSchema(SuccessResponseSchema(AccountResponseSchema), {
-              title: 'AccountDetailDeleteResponse'
-            }),
-            400: zodToJsonSchema(ErrorResponseSchema, { title: 'ValidationError' }),
-            404: zodToJsonSchema(ErrorResponseSchema, { title: 'NotFoundResponse' })
+            200: SuccessResponseSchema(AccountResponseSchema),
+            400: ErrorResponseSchema,
+            404: ErrorResponseSchema
           }
         }
       },

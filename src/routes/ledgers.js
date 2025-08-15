@@ -9,7 +9,7 @@ import { ulid } from 'ulid';
 import { z } from 'zod';
 import { cacheControl } from '../middleware/caching.js';
 import { authorize } from '../middleware/index.js';
-import { zodToJsonSchema } from '../middleware/validation.js';
+// ...existing code...
 import {
   ErrorResponseSchema,
   IdParamSchema,
@@ -68,17 +68,14 @@ export const ledgerRoutes = async fastify => {
           'Creates multiple ledger entries in a single transaction. All entries share the same reference number. Requires Admin, Manager, or Accountant role.',
         body: LedgerBulkCreateSchema,
         response: {
-          201: zodToJsonSchema(
-            SuccessResponseSchema(
-              z.object({
-                referenceNumber: z.string(),
-                totalEntries: z.number(),
-                ledgers: z.array(LedgerResponseSchema)
-              })
-            ),
-            { title: 'LedgerBulkCreateResponse' }
+          201: SuccessResponseSchema(
+            z.object({
+              referenceNumber: z.string(),
+              totalEntries: z.number(),
+              ledgers: z.array(LedgerResponseSchema)
+            })
           ),
-          400: zodToJsonSchema(ErrorResponseSchema, { title: 'ValidationError' })
+          400: ErrorResponseSchema
         }
       }
     },
@@ -312,9 +309,7 @@ export const ledgerRoutes = async fastify => {
           'Retrieves all ledger entries with pagination and optional filtering. Requires Admin, Manager, or Accountant role.',
         querystring: LedgerQuerySchema,
         response: {
-          200: zodToJsonSchema(SuccessResponseSchema(z.array(LedgerResponseSchema)), {
-            title: 'LedgerListResponse'
-          })
+          200: SuccessResponseSchema(z.array(LedgerResponseSchema))
         }
       }
     },
@@ -426,10 +421,8 @@ export const ledgerRoutes = async fastify => {
           'Retrieves a specific ledger entry by ID. Requires Admin, Manager, or Accountant role.',
         params: IdParamSchema,
         response: {
-          200: zodToJsonSchema(SuccessResponseSchema(LedgerResponseSchema), {
-            title: 'LedgerGetResponse'
-          }),
-          404: zodToJsonSchema(ErrorResponseSchema, { title: 'NotFoundResponse' })
+          200: SuccessResponseSchema(LedgerResponseSchema),
+          404: ErrorResponseSchema
         }
       }
     },
@@ -481,9 +474,7 @@ export const ledgerRoutes = async fastify => {
         params: IdParamSchema,
         body: LedgerUpdateSchema,
         response: {
-          200: zodToJsonSchema(SuccessResponseSchema(LedgerResponseSchema), {
-            title: 'LedgerUpdateResponse'
-          })
+          200: SuccessResponseSchema(LedgerResponseSchema)
         }
       }
     },
@@ -587,9 +578,7 @@ export const ledgerRoutes = async fastify => {
           'Soft deletes a specific ledger entry. Requires Admin, Manager, or Accountant role.',
         params: IdParamSchema,
         response: {
-          200: zodToJsonSchema(SuccessResponseSchema(z.object({ message: z.string() })), {
-            title: 'LedgerDeleteResponse'
-          })
+          200: SuccessResponseSchema(z.object({ message: z.string() }))
         }
       }
     },
@@ -670,15 +659,8 @@ export const ledgerRoutes = async fastify => {
           'Changes ledger status from PENDING to POSTED and sets postingAt timestamp. Requires Admin, Manager, or Accountant role.',
         params: IdParamSchema,
         response: {
-          200: zodToJsonSchema(
-            SuccessResponseSchema(
-              z.object({
-                id: z.string(),
-                postingStatus: z.string(),
-                postingAt: z.string()
-              })
-            ),
-            { title: 'LedgerPostResponse' }
+          200: SuccessResponseSchema(
+            z.object({ id: z.string(), postingStatus: z.string(), postingAt: z.string() })
           )
         }
       }
@@ -767,26 +749,14 @@ export const ledgerRoutes = async fastify => {
         summary: 'Unpost ledger entry',
         description:
           'Changes ledger status from POSTED to PENDING and removes postingAt timestamp. Requires Admin, Manager, or Accountant role.',
-        params: {
-          type: 'object',
-          properties: {
-            id: {
-              type: 'string',
-              description: 'Ledger ID'
-            }
-          },
-          required: ['id']
-        },
+        params: IdParamSchema,
         response: {
-          200: zodToJsonSchema(
-            SuccessResponseSchema(
-              z.object({
-                id: z.string(),
-                postingStatus: z.string(),
-                postingAt: z.string().nullable()
-              })
-            ),
-            { title: 'LedgerUnpostResponse' }
+          200: SuccessResponseSchema(
+            z.object({
+              id: z.string(),
+              postingStatus: z.string(),
+              postingAt: z.string().nullable()
+            })
           )
         }
       }

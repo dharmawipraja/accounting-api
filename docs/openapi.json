@@ -1,0 +1,923 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Accounting API",
+    "version": "1.0.0"
+  },
+  "components": {
+    "schemas": {
+      "AccountCategorySchema": {
+        "type": "string"
+      },
+      "AccountDetailCreateSchema": {
+        "type": "object",
+        "properties": {
+          "accountNumber": {
+            "type": "string"
+          },
+          "accountName": {
+            "type": "string"
+          },
+          "accountGeneralId": {
+            "type": "string"
+          },
+          "accountCategory": {
+            "type": "string"
+          },
+          "reportType": {
+            "type": "string"
+          },
+          "transactionType": {
+            "type": "string"
+          },
+          "amountCredit": {
+            "type": "number"
+          },
+          "amountDebit": {
+            "type": "object"
+          },
+          "createdBy": {
+            "type": "object"
+          },
+          "updatedBy": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "accountNumber",
+          "accountName",
+          "accountGeneralId",
+          "accountCategory",
+          "reportType",
+          "transactionType",
+          "amountCredit",
+          "amountDebit",
+          "createdBy",
+          "updatedBy"
+        ],
+        "additionalProperties": false
+      },
+      "AccountDetailUpdateSchema": {
+        "type": "object",
+        "properties": {
+          "accountName": {
+            "type": "string"
+          },
+          "accountCategory": {
+            "type": "string"
+          },
+          "reportType": {
+            "type": "string"
+          },
+          "transactionType": {
+            "type": "string"
+          },
+          "amountCredit": {
+            "type": "number"
+          },
+          "amountDebit": {
+            "type": "object"
+          },
+          "updatedBy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountName",
+          "accountCategory",
+          "reportType",
+          "transactionType",
+          "amountCredit",
+          "amountDebit",
+          "updatedBy"
+        ],
+        "additionalProperties": false
+      },
+      "AccountGeneralCreateSchema": {
+        "type": "object",
+        "properties": {
+          "accountNumber": {
+            "type": "string"
+          },
+          "accountName": {
+            "type": "string"
+          },
+          "accountCategory": {
+            "type": "string"
+          },
+          "reportType": {
+            "type": "string"
+          },
+          "transactionType": {
+            "type": "string"
+          },
+          "amountCredit": {
+            "type": "number"
+          },
+          "amountDebit": {
+            "type": "object"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "updatedBy": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "accountNumber",
+          "accountName",
+          "accountCategory",
+          "reportType",
+          "transactionType",
+          "amountCredit",
+          "amountDebit",
+          "createdBy",
+          "updatedBy"
+        ],
+        "additionalProperties": false
+      },
+      "AccountGeneralUpdateSchema": {
+        "type": "object",
+        "properties": {
+          "accountName": {
+            "type": "string"
+          },
+          "accountCategory": {
+            "type": "string"
+          },
+          "reportType": {
+            "type": "string"
+          },
+          "transactionType": {
+            "type": "string"
+          },
+          "amountCredit": {
+            "type": "number"
+          },
+          "amountDebit": {
+            "type": "object"
+          },
+          "updatedBy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountName",
+          "accountCategory",
+          "reportType",
+          "transactionType",
+          "amountCredit",
+          "amountDebit",
+          "updatedBy"
+        ],
+        "additionalProperties": false
+      },
+      "AccountQuerySchema": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "limit": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "search": {
+            "type": "string"
+          },
+          "accountCategory": {
+            "type": "string"
+          },
+          "accountType": {
+            "type": "string"
+          },
+          "startDate": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "endDate": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "page",
+          "limit",
+          "search",
+          "accountCategory",
+          "accountType",
+          "startDate",
+          "endDate"
+        ],
+        "additionalProperties": false
+      },
+      "AccountResponseSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "accountNumber": {
+            "type": "string"
+          },
+          "accountName": {
+            "type": "string"
+          },
+          "accountType": {
+            "type": "string"
+          },
+          "accountCategory": {
+            "type": "string"
+          },
+          "reportType": {
+            "type": "string"
+          },
+          "transactionType": {
+            "type": "string"
+          },
+          "amountCredit": {
+            "type": "number"
+          },
+          "amountDebit": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "updatedAt": {
+            "type": "object"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "updatedBy": {
+            "type": "string"
+          },
+          "deletedAt": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "id",
+          "accountNumber",
+          "accountName",
+          "accountType",
+          "accountCategory",
+          "reportType",
+          "transactionType",
+          "amountCredit",
+          "amountDebit",
+          "createdAt",
+          "updatedAt",
+          "createdBy",
+          "updatedBy",
+          "deletedAt"
+        ],
+        "additionalProperties": false
+      },
+      "AccountTypeSchema": {
+        "type": "string"
+      },
+      "AuthResponseSchema": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "username": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "username",
+              "name",
+              "role"
+            ],
+            "additionalProperties": false
+          },
+          "expiresIn": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "user",
+          "expiresIn"
+        ],
+        "additionalProperties": false
+      },
+      "BalanceCreateSchema": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "updatedBy": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "amount",
+          "createdBy",
+          "updatedBy"
+        ],
+        "additionalProperties": false
+      },
+      "BalanceResponseSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "updatedAt": {
+            "type": "object"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "updatedBy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "amount",
+          "createdAt",
+          "updatedAt",
+          "createdBy",
+          "updatedBy"
+        ],
+        "additionalProperties": false
+      },
+      "BalanceUpdateSchema": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "updatedBy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "updatedBy"
+        ],
+        "additionalProperties": false
+      },
+      "BooleanishSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "DateRangeQuerySchema": {
+        "type": "object",
+        "properties": {
+          "startDate": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "endDate": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "startDate",
+          "endDate"
+        ],
+        "additionalProperties": false
+      },
+      "DateSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "ErrorResponseSchema": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "requestId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "details",
+              "requestId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "success",
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "IdParamSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "LedgerBulkCreateSchema": {
+        "type": "object",
+        "properties": {
+          "ledgers": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "ledgers"
+        ],
+        "additionalProperties": false
+      },
+      "LedgerCreateSchema": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "description": {
+            "type": "string"
+          },
+          "accountDetailId": {
+            "type": "string"
+          },
+          "accountGeneralId": {
+            "type": "object"
+          },
+          "ledgerType": {
+            "type": "string"
+          },
+          "transactionType": {
+            "type": "string"
+          },
+          "ledgerDate": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "referenceNumber": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "description",
+          "accountDetailId",
+          "accountGeneralId",
+          "ledgerType",
+          "transactionType",
+          "ledgerDate",
+          "referenceNumber"
+        ],
+        "additionalProperties": false
+      },
+      "LedgerItemSchema": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "description": {
+            "type": "string"
+          },
+          "accountDetailId": {
+            "type": "string"
+          },
+          "accountGeneralId": {
+            "type": "object"
+          },
+          "ledgerType": {
+            "type": "string"
+          },
+          "transactionType": {
+            "type": "string"
+          },
+          "ledgerDate": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "amount",
+          "description",
+          "accountDetailId",
+          "accountGeneralId",
+          "ledgerType",
+          "transactionType",
+          "ledgerDate"
+        ],
+        "additionalProperties": false
+      },
+      "LedgerPostingSchema": {
+        "type": "object",
+        "properties": {
+          "postingStatus": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "postingStatus"
+        ],
+        "additionalProperties": false
+      },
+      "LedgerQuerySchema": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "limit": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "search": {
+            "type": "string"
+          },
+          "ledgerType": {
+            "type": "string"
+          },
+          "transactionType": {
+            "type": "string"
+          },
+          "postingStatus": {
+            "type": "string"
+          },
+          "accountDetailId": {
+            "type": "string"
+          },
+          "accountGeneralId": {
+            "type": "object"
+          },
+          "startDate": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "endDate": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "page",
+          "limit",
+          "search",
+          "ledgerType",
+          "transactionType",
+          "postingStatus",
+          "accountDetailId",
+          "accountGeneralId",
+          "startDate",
+          "endDate"
+        ],
+        "additionalProperties": false
+      },
+      "LedgerResponseSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "referenceNumber": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "description": {
+            "type": "string"
+          },
+          "ledgerType": {
+            "type": "string"
+          },
+          "transactionType": {
+            "type": "string"
+          },
+          "postingStatus": {
+            "type": "string"
+          },
+          "ledgerDate": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "postingAt": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "createdAt": {
+            "type": "object"
+          },
+          "updatedAt": {
+            "type": "object"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "updatedBy": {
+            "type": "string"
+          },
+          "deletedAt": {
+            "type": "object"
+          },
+          "accountDetailId": {
+            "type": "string"
+          },
+          "accountGeneralId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "referenceNumber",
+          "amount",
+          "description",
+          "ledgerType",
+          "transactionType",
+          "postingStatus",
+          "ledgerDate",
+          "postingAt",
+          "createdAt",
+          "updatedAt",
+          "createdBy",
+          "updatedBy",
+          "deletedAt",
+          "accountDetailId",
+          "accountGeneralId"
+        ],
+        "additionalProperties": false
+      },
+      "LedgerTypeSchema": {
+        "type": "string"
+      },
+      "LedgerUpdateSchema": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number"
+          },
+          "description": {
+            "type": "string"
+          },
+          "accountDetailId": {
+            "type": "string"
+          },
+          "accountGeneralId": {
+            "type": "object"
+          },
+          "ledgerType": {
+            "type": "string"
+          },
+          "transactionType": {
+            "type": "string"
+          },
+          "ledgerDate": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "amount",
+          "description",
+          "accountDetailId",
+          "accountGeneralId",
+          "ledgerType",
+          "transactionType",
+          "ledgerDate"
+        ],
+        "additionalProperties": false
+      },
+      "LoginSchema": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "additionalProperties": false
+      },
+      "OptionalDateSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "PaginationSchema": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "limit": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "page",
+          "limit"
+        ],
+        "additionalProperties": false
+      },
+      "PositiveDecimalSchema": {
+        "type": "number"
+      },
+      "PostingStatusSchema": {
+        "type": "string"
+      },
+      "ReportTypeSchema": {
+        "type": "string"
+      },
+      "RoleSchema": {
+        "type": "string"
+      },
+      "TransactionTypeSchema": {
+        "type": "string"
+      },
+      "UUIDSchema": {
+        "type": "string"
+      },
+      "UserCreateSchema": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password",
+          "name",
+          "role",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "UserQuerySchema": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "limit": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "search": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "page",
+          "limit",
+          "search",
+          "role",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "UserResponseSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "updatedAt": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "name",
+          "role",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "UserStatusSchema": {
+        "type": "string"
+      },
+      "UserUpdateSchema": {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "password",
+          "name",
+          "role",
+          "status"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {}
+}

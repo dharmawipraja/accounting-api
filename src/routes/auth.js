@@ -3,7 +3,7 @@
  */
 
 import { verifyPassword } from '../middleware/index.js';
-import { zodToJsonSchema } from '../middleware/validation.js';
+// ...existing code...
 import {
   AuthResponseSchema,
   LoginSchema,
@@ -24,9 +24,7 @@ export const authRoutes = async fastify => {
         // Use Zod schema for request body so fastify-type-provider-zod handles validation
         body: LoginSchema,
         response: {
-          200: zodToJsonSchema(SuccessResponseSchema(AuthResponseSchema), {
-            title: 'AuthLoginResponse'
-          })
+          200: SuccessResponseSchema(AuthResponseSchema)
         }
       }
     },
@@ -97,9 +95,7 @@ export const authRoutes = async fastify => {
         tags: ['auth'],
         security: [{ bearerAuth: [] }],
         response: {
-          200: zodToJsonSchema(SuccessResponseSchema(UserResponseSchema), {
-            title: 'AuthMeResponse'
-          })
+          200: SuccessResponseSchema(UserResponseSchema)
         }
       }
     },

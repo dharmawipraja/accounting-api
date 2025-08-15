@@ -1,5 +1,3 @@
-import * as zodToOpenapiPkg from '@asteasolutions/zod-to-openapi';
-import { extendZodWithOpenApi, getRefId, OpenApiGeneratorV3 } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 
 // Validate and return structured result
@@ -25,57 +23,6 @@ export const safeParse = (schema, data) => {
   }
 };
 
-// Convert Zod schema to JSON Schema/OpenAPI components
-export const zodToJsonSchema = (zodSchema, opts = {}) => {
-  try {
-    // Ensure the Zod extension is applied once so `.openapi()` is available
-    if (!globalThis.__zodToOpenApiExtended) {
-      try {
-        extendZodWithOpenApi(z);
-      } catch (error) {
-        console.warn('Zod OpenAPI extension already applied or not needed:', error);
-        // ignore if already extended or not needed
-      }
-      globalThis.__zodToOpenApiExtended = true;
-    }
-
-    // Use direct generateSchema if available
-    const generateSchemaFn = zodToOpenapiPkg && zodToOpenapiPkg.generateSchema;
-    if (typeof generateSchemaFn === 'function') {
-      // Some versions expose a helper that directly converts a Zod schema
-      return generateSchemaFn(zodSchema, { title: opts.title || 'Schema' });
-    }
-
-    // Create a generator with the provided schema as a definition
-    const generator = new OpenApiGeneratorV3([zodSchema]);
-    const components = generator.generateComponents();
-
-    // If the schema was registered with a refId/name, return a $ref to it
-    const refId = getRefId(zodSchema);
-    if (refId && components && components.schemas && components.schemas[refId]) {
-      return { $ref: `#/components/schemas/${refId}` };
-    }
-
-    // If the generator produced a single anonymous schema, return it directly
-    if (components && components.schemas) {
-      const keys = Object.keys(components.schemas);
-      if (keys.length === 1) {
-        return components.schemas[keys[0]];
-      }
-      // Multiple schemas produced; attempt to find a schema that matches by structural equality is expensive
-      // Fallback: return the whole components object so callers that attach components can still use it
-      return components;
-    }
-
-    return { type: 'object' };
-  } catch (err) {
-    console.error('Error generating JSON schema from Zod schema:', err);
-    // Fallback to a generic object schema
-    return { type: 'object' };
-  }
-};
-
 export default {
-  safeParse,
-  zodToJsonSchema
+  safeParse
 };

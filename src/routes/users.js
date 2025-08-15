@@ -14,7 +14,7 @@ import { ulid } from 'ulid';
 import { z } from 'zod';
 import { cacheControl } from '../middleware/caching.js';
 import { hashPassword, requireAdminOrManager } from '../middleware/index.js';
-import { zodToJsonSchema } from '../middleware/validation.js';
+// ...existing code...
 import {
   ErrorResponseSchema,
   IdParamSchema,
@@ -39,9 +39,7 @@ export const userRoutes = async fastify => {
         // Use Zod schema for request body validation
         body: UserCreateSchema,
         response: {
-          201: zodToJsonSchema(SuccessResponseSchema(UserResponseSchema), {
-            title: 'UserRegisterResponse'
-          })
+          201: SuccessResponseSchema(UserResponseSchema)
         }
       }
     },
@@ -108,9 +106,7 @@ export const userRoutes = async fastify => {
         // Use Zod schema for querystring validation
         querystring: UserQuerySchema,
         response: {
-          200: zodToJsonSchema(SuccessResponseSchema(z.array(UserResponseSchema)), {
-            title: 'UserListResponse'
-          })
+          200: SuccessResponseSchema(z.array(UserResponseSchema))
         }
       }
     },
@@ -166,10 +162,8 @@ export const userRoutes = async fastify => {
         // Use Zod schema for params validation
         params: IdParamSchema,
         response: {
-          200: zodToJsonSchema(SuccessResponseSchema(UserResponseSchema), {
-            title: 'UserGetResponse'
-          }),
-          404: zodToJsonSchema(ErrorResponseSchema, { title: 'UserNotFoundResponse' })
+          200: SuccessResponseSchema(UserResponseSchema),
+          404: ErrorResponseSchema
         }
       }
     },
@@ -216,9 +210,7 @@ export const userRoutes = async fastify => {
         params: IdParamSchema,
         body: UserUpdateSchema,
         response: {
-          200: zodToJsonSchema(SuccessResponseSchema(UserResponseSchema), {
-            title: 'UserUpdateResponse'
-          })
+          200: SuccessResponseSchema(UserResponseSchema)
         }
       }
     },
@@ -278,9 +270,7 @@ export const userRoutes = async fastify => {
         // Use Zod schema for params validation
         params: IdParamSchema,
         response: {
-          200: zodToJsonSchema(SuccessResponseSchema(z.object({ message: z.string() })), {
-            title: 'UserDeleteResponse'
-          })
+          200: SuccessResponseSchema(z.object({ message: z.string() }))
         }
       }
     },
@@ -337,9 +327,7 @@ export const userRoutes = async fastify => {
         tags: ['users'],
         security: [{ bearerAuth: [] }],
         response: {
-          200: zodToJsonSchema(SuccessResponseSchema(UserResponseSchema), {
-            title: 'UserProfileResponse'
-          })
+          200: SuccessResponseSchema(UserResponseSchema)
         }
       }
     },
