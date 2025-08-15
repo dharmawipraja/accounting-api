@@ -171,9 +171,9 @@ export const accountGeneralRoutes = async fastify => {
       },
       async (request, reply) => {
         try {
-          // Query params validated and transformed by fastify-type-provider-zod
-          const { page, limit, accountCategory, reportType, search } = request.query;
-          const skip = (page - 1) * limit;
+          // Use pagination helper
+          const { limit, skip } = request.getPagination();
+          const { accountCategory, reportType, search } = request.query;
 
           // Build where clause
           const where = {
@@ -211,21 +211,14 @@ export const accountGeneralRoutes = async fastify => {
             }
           });
 
-          return reply.send({
-            success: true,
-            message: 'Account general list retrieved successfully',
-            data: accounts.map(a => ({
+          return reply.paginate(
+            accounts.map(a => ({
               ...a,
               amountCredit: roundMoney(a.amountCredit),
               amountDebit: roundMoney(a.amountDebit)
             })),
-            pagination: {
-              page,
-              limit,
-              total,
-              totalPages: Math.ceil(total / limit)
-            }
-          });
+            total
+          );
         } catch (error) {
           request.log.error('Error retrieving account general list:', error);
           return reply.status(500).send({

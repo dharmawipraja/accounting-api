@@ -318,9 +318,12 @@ export const ledgerRoutes = async fastify => {
     async (request, reply) => {
       try {
         // request.query is validated/coerced by fastify-type-provider-zod via route schema
+        const { limit = 10, skip } = request.getPagination();
+        // request.query still contains other filters validated by Zod
         const {
-          page = 1,
-          limit = 10,
+          // page intentionally omitted - handled by pagination plugin
+          // page = 1,
+          // limit = 10,
           search,
           ledgerType,
           transactionType,
@@ -381,29 +384,14 @@ export const ledgerRoutes = async fastify => {
               }
             },
             orderBy: [{ ledgerDate: 'desc' }, { createdAt: 'desc' }],
-            skip: (page - 1) * limit,
+            skip,
             take: limit
           })
         ]);
-
-        const totalPages = Math.ceil(total / limit);
-
-        reply.send({
-          success: true,
-          data: ledgers.map(l => ({ ...l, amount: roundMoney(l.amount) })),
-          meta: {
-            pagination: {
-              page,
-              limit,
-              total,
-              totalPages,
-              hasNext: page < totalPages,
-              hasPrev: page > 1,
-              nextPage: page < totalPages ? page + 1 : null,
-              prevPage: page > 1 ? page - 1 : null
-            }
-          }
-        });
+        return reply.paginate(
+          ledgers.map(l => ({ ...l, amount: roundMoney(l.amount) })),
+          total
+        );
       } catch (error) {
         request.log.error('Error fetching ledgers:', error);
         reply.code(500).send({

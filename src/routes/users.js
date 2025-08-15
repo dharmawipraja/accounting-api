@@ -23,7 +23,7 @@ import {
   UserResponseSchema,
   UserUpdateSchema
 } from '../schemas/index.js';
-import { createSuccessResponse, getPaginationMeta } from '../utils/index.js';
+import { createSuccessResponse } from '../utils/index.js';
 
 export const userRoutes = async fastify => {
   // Register user - Admin and Manager only
@@ -112,8 +112,9 @@ export const userRoutes = async fastify => {
         }
       }
     },
-    async (request, _reply) => {
-      const { page, limit, search, role, status } = request.query;
+    async (request, reply) => {
+      const { limit, skip } = request.getPagination();
+      const { search, role, status } = request.query;
 
       // Build where clause
       const where = {
@@ -126,8 +127,6 @@ export const userRoutes = async fastify => {
         ...(role && { role }),
         ...(status && { status })
       };
-
-      const skip = (page - 1) * limit;
 
       // Execute queries
       const [users, total] = await Promise.all([
@@ -149,9 +148,7 @@ export const userRoutes = async fastify => {
         request.server.prisma.user.count({ where })
       ]);
 
-      const paginationMeta = getPaginationMeta(page, limit, total);
-
-      return createSuccessResponse(users, paginationMeta);
+      return reply.paginate(users, total);
     }
   );
 

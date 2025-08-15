@@ -134,6 +134,9 @@ export async function build(opts = {}) {
   // Register sensible plugin for common utilities
   await app.register(import('@fastify/sensible'));
 
+  // Lightweight in-repo pagination plugin (standardizes page/limit parsing and response meta)
+  await app.register(import('./plugins/pagination.js'));
+
   // Register under-pressure for health, readiness and load-shedding protection.
   // Keep existing `/health` and `/ready` endpoints, but let under-pressure
   // return 503 when the server is under high load or when the DB health check fails.

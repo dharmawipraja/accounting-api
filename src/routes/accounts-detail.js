@@ -191,10 +191,12 @@ export const accountDetailRoutes = async fastify => {
       },
       async (request, reply) => {
         try {
-          // request.query is validated/coerced by fastify-type-provider-zod via route schema
+          // Use pagination helper
+          const { limit, skip } = request.getPagination();
           const {
-            page = 1,
-            limit = 10,
+            // page intentionally handled by plugin
+            // page = 1,
+            // limit = 10,
             search,
             accountCategory,
             reportType,
@@ -204,8 +206,6 @@ export const accountDetailRoutes = async fastify => {
           } = request.query;
 
           const includeDeletedBool = !!includeDeleted;
-
-          const skip = (page - 1) * limit;
 
           // Build where clause
           const where = {
@@ -275,25 +275,14 @@ export const accountDetailRoutes = async fastify => {
             });
           }
 
-          const totalPages = Math.ceil(total / limit);
-
-          reply.send({
-            success: true,
-            message: 'Account details retrieved successfully',
-            data: accountDetails.map(a => ({
+          return reply.paginate(
+            accountDetails.map(a => ({
               ...a,
               amountCredit: roundMoney(a.amountCredit),
               amountDebit: roundMoney(a.amountDebit)
             })),
-            pagination: {
-              page,
-              limit,
-              total,
-              totalPages,
-              hasNextPage: page < totalPages,
-              hasPreviousPage: page > 1
-            }
-          });
+            total
+          );
         } catch (error) {
           request.log.error('Failed to retrieve account details:', error);
           throw error;
