@@ -2,7 +2,8 @@ import Fastify from 'fastify';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
 import { databaseMiddleware, queryPerformanceMiddleware } from './config/database.js';
 import config, { envSchema } from './config/index.js';
-import { requestIdPlugin, timingPlugin } from './middleware/index.js';
+// Replace custom request/timing plugins with battle-tested community plugins
+// `fastify-request-id` and `fastify-response-time` will be registered below.
 import { apiRoutes, healthRoutes } from './routes/index.js';
 
 export async function build(opts = {}) {
@@ -154,9 +155,12 @@ export async function build(opts = {}) {
     });
   }
 
-  // Register custom middleware plugins
-  await app.register(requestIdPlugin);
-  await app.register(timingPlugin);
+  // Register standard request-id and response-time plugins
+  await app.register(import('fastify-request-id'), {
+    headerName: 'x-request-id'
+  });
+
+  await app.register(import('fastify-response-time'));
 
   // Register routes
   await app.register(healthRoutes);
