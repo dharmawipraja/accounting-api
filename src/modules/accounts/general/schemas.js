@@ -14,6 +14,7 @@ import {
   TransactionTypeSchema,
   UUIDSchema
 } from '../../../shared/schemas/base.js';
+import { BulkOperationSchema, QueryFiltersSchema } from '../../../shared/schemas/common.js';
 
 // Account General creation schema
 export const AccountGeneralCreateSchema = z.object({
@@ -57,10 +58,26 @@ export const AccountGeneralResponseSchema = z
   })
   .merge(TimestampSchema);
 
-// Account General query schema
+// Enhanced Account General query schema with advanced filtering
 export const AccountGeneralQuerySchema = PaginationSchema.extend({
   search: z.string().optional(),
   accountCategory: AccountCategorySchema.optional(),
   reportType: ReportTypeSchema.optional(),
-  includeDeleted: z.boolean().default(false)
+  includeDeleted: z.boolean().default(false),
+  accountNumberPrefix: z.string().optional(),
+  hasDetails: z.boolean().optional()
+}).merge(QueryFiltersSchema);
+
+// Account hierarchy schema
+export const AccountHierarchySchema = z.object({
+  parentAccountId: UUIDSchema.optional(),
+  includeChildren: z.boolean().default(true),
+  maxDepth: z.number().int().min(1).max(10).default(5)
+});
+
+// Account bulk operations schema
+export const AccountBulkOperationSchema = BulkOperationSchema.extend({
+  items: z.array(
+    z.union([AccountGeneralCreateSchema, AccountGeneralUpdateSchema.extend({ id: UUIDSchema })])
+  )
 });

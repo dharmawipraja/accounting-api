@@ -14,6 +14,7 @@ import {
   TransactionTypeSchema,
   UUIDSchema
 } from '../../shared/schemas/base.js';
+import { QueryFiltersSchema } from '../../shared/schemas/common.js';
 
 // Single ledger item for bulk creation
 export const LedgerItemSchema = z.object({
@@ -87,15 +88,40 @@ export const LedgerResponseSchema = z
   .merge(TimestampSchema);
 
 // Ledger query schema
+// Enhanced ledger query schema with advanced filtering
 export const LedgerQuerySchema = PaginationSchema.extend({
-  search: z.string().optional(),
-  referenceNumber: z.string().optional(),
+  accountDetailId: UUIDSchema.optional(),
+  accountGeneralId: UUIDSchema.optional(),
   ledgerType: LedgerTypeSchema.optional(),
   transactionType: TransactionTypeSchema.optional(),
   postingStatus: PostingStatusSchema.optional(),
-  accountDetailId: UUIDSchema.optional(),
-  accountGeneralId: UUIDSchema.optional(),
-  startDate: DateSchema.optional(),
-  endDate: DateSchema.optional(),
-  includeAccounts: z.boolean().default(false)
+  dateFrom: DateSchema.optional(),
+  dateTo: DateSchema.optional(),
+  amountFrom: PositiveDecimalSchema.optional(),
+  amountTo: PositiveDecimalSchema.optional(),
+  search: z.string().max(100).optional()
+}).merge(QueryFiltersSchema);
+
+// Ledger reconciliation schema
+export const LedgerReconciliationSchema = z.object({
+  ledgerIds: z.array(UUIDSchema).min(1).max(1000),
+  reconciliationDate: DateSchema,
+  notes: z.string().max(1000).optional()
+});
+
+// Ledger posting schema
+export const LedgerPostingSchema = z.object({
+  ledgerIds: z.array(UUIDSchema).min(1).max(100),
+  postingDate: DateSchema.optional(),
+  notes: z.string().max(500).optional()
+});
+
+// Ledger report schema
+export const LedgerReportSchema = z.object({
+  reportType: z.enum(['TRIAL_BALANCE', 'GENERAL_LEDGER', 'ACCOUNT_SUMMARY']),
+  dateFrom: DateSchema,
+  dateTo: DateSchema,
+  accountIds: z.array(UUIDSchema).optional(),
+  format: z.enum(['JSON', 'CSV', 'PDF']).default('JSON'),
+  includeUnposted: z.boolean().default(false)
 });

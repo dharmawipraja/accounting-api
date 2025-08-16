@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 import { HealthController } from './controller.js';
+import { ComprehensiveHealthSchema, ReadinessSchema, SimpleHealthSchema } from './schemas.js';
 
 export async function healthRoutes(fastify) {
   const healthController = new HealthController(fastify.prisma);
@@ -17,23 +18,7 @@ export async function healthRoutes(fastify) {
         description: 'Comprehensive health check including database and memory status',
         tags: ['Health'],
         response: {
-          200: z.object({
-            status: z.string(),
-            timestamp: z.string(),
-            uptime: z.number(),
-            version: z.string(),
-            memory: z.object({
-              used: z.number(),
-              total: z.number(),
-              percentage: z.number()
-            }),
-            database: z.object({
-              healthy: z.boolean(),
-              version: z.string().optional(),
-              connections: z.number().optional(),
-              tableCount: z.number().optional()
-            })
-          })
+          200: ComprehensiveHealthSchema
         }
       }
     },
@@ -48,17 +33,8 @@ export async function healthRoutes(fastify) {
         description: 'Readiness check for load balancers',
         tags: ['Health'],
         response: {
-          200: z.object({
-            status: z.string(),
-            timestamp: z.string(),
-            checks: z.object({
-              database: z.string()
-            })
-          }),
-          503: z.object({
-            error: z.string(),
-            timestamp: z.string()
-          })
+          200: ReadinessSchema,
+          503: ReadinessSchema
         }
       }
     },
@@ -73,11 +49,7 @@ export async function healthRoutes(fastify) {
         description: 'Liveness check for container orchestration',
         tags: ['Health'],
         response: {
-          200: z.object({
-            status: z.string(),
-            timestamp: z.string(),
-            pid: z.number()
-          })
+          200: SimpleHealthSchema
         }
       }
     },
