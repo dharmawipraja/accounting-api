@@ -6,6 +6,8 @@
 import { z } from 'zod';
 import { authenticate, requireAccountingAccess } from '../../core/middleware/auth.js';
 import { cacheControl } from '../../core/middleware/caching.js';
+import { parsePagination } from '../../core/middleware/pagination.js';
+import { sensitiveRateLimitPlugin } from '../../core/security/rateLimiting.js';
 import { CACHE_DURATION } from '../../shared/constants/index.js';
 import {
   ErrorResponseSchema,
@@ -23,6 +25,9 @@ import {
 
 export async function ledgersRoutes(fastify) {
   const ledgersController = new LedgersController(fastify.prisma);
+
+  // Register sensitive operations rate limiting
+  await fastify.register(sensitiveRateLimitPlugin);
 
   // Create bulk ledger entries - Admin, Manager, and Accountant only
   fastify.post(
@@ -43,7 +48,8 @@ export async function ledgersRoutes(fastify) {
               ledgers: z.array(LedgerResponseSchema)
             })
           ),
-          400: ErrorResponseSchema
+          400: ErrorResponseSchema,
+          429: ErrorResponseSchema
         }
       }
     },
@@ -57,6 +63,7 @@ export async function ledgersRoutes(fastify) {
       preHandler: [
         authenticate,
         requireAccountingAccess,
+        parsePagination(),
         cacheControl(CACHE_DURATION.SHORT, 'private')
       ],
       schema: {

@@ -6,6 +6,7 @@
 import { z } from 'zod';
 import { authenticate, requireAccountingAccess } from '../../../core/middleware/auth.js';
 import { cacheControl } from '../../../core/middleware/caching.js';
+import { parsePagination } from '../../../core/middleware/pagination.js';
 import { CACHE_DURATION } from '../../../shared/constants/index.js';
 import {
   ErrorResponseSchema,
@@ -51,6 +52,7 @@ export async function accountDetailRoutes(fastify) {
       preHandler: [
         authenticate,
         requireAccountingAccess,
+        parsePagination(),
         cacheControl(CACHE_DURATION.MEDIUM, 'private')
       ],
       schema: {

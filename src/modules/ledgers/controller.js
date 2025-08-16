@@ -3,6 +3,7 @@
  * HTTP request handlers for ledger operations
  */
 
+import { buildPaginationMeta } from '../../core/middleware/pagination.js';
 import { HTTP_STATUS } from '../../shared/constants/index.js';
 import { createPaginatedResponse, createSuccessResponse } from '../../shared/utils/response.js';
 import { LedgersService } from './service.js';
@@ -44,10 +45,8 @@ export class LedgersController {
    */
   async getLedgers(request, reply) {
     try {
+      const { page, limit, skip } = request.pagination;
       const {
-        limit,
-        skip,
-        page,
         search,
         referenceNumber,
         ledgerType,
@@ -75,12 +74,8 @@ export class LedgersController {
         includeAccounts
       });
 
-      const response = createPaginatedResponse(ledgers, {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit)
-      });
+      const pagination = buildPaginationMeta(page, limit, total);
+      const response = createPaginatedResponse(ledgers, pagination);
 
       reply.status(HTTP_STATUS.OK).send(response);
     } catch (error) {

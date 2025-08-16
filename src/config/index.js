@@ -148,7 +148,31 @@ export const securityConfig = {
     24 * 60 * 60 * 1000, // 24 hours
     60000, // 1 minute
     7 * 24 * 60 * 60 * 1000 // 7 days
-  )
+  ),
+
+  // Enhanced security features
+  enableAdvancedRateLimit: parseBoolean(process.env.ENABLE_ADVANCED_RATE_LIMIT, true),
+  enableInputSanitization: parseBoolean(process.env.ENABLE_INPUT_SANITIZATION, true),
+  enableEncryption: parseBoolean(process.env.ENABLE_ENCRYPTION, false),
+  enableAuditTrail: parseBoolean(process.env.ENABLE_AUDIT_TRAIL, true),
+  enableEnhancedHeaders: parseBoolean(process.env.ENABLE_ENHANCED_HEADERS, true),
+  enableCSRF: parseBoolean(process.env.ENABLE_CSRF, false),
+
+  // Encryption settings
+  encryptionKey: process.env.ENCRYPTION_KEY,
+
+  // Security headers configuration
+  cspPolicy: process.env.CSP_POLICY || 'strict',
+  hstsConfig: process.env.HSTS_CONFIG || 'strict',
+  apiOnly: parseBoolean(process.env.SECURITY_API_ONLY, true),
+
+  // Input sanitization options
+  sanitizeBody: parseBoolean(process.env.SANITIZE_BODY, true),
+  sanitizeQuery: parseBoolean(process.env.SANITIZE_QUERY, true),
+  sanitizeParams: parseBoolean(process.env.SANITIZE_PARAMS, true),
+  stripHtmlTags: parseBoolean(process.env.STRIP_HTML_TAGS, true),
+  removeScriptTags: parseBoolean(process.env.REMOVE_SCRIPT_TAGS, true),
+  encodeSpecialChars: parseBoolean(process.env.ENCODE_SPECIAL_CHARS, true)
 };
 
 /**
@@ -228,6 +252,19 @@ export const envSchema = {
     JWT_SECRET: { type: 'string' },
     JWT_EXPIRES_IN: { type: 'string', default: '24h' },
     CORS_ORIGIN: { type: 'string', default: '*' },
+    SESSION_SECRET: { type: 'string' },
+
+    // Enhanced security
+    ENABLE_ADVANCED_RATE_LIMIT: { type: 'string', default: 'true' },
+    ENABLE_INPUT_SANITIZATION: { type: 'string', default: 'true' },
+    ENABLE_ENCRYPTION: { type: 'string', default: 'false' },
+    ENABLE_AUDIT_TRAIL: { type: 'string', default: 'true' },
+    ENABLE_ENHANCED_HEADERS: { type: 'string', default: 'true' },
+    ENABLE_CSRF: { type: 'string', default: 'false' },
+    ENCRYPTION_KEY: { type: 'string' },
+    CSP_POLICY: { type: 'string', default: 'strict' },
+    HSTS_CONFIG: { type: 'string', default: 'strict' },
+    SECURITY_API_ONLY: { type: 'string', default: 'true' },
 
     // Rate limiting
     RATE_LIMIT_MAX: { type: 'string', default: '100' },
@@ -295,6 +332,11 @@ export const validateConfig = (config = getConfig()) => {
   // Session secret validation
   if (config.isProduction && !config.security.sessionSecret) {
     errors.push('SESSION_SECRET is required in production');
+  }
+
+  // Encryption key validation
+  if (config.security.enableEncryption && !config.security.encryptionKey) {
+    errors.push('ENCRYPTION_KEY is required when encryption is enabled');
   }
 
   // Port validation

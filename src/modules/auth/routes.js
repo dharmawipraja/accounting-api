@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 import { authenticate } from '../../core/middleware/auth.js';
+import { authRateLimitPlugin } from '../../core/security/rateLimiting.js';
 import { ErrorResponseSchema, SuccessResponseSchema } from '../../shared/schemas/base.js';
 import { AuthController } from './controller.js';
 import { AuthResponseSchema, LoginSchema } from './schemas.js';
@@ -12,6 +13,9 @@ import { AuthResponseSchema, LoginSchema } from './schemas.js';
 export const createAuthRoutes = jwtSecret => {
   return async function authRoutes(fastify) {
     const authController = new AuthController(fastify.prisma, jwtSecret);
+
+    // Register auth-specific rate limiting
+    await fastify.register(authRateLimitPlugin);
 
     // Login endpoint
     fastify.post(
@@ -24,6 +28,7 @@ export const createAuthRoutes = jwtSecret => {
           response: {
             200: SuccessResponseSchema(AuthResponseSchema),
             401: ErrorResponseSchema,
+            429: ErrorResponseSchema,
             500: ErrorResponseSchema
           }
         }

@@ -3,6 +3,7 @@
  * HTTP request handlers for user operations
  */
 
+import { buildPaginationMeta } from '../../core/middleware/pagination.js';
 import { HTTP_STATUS } from '../../shared/constants/index.js';
 import { createPaginatedResponse, createSuccessResponse } from '../../shared/utils/response.js';
 import { UsersService } from './service.js';
@@ -44,7 +45,8 @@ export class UsersController {
    */
   async getUsers(request, reply) {
     try {
-      const { limit, skip, page, search, role, status } = request.query;
+      const { page, limit, skip } = request.pagination;
+      const { search, role, status } = request.query;
 
       const { users, total } = await this.usersService.getUsers({
         limit,
@@ -54,12 +56,8 @@ export class UsersController {
         status
       });
 
-      const response = createPaginatedResponse(users, {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit)
-      });
+      const pagination = buildPaginationMeta(page, limit, total);
+      const response = createPaginatedResponse(users, pagination);
 
       reply.status(HTTP_STATUS.OK).send(response);
     } catch (error) {

@@ -6,7 +6,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { ulid } from 'ulid';
-import { hashPassword } from '../src/middleware/auth.js';
+import { hashPassword } from '../src/core/middleware/auth.js';
 
 const prisma = new PrismaClient();
 

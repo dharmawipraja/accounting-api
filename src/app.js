@@ -2,9 +2,9 @@ import Fastify from 'fastify';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
 import { databaseMiddleware, queryPerformanceMiddleware } from './config/database.js';
 import config, { envSchema } from './config/index.js';
-import { checkDatabaseHealth } from './core/database/utils.js';
 import { errorHandler } from './core/errors/index.js';
 import { logFormats, registerLoggingMiddleware } from './core/logging/index.js';
+import { securitySuitePlugin, validateSecurityConfig } from './core/security/index.js';
 import { registerRoutes } from './router.js';
 
 export async function build(opts = {}) {
@@ -13,6 +13,12 @@ export async function build(opts = {}) {
 
   // Validate configuration
   config.validateConfig(appConfig);
+
+  // Validate security configuration
+  const securityValidation = validateSecurityConfig(appConfig);
+  if (!securityValidation.valid) {
+    throw new Error(`Security configuration issues:\n${securityValidation.issues.join('\n')}`);
+  }
 
   // Get appropriate logger configuration based on environment
   const loggerConfig =
@@ -61,6 +67,38 @@ export async function build(opts = {}) {
   if (appConfig.isDevelopment) {
     await app.register(queryPerformanceMiddleware);
   }
+
+  // Enhanced Security Suite
+  await app.register(securitySuitePlugin, {
+    enableAdvancedRateLimit: appConfig.security.enableAdvancedRateLimit,
+    enableInputSanitization: appConfig.security.enableInputSanitization,
+    sanitizationOptions: {
+      sanitizeBody: appConfig.security.sanitizeBody,
+      sanitizeQuery: appConfig.security.sanitizeQuery,
+      sanitizeParams: appConfig.security.sanitizeParams,
+      globalOptions: {
+        stripHtmlTags: appConfig.security.stripHtmlTags,
+        removeScriptTags: appConfig.security.removeScriptTags,
+        encodeSpecialChars: appConfig.security.encodeSpecialChars
+      }
+    },
+    enableEncryption: appConfig.security.enableEncryption,
+    encryptionKey: appConfig.security.encryptionKey,
+    enableAuditTrail: appConfig.security.enableAuditTrail,
+    enableEnhancedHeaders: appConfig.security.enableEnhancedHeaders,
+    headerOptions: {
+      environment: appConfig.nodeEnv,
+      enableCSP: appConfig.security.enableCSP,
+      enableHSTS: appConfig.security.enableHSTS,
+      cspPolicy: appConfig.security.cspPolicy,
+      hstsConfig: appConfig.security.hstsConfig,
+      apiOnly: appConfig.security.apiOnly
+    },
+    enableCSRF: appConfig.security.enableCSRF,
+    csrfOptions: {
+      enabled: appConfig.security.enableCSRF
+    }
+  });
 
   // Helmet for security headers
   await app.register(import('@fastify/helmet'), {
@@ -141,9 +179,6 @@ export async function build(opts = {}) {
   // Register @fastify/sensible
   await app.register(import('@fastify/sensible'));
 
-  // In-repo pagination plugin
-  await app.register(import('./plugins/pagination.js'));
-
   // Register under-pressure for health and load protection
   await app.register(import('@fastify/under-pressure'), {
     // sensible defaults; can be overridden by appConfig.health in the future
@@ -160,11 +195,18 @@ export async function build(opts = {}) {
     },
     // Integrate Prisma DB health check
     healthCheck: async () => {
-      const dbHealth = await checkDatabaseHealth(app.prisma);
-      if (!dbHealth || !dbHealth.healthy) {
-        throw new Error('Database unavailable');
+      try {
+        // Simple health check - just verify we can access the database
+        if (!app.prisma) {
+          return false;
+        }
+        // Basic connectivity test
+        await app.prisma.$queryRaw`SELECT 1`;
+        return true;
+      } catch (error) {
+        app.log.warn('Health check failed:', error.message);
+        return false;
       }
-      return true;
     }
   });
 
@@ -194,12 +236,6 @@ export async function build(opts = {}) {
   await app.register(import('fastify-request-id'), {
     headerName: 'x-request-id'
   });
-
-  // Instead of registering the external `fastify-response-time` plugin we
-  // implement a minimal, compatible response-time header using Fastify hooks.
-  // This avoids runtime incompatibilities where the upstream plugin reads
-  // internal response symbols that may be undefined for some Fastify versions
-  // and caused 500 errors on monitoring routes.
 
   // Store high-resolution start time on the request
   app.addHook('onRequest', async request => {

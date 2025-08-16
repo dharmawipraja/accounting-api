@@ -3,6 +3,7 @@
  * HTTP request handlers for general account operations
  */
 
+import { buildPaginationMeta } from '../../../core/middleware/pagination.js';
 import { HTTP_STATUS } from '../../../shared/constants/index.js';
 import { createPaginatedResponse, createSuccessResponse } from '../../../shared/utils/response.js';
 import { AccountGeneralService } from './service.js';
@@ -44,8 +45,8 @@ export class AccountGeneralController {
    */
   async getAccounts(request, reply) {
     try {
-      const { limit, skip, page, search, accountCategory, reportType, includeDeleted } =
-        request.query;
+      const { page, limit, skip } = request.pagination;
+      const { search, accountCategory, reportType, includeDeleted } = request.query;
 
       const { accounts, total } = await this.accountGeneralService.getAccounts({
         limit,
@@ -56,12 +57,8 @@ export class AccountGeneralController {
         includeDeleted
       });
 
-      const response = createPaginatedResponse(accounts, {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit)
-      });
+      const pagination = buildPaginationMeta(page, limit, total);
+      const response = createPaginatedResponse(accounts, pagination);
 
       reply.status(HTTP_STATUS.OK).send(response);
     } catch (error) {

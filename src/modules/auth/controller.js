@@ -22,10 +22,32 @@ export class AuthController {
 
       const authResult = await this.authService.authenticate(username, password);
 
+      // Log successful login
+      if (request.server.securityAudit) {
+        request.server.securityAudit.logLoginSuccess(
+          authResult.user.id,
+          authResult.user.username,
+          request.ip,
+          request.headers['user-agent'],
+          request.id
+        );
+      }
+
       const response = createSuccessResponse(authResult, 'Login successful');
       reply.status(200).send(response);
     } catch (error) {
       request.log.error({ error, username: request.body?.username }, 'Login failed');
+
+      // Log failed login attempt
+      if (request.server.securityAudit) {
+        request.server.securityAudit.logLoginFailure(
+          request.body?.username,
+          request.ip,
+          request.headers['user-agent'],
+          error.message,
+          request.id
+        );
+      }
 
       if (error.message === 'Invalid credentials') {
         throw reply.unauthorized('Invalid username or password');
@@ -41,6 +63,22 @@ export class AuthController {
    * @param {Object} reply - Fastify reply object
    */
   async logout(request, reply) {
+    // Log logout event
+    if (request.server.securityAudit && request.user) {
+      request.server.securityAudit.logEvent({
+        eventType: 'logout',
+        riskLevel: 'low',
+        timestamp: new Date(),
+        userId: request.user.userId,
+        userEmail: request.user.username,
+        ipAddress: request.ip,
+        userAgent: request.headers['user-agent'],
+        action: 'logout',
+        success: true,
+        requestId: request.id
+      });
+    }
+
     // For JWT, logout is typically handled client-side by removing the token
     // You could implement token blacklisting here if needed
     const response = createSuccessResponse(

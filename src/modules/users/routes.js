@@ -6,6 +6,7 @@
 import { z } from 'zod';
 import { authenticate, authorize } from '../../core/middleware/auth.js';
 import { cacheControl } from '../../core/middleware/caching.js';
+import { parsePagination } from '../../core/middleware/pagination.js';
 import { CACHE_DURATION, USER_ROLES } from '../../shared/constants/index.js';
 import {
   ErrorResponseSchema,
@@ -55,6 +56,7 @@ export async function userRoutes(fastify) {
       preHandler: [
         authenticate,
         requireUserManagement,
+        parsePagination(),
         cacheControl(CACHE_DURATION.MEDIUM, 'private')
       ],
       schema: {

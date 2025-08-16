@@ -58,6 +58,11 @@ export const requireAccountingAccess = authorize(
 );
 
 /**
+ * Convenience middleware for user management operations
+ */
+export const canManageUsers = authorize(USER_ROLES.ADMIN, USER_ROLES.MANAJER);
+
+/**
  * Resource ownership check middleware
  * Allows admin or the owner of the resource
  * @param {string} resourceUserIdField - Field name that contains the user ID in the resource
