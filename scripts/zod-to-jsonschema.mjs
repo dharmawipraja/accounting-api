@@ -78,10 +78,12 @@ export function convertZodToJsonSchema(zodSchema, opts = {}) {
       if (t === 'ZodLiteral') return { const: def.value, type: typeof def.value };
       if (t === 'ZodEnum' || t === 'ZodNativeEnum') {
         let values = [];
+        // eslint-disable-next-line prefer-destructuring
         if (Array.isArray(def.values) && def.values.length > 0) values = def.values;
         else if (Array.isArray(def.options) && def.options.length > 0) values = def.options;
-        else if (def.nativeEnum && typeof def.nativeEnum === 'object') {
-          values = Object.values(def.nativeEnum).filter(
+        const { nativeEnum } = def;
+        if (nativeEnum && typeof nativeEnum === 'object') {
+          values = Object.values(nativeEnum).filter(
             v => typeof v === 'string' || typeof v === 'number'
           );
         }

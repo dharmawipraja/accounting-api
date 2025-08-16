@@ -303,23 +303,14 @@
                 "type": "string"
               }
             },
-            "required": [
-              "id",
-              "username",
-              "name",
-              "role"
-            ],
+            "required": ["id", "username", "name", "role"],
             "additionalProperties": false
           },
           "expiresIn": {
             "type": "string"
           }
         },
-        "required": [
-          "token",
-          "user",
-          "expiresIn"
-        ],
+        "required": ["token", "user", "expiresIn"],
         "additionalProperties": false
       },
       "BalanceCreateSchema": {
@@ -335,11 +326,7 @@
             "type": "object"
           }
         },
-        "required": [
-          "amount",
-          "createdBy",
-          "updatedBy"
-        ],
+        "required": ["amount", "createdBy", "updatedBy"],
         "additionalProperties": false
       },
       "BalanceResponseSchema": {
@@ -365,14 +352,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "id",
-          "amount",
-          "createdAt",
-          "updatedAt",
-          "createdBy",
-          "updatedBy"
-        ],
+        "required": ["id", "amount", "createdAt", "updatedAt", "createdBy", "updatedBy"],
         "additionalProperties": false
       },
       "BalanceUpdateSchema": {
@@ -385,10 +365,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "amount",
-          "updatedBy"
-        ],
+        "required": ["amount", "updatedBy"],
         "additionalProperties": false
       },
       "BooleanishSchema": {
@@ -406,10 +383,7 @@
             "type": "object"
           }
         },
-        "required": [
-          "startDate",
-          "endDate"
-        ],
+        "required": ["startDate", "endDate"],
         "additionalProperties": false
       },
       "DateSchema": {
@@ -441,19 +415,11 @@
                 "type": "string"
               }
             },
-            "required": [
-              "code",
-              "message",
-              "details",
-              "requestId"
-            ],
+            "required": ["code", "message", "details", "requestId"],
             "additionalProperties": false
           }
         },
-        "required": [
-          "success",
-          "error"
-        ],
+        "required": ["success", "error"],
         "additionalProperties": false
       },
       "IdParamSchema": {
@@ -463,9 +429,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "id"
-        ],
+        "required": ["id"],
         "additionalProperties": false
       },
       "LedgerBulkCreateSchema": {
@@ -478,9 +442,7 @@
             }
           }
         },
-        "required": [
-          "ledgers"
-        ],
+        "required": ["ledgers"],
         "additionalProperties": false
       },
       "LedgerCreateSchema": {
@@ -568,9 +530,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "postingStatus"
-        ],
+        "required": ["postingStatus"],
         "additionalProperties": false
       },
       "LedgerQuerySchema": {
@@ -748,10 +708,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "username",
-          "password"
-        ],
+        "required": ["username", "password"],
         "additionalProperties": false
       },
       "OptionalDateSchema": {
@@ -770,10 +727,7 @@
             "additionalProperties": true
           }
         },
-        "required": [
-          "page",
-          "limit"
-        ],
+        "required": ["page", "limit"],
         "additionalProperties": false
       },
       "PositiveDecimalSchema": {
@@ -813,13 +767,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "username",
-          "password",
-          "name",
-          "role",
-          "status"
-        ],
+        "required": ["username", "password", "name", "role", "status"],
         "additionalProperties": false
       },
       "UserQuerySchema": {
@@ -843,13 +791,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "page",
-          "limit",
-          "search",
-          "role",
-          "status"
-        ],
+        "required": ["page", "limit", "search", "role", "status"],
         "additionalProperties": false
       },
       "UserResponseSchema": {
@@ -878,15 +820,7 @@
             "type": "object"
           }
         },
-        "required": [
-          "id",
-          "username",
-          "name",
-          "role",
-          "status",
-          "createdAt",
-          "updatedAt"
-        ],
+        "required": ["id", "username", "name", "role", "status", "createdAt", "updatedAt"],
         "additionalProperties": false
       },
       "UserStatusSchema": {
@@ -908,12 +842,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "password",
-          "name",
-          "role",
-          "status"
-        ],
+        "required": ["password", "name", "role", "status"],
         "additionalProperties": false
       }
     },

@@ -257,11 +257,7 @@ export const accountsDetailController = {
         });
       }
 
-      const updatedAccountDetail = await accountDetailService.update(
-        request.server.prisma,
-        { id },
-        updateData
-      );
+      await accountDetailService.update(request.server.prisma, { id }, updateData);
 
       const result = await accountDetailService.findFirst(
         request.server.prisma,

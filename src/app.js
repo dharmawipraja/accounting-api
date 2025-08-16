@@ -1,9 +1,9 @@
 import Fastify from 'fastify';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
 import { databaseMiddleware, queryPerformanceMiddleware } from './config/database.js';
-import { checkDatabaseHealth } from './config/db-utils.js';
 import config, { envSchema } from './config/index.js';
-import { apiRoutes, healthRoutes } from './routes/index.js';
+import { checkDatabaseHealth } from './core/database/utils.js';
+import { registerRoutes } from './router.js';
 
 export async function build(opts = {}) {
   // Get application configuration
@@ -225,8 +225,7 @@ export async function build(opts = {}) {
   });
 
   // Register routes
-  await app.register(healthRoutes);
-  await app.register(apiRoutes);
+  await registerRoutes(app);
 
   // Global error handler
   app.setErrorHandler((error, request, reply) => {

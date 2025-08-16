@@ -355,7 +355,7 @@ export const ledgersController = {
         });
       }
 
-      const updatedLedger = await ledgerService.update(
+      await ledgerService.update(
         request.server.prisma,
         { id },
         {
