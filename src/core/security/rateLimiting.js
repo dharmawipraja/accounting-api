@@ -63,132 +63,146 @@ const generateUserKey = request => {
 
 /**
  * Rate limiting plugin for authentication endpoints
+ * Uses plugin context to avoid conflicts with global rate limiting
  */
 export async function authRateLimitPlugin(fastify) {
-  await fastify.register(import('@fastify/rate-limit'), {
-    ...rateLimitStrategies.auth,
-    keyGenerator: request => `auth:${request.ip}`,
-    errorResponseBuilder: (request, context) => {
-      const retryAfter = Math.round(context.ttl / 1000);
+  // Register in a context to avoid conflicts
+  await fastify.register(async function authRateLimitContext(contextFastify) {
+    await contextFastify.register(import('@fastify/rate-limit'), {
+      ...rateLimitStrategies.auth,
+      keyGenerator: request => `auth:${request.ip}`,
+      errorResponseBuilder: (request, context) => {
+        const retryAfter = Math.round(context.ttl / 1000);
 
-      fastify.log.warn(
-        {
-          ip: request.ip,
-          userAgent: request.headers['user-agent'],
-          url: request.url,
-          method: request.method,
+        fastify.log.warn(
+          {
+            ip: request.ip,
+            userAgent: request.headers['user-agent'],
+            url: request.url,
+            method: request.method,
+            retryAfter
+          },
+          'Authentication rate limit exceeded'
+        );
+
+        return {
+          statusCode: 429,
+          error: 'Too Many Requests',
+          message: `Too many authentication attempts. Retry in ${retryAfter} seconds.`,
           retryAfter
-        },
-        'Authentication rate limit exceeded'
-      );
-
-      return {
-        statusCode: 429,
-        error: 'Too Many Requests',
-        message: `Too many authentication attempts. Retry in ${retryAfter} seconds.`,
-        retryAfter
-      };
-    }
+        };
+      }
+    });
   });
 }
 
 /**
  * Rate limiting plugin for authenticated users
+ * Uses plugin context to avoid conflicts
  */
 export async function userRateLimitPlugin(fastify) {
-  await fastify.register(import('@fastify/rate-limit'), {
-    ...rateLimitStrategies.authenticated,
-    keyGenerator: generateUserKey,
-    errorResponseBuilder: (request, context) => {
-      const retryAfter = Math.round(context.ttl / 1000);
+  await fastify.register(async function userRateLimitContext(contextFastify) {
+    await contextFastify.register(import('@fastify/rate-limit'), {
+      ...rateLimitStrategies.authenticated,
+      keyGenerator: generateUserKey,
+      errorResponseBuilder: (request, context) => {
+        const retryAfter = Math.round(context.ttl / 1000);
 
-      fastify.log.warn(
-        {
-          userId: request.user?.id,
-          ip: request.ip,
-          url: request.url,
-          method: request.method,
+        fastify.log.warn(
+          {
+            userId: request.user?.id,
+            ip: request.ip,
+            url: request.url,
+            method: request.method,
+            retryAfter
+          },
+          'User rate limit exceeded'
+        );
+
+        return {
+          statusCode: 429,
+          error: 'Too Many Requests',
+          message: `Rate limit exceeded. Retry in ${retryAfter} seconds.`,
           retryAfter
-        },
-        'User rate limit exceeded'
-      );
-
-      return {
-        statusCode: 429,
-        error: 'Too Many Requests',
-        message: `Rate limit exceeded. Retry in ${retryAfter} seconds.`,
-        retryAfter
-      };
-    }
+        };
+      }
+    });
   });
 }
 
 /**
  * Rate limiting plugin for sensitive operations
+ * Uses plugin context to avoid conflicts
  */
 export async function sensitiveRateLimitPlugin(fastify) {
-  await fastify.register(import('@fastify/rate-limit'), {
-    ...rateLimitStrategies.sensitive,
-    keyGenerator: generateUserKey,
-    errorResponseBuilder: (request, context) => {
-      const retryAfter = Math.round(context.ttl / 1000);
+  await fastify.register(async function sensitiveRateLimitContext(contextFastify) {
+    await contextFastify.register(import('@fastify/rate-limit'), {
+      ...rateLimitStrategies.sensitive,
+      keyGenerator: generateUserKey,
+      errorResponseBuilder: (request, context) => {
+        const retryAfter = Math.round(context.ttl / 1000);
 
-      fastify.log.warn(
-        {
-          userId: request.user?.id,
-          ip: request.ip,
-          url: request.url,
-          method: request.method,
-          operation: 'sensitive',
+        fastify.log.warn(
+          {
+            userId: request.user?.id,
+            ip: request.ip,
+            url: request.url,
+            method: request.method,
+            operation: 'sensitive',
+            retryAfter
+          },
+          'Sensitive operation rate limit exceeded'
+        );
+
+        return {
+          statusCode: 429,
+          error: 'Too Many Requests',
+          message: `Too many sensitive operations. Retry in ${retryAfter} seconds.`,
           retryAfter
-        },
-        'Sensitive operation rate limit exceeded'
-      );
-
-      return {
-        statusCode: 429,
-        error: 'Too Many Requests',
-        message: `Too many sensitive operations. Retry in ${retryAfter} seconds.`,
-        retryAfter
-      };
-    }
+        };
+      }
+    });
   });
 }
 
 /**
  * Rate limiting plugin for heavy operations
+ * Uses plugin context to avoid conflicts
  */
 export async function heavyRateLimitPlugin(fastify) {
-  await fastify.register(import('@fastify/rate-limit'), {
-    ...rateLimitStrategies.heavy,
-    keyGenerator: generateUserKey,
-    errorResponseBuilder: (request, context) => {
-      const retryAfter = Math.round(context.ttl / 1000);
+  await fastify.register(async function heavyRateLimitContext(contextFastify) {
+    await contextFastify.register(import('@fastify/rate-limit'), {
+      ...rateLimitStrategies.heavy,
+      keyGenerator: generateUserKey,
+      errorResponseBuilder: (request, context) => {
+        const retryAfter = Math.round(context.ttl / 1000);
 
-      fastify.log.warn(
-        {
-          userId: request.user?.id,
-          ip: request.ip,
-          url: request.url,
-          method: request.method,
-          operation: 'heavy',
+        fastify.log.warn(
+          {
+            userId: request.user?.id,
+            ip: request.ip,
+            url: request.url,
+            method: request.method,
+            operation: 'heavy',
+            retryAfter
+          },
+          'Heavy operation rate limit exceeded'
+        );
+
+        return {
+          statusCode: 429,
+          error: 'Too Many Requests',
+          message: `Too many heavy operations. Retry in ${retryAfter} seconds.`,
           retryAfter
-        },
-        'Heavy operation rate limit exceeded'
-      );
-
-      return {
-        statusCode: 429,
-        error: 'Too Many Requests',
-        message: `Too many heavy operations. Retry in ${retryAfter} seconds.`,
-        retryAfter
-      };
-    }
+        };
+      }
+    });
   });
 }
 
 /**
  * Create a custom rate limiter with specific options
+ * Uses plugin context to avoid conflicts
  */
 export function createCustomRateLimit(options = {}) {
   const defaultOptions = {
@@ -205,9 +219,11 @@ export function createCustomRateLimit(options = {}) {
   };
 
   return async function customRateLimitPlugin(fastify) {
-    await fastify.register(import('@fastify/rate-limit'), {
-      ...defaultOptions,
-      ...options
+    await fastify.register(async function customRateLimitContext(contextFastify) {
+      await contextFastify.register(import('@fastify/rate-limit'), {
+        ...defaultOptions,
+        ...options
+      });
     });
   };
 }

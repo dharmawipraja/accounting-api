@@ -109,10 +109,44 @@ export async function securitySuitePlugin(fastify, options = {}) {
 
     // CSRF protection options
     enableCSRF = false,
-    csrfOptions = {}
+    csrfOptions = {},
+
+    // Rate limiting options - NEW
+    enableGlobalRateLimit = true,
+    rateLimitOptions = {}
   } = options;
 
   fastify.log.info('Initializing enhanced security suite...');
+
+  // Global rate limiting (if enabled)
+  if (enableGlobalRateLimit) {
+    const config = fastify.config || {};
+    const defaultRateLimitOptions = {
+      max: config.security?.rateLimitMax || 100,
+      timeWindow: config.security?.rateLimitWindow || '1 minute',
+      cache: 10000,
+      allowList: ['127.0.0.1', '::1'],
+      redis: config.redis?.enabled ? { url: config.redis.url } : undefined,
+      skipOnError: config.security?.rateLimitSkipOnError ?? true,
+      addHeadersOnExceeding: true,
+      addHeaders: {
+        'x-ratelimit-limit': true,
+        'x-ratelimit-remaining': true,
+        'x-ratelimit-reset': true
+      },
+      errorResponseBuilder: (request, context) => {
+        throw request.server.httpErrors.tooManyRequests(
+          `Rate limit exceeded, retry in ${Math.round(context.ttl / 1000)} seconds`
+        );
+      }
+    };
+
+    await fastify.register(import('@fastify/rate-limit'), {
+      ...defaultRateLimitOptions,
+      ...rateLimitOptions
+    });
+    fastify.log.info('✓ Global rate limiting enabled');
+  }
 
   // Input sanitization
   if (enableInputSanitization) {
@@ -132,7 +166,7 @@ export async function securitySuitePlugin(fastify, options = {}) {
     fastify.log.info('✓ Security audit trail enabled');
   }
 
-  // Enhanced security headers
+  // Enhanced security headers (includes helmet)
   if (enableEnhancedHeaders) {
     await fastify.register(securityHeadersPlugin, headerOptions);
     fastify.log.info('✓ Enhanced security headers enabled');

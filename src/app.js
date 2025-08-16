@@ -71,6 +71,26 @@ export async function build(opts = {}) {
   // Enhanced Security Suite
   await app.register(securitySuitePlugin, {
     enableAdvancedRateLimit: appConfig.security.enableAdvancedRateLimit,
+    enableGlobalRateLimit: true, // Enable global rate limiting through security suite
+    rateLimitOptions: {
+      max: appConfig.security.rateLimitMax,
+      timeWindow: appConfig.security.rateLimitWindow,
+      cache: 10000,
+      allowList: ['127.0.0.1', '::1'],
+      redis: appConfig.redis.enabled ? { url: appConfig.redis.url } : undefined,
+      skipOnError: appConfig.security.rateLimitSkipOnError,
+      addHeadersOnExceeding: true,
+      addHeaders: {
+        'x-ratelimit-limit': true,
+        'x-ratelimit-remaining': true,
+        'x-ratelimit-reset': true
+      },
+      errorResponseBuilder: (request, context) => {
+        throw request.server.httpErrors.tooManyRequests(
+          `Rate limit exceeded, retry in ${Math.round(context.ttl / 1000)} seconds`
+        );
+      }
+    },
     enableInputSanitization: appConfig.security.enableInputSanitization,
     sanitizationOptions: {
       sanitizeBody: appConfig.security.sanitizeBody,
@@ -100,27 +120,7 @@ export async function build(opts = {}) {
     }
   });
 
-  // Helmet for security headers
-  await app.register(import('@fastify/helmet'), {
-    crossOriginEmbedderPolicy: false,
-    contentSecurityPolicy: appConfig.features.enableCSP
-      ? {
-          directives: {
-            defaultSrc: ["'self'"],
-            styleSrc: ["'self'", "'unsafe-inline'"],
-            scriptSrc: ["'self'"],
-            imgSrc: ["'self'", 'data:', 'https:']
-          }
-        }
-      : false,
-    hsts: appConfig.security.enableHSTS
-      ? {
-          maxAge: 31536000,
-          includeSubDomains: true,
-          preload: true
-        }
-      : false
-  });
+  // Note: Helmet is now configured within the securitySuitePlugin to avoid conflicts
 
   // CORS
   if (appConfig.features.enableCors) {
@@ -146,26 +146,8 @@ export async function build(opts = {}) {
     });
   }
 
-  // Rate limiting
-  await app.register(import('@fastify/rate-limit'), {
-    max: appConfig.security.rateLimitMax,
-    timeWindow: appConfig.security.rateLimitWindow,
-    cache: 10000, // Cache size
-    allowList: ['127.0.0.1', '::1'], // Whitelist localhost
-    redis: appConfig.redis.enabled ? { url: appConfig.redis.url } : undefined,
-    skipOnError: appConfig.security.rateLimitSkipOnError,
-    addHeadersOnExceeding: true,
-    addHeaders: {
-      'x-ratelimit-limit': true,
-      'x-ratelimit-remaining': true,
-      'x-ratelimit-reset': true
-    },
-    errorResponseBuilder: (request, context) => {
-      throw request.server.httpErrors.tooManyRequests(
-        `Rate limit exceeded, retry in ${Math.round(context.ttl / 1000)} seconds`
-      );
-    }
-  });
+  // Note: Global rate limiting is now handled by the securitySuitePlugin to avoid conflicts
+  // Individual routes can still use specific rate limiting strategies
 
   // Compression
   if (appConfig.features.enableCompression) {
