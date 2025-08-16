@@ -3,6 +3,7 @@ import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod
 import { databaseMiddleware, queryPerformanceMiddleware } from './config/database.js';
 import config, { envSchema } from './config/index.js';
 import { checkDatabaseHealth } from './core/database/utils.js';
+import { errorHandler } from './core/errors/index.js';
 import { registerRoutes } from './router.js';
 
 export async function build(opts = {}) {
@@ -227,28 +228,8 @@ export async function build(opts = {}) {
   // Register routes
   await registerRoutes(app);
 
-  // Global error handler
-  app.setErrorHandler((error, request, reply) => {
-    const { statusCode = 500 } = error;
-
-    // Log error details
-    request.log.error(error, 'Request error');
-
-    // Don't expose internal errors in production
-    const message =
-      appConfig.isProduction && statusCode === 500 ? 'Internal Server Error' : error.message;
-
-    // Use sensible error response format
-    const errorResponse = {
-      statusCode,
-      error: error.name,
-      message,
-      requestId: request.id,
-      ...(appConfig.isDevelopment && { stack: error.stack })
-    };
-
-    reply.status(statusCode).send(errorResponse);
-  });
+  // Advanced global error handler
+  app.setErrorHandler(errorHandler);
 
   // Not found handler using sensible
   app.setNotFoundHandler((request, reply) => {

@@ -18,8 +18,8 @@ export const enhancedSafeParse = (schema, data, _options = {}) => {
     };
   } catch (error) {
     if (error instanceof z.ZodError) {
-      const formattedErrors = error.errors.map(err => ({
-        field: err.path.join('.') || 'root',
+      const formattedErrors = (error.errors || error.issues || []).map(err => ({
+        field: (err.path || []).join('.') || 'root',
         message: err.message,
         code: err.code,
         expected: err.expected || null,
