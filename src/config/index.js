@@ -6,7 +6,7 @@
  * typed configuration objects for different parts of the application.
  */
 
-import { isDevelopment, isProduction, isTest } from '../utils/index.js';
+import { isDevelopment, isProduction, isTest } from '../shared/utils/index.js';
 
 /**
  * Validate required environment variables

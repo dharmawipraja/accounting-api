@@ -5,6 +5,8 @@
  * types of endpoints and user behaviors.
  */
 
+import rateLimit from '@fastify/rate-limit';
+
 /**
  * Rate limiting strategies configuration
  */
@@ -67,8 +69,8 @@ const generateUserKey = request => {
  */
 export async function authRateLimitPlugin(fastify) {
   // Register in a context to avoid conflicts
-  await fastify.register(async function authRateLimitContext(contextFastify) {
-    await contextFastify.register(import('@fastify/rate-limit'), {
+  await fastify.register(async contextFastify => {
+    await contextFastify.register(rateLimit, {
       ...rateLimitStrategies.auth,
       keyGenerator: request => `auth:${request.ip}`,
       errorResponseBuilder: (request, context) => {
@@ -101,8 +103,8 @@ export async function authRateLimitPlugin(fastify) {
  * Uses plugin context to avoid conflicts
  */
 export async function userRateLimitPlugin(fastify) {
-  await fastify.register(async function userRateLimitContext(contextFastify) {
-    await contextFastify.register(import('@fastify/rate-limit'), {
+  await fastify.register(async contextFastify => {
+    await contextFastify.register(rateLimit, {
       ...rateLimitStrategies.authenticated,
       keyGenerator: generateUserKey,
       errorResponseBuilder: (request, context) => {
@@ -135,8 +137,8 @@ export async function userRateLimitPlugin(fastify) {
  * Uses plugin context to avoid conflicts
  */
 export async function sensitiveRateLimitPlugin(fastify) {
-  await fastify.register(async function sensitiveRateLimitContext(contextFastify) {
-    await contextFastify.register(import('@fastify/rate-limit'), {
+  await fastify.register(async contextFastify => {
+    await contextFastify.register(rateLimit, {
       ...rateLimitStrategies.sensitive,
       keyGenerator: generateUserKey,
       errorResponseBuilder: (request, context) => {
@@ -170,8 +172,8 @@ export async function sensitiveRateLimitPlugin(fastify) {
  * Uses plugin context to avoid conflicts
  */
 export async function heavyRateLimitPlugin(fastify) {
-  await fastify.register(async function heavyRateLimitContext(contextFastify) {
-    await contextFastify.register(import('@fastify/rate-limit'), {
+  await fastify.register(async contextFastify => {
+    await contextFastify.register(rateLimit, {
       ...rateLimitStrategies.heavy,
       keyGenerator: generateUserKey,
       errorResponseBuilder: (request, context) => {
@@ -219,8 +221,8 @@ export function createCustomRateLimit(options = {}) {
   };
 
   return async function customRateLimitPlugin(fastify) {
-    await fastify.register(async function customRateLimitContext(contextFastify) {
-      await contextFastify.register(import('@fastify/rate-limit'), {
+    await fastify.register(async contextFastify => {
+      await contextFastify.register(rateLimit, {
         ...defaultOptions,
         ...options
       });

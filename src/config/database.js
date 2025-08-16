@@ -2,7 +2,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { createSoftDeleteExtension } from 'prisma-extension-soft-delete';
-import { isDevelopment, isProduction, isTest } from '../utils/index.js';
+import { isDevelopment, isProduction, isTest } from '../shared/utils/index.js';
 
 /**
  * Database configuration options based on environment

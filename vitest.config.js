@@ -8,7 +8,7 @@ export default defineConfig({
     include: ['tests/**/*.{test,spec}.js'],
     exclude: ['node_modules', 'dist', '.git'],
     coverage: {
-      provider: 'c8',
+      provider: 'v8',
       reporter: ['text', 'json', 'html'],
       include: ['src/**/*.js'],
       exclude: ['src/**/*.test.js', 'src/**/*.spec.js', 'server.js', 'prisma/**'],

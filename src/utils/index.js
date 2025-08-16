@@ -13,11 +13,6 @@ export {
 
 export { formatMoneyForDb, roundMoney, toDecimal } from '../core/database/utils.js';
 
-// Environment helpers
-export const isDevelopment = () => process.env.NODE_ENV === 'development';
-export const isProduction = () => process.env.NODE_ENV === 'production';
-export const isTest = () => process.env.NODE_ENV === 'test';
-
 // Sum an array of numeric/Decimal values using Decimal
 export const sumDecimals = (arr = []) => {
   // Use local Decimal implementation to avoid circular dependency

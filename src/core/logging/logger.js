@@ -6,7 +6,7 @@
  */
 
 import pino from 'pino';
-import { isDevelopment, isProduction } from '../../utils/index.js';
+import { isDevelopment, isProduction } from '../../shared/utils/index.js';
 
 /**
  * Log level configuration based on environment
