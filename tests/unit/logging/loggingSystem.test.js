@@ -342,24 +342,28 @@ describe('Logging System', () => {
       );
     });
 
-    test('should sanitize sensitive data in queries', () => {
+    test('should sanitize sensitive data in queries', async () => {
+      const { sanitizeQuery } = await import('../../../src/shared/utils/sanitization.js');
+
       const sensitiveQuery =
         "UPDATE users SET password='secret123', email='test@example.com' WHERE id=1";
-      const sanitized = PerformanceLogger.sanitizeQuery(sensitiveQuery);
+      const sanitized = sanitizeQuery(sensitiveQuery);
 
       expect(sanitized).toContain("password='[REDACTED]'");
       expect(sanitized).not.toContain('secret123');
       expect(sanitized).toContain('test@example.com'); // Email should remain
     });
 
-    test('should sanitize function arguments', () => {
+    test('should sanitize function arguments', async () => {
+      const { sanitizeArgs } = await import('../../../src/shared/utils/sanitization.js');
+
       const args = [
         { email: 'test@example.com', password: 'secret123' },
         { token: 'jwt_token_here' },
         'normal_string'
       ];
 
-      const sanitized = PerformanceLogger.sanitizeArgs(args);
+      const sanitized = sanitizeArgs(args);
 
       expect(sanitized[0].email).toBe('test@example.com');
       expect(sanitized[0].password).toBe('[REDACTED]');

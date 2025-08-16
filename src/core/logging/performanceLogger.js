@@ -5,6 +5,7 @@
  * application performance analysis and optimization.
  */
 
+import { sanitizeArgs, sanitizeQuery } from '../../shared/utils/sanitization.js';
 import logger from './logger.js';
 
 /**
@@ -18,7 +19,7 @@ export class PerformanceLogger {
     const metrics = {
       event: 'database.query.performance',
       operation,
-      query: this.sanitizeQuery(query),
+      query: sanitizeQuery(query),
       duration,
       timestamp: new Date().toISOString(),
       ...metadata
@@ -148,7 +149,7 @@ export class PerformanceLogger {
           PerformanceLogger.logBusinessOperation(operation, duration, {
             category,
             success: true,
-            args: PerformanceLogger.sanitizeArgs(args)
+            args: sanitizeArgs(args)
           });
 
           return result;
@@ -160,7 +161,7 @@ export class PerformanceLogger {
             category,
             success: false,
             error: error.message,
-            args: PerformanceLogger.sanitizeArgs(args)
+            args: sanitizeArgs(args)
           });
 
           throw error;
@@ -228,42 +229,6 @@ export class PerformanceLogger {
    */
   static getSlowExternalServiceThreshold() {
     return parseInt(process.env.SLOW_EXTERNAL_SERVICE_THRESHOLD) || 5000; // 5 seconds default
-  }
-
-  /**
-   * Sanitize SQL query for logging
-   */
-  static sanitizeQuery(query) {
-    if (typeof query === 'string') {
-      // Remove potential sensitive data
-      return query
-        .replace(/password\s*=\s*'[^']*'/gi, "password='[REDACTED]'")
-        .replace(/token\s*=\s*'[^']*'/gi, "token='[REDACTED]'")
-        .substring(0, 500); // Limit length
-    }
-    return query;
-  }
-
-  /**
-   * Sanitize function arguments for logging
-   */
-  static sanitizeArgs(args) {
-    return args.map(arg => {
-      if (typeof arg === 'object' && arg !== null) {
-        // Remove sensitive fields
-        const sanitized = { ...arg };
-        const sensitiveFields = ['password', 'token', 'secret', 'key'];
-
-        sensitiveFields.forEach(field => {
-          if (sanitized[field]) {
-            sanitized[field] = '[REDACTED]';
-          }
-        });
-
-        return sanitized;
-      }
-      return arg;
-    });
   }
 }
 

@@ -5,24 +5,8 @@
 
 import Decimal from 'decimal.js';
 
-/**
- * Database connection health check
- * @param {Object} prismaClient - Prisma client instance
- * @returns {Promise<Object>} Health status
- */
-export const checkDatabaseHealth = async prismaClient => {
-  try {
-    // Simple query to check database connectivity
-    await prismaClient.$queryRaw`SELECT 1`;
-    return { healthy: true, timestamp: new Date().toISOString() };
-  } catch (error) {
-    return {
-      healthy: false,
-      error: error.message,
-      timestamp: new Date().toISOString()
-    };
-  }
-};
+// Re-export database health check from config
+export { checkDatabaseHealth, getDatabaseInfo } from '../../config/database.js';
 
 /**
  * Get database statistics
@@ -95,30 +79,38 @@ export const buildPaginationMeta = (page, limit, total) => {
 };
 
 /**
- * Format money value for database storage
- * @param {number|string} amount - Amount to format
- * @returns {Decimal} Decimal value
- */
-export const formatMoneyForDb = amount => {
-  return new Decimal(amount).toDecimalPlaces(2);
-};
-
-/**
- * Round money to 2 decimal places
- * @param {number|string|Decimal} amount - Amount to round
- * @returns {number} Rounded amount
- */
-export const roundMoney = amount => {
-  return new Decimal(amount).toDecimalPlaces(2).toNumber();
-};
-
-/**
- * Convert to Decimal for precise calculations
- * @param {number|string} value - Value to convert
+ * Convert to Decimal for precise calculations with error handling
+ * @param {number|string|Decimal} value - Value to convert
  * @returns {Decimal} Decimal value
  */
 export const toDecimal = value => {
-  return new Decimal(value);
+  if (value instanceof Decimal) return value;
+  if (value == null || value === '') return new Decimal(0);
+  try {
+    return new Decimal(value.toString());
+  } catch {
+    return new Decimal(0);
+  }
+};
+
+/**
+ * Format money for database storage with proper precision
+ * @param {number|string|Decimal} amount - Amount to format
+ * @param {number} precision - Decimal places (default: 2)
+ * @returns {Decimal} Decimal value for database
+ */
+export const formatMoneyForDb = (amount, precision = 2) => {
+  return toDecimal(amount).toDecimalPlaces(precision);
+};
+
+/**
+ * Round money to specified decimal places for display
+ * @param {number|string|Decimal} amount - Amount to round
+ * @param {number} precision - Decimal places (default: 2)
+ * @returns {number} Rounded amount as number
+ */
+export const roundMoney = (amount, precision = 2) => {
+  return toDecimal(amount).toDecimalPlaces(precision).toNumber();
 };
 
 /**

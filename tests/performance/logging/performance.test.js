@@ -293,9 +293,10 @@ describe('Logging Performance', () => {
         "DELETE FROM passwords WHERE value = 'old_password'"
       ];
 
-      const metrics = await measurePerformance(i => {
+      const metrics = await measurePerformance(async i => {
+        const { sanitizeQuery } = await import('../../../src/shared/utils/sanitization.js');
         const query = sensitiveQueries[i % sensitiveQueries.length];
-        const sanitized = PerformanceLogger.sanitizeQuery(query);
+        const sanitized = sanitizeQuery(query);
         PerformanceLogger.logQuery('test.query', sanitized, Math.random() * 50);
       }, 1000);
 
