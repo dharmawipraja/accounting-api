@@ -7,6 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import logger, { AuditLogger, PerformanceLogger, log } from '../../../src/core/logging/index.js';
+import { sanitizeQuery } from '../../../src/shared/utils/sanitization.js';
 
 describe('Logging Performance', () => {
   beforeEach(() => {
@@ -294,7 +295,6 @@ describe('Logging Performance', () => {
       ];
 
       const metrics = await measurePerformance(async i => {
-        const { sanitizeQuery } = await import('../../../src/shared/utils/sanitization.js');
         const query = sensitiveQueries[i % sensitiveQueries.length];
         const sanitized = sanitizeQuery(query);
         PerformanceLogger.logQuery('test.query', sanitized, Math.random() * 50);

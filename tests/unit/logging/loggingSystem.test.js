@@ -16,6 +16,7 @@ import logger, {
   logTemplates,
   loggerUtils
 } from '../../../src/core/logging/index.js';
+import { sanitizeArgs, sanitizeQuery } from '../../../src/shared/utils/sanitization.js';
 
 describe('Logging System', () => {
   beforeEach(() => {
@@ -343,8 +344,6 @@ describe('Logging System', () => {
     });
 
     test('should sanitize sensitive data in queries', async () => {
-      const { sanitizeQuery } = await import('../../../src/shared/utils/sanitization.js');
-
       const sensitiveQuery =
         "UPDATE users SET password='secret123', email='test@example.com' WHERE id=1";
       const sanitized = sanitizeQuery(sensitiveQuery);
@@ -355,8 +354,6 @@ describe('Logging System', () => {
     });
 
     test('should sanitize function arguments', async () => {
-      const { sanitizeArgs } = await import('../../../src/shared/utils/sanitization.js');
-
       const args = [
         { email: 'test@example.com', password: 'secret123' },
         { token: 'jwt_token_here' },

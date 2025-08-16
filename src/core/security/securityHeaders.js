@@ -5,6 +5,8 @@
  * and customizable security policies.
  */
 
+import fastifyHelmet from '@fastify/helmet';
+
 /**
  * Content Security Policy (CSP) configurations
  */
@@ -219,7 +221,7 @@ export async function securityHeadersPlugin(fastify, options = {}) {
   };
 
   // Register helmet with configuration
-  await fastify.register(import('@fastify/helmet'), helmetOptions);
+  await fastify.register(fastifyHelmet, helmetOptions);
 
   // Add custom security headers
   fastify.addHook('onSend', async (request, reply) => {

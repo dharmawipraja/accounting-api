@@ -5,6 +5,8 @@
  * extending the existing Fastify security plugins with additional functionality.
  */
 
+import fastifyRateLimit from '@fastify/rate-limit';
+
 export {
   authRateLimitPlugin,
   createCustomRateLimit,
@@ -141,7 +143,7 @@ export async function securitySuitePlugin(fastify, options = {}) {
       }
     };
 
-    await fastify.register(import('@fastify/rate-limit'), {
+    await fastify.register(fastifyRateLimit, {
       ...defaultRateLimitOptions,
       ...rateLimitOptions
     });

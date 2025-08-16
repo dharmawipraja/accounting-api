@@ -1,4 +1,13 @@
+import fastifyCaching from '@fastify/caching';
+import fastifyCompress from '@fastify/compress';
+import fastifyCors from '@fastify/cors';
+import fastifyEnv from '@fastify/env';
+import fastifySensible from '@fastify/sensible';
+import fastifySwagger from '@fastify/swagger';
+import fastifySwaggerUi from '@fastify/swagger-ui';
+import fastifyUnderPressure from '@fastify/under-pressure';
 import Fastify from 'fastify';
+import fastifyRequestId from 'fastify-request-id';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
 import { databaseMiddleware, queryPerformanceMiddleware } from './config/database.js';
 import config, { envSchema } from './config/index.js';
@@ -52,7 +61,7 @@ export async function build(opts = {}) {
   // app.withTypeProvider<ZodTypeProvider>().route({ ... })
 
   // Validate environment variables
-  await app.register(import('@fastify/env'), {
+  await app.register(fastifyEnv, {
     confKey: 'config',
     schema: envSchema
   });
@@ -124,7 +133,7 @@ export async function build(opts = {}) {
 
   // CORS
   if (appConfig.features.enableCors) {
-    await app.register(import('@fastify/cors'), {
+    await app.register(fastifyCors, {
       origin: (origin, callback) => {
         // Allow localhost in development
         if (appConfig.isDevelopment) {
@@ -151,7 +160,7 @@ export async function build(opts = {}) {
 
   // Compression
   if (appConfig.features.enableCompression) {
-    await app.register(import('@fastify/compress'), {
+    await app.register(fastifyCompress, {
       global: true,
       encodings: ['gzip', 'deflate'],
       threshold: appConfig.features.compressionThreshold
@@ -159,10 +168,10 @@ export async function build(opts = {}) {
   }
 
   // Register @fastify/sensible
-  await app.register(import('@fastify/sensible'));
+  await app.register(fastifySensible);
 
   // Register under-pressure for health and load protection
-  await app.register(import('@fastify/under-pressure'), {
+  await app.register(fastifyUnderPressure, {
     // sensible defaults; can be overridden by appConfig.health in the future
     maxEventLoopDelay: appConfig.health?.maxEventLoopDelay ?? 1000,
     maxHeapUsedBytes: appConfig.health?.maxHeapUsedBytes ?? 200 * 1024 * 1024,
@@ -195,7 +204,7 @@ export async function build(opts = {}) {
   // Swagger/OpenAPI (optional)
   if (appConfig.features.enableSwagger) {
     // Register swagger and swagger-ui; the repo already includes @fastify/swagger
-    await app.register(import('@fastify/swagger'), {
+    await app.register(fastifySwagger, {
       swagger: {
         info: {
           title: 'Accounting API',
@@ -206,7 +215,7 @@ export async function build(opts = {}) {
       exposeRoute: true
     });
 
-    await app.register(import('@fastify/swagger-ui'), {
+    await app.register(fastifySwaggerUi, {
       routePrefix: '/docs',
       uiConfig: {
         docExpansion: 'list'
@@ -215,7 +224,7 @@ export async function build(opts = {}) {
   }
 
   // Request-id and response-time
-  await app.register(import('fastify-request-id'), {
+  await app.register(fastifyRequestId, {
     headerName: 'x-request-id'
   });
 
@@ -242,7 +251,7 @@ export async function build(opts = {}) {
 
   // HTTP caching (ETag/Cache-Control)
   const defaultTtlSeconds = appConfig.redis?.defaultTTL ?? 300;
-  await app.register(import('@fastify/caching'), {
+  await app.register(fastifyCaching, {
     // privacy: 'public' is suitable for GET endpoints that return public data
     privacy: 'public',
     // expiresIn expects milliseconds

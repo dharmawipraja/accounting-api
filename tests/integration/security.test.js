@@ -5,6 +5,16 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import {
+  decrypt,
+  decryptSensitiveFields,
+  encrypt,
+  encryptSensitiveFields,
+  generateKey,
+  generateToken,
+  generateUUID
+} from '../../src/core/security/encryption.js';
+import * as inputSanitization from '../../src/core/security/inputSanitization.js';
 
 describe('Enhanced Security Features', () => {
   let app;
@@ -155,10 +165,6 @@ describe('Enhanced Security Features', () => {
   describe('Encryption Utilities', () => {
     it('should encrypt and decrypt data correctly', async () => {
       // Import encryption utilities for unit testing
-      const { encrypt, decrypt, generateKey } = await import(
-        '../../src/core/security/encryption.js'
-      );
-
       const key = generateKey();
       const originalData = 'sensitive information';
       const encrypted = encrypt(originalData, key);
@@ -172,10 +178,6 @@ describe('Enhanced Security Features', () => {
     });
 
     it('should handle sensitive fields in objects', async () => {
-      const { encryptSensitiveFields, decryptSensitiveFields, generateKey } = await import(
-        '../../src/core/security/encryption.js'
-      );
-
       const key = generateKey();
       const userData = {
         id: '123',
@@ -194,8 +196,6 @@ describe('Enhanced Security Features', () => {
     });
 
     it('should generate secure tokens and UUIDs', async () => {
-      const { generateToken, generateUUID } = await import('../../src/core/security/encryption.js');
-
       const token1 = generateToken();
       const token2 = generateToken();
       const uuid1 = generateUUID();
@@ -219,7 +219,7 @@ describe('Enhanced Security Features', () => {
   describe('Input Sanitization', () => {
     it('should sanitize HTML and XSS attempts', async () => {
       const { stripHtml, removeScripts, encodeHtml, sanitizeString, detectSqlInjection } =
-        await import('../../src/core/security/inputSanitization.js');
+        inputSanitization;
 
       // Test HTML stripping
       expect(stripHtml('<script>alert("xss")</script>Hello')).toBe('Hello');
