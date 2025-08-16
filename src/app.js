@@ -4,6 +4,7 @@ import { databaseMiddleware, queryPerformanceMiddleware } from './config/databas
 import config, { envSchema } from './config/index.js';
 import { checkDatabaseHealth } from './core/database/utils.js';
 import { errorHandler } from './core/errors/index.js';
+import { logFormats, registerLoggingMiddleware } from './core/logging/index.js';
 import { registerRoutes } from './router.js';
 
 export async function build(opts = {}) {
@@ -13,11 +14,15 @@ export async function build(opts = {}) {
   // Validate configuration
   config.validateConfig(appConfig);
 
+  // Get appropriate logger configuration based on environment
+  const loggerConfig =
+    opts.logger !== false ? opts.logger || logFormats.getLoggerConfig(appConfig.nodeEnv) : false;
+
   const app = Fastify({
-    logger: opts.logger || true,
+    logger: loggerConfig,
     // Production optimizations
     trustProxy: appConfig.server.trustProxy,
-    disableRequestLogging: appConfig.server.disableRequestLogging,
+    disableRequestLogging: true, // We'll handle this with our structured logging
     // Request timeout
     requestTimeout: appConfig.server.requestTimeout,
     // Body size limit
@@ -48,6 +53,9 @@ export async function build(opts = {}) {
 
   // Register database middleware
   await app.register(databaseMiddleware);
+
+  // Register structured logging middleware early
+  await registerLoggingMiddleware(app);
 
   // Query performance monitoring in development
   if (appConfig.isDevelopment) {
@@ -237,20 +245,6 @@ export async function build(opts = {}) {
   });
 
   // Graceful shutdown is handled by the database middleware
-
-  // Request logging in development
-  if (appConfig.logging.logRequests && appConfig.isDevelopment) {
-    app.addHook('onRequest', async request => {
-      request.log.info(
-        {
-          url: request.url,
-          method: request.method,
-          requestId: request.id
-        },
-        'Incoming request'
-      );
-    });
-  }
 
   return app;
 }

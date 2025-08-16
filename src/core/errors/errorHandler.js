@@ -5,6 +5,7 @@
  * Provides consistent error responses and logging.
  */
 
+import { AUDIT_EVENTS, AuditLogger, loggerUtils } from '../logging/index.js';
 import AppError from './AppError.js';
 import AuthenticationError from './AuthenticationError.js';
 import DatabaseError from './DatabaseError.js';
@@ -108,30 +109,124 @@ function normalizeError(error) {
 }
 
 /**
- * Log error with appropriate level and context
+ * Log error with appropriate level and context using structured logging
  */
 function logError(error, request) {
-  const errorInfo = {
-    message: error.message,
-    stack: error.stack,
+  const errorContext = {
+    errorName: error.name,
+    errorCode: error.code,
+    statusCode: error.statusCode || 500,
     requestId: request.id,
     method: request.method,
     url: request.url,
     userAgent: request.headers['user-agent'],
     ip: request.ip,
     userId: request.user?.id,
+    correlationId: request.headers['x-correlation-id'],
     timestamp: new Date().toISOString()
   };
 
-  // Determine log level based on error type and status
+  // Determine log level and type based on error
   const statusCode = error.statusCode || 500;
+
   if (statusCode >= 500) {
-    request.log.error(errorInfo, 'Server error occurred');
+    // Server errors - log with full context
+    loggerUtils.logError(error, 'Server error occurred', {
+      ...errorContext,
+      severity: 'high',
+      category: 'server_error'
+    });
+
+    // Log audit event for server errors
+    if (request.user?.id) {
+      AuditLogger.logSecurity(AUDIT_EVENTS.SYSTEM_ERROR, {
+        userId: request.user.id,
+        ip: request.ip,
+        error: error.message,
+        endpoint: `${request.method} ${request.url}`,
+        severity: 'high'
+      });
+    }
+  } else if (statusCode === 401) {
+    // Authentication errors
+    loggerUtils.logSecurity('authentication_failure', {
+      ...errorContext,
+      severity: 'medium',
+      reason: error.message
+    });
+
+    AuditLogger.logAuth(AUDIT_EVENTS.LOGIN_FAILURE, request.user?.id || 'anonymous', {
+      ip: request.ip,
+      userAgent: request.headers['user-agent'],
+      reason: error.message,
+      endpoint: `${request.method} ${request.url}`,
+      requestId: request.id
+    });
+  } else if (statusCode === 403) {
+    // Authorization errors
+    loggerUtils.logSecurity('authorization_failure', {
+      ...errorContext,
+      severity: 'medium',
+      action: 'access_denied'
+    });
+
+    AuditLogger.logSecurity(AUDIT_EVENTS.UNAUTHORIZED_ACCESS, {
+      userId: request.user?.id,
+      ip: request.ip,
+      url: request.url,
+      method: request.method,
+      reason: error.message,
+      severity: 'medium'
+    });
+  } else if (statusCode === 429) {
+    // Rate limiting
+    loggerUtils.logSecurity('rate_limit_exceeded', {
+      ...errorContext,
+      severity: 'low',
+      category: 'rate_limiting'
+    });
+
+    AuditLogger.logSecurity(AUDIT_EVENTS.RATE_LIMIT_EXCEEDED, {
+      ip: request.ip,
+      endpoint: `${request.method} ${request.url}`,
+      severity: 'low'
+    });
   } else if (statusCode >= 400) {
-    request.log.warn(errorInfo, 'Client error occurred');
-  } else {
-    request.log.info(errorInfo, 'Request completed with error');
+    // Other client errors
+    request.log.warn(
+      {
+        ...errorContext,
+        category: 'client_error'
+      },
+      'Client error occurred'
+    );
   }
+
+  // Log business impact for critical endpoints
+  if (isCriticalEndpoint(request.url) && statusCode >= 500) {
+    loggerUtils.logBusiness('critical_endpoint_failure', {
+      endpoint: `${request.method} ${request.url}`,
+      error: error.message,
+      impact: 'high',
+      userId: request.user?.id,
+      requestId: request.id
+    });
+  }
+}
+
+/**
+ * Check if an endpoint is considered critical for business operations
+ */
+function isCriticalEndpoint(url) {
+  const criticalPatterns = [
+    '/api/transactions',
+    '/api/accounts',
+    '/api/ledgers',
+    '/api/auth',
+    '/api/users'
+  ];
+
+  return criticalPatterns.some(pattern => url.startsWith(pattern));
 }
 
 /**
