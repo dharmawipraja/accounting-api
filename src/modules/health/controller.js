@@ -35,10 +35,24 @@ export class HealthController {
   async getReadiness(request, reply) {
     try {
       const readinessStatus = await this.healthService.getReadinessStatus();
-      reply.status(HTTP_STATUS.OK).send(readinessStatus);
+
+      if (readinessStatus.ready === false) {
+        reply.status(503).send(readinessStatus);
+      } else {
+        reply.status(HTTP_STATUS.OK).send(readinessStatus);
+      }
     } catch (error) {
       request.log.error('Readiness check failed:', error);
-      throw reply.serviceUnavailable('Service not ready');
+
+      // Return 503 for readiness failures (not ready)
+      const notReadyResponse = {
+        ready: false,
+        services: {
+          database: false,
+          memory: true
+        }
+      };
+      reply.status(503).send(notReadyResponse);
     }
   }
 

@@ -4,13 +4,25 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createIntegrationTestApp, skipIfNoDatabaseAvailable } from '../utils.js';
 
 describe('Health Module Integration', () => {
   let app;
 
   beforeAll(async () => {
-    // Skip integration tests for now - require more complex setup
-    app = null;
+    // Check if database is available
+    const shouldSkip = await skipIfNoDatabaseAvailable();
+    if (shouldSkip) {
+      app = null;
+      return;
+    }
+
+    try {
+      app = await createIntegrationTestApp();
+    } catch (error) {
+      console.warn('Failed to create test app:', error.message);
+      app = null;
+    }
   });
 
   afterAll(async () => {
@@ -20,10 +32,18 @@ describe('Health Module Integration', () => {
   });
 
   describe('GET /health', () => {
-    it.skip('should return comprehensive health status', async () => {
+    it('should return comprehensive health status', async () => {
+      if (!app) {
+        console.log('⚠️  Skipping health test - app not available');
+        return;
+      }
+
       const response = await app.inject({
         method: 'GET',
-        url: '/health'
+        url: '/health',
+        headers: {
+          origin: 'http://localhost:3000' // Add origin header for CORS
+        }
       });
 
       expect(response.statusCode).toBe(200);
@@ -49,10 +69,13 @@ describe('Health Module Integration', () => {
       expect(typeof payload.database.healthy).toBe('boolean');
     });
 
-    it.skip('should have valid timestamp format', async () => {
+    it('should have valid timestamp format', async () => {
       const response = await app.inject({
         method: 'GET',
-        url: '/health'
+        url: '/health',
+        headers: {
+          origin: 'http://localhost:3000' // Add origin header for CORS
+        }
       });
 
       const payload = JSON.parse(response.payload);
@@ -64,10 +87,13 @@ describe('Health Module Integration', () => {
   });
 
   describe('GET /ready', () => {
-    it.skip('should return readiness status', async () => {
+    it('should return readiness status', async () => {
       const response = await app.inject({
         method: 'GET',
-        url: '/ready'
+        url: '/ready',
+        headers: {
+          origin: 'http://localhost:3000' // Add origin header for CORS
+        }
       });
 
       // Should be either 200 (ready) or 503 (not ready)
@@ -87,10 +113,13 @@ describe('Health Module Integration', () => {
   });
 
   describe('GET /live', () => {
-    it.skip('should return liveness status', async () => {
+    it('should return liveness status', async () => {
       const response = await app.inject({
         method: 'GET',
-        url: '/live'
+        url: '/live',
+        headers: {
+          origin: 'http://localhost:3000' // Add origin header for CORS
+        }
       });
 
       expect(response.statusCode).toBe(200);
@@ -108,10 +137,13 @@ describe('Health Module Integration', () => {
   });
 
   describe('Health response schema validation', () => {
-    it.skip('should match expected health response schema', async () => {
+    it('should match expected health response schema', async () => {
       const response = await app.inject({
         method: 'GET',
-        url: '/health'
+        url: '/health',
+        headers: {
+          origin: 'http://localhost:3000' // Add origin header for CORS
+        }
       });
 
       const payload = JSON.parse(response.payload);

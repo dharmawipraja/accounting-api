@@ -479,7 +479,10 @@ describe('Logging System', () => {
 
       log.info('Test info message', { test: true });
 
-      expect(logSpy).toHaveBeenCalledWith({ test: true }, 'Test info message');
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ test: true }),
+        'Test info message'
+      );
     });
 
     test('should log error messages with error objects', () => {

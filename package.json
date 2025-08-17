@@ -14,7 +14,7 @@
     "restart": "pm2 restart accounting-api",
     "logs": "pm2 logs accounting-api",
     "monitor": "pm2 monit",
-    "prisma:generate": "prisma generate",
+    "prisma:generate": "prisma generate --no-engine",
     "prisma:migrate": "prisma migrate dev",
     "prisma:reset": "prisma migrate reset",
     "prisma:prod": "prisma migrate deploy",

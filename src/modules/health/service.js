@@ -28,7 +28,7 @@ export class HealthService {
 
       if (dbHealth.healthy) {
         try {
-          const dbStats = await getDatabaseStats();
+          const dbStats = await getDatabaseStats(this.prisma);
           dbInfo = {
             healthy: true,
             version: 'PostgreSQL',
@@ -64,19 +64,26 @@ export class HealthService {
    * @returns {Promise<Object>} Readiness status
    */
   async getReadinessStatus() {
-    const dbHealth = await checkDatabaseHealth(this.prisma);
+    try {
+      const dbHealth = await checkDatabaseHealth(this.prisma);
 
-    if (!dbHealth.healthy) {
-      throw new Error('Database unavailable');
+      return {
+        ready: dbHealth.healthy,
+        services: {
+          database: dbHealth.healthy,
+          memory: true // Memory is always considered healthy if process is running
+        }
+      };
+    } catch (error) {
+      return {
+        ready: false,
+        services: {
+          database: false,
+          memory: true
+        },
+        message: error.message
+      };
     }
-
-    return {
-      status: 'ready',
-      timestamp: new Date().toISOString(),
-      checks: {
-        database: 'healthy'
-      }
-    };
   }
 
   /**
@@ -85,9 +92,8 @@ export class HealthService {
    */
   getLivenessStatus() {
     return {
-      status: 'alive',
-      timestamp: new Date().toISOString(),
-      pid: process.pid
+      status: 'healthy',
+      timestamp: new Date().toISOString()
     };
   }
 
@@ -96,6 +102,6 @@ export class HealthService {
    * @returns {Promise<Object>} Database statistics
    */
   async getDatabaseStatistics() {
-    return getDatabaseStats();
+    return getDatabaseStats(this.prisma);
   }
 }

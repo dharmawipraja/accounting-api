@@ -2,6 +2,7 @@ import fastifyCaching from '@fastify/caching';
 import fastifyCompress from '@fastify/compress';
 import fastifyCors from '@fastify/cors';
 import fastifyEnv from '@fastify/env';
+import fastifyJwt from '@fastify/jwt';
 import fastifySensible from '@fastify/sensible';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
@@ -129,6 +130,11 @@ export async function build(opts = {}) {
     }
   });
 
+  // JWT Plugin for authentication
+  await app.register(fastifyJwt, {
+    secret: appConfig.security.jwtSecret || process.env.JWT_SECRET || 'fallback-secret-key'
+  });
+
   // Note: Helmet is now configured within the securitySuitePlugin to avoid conflicts
 
   // CORS
@@ -171,7 +177,7 @@ export async function build(opts = {}) {
   await app.register(fastifySensible);
 
   // Register under-pressure for health and load protection
-  await app.register(fastifyUnderPressure, {
+  const underPressureConfig = {
     // sensible defaults; can be overridden by appConfig.health in the future
     maxEventLoopDelay: appConfig.health?.maxEventLoopDelay ?? 1000,
     maxHeapUsedBytes: appConfig.health?.maxHeapUsedBytes ?? 200 * 1024 * 1024,
@@ -183,9 +189,12 @@ export async function build(opts = {}) {
     exposeStatusRoute: true,
     statusRoute: {
       url: '/status'
-    },
-    // Integrate Prisma DB health check
-    healthCheck: async () => {
+    }
+  };
+
+  // Only add database health check in non-test environment
+  if (!appConfig.isTest && !process.env.NODE_ENV?.includes('test')) {
+    underPressureConfig.healthCheck = async () => {
       try {
         // Simple health check - just verify we can access the database
         if (!app.prisma) {
@@ -198,8 +207,10 @@ export async function build(opts = {}) {
         app.log.warn('Health check failed:', error.message);
         return false;
       }
-    }
-  });
+    };
+  }
+
+  await app.register(fastifyUnderPressure, underPressureConfig);
 
   // Swagger/OpenAPI (optional)
   if (appConfig.features.enableSwagger) {

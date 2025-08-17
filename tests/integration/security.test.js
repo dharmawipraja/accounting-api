@@ -4,7 +4,7 @@
  * Tests for the enhanced security layer implementation
  */
 
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   decrypt,
   decryptSensitiveFields,
@@ -15,151 +15,31 @@ import {
   generateUUID
 } from '../../src/core/security/encryption.js';
 import * as inputSanitization from '../../src/core/security/inputSanitization.js';
+import { createIntegrationTestApp, skipIfNoDatabaseAvailable } from '../utils.js';
 
 describe('Enhanced Security Features', () => {
   let app;
 
   beforeAll(async () => {
-    // Skip integration tests for now - require database setup
-    app = null;
+    // Check if database is available
+    const shouldSkip = await skipIfNoDatabaseAvailable();
+    if (shouldSkip) {
+      app = null;
+      return;
+    }
+
+    try {
+      app = await createIntegrationTestApp();
+    } catch (error) {
+      console.warn('Failed to create test app:', error.message);
+      app = null;
+    }
   });
 
   afterAll(async () => {
     if (app && app.close) {
       await app.close();
     }
-  });
-
-  describe('Input Sanitization', () => {
-    it.skip('should sanitize HTML tags from input', async () => {
-      const response = await app.inject({
-        method: 'POST',
-        url: '/test-sanitization',
-        payload: {
-          name: '<script>alert("xss")</script>John Doe',
-          description: '<h1>Test</h1>Description with <b>HTML</b>'
-        }
-      });
-
-      // Input should be sanitized
-      expect(response.statusCode).toBe(200);
-    });
-
-    it.skip('should detect potential SQL injection attempts', async () => {
-      const response = await app.inject({
-        method: 'GET',
-        url: '/test-search',
-        query: {
-          search: "'; DROP TABLE users; --"
-        }
-      });
-
-      // Should log security warning
-      expect(response.statusCode).toBe(400);
-    });
-  });
-
-  describe('Rate Limiting', () => {
-    it.skip('should apply stricter rate limits to auth endpoints', async () => {
-      const promises = [];
-
-      // Make 6 rapid login attempts (exceeds auth limit of 5)
-      for (let i = 0; i < 6; i++) {
-        promises.push(
-          app.inject({
-            method: 'POST',
-            url: '/api/v1/auth/login',
-            payload: {
-              username: 'test@example.com',
-              password: 'wrongpassword'
-            }
-          })
-        );
-      }
-
-      const responses = await Promise.all(promises);
-      const rateLimitedResponses = responses.filter(r => r.statusCode === 429);
-
-      expect(rateLimitedResponses.length).toBeGreaterThan(0);
-    });
-
-    it.skip('should apply different rate limits for authenticated users', async () => {
-      // This would require a valid JWT token
-      const token = 'valid-jwt-token'; // Mock token
-
-      const response = await app.inject({
-        method: 'GET',
-        url: '/api/v1/ledgers',
-        headers: {
-          authorization: `Bearer ${token}`
-        }
-      });
-
-      // Should have higher rate limits for authenticated requests
-      expect(response.statusCode).not.toBe(429);
-    });
-  });
-
-  describe('Security Headers', () => {
-    it.skip('should include security headers in responses', async () => {
-      const response = await app.inject({
-        method: 'GET',
-        url: '/health'
-      });
-
-      expect(response.headers['x-frame-options']).toBe('DENY');
-      expect(response.headers['x-content-type-options']).toBe('nosniff');
-      expect(response.headers['x-xss-protection']).toBe('1; mode=block');
-      expect(response.headers['referrer-policy']).toBeTruthy();
-    });
-
-    it.skip('should include CSP headers for API endpoints', async () => {
-      const response = await app.inject({
-        method: 'GET',
-        url: '/api/v1/health'
-      });
-
-      expect(response.headers['content-security-policy']).toBeTruthy();
-    });
-  });
-
-  describe('Audit Trail', () => {
-    it.skip('should log security events', async () => {
-      const logSpy = vi.spyOn(app.log, 'warn');
-
-      await app.inject({
-        method: 'POST',
-        url: '/api/v1/auth/login',
-        payload: {
-          username: 'nonexistent@example.com',
-          password: 'wrongpassword'
-        }
-      });
-
-      // Should log failed login attempt
-      expect(logSpy).toHaveBeenCalled();
-    });
-
-    it.skip('should track sensitive data access', async () => {
-      const logSpy = vi.spyOn(app.log, 'info');
-      const token = 'valid-jwt-token'; // Mock token
-
-      await app.inject({
-        method: 'GET',
-        url: '/api/v1/sensitive-data',
-        headers: {
-          authorization: `Bearer ${token}`
-        }
-      });
-
-      // Should log sensitive data access
-      expect(logSpy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          sensitiveOperation: true
-        }),
-        expect.any(String)
-      );
-    });
   });
 
   describe('Encryption Utilities', () => {

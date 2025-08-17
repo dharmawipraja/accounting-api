@@ -5,24 +5,44 @@
 
 import { expect } from 'vitest';
 import { build } from '../src/app.js';
+import { isDatabaseAvailable } from './setup.js';
 
 /**
  * Create a test application instance
  */
 export async function createTestApp(options = {}) {
-  const app = build({
+  const app = await build({
     logger: false,
     ...options
   });
 
-  // Initialize the app instead of calling ready()
-  try {
-    await app.listen({ port: 0, host: '127.0.0.1' });
-    return app;
-  } catch (error) {
-    console.error('Failed to start test app:', error);
-    throw error;
+  // Just prepare the app for testing, don't start a server
+  await app.ready();
+  return app;
+}
+
+/**
+ * Create app specifically for integration tests with database check
+ */
+export async function createIntegrationTestApp(options = {}) {
+  const dbAvailable = await isDatabaseAvailable();
+  if (!dbAvailable) {
+    throw new Error('Database not available for integration test');
   }
+
+  return createTestApp(options);
+}
+
+/**
+ * Skip test if database is not available
+ */
+export async function skipIfNoDatabaseAvailable() {
+  const dbAvailable = await isDatabaseAvailable();
+  if (!dbAvailable) {
+    console.log('⚠️  Skipping test - database not available');
+    return true;
+  }
+  return false;
 }
 
 /**
