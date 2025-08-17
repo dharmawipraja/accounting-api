@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod';
+import { prisma } from '../../config/database.js';
 import { authenticate } from '../../core/middleware/auth.js';
 import { authRateLimitPlugin } from '../../core/security/rateLimiting.js';
 import { SuccessResponseSchema } from '../../shared/schemas/base.js';
@@ -12,7 +13,7 @@ import { AuthResponseSchema, LoginSchema } from './schemas.js';
 
 export const createAuthRoutes = jwtSecret => {
   return async function authRoutes(fastify) {
-    const authController = new AuthController(fastify.prisma, jwtSecret);
+    const authController = new AuthController(prisma, jwtSecret);
 
     // Register auth-specific rate limiting
     await fastify.register(authRateLimitPlugin);

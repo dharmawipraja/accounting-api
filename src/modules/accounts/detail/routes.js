@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod';
+import { prisma } from '../../../config/database.js';
 import { authenticate, requireAccountingAccess } from '../../../core/middleware/auth.js';
 import { cacheControl } from '../../../core/middleware/caching.js';
 import { parsePagination } from '../../../core/middleware/pagination.js';
@@ -22,7 +23,7 @@ import {
 } from './schemas.js';
 
 export async function accountDetailRoutes(fastify) {
-  const accountDetailController = new AccountDetailController(fastify.prisma);
+  const accountDetailController = new AccountDetailController(prisma);
 
   // Create detail account - Admin, Manager, and Accountant only
   fastify.post(

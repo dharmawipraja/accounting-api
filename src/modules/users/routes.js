@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod';
+import { prisma } from '../../config/database.js';
 import { authenticate, authorize } from '../../core/middleware/auth.js';
 import { cacheControl } from '../../core/middleware/caching.js';
 import { parsePagination } from '../../core/middleware/pagination.js';
@@ -26,7 +27,7 @@ import {
 const requireUserManagement = authorize(USER_ROLES.ADMIN, USER_ROLES.MANAJER);
 
 export async function userRoutes(fastify) {
-  const usersController = new UsersController(fastify.prisma);
+  const usersController = new UsersController(prisma);
 
   // Create user - Admin and Manager only
   fastify.post(

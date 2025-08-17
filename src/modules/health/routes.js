@@ -4,11 +4,12 @@
  */
 
 import { z } from 'zod';
+import { prisma } from '../../config/database.js';
 import { HealthController } from './controller.js';
 import { ComprehensiveHealthSchema, ReadinessSchema, SimpleHealthSchema } from './schemas.js';
 
 export async function healthRoutes(fastify) {
-  const healthController = new HealthController(fastify.prisma);
+  const healthController = new HealthController(prisma);
 
   // Comprehensive health check
   fastify.get(
