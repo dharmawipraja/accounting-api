@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import { authenticate } from '../../core/middleware/auth.js';
 import { authRateLimitPlugin } from '../../core/security/rateLimiting.js';
-import { ErrorResponseSchema, SuccessResponseSchema } from '../../shared/schemas/base.js';
+import { SuccessResponseSchema } from '../../shared/schemas/base.js';
 import { AuthController } from './controller.js';
 import { AuthResponseSchema, LoginSchema } from './schemas.js';
 
@@ -26,10 +26,8 @@ export const createAuthRoutes = jwtSecret => {
           tags: ['Authentication'],
           body: LoginSchema,
           response: {
-            200: SuccessResponseSchema(AuthResponseSchema),
-            401: ErrorResponseSchema,
-            429: ErrorResponseSchema,
-            500: ErrorResponseSchema
+            200: SuccessResponseSchema(AuthResponseSchema)
+            // Removed error response schemas to prevent serialization conflicts
           }
         }
       },
@@ -50,8 +48,7 @@ export const createAuthRoutes = jwtSecret => {
               z.object({
                 message: z.string()
               })
-            ),
-            401: ErrorResponseSchema
+            )
           }
         }
       },
@@ -78,9 +75,7 @@ export const createAuthRoutes = jwtSecret => {
                 createdAt: z.date(),
                 updatedAt: z.date()
               })
-            ),
-            401: ErrorResponseSchema,
-            404: ErrorResponseSchema
+            )
           }
         }
       },

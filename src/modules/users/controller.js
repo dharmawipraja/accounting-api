@@ -3,6 +3,13 @@
  * HTTP request handlers for user operations
  */
 
+/**
+ * Users Controller
+ * HTTP request handlers for user operations
+ */
+
+import AppError from '../../core/errors/AppError.js';
+import ValidationError from '../../core/errors/ValidationError.js';
 import { buildPaginationMeta } from '../../core/middleware/pagination.js';
 import { HTTP_STATUS } from '../../shared/constants/index.js';
 import { createPaginatedResponse, createSuccessResponse } from '../../shared/utils/response.js';
@@ -34,7 +41,7 @@ export class UsersController {
         throw reply.conflict(error.message);
       }
 
-      throw reply.internalServerError('Failed to create user');
+      throw new AppError('Failed to create user', 500, 'INTERNAL_ERROR');
     }
   }
 
@@ -62,7 +69,7 @@ export class UsersController {
       reply.status(HTTP_STATUS.OK).send(response);
     } catch (error) {
       request.log.error({ error, query: request.query }, 'Failed to get users');
-      throw reply.internalServerError('Failed to retrieve users');
+      throw new AppError('Failed to retrieve users', 500, 'INTERNAL_ERROR');
     }
   }
 
@@ -78,7 +85,7 @@ export class UsersController {
       const user = await this.usersService.getUserById(id);
 
       if (!user) {
-        throw reply.notFound('User not found');
+        throw new AppError('User not found', 404, 'NOT_FOUND');
       }
 
       const response = createSuccessResponse(user);
@@ -89,7 +96,7 @@ export class UsersController {
       }
 
       request.log.error({ error, userId: request.params.id }, 'Failed to get user');
-      throw reply.internalServerError('Failed to retrieve user');
+      throw new AppError('Failed to retrieve user', 500, 'INTERNAL_ERROR');
     }
   }
 
@@ -120,10 +127,10 @@ export class UsersController {
 
       if (error.code === 'P2025') {
         // Prisma record not found
-        throw reply.notFound('User not found');
+        throw new AppError('User not found', 404, 'NOT_FOUND');
       }
 
-      throw reply.internalServerError('Failed to update user');
+      throw new AppError('Failed to update user', 500, 'INTERNAL_ERROR');
     }
   }
 
@@ -146,10 +153,10 @@ export class UsersController {
 
       if (error.code === 'P2025') {
         // Prisma record not found
-        throw reply.notFound('User not found');
+        throw new AppError('User not found', 404, 'NOT_FOUND');
       }
 
-      throw reply.internalServerError('Failed to delete user');
+      throw new AppError('Failed to delete user', 500, 'INTERNAL_ERROR');
     }
   }
 
@@ -174,14 +181,14 @@ export class UsersController {
       request.log.error({ error, userId: request.user?.userId }, 'Failed to change password');
 
       if (error.message === 'User not found') {
-        throw reply.notFound(error.message);
+        throw new AppError(error.message, 404, 'NOT_FOUND');
       }
 
       if (error.message === 'Current password is incorrect') {
-        throw reply.badRequest(error.message);
+        throw new ValidationError(error.message);
       }
 
-      throw reply.internalServerError('Failed to change password');
+      throw new AppError('Failed to change password', 500, 'INTERNAL_ERROR');
     }
   }
 }

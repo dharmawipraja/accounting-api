@@ -36,12 +36,13 @@ class AppError extends Error {
   toJSON() {
     return {
       success: false,
-      error: {
+      error: this.message,
+      statusCode: this.statusCode,
+      details: {
         code: this.code,
-        message: this.message,
-        details: this.details,
         requestId: this.requestId,
         timestamp: this.timestamp,
+        ...(this.details && { additionalDetails: this.details }),
         ...(process.env.NODE_ENV === 'development' && {
           stack: this.stack
         })

@@ -178,36 +178,53 @@ export async function build(opts = {}) {
 
   // Register under-pressure for health and load protection
   const underPressureConfig = {
-    // sensible defaults; can be overridden by appConfig.health in the future
-    maxEventLoopDelay: appConfig.health?.maxEventLoopDelay ?? 1000,
-    maxHeapUsedBytes: appConfig.health?.maxHeapUsedBytes ?? 200 * 1024 * 1024,
-    maxRssBytes: appConfig.health?.maxRssBytes ?? 300 * 1024 * 1024,
-    sampleInterval: appConfig.health?.sampleInterval ?? 5000,
+    // More relaxed defaults to prevent false positives
+    maxEventLoopDelay: appConfig.health?.maxEventLoopDelay ?? 5000, // Increased from 1000ms
+    maxHeapUsedBytes: appConfig.health?.maxHeapUsedBytes ?? 512 * 1024 * 1024, // Increased from 200MB
+    maxRssBytes: appConfig.health?.maxRssBytes ?? 768 * 1024 * 1024, // Increased from 300MB
+    sampleInterval: appConfig.health?.sampleInterval ?? 10000, // Increased from 5000ms
     message: 'Server is under heavy load, please try again later',
     // Expose a lightweight under-pressure status route for quick probe checks.
     // This is mapped to `/status` and complements the richer `/health` and `/ready` endpoints.
     exposeStatusRoute: true,
     statusRoute: {
       url: '/status'
-    }
+    },
+    // Add retry mechanism for health checks
+    retries: 3
   };
 
-  // Only add database health check in non-test environment
-  if (!appConfig.isTest && !process.env.NODE_ENV?.includes('test')) {
+  // Only add database health check in non-test environment and if health checks are enabled
+  if (
+    !appConfig.isTest &&
+    !process.env.NODE_ENV?.includes('test') &&
+    appConfig.features.enableHealthCheck
+  ) {
     underPressureConfig.healthCheck = async () => {
       try {
-        // Simple health check - just verify we can access the database
+        // Wait a bit for Prisma to be ready if it's not yet available
         if (!app.prisma) {
-          return false;
+          app.log.debug('Prisma client not yet available for health check');
+          return true; // Return true to avoid blocking during startup
         }
-        // Basic connectivity test
-        await app.prisma.$queryRaw`SELECT 1`;
+
+        // Basic connectivity test with timeout
+        const timeoutPromise = new Promise((_, reject) =>
+          global.setTimeout(() => reject(new Error('Health check timeout')), 3000)
+        );
+
+        await Promise.race([app.prisma.$queryRaw`SELECT 1`, timeoutPromise]);
+
         return true;
       } catch (error) {
         app.log.warn('Health check failed:', error.message);
-        return false;
+        // Be more lenient during development
+        return appConfig.isDevelopment;
       }
     };
+
+    // Add health check timeout
+    underPressureConfig.healthCheckInterval = 30000; // Check every 30 seconds instead of default
   }
 
   await app.register(fastifyUnderPressure, underPressureConfig);

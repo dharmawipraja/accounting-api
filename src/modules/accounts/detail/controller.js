@@ -7,6 +7,8 @@ import { buildPaginationMeta } from '../../../core/middleware/pagination.js';
 import { HTTP_STATUS } from '../../../shared/constants/index.js';
 import { createPaginatedResponse, createSuccessResponse } from '../../../shared/utils/response.js';
 import { AccountDetailService } from './service.js';
+import AppError from '../../../core/errors/AppError.js';
+import ValidationError from '../../../core/errors/ValidationError.js';
 
 export class AccountDetailController {
   constructor(prisma) {
@@ -35,10 +37,10 @@ export class AccountDetailController {
       }
 
       if (error.message === 'General account not found') {
-        throw reply.badRequest(error.message);
+        throw new ValidationError(error.message);
       }
 
-      throw reply.internalServerError('Failed to create account detail');
+      throw new AppError('Failed to create account detail', 500, 'INTERNAL_ERROR');
     }
   }
 
@@ -78,7 +80,7 @@ export class AccountDetailController {
       reply.status(HTTP_STATUS.OK).send(response);
     } catch (error) {
       request.log.error({ error, query: request.query }, 'Failed to get account details');
-      throw reply.internalServerError('Failed to retrieve account details');
+      throw new AppError('Failed to retrieve account details', 500, 'INTERNAL_ERROR');
     }
   }
 
@@ -99,7 +101,7 @@ export class AccountDetailController {
       );
 
       if (!account) {
-        throw reply.notFound('Account detail not found');
+        throw new AppError('Account detail not found', 404, 'NOT_FOUND');
       }
 
       const response = createSuccessResponse(account);
@@ -110,7 +112,7 @@ export class AccountDetailController {
       }
 
       request.log.error({ error, accountId: request.params.id }, 'Failed to get account detail');
-      throw reply.internalServerError('Failed to retrieve account detail');
+      throw new AppError('Failed to retrieve account detail', 500, 'INTERNAL_ERROR');
     }
   }
 
@@ -144,10 +146,10 @@ export class AccountDetailController {
       );
 
       if (error.message === 'Account not found') {
-        throw reply.notFound(error.message);
+        throw new AppError(error.message, 404, 'NOT_FOUND');
       }
 
-      throw reply.internalServerError('Failed to update account detail');
+      throw new AppError('Failed to update account detail', 500, 'INTERNAL_ERROR');
     }
   }
 
@@ -169,14 +171,14 @@ export class AccountDetailController {
       request.log.error({ error, accountId: request.params.id }, 'Failed to delete account detail');
 
       if (error.message === 'Account not found') {
-        throw reply.notFound(error.message);
+        throw new AppError(error.message, 404, 'NOT_FOUND');
       }
 
       if (error.message === 'Cannot delete account with associated ledger entries') {
-        throw reply.badRequest(error.message);
+        throw new ValidationError(error.message);
       }
 
-      throw reply.internalServerError('Failed to delete account detail');
+      throw new AppError('Failed to delete account detail', 500, 'INTERNAL_ERROR');
     }
   }
 }

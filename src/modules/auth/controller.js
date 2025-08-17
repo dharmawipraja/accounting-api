@@ -3,6 +3,8 @@
  * HTTP request handlers for authentication
  */
 
+import AppError from '../../core/errors/AppError.js';
+import AuthenticationError from '../../core/errors/AuthenticationError.js';
 import { createSuccessResponse } from '../../shared/utils/response.js';
 import { AuthService } from './service.js';
 
@@ -38,6 +40,14 @@ export class AuthController {
     } catch (error) {
       request.log.error({ error, username: request.body?.username }, 'Login failed');
 
+      // Debug logging
+      console.log('Auth error caught:', {
+        message: error.message,
+        name: error.name,
+        statusCode: error.statusCode,
+        stack: error.stack?.split('\n')[0]
+      });
+
       // Log failed login attempt
       if (request.server.securityAudit) {
         request.server.securityAudit.logLoginFailure(
@@ -50,10 +60,14 @@ export class AuthController {
       }
 
       if (error.message === 'Invalid credentials') {
-        throw reply.unauthorized('Invalid username or password');
+        const authError = new AuthenticationError('Invalid username or password');
+        console.log('Throwing AuthenticationError:', authError.toJSON());
+        throw authError;
       }
 
-      throw reply.internalServerError('Authentication failed');
+      const appError = new AppError('Authentication failed', 500, 'AUTH_FAILED');
+      console.log('Throwing AppError:', appError.toJSON());
+      throw appError;
     }
   }
 
@@ -111,7 +125,7 @@ export class AuthController {
       });
 
       if (!user) {
-        throw reply.notFound('User not found');
+        throw new AppError('User not found', 404, 'USER_NOT_FOUND');
       }
 
       const response = createSuccessResponse(user);
@@ -122,7 +136,7 @@ export class AuthController {
       }
 
       request.log.error({ error, userId: request.user?.userId }, 'Failed to get user profile');
-      throw reply.internalServerError('Failed to retrieve profile');
+      throw new AppError('Failed to retrieve profile', 500, 'PROFILE_RETRIEVAL_FAILED');
     }
   }
 }

@@ -5,6 +5,7 @@
 
 import bcrypt from 'bcrypt';
 import { ERROR_MESSAGES, USER_ROLES } from '../../shared/constants/index.js';
+import AppError from '../errors/AppError.js';
 
 /**
  * JWT Authentication middleware
@@ -97,7 +98,7 @@ export function requireOwnerOrAdmin(resourceUserIdField = 'userId') {
  * @returns {Function} Middleware function
  */
 export function checkNotDeleted(model, idField = 'id') {
-  return async (request, reply) => {
+  return async (request, _reply) => {
     const id = request.params[idField];
     const resource = await request.server.prisma[model].findUnique({
       where: { id },
@@ -105,11 +106,11 @@ export function checkNotDeleted(model, idField = 'id') {
     });
 
     if (!resource) {
-      throw reply.notFound(ERROR_MESSAGES.NOT_FOUND);
+      throw new AppError(ERROR_MESSAGES.NOT_FOUND, 404, 'NOT_FOUND');
     }
 
     if (resource.deletedAt) {
-      throw reply.notFound('Resource has been deleted');
+      throw new AppError('Resource has been deleted', 404, 'RESOURCE_DELETED');
     }
   };
 }

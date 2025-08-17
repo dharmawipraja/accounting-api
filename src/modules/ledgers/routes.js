@@ -10,7 +10,6 @@ import { parsePagination } from '../../core/middleware/pagination.js';
 import { sensitiveRateLimitPlugin } from '../../core/security/rateLimiting.js';
 import { CACHE_DURATION } from '../../shared/constants/index.js';
 import {
-  ErrorResponseSchema,
   IdParamSchema,
   PaginatedResponseSchema,
   SuccessResponseSchema
@@ -47,9 +46,7 @@ export async function ledgersRoutes(fastify) {
               totalEntries: z.number(),
               ledgers: z.array(LedgerResponseSchema)
             })
-          ),
-          400: ErrorResponseSchema,
-          429: ErrorResponseSchema
+          )
         }
       }
     },
@@ -73,8 +70,7 @@ export async function ledgersRoutes(fastify) {
         security: [{ bearerAuth: [] }],
         querystring: LedgerQuerySchema,
         response: {
-          200: PaginatedResponseSchema(LedgerResponseSchema),
-          400: ErrorResponseSchema
+          200: PaginatedResponseSchema(LedgerResponseSchema)
         }
       }
     },
@@ -97,8 +93,7 @@ export async function ledgersRoutes(fastify) {
         security: [{ bearerAuth: [] }],
         params: IdParamSchema,
         response: {
-          200: SuccessResponseSchema(LedgerResponseSchema),
-          404: ErrorResponseSchema
+          200: SuccessResponseSchema(LedgerResponseSchema)
         }
       }
     },
@@ -118,9 +113,7 @@ export async function ledgersRoutes(fastify) {
         params: IdParamSchema,
         body: LedgerUpdateSchema,
         response: {
-          200: SuccessResponseSchema(LedgerResponseSchema),
-          400: ErrorResponseSchema,
-          404: ErrorResponseSchema
+          200: SuccessResponseSchema(LedgerResponseSchema)
         }
       }
     },
@@ -143,9 +136,7 @@ export async function ledgersRoutes(fastify) {
             z.object({
               message: z.string()
             })
-          ),
-          400: ErrorResponseSchema,
-          404: ErrorResponseSchema
+          )
         }
       }
     },

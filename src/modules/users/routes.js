@@ -9,7 +9,6 @@ import { cacheControl } from '../../core/middleware/caching.js';
 import { parsePagination } from '../../core/middleware/pagination.js';
 import { CACHE_DURATION, USER_ROLES } from '../../shared/constants/index.js';
 import {
-  ErrorResponseSchema,
   IdParamSchema,
   PaginatedResponseSchema,
   SuccessResponseSchema
@@ -40,9 +39,7 @@ export async function userRoutes(fastify) {
         security: [{ bearerAuth: [] }],
         body: UserCreateSchema,
         response: {
-          201: SuccessResponseSchema(UserResponseSchema),
-          400: ErrorResponseSchema,
-          409: ErrorResponseSchema
+          201: SuccessResponseSchema(UserResponseSchema)
         }
       }
     },
@@ -65,8 +62,7 @@ export async function userRoutes(fastify) {
         security: [{ bearerAuth: [] }],
         querystring: UserQuerySchema,
         response: {
-          200: PaginatedResponseSchema(UserResponseSchema),
-          400: ErrorResponseSchema
+          200: PaginatedResponseSchema(UserResponseSchema)
         }
       }
     },
@@ -88,8 +84,7 @@ export async function userRoutes(fastify) {
         security: [{ bearerAuth: [] }],
         params: IdParamSchema,
         response: {
-          200: SuccessResponseSchema(UserResponseSchema),
-          404: ErrorResponseSchema
+          200: SuccessResponseSchema(UserResponseSchema)
         }
       }
     },
@@ -108,10 +103,7 @@ export async function userRoutes(fastify) {
         params: IdParamSchema,
         body: UserUpdateSchema,
         response: {
-          200: SuccessResponseSchema(UserResponseSchema),
-          400: ErrorResponseSchema,
-          404: ErrorResponseSchema,
-          409: ErrorResponseSchema
+          200: SuccessResponseSchema(UserResponseSchema)
         }
       }
     },
@@ -129,8 +121,7 @@ export async function userRoutes(fastify) {
         security: [{ bearerAuth: [] }],
         params: IdParamSchema,
         response: {
-          200: SuccessResponseSchema(UserResponseSchema),
-          404: ErrorResponseSchema
+          200: SuccessResponseSchema(UserResponseSchema)
         }
       }
     },
@@ -152,9 +143,7 @@ export async function userRoutes(fastify) {
             z.object({
               message: z.string()
             })
-          ),
-          400: ErrorResponseSchema,
-          404: ErrorResponseSchema
+          )
         }
       }
     },

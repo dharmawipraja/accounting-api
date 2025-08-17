@@ -84,16 +84,22 @@ class AuthenticationError extends AppError {
    * Convert to structured response format
    */
   toJSON() {
-    const baseResponse = super.toJSON();
-
     return {
-      ...baseResponse,
-      error: {
-        ...baseResponse.error,
+      success: false,
+      error: this.message,
+      statusCode: this.statusCode,
+      details: {
+        code: this.code,
+        requestId: this.requestId,
+        timestamp: this.timestamp,
         type: 'authentication',
         authHeader: this.authHeader,
+        ...(this.details && { additionalDetails: this.details }),
         ...(this.details?.retryAfter && {
           retryAfter: this.details.retryAfter
+        }),
+        ...(process.env.NODE_ENV === 'development' && {
+          stack: this.stack
         })
       }
     };

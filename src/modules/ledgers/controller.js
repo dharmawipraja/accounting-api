@@ -3,6 +3,8 @@
  * HTTP request handlers for ledger operations
  */
 
+import AppError from '../../core/errors/AppError.js';
+import ValidationError from '../../core/errors/ValidationError.js';
 import { buildPaginationMeta } from '../../core/middleware/pagination.js';
 import { HTTP_STATUS } from '../../shared/constants/index.js';
 import { createPaginatedResponse, createSuccessResponse } from '../../shared/utils/response.js';
@@ -31,10 +33,10 @@ export class LedgersController {
       request.log.error({ error, ledgerData: request.body }, 'Failed to create bulk ledgers');
 
       if (error.message.includes('accounts not found')) {
-        throw reply.badRequest(error.message);
+        throw new ValidationError(error.message);
       }
 
-      throw reply.internalServerError('Failed to create ledger entries');
+      throw new AppError('Failed to create ledger entries', 500, 'INTERNAL_ERROR');
     }
   }
 
@@ -80,7 +82,7 @@ export class LedgersController {
       reply.status(HTTP_STATUS.OK).send(response);
     } catch (error) {
       request.log.error({ error, query: request.query }, 'Failed to get ledgers');
-      throw reply.internalServerError('Failed to retrieve ledger entries');
+      throw new AppError('Failed to retrieve ledger entries', 500, 'INTERNAL_ERROR');
     }
   }
 
@@ -96,7 +98,7 @@ export class LedgersController {
       const ledger = await this.ledgersService.getLedgerById(id);
 
       if (!ledger) {
-        throw reply.notFound('Ledger entry not found');
+        throw new AppError('Ledger entry not found', 404, 'NOT_FOUND');
       }
 
       const response = createSuccessResponse(ledger);
@@ -107,7 +109,7 @@ export class LedgersController {
       }
 
       request.log.error({ error, ledgerId: request.params.id }, 'Failed to get ledger');
-      throw reply.internalServerError('Failed to retrieve ledger entry');
+      throw new AppError('Failed to retrieve ledger entry', 500, 'INTERNAL_ERROR');
     }
   }
 
@@ -137,14 +139,14 @@ export class LedgersController {
       );
 
       if (error.message === 'Ledger not found') {
-        throw reply.notFound(error.message);
+        throw new AppError(error.message, 404, 'NOT_FOUND');
       }
 
       if (error.message === 'Cannot update posted ledger entries') {
-        throw reply.badRequest(error.message);
+        throw new ValidationError(error.message);
       }
 
-      throw reply.internalServerError('Failed to update ledger entry');
+      throw new AppError('Failed to update ledger entry', 500, 'INTERNAL_ERROR');
     }
   }
 
@@ -166,14 +168,14 @@ export class LedgersController {
       request.log.error({ error, ledgerId: request.params.id }, 'Failed to delete ledger');
 
       if (error.message === 'Ledger not found') {
-        throw reply.notFound(error.message);
+        throw new AppError(error.message, 404, 'NOT_FOUND');
       }
 
       if (error.message === 'Cannot delete posted ledger entries') {
-        throw reply.badRequest(error.message);
+        throw new ValidationError(error.message);
       }
 
-      throw reply.internalServerError('Failed to delete ledger entry');
+      throw new AppError('Failed to delete ledger entry', 500, 'INTERNAL_ERROR');
     }
   }
 }

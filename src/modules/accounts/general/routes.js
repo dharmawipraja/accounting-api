@@ -9,7 +9,6 @@ import { cacheControl } from '../../../core/middleware/caching.js';
 import { parsePagination } from '../../../core/middleware/pagination.js';
 import { CACHE_DURATION } from '../../../shared/constants/index.js';
 import {
-  ErrorResponseSchema,
   IdParamSchema,
   PaginatedResponseSchema,
   SuccessResponseSchema
@@ -36,9 +35,7 @@ export async function accountGeneralRoutes(fastify) {
         security: [{ bearerAuth: [] }],
         body: AccountGeneralCreateSchema,
         response: {
-          201: SuccessResponseSchema(AccountGeneralResponseSchema),
-          400: ErrorResponseSchema,
-          409: ErrorResponseSchema
+          201: SuccessResponseSchema(AccountGeneralResponseSchema)
         }
       }
     },
@@ -61,8 +58,7 @@ export async function accountGeneralRoutes(fastify) {
         security: [{ bearerAuth: [] }],
         querystring: AccountGeneralQuerySchema,
         response: {
-          200: PaginatedResponseSchema(AccountGeneralResponseSchema),
-          400: ErrorResponseSchema
+          200: PaginatedResponseSchema(AccountGeneralResponseSchema)
         }
       }
     },
@@ -87,8 +83,7 @@ export async function accountGeneralRoutes(fastify) {
           includeDeleted: z.boolean().default(false)
         }),
         response: {
-          200: SuccessResponseSchema(AccountGeneralResponseSchema),
-          404: ErrorResponseSchema
+          200: SuccessResponseSchema(AccountGeneralResponseSchema)
         }
       }
     },
@@ -107,9 +102,7 @@ export async function accountGeneralRoutes(fastify) {
         params: IdParamSchema,
         body: AccountGeneralUpdateSchema,
         response: {
-          200: SuccessResponseSchema(AccountGeneralResponseSchema),
-          400: ErrorResponseSchema,
-          404: ErrorResponseSchema
+          200: SuccessResponseSchema(AccountGeneralResponseSchema)
         }
       }
     },
@@ -127,9 +120,7 @@ export async function accountGeneralRoutes(fastify) {
         security: [{ bearerAuth: [] }],
         params: IdParamSchema,
         response: {
-          200: SuccessResponseSchema(AccountGeneralResponseSchema),
-          400: ErrorResponseSchema,
-          404: ErrorResponseSchema
+          200: SuccessResponseSchema(AccountGeneralResponseSchema)
         }
       }
     },

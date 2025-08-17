@@ -3,6 +3,8 @@
  * HTTP request handlers for general account operations
  */
 
+import AppError from '../../../core/errors/AppError.js';
+import ValidationError from '../../../core/errors/ValidationError.js';
 import { buildPaginationMeta } from '../../../core/middleware/pagination.js';
 import { HTTP_STATUS } from '../../../shared/constants/index.js';
 import { createPaginatedResponse, createSuccessResponse } from '../../../shared/utils/response.js';
@@ -34,7 +36,7 @@ export class AccountGeneralController {
         throw reply.conflict(error.message);
       }
 
-      throw reply.internalServerError('Failed to create account general');
+      throw new AppError('Failed to create account general', 500, 'INTERNAL_ERROR');
     }
   }
 
@@ -63,7 +65,7 @@ export class AccountGeneralController {
       reply.status(HTTP_STATUS.OK).send(response);
     } catch (error) {
       request.log.error({ error, query: request.query }, 'Failed to get account generals');
-      throw reply.internalServerError('Failed to retrieve account generals');
+      throw new AppError('Failed to retrieve account generals', 500, 'INTERNAL_ERROR');
     }
   }
 
@@ -80,7 +82,7 @@ export class AccountGeneralController {
       const account = await this.accountGeneralService.getAccountById(id, includeDeleted);
 
       if (!account) {
-        throw reply.notFound('Account general not found');
+        throw new AppError('Account general not found', 404, 'NOT_FOUND');
       }
 
       const response = createSuccessResponse(account);
@@ -91,7 +93,7 @@ export class AccountGeneralController {
       }
 
       request.log.error({ error, accountId: request.params.id }, 'Failed to get account general');
-      throw reply.internalServerError('Failed to retrieve account general');
+      throw new AppError('Failed to retrieve account general', 500, 'INTERNAL_ERROR');
     }
   }
 
@@ -128,10 +130,10 @@ export class AccountGeneralController {
       );
 
       if (error.message === 'Account not found') {
-        throw reply.notFound(error.message);
+        throw new AppError(error.message, 404, 'NOT_FOUND');
       }
 
-      throw reply.internalServerError('Failed to update account general');
+      throw new AppError('Failed to update account general', 500, 'INTERNAL_ERROR');
     }
   }
 
@@ -159,14 +161,14 @@ export class AccountGeneralController {
       );
 
       if (error.message === 'Account not found') {
-        throw reply.notFound(error.message);
+        throw new AppError(error.message, 404, 'NOT_FOUND');
       }
 
       if (error.message === 'Cannot delete account with associated detail accounts') {
-        throw reply.badRequest(error.message);
+        throw new ValidationError(error.message);
       }
 
-      throw reply.internalServerError('Failed to delete account general');
+      throw new AppError('Failed to delete account general', 500, 'INTERNAL_ERROR');
     }
   }
 }
