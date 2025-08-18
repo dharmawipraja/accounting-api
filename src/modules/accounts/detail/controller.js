@@ -17,8 +17,8 @@ export class AccountDetailController {
 
   /**
    * Create a new detail account
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async createAccount(request, reply) {
     try {
@@ -46,8 +46,8 @@ export class AccountDetailController {
 
   /**
    * Get all detail accounts with pagination and filtering
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async getAccounts(request, reply) {
     try {
@@ -86,8 +86,8 @@ export class AccountDetailController {
 
   /**
    * Get detail account by ID
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async getAccountById(request, reply) {
     try {
@@ -118,8 +118,8 @@ export class AccountDetailController {
 
   /**
    * Update detail account
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async updateAccount(request, reply) {
     try {
@@ -155,8 +155,8 @@ export class AccountDetailController {
 
   /**
    * Soft delete detail account
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async deleteAccount(request, reply) {
     try {

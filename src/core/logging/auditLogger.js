@@ -5,7 +5,8 @@
  * data changes, and security events for compliance and debugging.
  */
 
-import logger from './logger.js';
+import { env } from '../../config/env.js';
+import { logger } from './logger.js';
 
 /**
  * Audit event types
@@ -78,7 +79,7 @@ export class AuditLogger {
     logger.info(auditEntry, `Audit: ${event}`);
 
     // Could also log to separate audit log file or database
-    if (process.env.AUDIT_LOG_SEPARATE === 'true') {
+    if (env.AUDIT_LOG_SEPARATE === 'true') {
       this.logToAuditFile(auditEntry);
     }
   }
@@ -206,50 +207,7 @@ export class AuditLogger {
 /**
  * Audit middleware for request tracking
  */
-export const auditMiddleware = {
-  /**
-   * Register audit hooks
-   */
-  register: async fastify => {
-    // Track all API calls
-    fastify.addHook('onRequest', async (request, _reply) => {
-      request.auditContext = {
-        requestId: request.id,
-        ip: request.ip,
-        userAgent: request.headers['user-agent'],
-        url: request.url,
-        method: request.method
-      };
-    });
-
-    // Log successful operations
-    fastify.addHook('onResponse', async (request, reply) => {
-      if (shouldAuditRequest(request, reply)) {
-        AuditLogger.log('api.request.completed', {
-          ...request.auditContext,
-          statusCode: reply.statusCode,
-          userId: request.user?.id
-        });
-      }
-    });
-  }
-};
-
-/**
- * Determine if request should be audited
- */
-const shouldAuditRequest = (request, reply) => {
-  // Only audit specific methods and successful operations
-  const auditMethods = ['POST', 'PUT', 'DELETE'];
-  const isSuccessful = reply.statusCode >= 200 && reply.statusCode < 300;
-  const skipPaths = ['/health', '/status', '/ready'];
-
-  return (
-    auditMethods.includes(request.method) &&
-    isSuccessful &&
-    !skipPaths.some(path => request.url.startsWith(path))
-  );
-};
+export const auditMiddleware = {};
 
 /**
  * Request audit decorator

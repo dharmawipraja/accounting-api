@@ -1,60 +1,27 @@
 /**
- * Application Router
- * Central routing configuration using the new modular structure
+ * Express Application Router
+ * Central routing configuration for Express.js
  */
 
-import { z } from 'zod';
 import { accountsRoutes } from './modules/accounts/routes.js';
-import { createAuthRoutes } from './modules/auth/index.js';
-import { healthRoutes } from './modules/health/index.js';
-import { ledgersRoutes } from './modules/ledgers/index.js';
-import { userRoutes } from './modules/users/index.js';
+import { authRoutes } from './modules/auth/routes.js';
+import { ledgersRoutes } from './modules/ledgers/routes.js';
+import { userRoutes } from './modules/users/routes.js';
 
 /**
- * Register all application routes
- * @param {Object} fastify - Fastify instance
+ * Register all application routes for Express
+ * @param {Object} app - Express app instance
  */
-export async function registerRoutes(fastify) {
-  // Health and monitoring routes (no auth required)
-  await fastify.register(healthRoutes);
-
-  // API info endpoint
-  fastify.get(
-    '/api',
-    {
-      schema: {
-        description: 'API Information',
-        tags: ['API'],
-        response: {
-          200: z.object({
-            name: z.string(),
-            version: z.string(),
-            description: z.string(),
-            timestamp: z.string()
-          })
-        }
-      }
-    },
-    async () => {
-      return {
-        name: 'Accounting API',
-        version: '1.0.0',
-        description: 'A RESTful API for accounting system',
-        timestamp: new Date().toISOString()
-      };
-    }
-  );
-
+export async function registerRoutes(app) {
   // Authentication routes
-  const authRoutes = createAuthRoutes(process.env.JWT_SECRET || 'your-secret-key');
-  await fastify.register(authRoutes, { prefix: '/auth' });
+  app.use('/auth', authRoutes);
 
   // User management routes
-  await fastify.register(userRoutes, { prefix: '/users' });
+  app.use('/users', userRoutes);
 
   // Account management routes (general and detail)
-  await fastify.register(accountsRoutes, { prefix: '/accounts' });
+  app.use('/accounts', accountsRoutes);
 
   // Ledger management routes
-  await fastify.register(ledgersRoutes, { prefix: '/ledgers' });
+  app.use('/ledgers', ledgersRoutes);
 }

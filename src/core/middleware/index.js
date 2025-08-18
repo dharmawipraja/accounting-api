@@ -4,6 +4,5 @@
  */
 
 export * from './auth.js';
-export * from './caching.js';
 export * from './pagination.js';
 export * from './validation.js';

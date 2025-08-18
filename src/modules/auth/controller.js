@@ -15,8 +15,8 @@ export class AuthController {
 
   /**
    * Handle login request
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async login(request, reply) {
     try {
@@ -73,8 +73,8 @@ export class AuthController {
 
   /**
    * Handle logout request (optional - mainly for client-side token removal)
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async logout(request, reply) {
     // Log logout event
@@ -104,8 +104,8 @@ export class AuthController {
 
   /**
    * Get current user profile
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async getProfile(request, reply) {
     try {

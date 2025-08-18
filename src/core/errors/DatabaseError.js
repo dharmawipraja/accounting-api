@@ -5,6 +5,7 @@
  * while protecting sensitive database information.
  */
 
+import { isDevelopment } from '../../config/env.js';
 import AppError from './AppError.js';
 
 class DatabaseError extends AppError {
@@ -125,13 +126,12 @@ class DatabaseError extends AppError {
           statusCode: 500,
           code: 'DATABASE_ERROR',
           userMessage: 'An unexpected database error occurred',
-          details:
-            process.env.NODE_ENV === 'development'
-              ? {
-                  code: error.code,
-                  message: error.message
-                }
-              : null
+          details: isDevelopment()
+            ? {
+                code: error.code,
+                message: error.message
+              }
+            : null
         };
     }
   }

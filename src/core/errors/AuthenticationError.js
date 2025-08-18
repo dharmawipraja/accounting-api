@@ -5,6 +5,7 @@
  * login failures, and session management issues.
  */
 
+import { isDevelopment } from '../../config/env.js';
 import AppError from './AppError.js';
 
 class AuthenticationError extends AppError {
@@ -98,7 +99,7 @@ class AuthenticationError extends AppError {
         ...(this.details?.retryAfter && {
           retryAfter: this.details.retryAfter
         }),
-        ...(process.env.NODE_ENV === 'development' && {
+        ...(isDevelopment() && {
           stack: this.stack
         })
       }

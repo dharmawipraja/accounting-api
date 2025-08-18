@@ -17,8 +17,8 @@ export class LedgersController {
 
   /**
    * Create bulk ledger entries
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async createBulkLedgers(request, reply) {
     try {
@@ -42,8 +42,8 @@ export class LedgersController {
 
   /**
    * Get all ledgers with pagination and filtering
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async getLedgers(request, reply) {
     try {
@@ -88,8 +88,8 @@ export class LedgersController {
 
   /**
    * Get ledger by ID
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async getLedgerById(request, reply) {
     try {
@@ -115,8 +115,8 @@ export class LedgersController {
 
   /**
    * Update ledger
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async updateLedger(request, reply) {
     try {
@@ -152,8 +152,8 @@ export class LedgersController {
 
   /**
    * Delete ledger
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async deleteLedger(request, reply) {
     try {

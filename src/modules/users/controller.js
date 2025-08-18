@@ -22,8 +22,8 @@ export class UsersController {
 
   /**
    * Create a new user
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async createUser(request, reply) {
     try {
@@ -47,8 +47,8 @@ export class UsersController {
 
   /**
    * Get all users with pagination and filtering
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async getUsers(request, reply) {
     try {
@@ -75,8 +75,8 @@ export class UsersController {
 
   /**
    * Get user by ID
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async getUserById(request, reply) {
     try {
@@ -102,8 +102,8 @@ export class UsersController {
 
   /**
    * Update user
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async updateUser(request, reply) {
     try {
@@ -136,8 +136,8 @@ export class UsersController {
 
   /**
    * Soft delete user
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async deleteUser(request, reply) {
     try {
@@ -162,8 +162,8 @@ export class UsersController {
 
   /**
    * Change user password
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async changePassword(request, reply) {
     try {

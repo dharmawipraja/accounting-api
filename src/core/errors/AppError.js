@@ -1,8 +1,8 @@
+import { isDevelopment } from '../../config/env.js';
+
 /**
- * Base Application Error Class
- *
- * Provides standardized error handling across the application with consistent
- * error formatting, HTTP status codes, and structured error responses.
+ * Custom Application Error Class
+ * Base error class for all application-specific errors
  */
 
 class AppError extends Error {
@@ -43,7 +43,7 @@ class AppError extends Error {
         requestId: this.requestId,
         timestamp: this.timestamp,
         ...(this.details && { additionalDetails: this.details }),
-        ...(process.env.NODE_ENV === 'development' && {
+        ...(isDevelopment() && {
           stack: this.stack
         })
       }
@@ -80,7 +80,7 @@ class AppError extends Error {
    * Check if error should expose detailed information to client
    */
   shouldExposeDetails() {
-    return this.statusCode < 500 || process.env.NODE_ENV === 'development';
+    return this.statusCode < 500 || isDevelopment();
   }
 }
 

@@ -17,8 +17,8 @@ export class AccountGeneralController {
 
   /**
    * Create a new general account
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async createAccount(request, reply) {
     try {
@@ -42,8 +42,8 @@ export class AccountGeneralController {
 
   /**
    * Get all general accounts with pagination and filtering
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async getAccounts(request, reply) {
     try {
@@ -71,8 +71,8 @@ export class AccountGeneralController {
 
   /**
    * Get general account by ID
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async getAccountById(request, reply) {
     try {
@@ -99,8 +99,8 @@ export class AccountGeneralController {
 
   /**
    * Update general account
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async updateAccount(request, reply) {
     try {
@@ -139,8 +139,8 @@ export class AccountGeneralController {
 
   /**
    * Soft delete general account
-   * @param {Object} request - Fastify request object
-   * @param {Object} reply - Fastify reply object
+   * @param {Object} request - Express request object
+   * @param {Object} reply - Express response object
    */
   async deleteAccount(request, reply) {
     try {

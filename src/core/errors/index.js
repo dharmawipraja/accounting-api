@@ -9,7 +9,14 @@ import AuthenticationError from './AuthenticationError.js';
 import AuthorizationError from './AuthorizationError.js';
 import BusinessLogicError from './BusinessLogicError.js';
 import DatabaseError from './DatabaseError.js';
-import { errorHandler, logError, normalizeError } from './errorHandler.js';
+import {
+  asyncHandler,
+  createErrorResponse,
+  createPaginatedResponse,
+  createSuccessResponse,
+  globalErrorHandler,
+  notFoundHandler
+} from './errorHandler.js';
 import ValidationError from './ValidationError.js';
 
 // Convenience factory functions
@@ -76,12 +83,15 @@ export const errors = {
 // Export error classes
 export {
   AppError,
+  asyncHandler,
   AuthenticationError,
   AuthorizationError,
   BusinessLogicError,
+  createErrorResponse,
+  createPaginatedResponse,
+  createSuccessResponse,
   DatabaseError,
-  errorHandler,
-  logError,
-  normalizeError,
+  globalErrorHandler,
+  notFoundHandler,
   ValidationError
 };

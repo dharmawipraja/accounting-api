@@ -58,14 +58,6 @@ export const REPORT_TYPES = {
   LABA_RUGI: 'LABA_RUGI'
 };
 
-// Cache durations (in seconds)
-export const CACHE_DURATION = {
-  SHORT: 60, // 1 minute
-  MEDIUM: 300, // 5 minutes
-  LONG: 3600, // 1 hour
-  API_INFO: 300 // 5 minutes for API info
-};
-
 // Pagination defaults
 export const PAGINATION = {
   DEFAULT_LIMIT: 20,

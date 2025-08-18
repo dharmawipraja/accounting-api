@@ -1,8 +1,6 @@
 /**
- * Env Utilities
- * Helper functions for environment checks
+ * Environment utilities
+ * Re-export from centralized env config
  */
 
-export const isDevelopment = () => process.env.NODE_ENV === 'development';
-export const isProduction = () => process.env.NODE_ENV === 'production';
-export const isTest = () => process.env.NODE_ENV === 'test';
+export { env, isDevelopment, isProduction, isTest } from '../../config/env.js';

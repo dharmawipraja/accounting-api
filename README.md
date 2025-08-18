@@ -1,10 +1,10 @@
-# Accounting API
+# 🏦 Accounting API
 
-A production-ready Fastify-based REST API for accounting operations with security, performance, and reliability best practices.
+A production-ready Express.js-based REST API for accounting operations with security, performance, and reliability best practices.
 
-## Features
+## ✨ Features
 
-- 🚀 **High Performance**: Built with Fastify for maximum throughput
+- 🚀 **High Performance**: Built with Express.js for reliability and ecosystem support
 - 🔒 **Security First**: Security headers, CORS, rate limiting, and input validation
 - 📊 **Production Ready**: Comprehensive logging, error handling, and health checks
 - 🎯 **Type Safety**: Request/response schema validation
@@ -13,7 +13,7 @@ A production-ready Fastify-based REST API for accounting operations with securit
 
 ## Tech Stack
 
-- **Framework**: Fastify
+- **Framework**: Express.js
 - **Database**: PostgreSQL with Prisma ORM
 - **Validation**: JSON Schema
 - **Logging**: Pino (structured logging)
@@ -131,24 +131,35 @@ npm run lint:fix
 
 1. Create a new route file in `src/routes/`:
 
+````javascript
 ```javascript
-// src/routes/example.js
-async function exampleRoutes(fastify, options) {
-  fastify.get('/', async (request, reply) => {
-    return { message: 'Hello from example route!' };
-  });
-}
+// Example Express route module
+import express from 'express';
 
-module.exports = exampleRoutes;
+const router = express.Router();
+
+router.get('/', async (req, res) => {
+  res.json({ message: 'Hello World!' });
+});
+
+export default router;
+````
+
+### Register Routes
+
+```javascript
+// In your main app
+import router from './src/routes/example.js';
+
+app.use('/api', router);
 ```
 
-2. Register the route in `server.js`:
+2. Register the route in `src/router.js`:
 
 ```javascript
-// In the registerRoutes function
-await fastify.register(require('./src/routes/example'), {
-  prefix: '/api/v1/example'
-});
+// Import and register the route
+import exampleRouter from './src/routes/example.js';
+app.use('/api/v1/example', exampleRouter);
 ```
 
 ## Security Features

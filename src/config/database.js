@@ -2,7 +2,11 @@
 
 import { PrismaClient } from '@prisma/client';
 import { createSoftDeleteExtension } from 'prisma-extension-soft-delete';
-import { isDevelopment, isProduction, isTest } from '../shared/utils/index.js';
+import { env, isDevelopment, isTest } from './env.js';
+
+/**
+ * Database connection utilities for Express.js
+ */
 
 /**
  * Database configuration options based on environment
@@ -12,7 +16,7 @@ const getDatabaseConfig = () => {
     // Datasource configuration
     datasources: {
       db: {
-        url: process.env.DATABASE_URL
+        url: env.DATABASE_URL
       }
     },
 
@@ -104,8 +108,8 @@ export const getDatabaseInfo = async prisma => {
 
     // Get connection pool status (if available)
     const poolStatus = {
-      totalConnections: process.env.DATABASE_CONNECTION_LIMIT || 10,
-      environment: process.env.NODE_ENV || 'development'
+      totalConnections: 10,
+      environment: env.NODE_ENV
     };
 
     return {
@@ -130,59 +134,6 @@ export const disconnectDatabase = async (prisma, logger) => {
   } catch (error) {
     if (logger) logger.error('Error closing database connection:', error);
     else console.error('Error closing database connection:', error);
-  }
-};
-
-/**
- * Database middleware for request-level database access
- */
-export const databaseMiddleware = async fastify => {
-  // Create Prisma client instance
-  const prisma = createPrismaClient();
-
-  // Test initial connection
-  try {
-    const healthCheck = await checkDatabaseHealth(prisma);
-    if (!healthCheck.healthy) throw new Error(`Database health check failed: ${healthCheck.error}`);
-    fastify.log.info('Database connection established');
-    if (isDevelopment()) {
-      const dbInfo = await getDatabaseInfo(prisma);
-      fastify.log.info('Database Info:', {
-        version: dbInfo.version,
-        environment: dbInfo.pool.environment
-      });
-    }
-  } catch (error) {
-    fastify.log.error('Failed to establish database connection:', error);
-    throw error;
-  }
-
-  // Decorate Fastify instance with Prisma client
-  fastify.decorate('prisma', prisma);
-
-  // Add database health check method
-  fastify.decorate('checkDatabaseConnection', async () => {
-    const health = await checkDatabaseHealth(prisma);
-    return health.healthy;
-  });
-
-  // Add database info method
-  fastify.decorate('getDatabaseInfo', async () => {
-    return await getDatabaseInfo(prisma);
-  });
-
-  // Graceful shutdown hook
-  fastify.addHook('onClose', async instance => {
-    await disconnectDatabase(instance.prisma, instance.log);
-  });
-
-  if (isProduction()) {
-    fastify.addHook('onRequest', async request => {
-      if (request.url.startsWith('/api/')) {
-        const isHealthy = await request.server.checkDatabaseConnection();
-        if (!isHealthy) throw request.server.httpErrors.serviceUnavailable('Database unavailable');
-      }
-    });
   }
 };
 
@@ -221,56 +172,45 @@ export const withTransaction = async (prisma, operations, retries = 3) => {
 };
 
 /**
- * Database query performance monitoring
- */
-export const queryPerformanceMiddleware = async fastify => {
-  if (!isDevelopment()) return;
-
-  // Wait for prisma to be available
-  await fastify.after(() => {
-    if (!fastify.prisma) {
-      fastify.log.warn('Prisma client not available for query performance monitoring');
-      return;
-    }
-
-    const originalQuery = fastify.prisma.$queryRaw;
-
-    fastify.prisma.$queryRaw = async (...args) => {
-      const start = Date.now();
-      try {
-        const result = await originalQuery.apply(fastify.prisma, args);
-        const duration = Date.now() - start;
-
-        // Log slow queries
-        if (duration > 1000) {
-          fastify.log.warn(`🐌 Slow query detected (${duration}ms):`, {
-            query: args[0],
-            duration: `${duration}ms`
-          });
-        }
-
-        return result;
-      } catch (error) {
-        const duration = Date.now() - start;
-        fastify.log.error(`❌ Query failed (${duration}ms):`, {
-          query: args[0],
-          error: error.message,
-          duration: `${duration}ms`
-        });
-        throw error;
-      }
-    };
-  });
-};
-
-/**
  * Export configured Prisma client for direct use
  */
 export const prisma = createPrismaClient();
 
+/**
+ * Express database middleware
+ * Sets up Prisma client for Express application
+ */
+export const databaseMiddleware = async app => {
+  const client = createPrismaClient();
+
+  try {
+    // Test database connection
+    await client.$connect();
+    await client.$queryRaw`SELECT 1`;
+
+    console.log('✅ Database connected successfully');
+
+    // Store Prisma client in app.locals for access in routes
+    app.locals.prisma = client;
+
+    // Graceful shutdown handling
+    const gracefulShutdown = async () => {
+      console.log('📴 Disconnecting from database...');
+      await client.$disconnect();
+      console.log('✅ Database disconnected');
+    };
+
+    process.on('SIGTERM', gracefulShutdown);
+    process.on('SIGINT', gracefulShutdown);
+    process.on('beforeExit', gracefulShutdown);
+  } catch (error) {
+    console.error('❌ Database connection failed:', error);
+    throw error;
+  }
+};
+
 export default {
   databaseMiddleware,
-  queryPerformanceMiddleware,
   withTransaction,
   checkDatabaseHealth,
   getDatabaseInfo,
