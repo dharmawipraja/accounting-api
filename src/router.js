@@ -3,7 +3,8 @@
  * Central routing configuration for Express.js
  */
 
-import { accountsRoutes } from './modules/accounts/routes.js';
+import { accountDetailRoutes } from './modules/accounts/detail/routes.js';
+import { accountGeneralRoutes } from './modules/accounts/routes.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { ledgersRoutes } from './modules/ledgers/routes.js';
 import { userRoutes } from './modules/users/routes.js';
@@ -19,8 +20,11 @@ export async function registerRoutes(app) {
   // User management routes
   app.use('/users', userRoutes);
 
-  // Account management routes (general and detail)
-  app.use('/accounts', accountsRoutes);
+  // Account management routes
+  // General accounts (parent accounts)
+  app.use('/accounts/general', accountGeneralRoutes);
+  // Detail accounts (sub-accounts)
+  app.use('/accounts/detail', accountDetailRoutes);
 
   // Ledger management routes
   app.use('/ledgers', ledgersRoutes);

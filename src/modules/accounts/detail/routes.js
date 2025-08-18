@@ -1,6 +1,6 @@
 /**
- * Express Account General Routes
- * Account management endpoints for Express.js
+ * Express Account Detail Routes
+ * Detail account management endpoints for Express.js
  */
 
 import { Router } from 'express';
@@ -10,13 +10,13 @@ import {
   asyncHandler,
   createPaginatedResponse,
   createSuccessResponse
-} from '../../core/errors/index.js';
-import { authenticate, requireAccountingAccess } from '../../core/middleware/auth.js';
-import { commonValidations, validationMiddleware } from '../../core/security/security.js';
+} from '../../../core/errors/index.js';
+import { authenticate, requireAccountingAccess } from '../../../core/middleware/auth.js';
+import { commonValidations, validationMiddleware } from '../../../core/security/security.js';
 
 const router = Router();
 
-// Apply authentication to all account routes
+// Apply authentication to all account detail routes
 router.use(authenticate);
 
 // Require accounting access for all routes
@@ -24,10 +24,10 @@ router.use(requireAccountingAccess);
 
 /**
  * @swagger
- * /accounts:
+ * /accounts/detail:
  *   get:
- *     summary: Get all general accounts
- *     tags: [Accounts]
+ *     summary: Get all detail accounts
+ *     tags: [Account Details]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -50,9 +50,14 @@ router.use(requireAccountingAccess);
  *           type: string
  *           enum: [ASSET, HUTANG, MODAL, PENDAPATAN, BIAYA]
  *         description: Filter by account category
+ *       - in: query
+ *         name: accountGeneralId
+ *         schema:
+ *           type: string
+ *         description: Filter by general account ID
  *     responses:
  *       200:
- *         description: Accounts retrieved successfully
+ *         description: Detail accounts retrieved successfully
  */
 router.get(
   '/',
@@ -61,50 +66,59 @@ router.get(
     query('accountCategory')
       .optional()
       .isIn(['ASSET', 'HUTANG', 'MODAL', 'PENDAPATAN', 'BIAYA'])
-      .withMessage('Invalid account category')
+      .withMessage('Invalid account category'),
+    query('accountGeneralId')
+      .optional()
+      .isString()
+      .withMessage('Account general ID must be a string')
   ],
   validationMiddleware,
   asyncHandler(async (req, res) => {
-    const { page = 1, limit = 10, accountCategory } = req.query;
+    const { page = 1, limit = 10, accountCategory, accountGeneralId } = req.query;
     const skip = (page - 1) * limit;
 
     const whereClause = {
       deletedAt: null,
-      ...(accountCategory && { accountCategory })
+      ...(accountCategory && { accountCategory }),
+      ...(accountGeneralId && { accountGeneralId })
     };
 
     const [accounts, total] = await Promise.all([
-      req.app.locals.prisma.accountGeneral.findMany({
+      req.app.locals.prisma.accountDetail.findMany({
         where: whereClause,
         skip,
         take: limit,
         orderBy: { accountNumber: 'asc' },
         include: {
-          accountsDetail: {
-            where: { deletedAt: null },
+          accountGeneral: {
             select: {
               id: true,
               accountNumber: true,
-              accountName: true
+              accountName: true,
+              accountCategory: true
             }
           }
         }
       }),
-      req.app.locals.prisma.accountGeneral.count({ where: whereClause })
+      req.app.locals.prisma.accountDetail.count({ where: whereClause })
     ]);
 
     res.json(
-      createPaginatedResponse(accounts, { page, limit, total }, 'Accounts retrieved successfully')
+      createPaginatedResponse(
+        accounts,
+        { page, limit, total },
+        'Detail accounts retrieved successfully'
+      )
     );
   })
 );
 
 /**
  * @swagger
- * /accounts/{id}:
+ * /accounts/detail/{id}:
  *   get:
- *     summary: Get account by ID
- *     tags: [Accounts]
+ *     summary: Get detail account by ID
+ *     tags: [Account Details]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -113,12 +127,12 @@ router.get(
  *         required: true
  *         schema:
  *           type: string
- *         description: Account ID
+ *         description: Detail Account ID
  *     responses:
  *       200:
- *         description: Account retrieved successfully
+ *         description: Detail account retrieved successfully
  *       404:
- *         description: Account not found
+ *         description: Detail account not found
  */
 router.get(
   '/:id',
@@ -127,22 +141,33 @@ router.get(
   asyncHandler(async (req, res) => {
     const { id } = req.params;
 
-    const account = await req.app.locals.prisma.accountGeneral.findFirst({
+    const account = await req.app.locals.prisma.accountDetail.findFirst({
       where: {
         id,
         deletedAt: null
       },
       include: {
-        accountsDetail: {
-          where: { deletedAt: null },
+        accountGeneral: {
           select: {
             id: true,
             accountNumber: true,
             accountName: true,
-            accountCategory: true,
-            amountCredit: true,
-            amountDebit: true
+            accountCategory: true
           }
+        },
+        ledgers: {
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            referenceNumber: true,
+            amount: true,
+            description: true,
+            ledgerType: true,
+            postingStatus: true,
+            ledgerDate: true
+          },
+          orderBy: { ledgerDate: 'desc' },
+          take: 10
         }
       }
     });
@@ -151,20 +176,20 @@ router.get(
       return res.status(404).json({
         success: false,
         error: 'Not Found',
-        message: 'Account not found'
+        message: 'Detail account not found'
       });
     }
 
-    res.json(createSuccessResponse(account, 'Account retrieved successfully'));
+    res.json(createSuccessResponse(account, 'Detail account retrieved successfully'));
   })
 );
 
 /**
  * @swagger
- * /accounts:
+ * /accounts/detail:
  *   post:
- *     summary: Create new general account
- *     tags: [Accounts]
+ *     summary: Create new detail account
+ *     tags: [Account Details]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -176,6 +201,7 @@ router.get(
  *             required:
  *               - accountNumber
  *               - accountName
+ *               - accountGeneralId
  *               - accountCategory
  *               - reportType
  *               - transactionType
@@ -184,6 +210,8 @@ router.get(
  *                 type: string
  *                 pattern: '^[0-9\-]+$'
  *               accountName:
+ *                 type: string
+ *               accountGeneralId:
  *                 type: string
  *               accountCategory:
  *                 type: string
@@ -202,7 +230,7 @@ router.get(
  *                 minimum: 0
  *     responses:
  *       201:
- *         description: Account created successfully
+ *         description: Detail account created successfully
  *       400:
  *         description: Validation error
  */
@@ -223,6 +251,7 @@ router.post(
       .withMessage('Account name is required')
       .isLength({ min: 3, max: 100 })
       .withMessage('Account name must be between 3 and 100 characters'),
+    body('accountGeneralId').notEmpty().withMessage('General account ID is required'),
     body('accountCategory')
       .isIn(['ASSET', 'HUTANG', 'MODAL', 'PENDAPATAN', 'BIAYA'])
       .withMessage('Invalid account category'),
@@ -242,6 +271,7 @@ router.post(
     const {
       accountNumber,
       accountName,
+      accountGeneralId,
       accountCategory,
       reportType,
       transactionType,
@@ -252,7 +282,7 @@ router.post(
     const userId = req.user?.userId || req.user?.id;
 
     // Check if account number already exists
-    const existingAccount = await req.app.locals.prisma.accountGeneral.findFirst({
+    const existingAccount = await req.app.locals.prisma.accountDetail.findFirst({
       where: {
         accountNumber,
         deletedAt: null
@@ -267,12 +297,29 @@ router.post(
       });
     }
 
-    const account = await req.app.locals.prisma.accountGeneral.create({
+    // Check if general account exists
+    const generalAccount = await req.app.locals.prisma.accountGeneral.findFirst({
+      where: {
+        id: accountGeneralId,
+        deletedAt: null
+      }
+    });
+
+    if (!generalAccount) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation Error',
+        message: 'General account not found'
+      });
+    }
+
+    const account = await req.app.locals.prisma.accountDetail.create({
       data: {
         id: ulid(),
         accountNumber,
         accountName,
-        accountType: 'GENERAL',
+        accountType: 'DETAIL',
+        accountGeneralId,
         accountCategory,
         reportType,
         transactionType,
@@ -282,19 +329,29 @@ router.post(
         updatedBy: userId,
         createdAt: new Date(),
         updatedAt: new Date()
+      },
+      include: {
+        accountGeneral: {
+          select: {
+            id: true,
+            accountNumber: true,
+            accountName: true,
+            accountCategory: true
+          }
+        }
       }
     });
 
-    res.status(201).json(createSuccessResponse(account, 'Account created successfully'));
+    res.status(201).json(createSuccessResponse(account, 'Detail account created successfully'));
   })
 );
 
 /**
  * @swagger
- * /accounts/{id}:
+ * /accounts/detail/{id}:
  *   put:
- *     summary: Update account
- *     tags: [Accounts]
+ *     summary: Update detail account
+ *     tags: [Account Details]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -303,7 +360,7 @@ router.post(
  *         required: true
  *         schema:
  *           type: string
- *         description: Account ID
+ *         description: Detail Account ID
  *     requestBody:
  *       required: true
  *       content:
@@ -330,9 +387,9 @@ router.post(
  *                 minimum: 0
  *     responses:
  *       200:
- *         description: Account updated successfully
+ *         description: Detail account updated successfully
  *       404:
- *         description: Account not found
+ *         description: Detail account not found
  */
 router.put(
   '/:id',
@@ -368,7 +425,7 @@ router.put(
     const userId = req.user?.userId || req.user?.id;
 
     // Check if account exists
-    const existingAccount = await req.app.locals.prisma.accountGeneral.findFirst({
+    const existingAccount = await req.app.locals.prisma.accountDetail.findFirst({
       where: {
         id,
         deletedAt: null
@@ -379,7 +436,7 @@ router.put(
       return res.status(404).json({
         success: false,
         error: 'Not Found',
-        message: 'Account not found'
+        message: 'Detail account not found'
       });
     }
 
@@ -398,21 +455,31 @@ router.put(
       updateData.amountDebit = parseFloat(updates.amountDebit);
     }
 
-    const account = await req.app.locals.prisma.accountGeneral.update({
+    const account = await req.app.locals.prisma.accountDetail.update({
       where: { id },
-      data: updateData
+      data: updateData,
+      include: {
+        accountGeneral: {
+          select: {
+            id: true,
+            accountNumber: true,
+            accountName: true,
+            accountCategory: true
+          }
+        }
+      }
     });
 
-    res.json(createSuccessResponse(account, 'Account updated successfully'));
+    res.json(createSuccessResponse(account, 'Detail account updated successfully'));
   })
 );
 
 /**
  * @swagger
- * /accounts/{id}:
+ * /accounts/detail/{id}:
  *   delete:
- *     summary: Delete account (soft delete)
- *     tags: [Accounts]
+ *     summary: Delete detail account (soft delete)
+ *     tags: [Account Details]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -421,14 +488,14 @@ router.put(
  *         required: true
  *         schema:
  *           type: string
- *         description: Account ID
+ *         description: Detail Account ID
  *     responses:
  *       200:
- *         description: Account deleted successfully
+ *         description: Detail account deleted successfully
  *       404:
- *         description: Account not found
+ *         description: Detail account not found
  *       400:
- *         description: Cannot delete account with existing ledger entries or detail accounts
+ *         description: Cannot delete account with existing ledger entries
  */
 router.delete(
   '/:id',
@@ -439,7 +506,7 @@ router.delete(
     const userId = req.user?.userId || req.user?.id;
 
     // Check if account exists
-    const existingAccount = await req.app.locals.prisma.accountGeneral.findFirst({
+    const existingAccount = await req.app.locals.prisma.accountDetail.findFirst({
       where: {
         id,
         deletedAt: null
@@ -450,30 +517,14 @@ router.delete(
       return res.status(404).json({
         success: false,
         error: 'Not Found',
-        message: 'Account not found'
-      });
-    }
-
-    // Check if account has detail accounts
-    const detailAccountsCount = await req.app.locals.prisma.accountDetail.count({
-      where: {
-        accountGeneralId: id,
-        deletedAt: null
-      }
-    });
-
-    if (detailAccountsCount > 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Bad Request',
-        message: 'Cannot delete account with existing detail accounts'
+        message: 'Detail account not found'
       });
     }
 
     // Check if account has ledger entries
     const ledgerCount = await req.app.locals.prisma.ledger.count({
       where: {
-        accountGeneralId: id,
+        accountDetailId: id,
         deletedAt: null
       }
     });
@@ -487,7 +538,7 @@ router.delete(
     }
 
     // Perform soft delete
-    await req.app.locals.prisma.accountGeneral.update({
+    await req.app.locals.prisma.accountDetail.update({
       where: { id },
       data: {
         deletedAt: new Date(),
@@ -496,8 +547,8 @@ router.delete(
       }
     });
 
-    res.json(createSuccessResponse({ deletedId: id }, 'Account deleted successfully'));
+    res.json(createSuccessResponse({ deletedId: id }, 'Detail account deleted successfully'));
   })
 );
 
-export { router as accountGeneralRoutes };
+export { router as accountDetailRoutes };
