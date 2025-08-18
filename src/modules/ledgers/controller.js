@@ -18,9 +18,9 @@ export class LedgersController {
   /**
    * Create bulk ledger entries
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async createBulkLedgers(request, reply) {
+  async createBulkLedgers(request, res) {
     try {
       const ledgerData = request.body;
       const createdBy = request.user.userId;
@@ -28,7 +28,7 @@ export class LedgersController {
       const result = await this.ledgersService.createBulkLedgers(ledgerData, createdBy);
 
       const response = createSuccessResponse(result, 'Ledger entries created successfully');
-      reply.status(HTTP_STATUS.CREATED).send(response);
+      res.status(HTTP_STATUS.CREATED).json(response);
     } catch (error) {
       request.log.error({ error, ledgerData: request.body }, 'Failed to create bulk ledgers');
 
@@ -43,9 +43,9 @@ export class LedgersController {
   /**
    * Get all ledgers with pagination and filtering
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async getLedgers(request, reply) {
+  async getLedgers(request, res) {
     try {
       const { page, limit, skip } = request.pagination;
       const {
@@ -79,7 +79,7 @@ export class LedgersController {
       const pagination = buildPaginationMeta(page, limit, total);
       const response = createPaginatedResponse(ledgers, pagination);
 
-      reply.status(HTTP_STATUS.OK).send(response);
+      res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       request.log.error({ error, query: request.query }, 'Failed to get ledgers');
       throw new AppError('Failed to retrieve ledger entries', 500, 'INTERNAL_ERROR');
@@ -89,9 +89,9 @@ export class LedgersController {
   /**
    * Get ledger by ID
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async getLedgerById(request, reply) {
+  async getLedgerById(request, res) {
     try {
       const { id } = request.params;
 
@@ -102,7 +102,7 @@ export class LedgersController {
       }
 
       const response = createSuccessResponse(ledger);
-      reply.status(HTTP_STATUS.OK).send(response);
+      res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       if (error.statusCode) {
         throw error;
@@ -116,9 +116,9 @@ export class LedgersController {
   /**
    * Update ledger
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async updateLedger(request, reply) {
+  async updateLedger(request, res) {
     try {
       const { id } = request.params;
       const updateData = request.body;
@@ -127,7 +127,7 @@ export class LedgersController {
       const updatedLedger = await this.ledgersService.updateLedger(id, updateData, updatedBy);
 
       const response = createSuccessResponse(updatedLedger, 'Ledger entry updated successfully');
-      reply.status(HTTP_STATUS.OK).send(response);
+      res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       request.log.error(
         {
@@ -153,9 +153,9 @@ export class LedgersController {
   /**
    * Delete ledger
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async deleteLedger(request, reply) {
+  async deleteLedger(request, res) {
     try {
       const { id } = request.params;
       const deletedBy = request.user.userId;
@@ -163,7 +163,7 @@ export class LedgersController {
       const result = await this.ledgersService.deleteLedger(id, deletedBy);
 
       const response = createSuccessResponse(result, 'Ledger entry deleted successfully');
-      reply.status(HTTP_STATUS.OK).send(response);
+      res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       request.log.error({ error, ledgerId: request.params.id }, 'Failed to delete ledger');
 

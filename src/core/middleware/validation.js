@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod';
+import ValidationError from '../errors/ValidationError.js';
 
 /**
  * Safe validation with structured error handling
@@ -43,7 +44,7 @@ export function safeParse(schema, data) {
  * @returns {Function} Middleware function
  */
 export function validate(schemas = {}) {
-  return async (request, reply) => {
+  return async (request, _res, next) => {
     const errors = [];
 
     // Validate body
@@ -71,7 +72,11 @@ export function validate(schemas = {}) {
     }
 
     if (errors.length > 0) {
-      throw reply.badRequest('Validation failed', { validationErrors: errors });
+      const error = new ValidationError('Validation failed');
+      error.details = { validationErrors: errors };
+      throw error;
     }
+
+    next();
   };
 }

@@ -77,13 +77,10 @@ router.post(
   ],
   validationMiddleware,
   asyncHandler(async (req, res) => {
-    const { username, password } = req.body;
     const jwtSecret = env.JWT_SECRET || req.app.locals.config?.security?.jwtSecret;
-
     const authController = new AuthController(req.app.locals.prisma, jwtSecret);
-    const result = await authController.login({ body: { username, password } });
 
-    res.json(createSuccessResponse(result.data, 'Login successful'));
+    await authController.login(req, res);
   })
 );
 
@@ -217,7 +214,6 @@ router.post(
     const newToken = authController.generateToken({
       userId: req.user.id,
       username: req.user.username,
-      email: req.user.email,
       role: req.user.role
     });
 

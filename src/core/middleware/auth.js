@@ -45,19 +45,20 @@ export async function authenticate(req, res, next) {
         select: {
           id: true,
           username: true,
-          email: true,
           role: true,
-          isActive: true,
+          status: true,
           createdAt: true,
           updatedAt: true
         }
       });
 
+      console.log('=========USER==========', user);
+
       if (!user) {
         throw new AuthenticationError(ERROR_MESSAGES.AUTH.USER_NOT_FOUND);
       }
 
-      if (!user.isActive) {
+      if (user.status !== 'ACTIVE') {
         throw new AuthenticationError(ERROR_MESSAGES.AUTH.USER_INACTIVE);
       }
 

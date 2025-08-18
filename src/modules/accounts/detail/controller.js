@@ -3,12 +3,12 @@
  * HTTP request handlers for detailed account operations
  */
 
+import AppError from '../../../core/errors/AppError.js';
+import ValidationError from '../../../core/errors/ValidationError.js';
 import { buildPaginationMeta } from '../../../core/middleware/pagination.js';
 import { HTTP_STATUS } from '../../../shared/constants/index.js';
 import { createPaginatedResponse, createSuccessResponse } from '../../../shared/utils/response.js';
 import { AccountDetailService } from './service.js';
-import AppError from '../../../core/errors/AppError.js';
-import ValidationError from '../../../core/errors/ValidationError.js';
 
 export class AccountDetailController {
   constructor(prisma) {
@@ -18,9 +18,9 @@ export class AccountDetailController {
   /**
    * Create a new detail account
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async createAccount(request, reply) {
+  async createAccount(request, res) {
     try {
       const accountData = request.body;
       const createdBy = request.user.userId;
@@ -28,12 +28,12 @@ export class AccountDetailController {
       const newAccount = await this.accountDetailService.createAccount(accountData, createdBy);
 
       const response = createSuccessResponse(newAccount, 'Account detail created successfully');
-      reply.status(HTTP_STATUS.CREATED).send(response);
+      res.status(HTTP_STATUS.CREATED).json(response);
     } catch (error) {
       request.log.error({ error, accountData: request.body }, 'Failed to create account detail');
 
       if (error.message === 'Account number already exists') {
-        throw reply.conflict(error.message);
+        throw new ValidationError(error.message);
       }
 
       if (error.message === 'General account not found') {
@@ -47,9 +47,9 @@ export class AccountDetailController {
   /**
    * Get all detail accounts with pagination and filtering
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async getAccounts(request, reply) {
+  async getAccounts(request, res) {
     try {
       const { page, limit, skip } = request.pagination;
       const {
@@ -77,7 +77,7 @@ export class AccountDetailController {
       const pagination = buildPaginationMeta(page, limit, total);
       const response = createPaginatedResponse(accounts, pagination);
 
-      reply.status(HTTP_STATUS.OK).send(response);
+      res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       request.log.error({ error, query: request.query }, 'Failed to get account details');
       throw new AppError('Failed to retrieve account details', 500, 'INTERNAL_ERROR');
@@ -87,9 +87,9 @@ export class AccountDetailController {
   /**
    * Get detail account by ID
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async getAccountById(request, reply) {
+  async getAccountById(request, res) {
     try {
       const { id } = request.params;
       const { includeDeleted, includeLedgers } = request.query;
@@ -105,7 +105,7 @@ export class AccountDetailController {
       }
 
       const response = createSuccessResponse(account);
-      reply.status(HTTP_STATUS.OK).send(response);
+      res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       if (error.statusCode) {
         throw error;
@@ -119,9 +119,9 @@ export class AccountDetailController {
   /**
    * Update detail account
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async updateAccount(request, reply) {
+  async updateAccount(request, res) {
     try {
       const { id } = request.params;
       const updateData = request.body;
@@ -134,7 +134,7 @@ export class AccountDetailController {
       );
 
       const response = createSuccessResponse(updatedAccount, 'Account detail updated successfully');
-      reply.status(HTTP_STATUS.OK).send(response);
+      res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       request.log.error(
         {
@@ -156,9 +156,9 @@ export class AccountDetailController {
   /**
    * Soft delete detail account
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async deleteAccount(request, reply) {
+  async deleteAccount(request, res) {
     try {
       const { id } = request.params;
       const deletedBy = request.user.userId;
@@ -166,7 +166,7 @@ export class AccountDetailController {
       const deletedAccount = await this.accountDetailService.deleteAccount(id, deletedBy);
 
       const response = createSuccessResponse(deletedAccount, 'Account detail deleted successfully');
-      reply.status(HTTP_STATUS.OK).send(response);
+      res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       request.log.error({ error, accountId: request.params.id }, 'Failed to delete account detail');
 

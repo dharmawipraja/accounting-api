@@ -20,7 +20,9 @@ class AuthenticationError extends AppError {
    * Create AuthenticationError for invalid credentials
    */
   static invalidCredentials() {
-    return new AuthenticationError('Invalid email or password', { reason: 'invalid_credentials' });
+    return new AuthenticationError('Invalid username or password', {
+      reason: 'invalid_credentials'
+    });
   }
 
   /**

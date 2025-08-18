@@ -23,9 +23,9 @@ export class UsersController {
   /**
    * Create a new user
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async createUser(request, reply) {
+  async createUser(request, res) {
     try {
       const userData = request.body;
       const createdBy = request.user.userId;
@@ -33,12 +33,12 @@ export class UsersController {
       const newUser = await this.usersService.createUser(userData, createdBy);
 
       const response = createSuccessResponse(newUser, 'User created successfully');
-      reply.status(HTTP_STATUS.CREATED).send(response);
+      res.status(HTTP_STATUS.CREATED).json(response);
     } catch (error) {
       request.log.error({ error, userData: request.body }, 'Failed to create user');
 
       if (error.message === 'Username already exists') {
-        throw reply.conflict(error.message);
+        throw new ValidationError(error.message);
       }
 
       throw new AppError('Failed to create user', 500, 'INTERNAL_ERROR');
@@ -48,9 +48,9 @@ export class UsersController {
   /**
    * Get all users with pagination and filtering
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async getUsers(request, reply) {
+  async getUsers(request, res) {
     try {
       const { page, limit, skip } = request.pagination;
       const { search, role, status } = request.query;
@@ -66,7 +66,7 @@ export class UsersController {
       const pagination = buildPaginationMeta(page, limit, total);
       const response = createPaginatedResponse(users, pagination);
 
-      reply.status(HTTP_STATUS.OK).send(response);
+      res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       request.log.error({ error, query: request.query }, 'Failed to get users');
       throw new AppError('Failed to retrieve users', 500, 'INTERNAL_ERROR');
@@ -76,9 +76,9 @@ export class UsersController {
   /**
    * Get user by ID
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async getUserById(request, reply) {
+  async getUserById(request, res) {
     try {
       const { id } = request.params;
 
@@ -89,7 +89,7 @@ export class UsersController {
       }
 
       const response = createSuccessResponse(user);
-      reply.status(HTTP_STATUS.OK).send(response);
+      res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       if (error.statusCode) {
         throw error;
@@ -103,9 +103,9 @@ export class UsersController {
   /**
    * Update user
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async updateUser(request, reply) {
+  async updateUser(request, res) {
     try {
       const { id } = request.params;
       const updateData = request.body;
@@ -114,7 +114,7 @@ export class UsersController {
       const updatedUser = await this.usersService.updateUser(id, updateData, updatedBy);
 
       const response = createSuccessResponse(updatedUser, 'User updated successfully');
-      reply.status(HTTP_STATUS.OK).send(response);
+      res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       request.log.error(
         { error, userId: request.params.id, updateData: request.body },
@@ -122,7 +122,7 @@ export class UsersController {
       );
 
       if (error.message === 'Username already exists') {
-        throw reply.conflict(error.message);
+        throw new ValidationError(error.message);
       }
 
       if (error.code === 'P2025') {
@@ -137,9 +137,9 @@ export class UsersController {
   /**
    * Soft delete user
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async deleteUser(request, reply) {
+  async deleteUser(request, res) {
     try {
       const { id } = request.params;
       const deletedBy = request.user.userId;
@@ -147,7 +147,7 @@ export class UsersController {
       const deletedUser = await this.usersService.deleteUser(id, deletedBy);
 
       const response = createSuccessResponse(deletedUser, 'User deleted successfully');
-      reply.status(HTTP_STATUS.OK).send(response);
+      res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       request.log.error({ error, userId: request.params.id }, 'Failed to delete user');
 
@@ -163,9 +163,9 @@ export class UsersController {
   /**
    * Change user password
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async changePassword(request, reply) {
+  async changePassword(request, res) {
     try {
       const { userId } = request.user;
       const { currentPassword, newPassword } = request.body;
@@ -176,7 +176,7 @@ export class UsersController {
         { message: 'Password changed successfully' },
         'Password updated'
       );
-      reply.status(HTTP_STATUS.OK).send(response);
+      res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       request.log.error({ error, userId: request.user?.userId }, 'Failed to change password');
 

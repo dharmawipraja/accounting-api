@@ -18,9 +18,9 @@ export class AccountGeneralController {
   /**
    * Create a new general account
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async createAccount(request, reply) {
+  async createAccount(request, res) {
     try {
       const accountData = request.body;
       const createdBy = request.user.userId;
@@ -28,12 +28,12 @@ export class AccountGeneralController {
       const newAccount = await this.accountGeneralService.createAccount(accountData, createdBy);
 
       const response = createSuccessResponse(newAccount, 'Account general created successfully');
-      reply.status(HTTP_STATUS.CREATED).send(response);
+      res.status(HTTP_STATUS.CREATED).json(response);
     } catch (error) {
       request.log.error({ error, accountData: request.body }, 'Failed to create account general');
 
       if (error.message === 'Account number already exists') {
-        throw reply.conflict(error.message);
+        throw res.conflict(error.message);
       }
 
       throw new AppError('Failed to create account general', 500, 'INTERNAL_ERROR');
@@ -43,9 +43,9 @@ export class AccountGeneralController {
   /**
    * Get all general accounts with pagination and filtering
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async getAccounts(request, reply) {
+  async getAccounts(request, res) {
     try {
       const { page, limit, skip } = request.pagination;
       const { search, accountCategory, reportType, includeDeleted } = request.query;
@@ -62,7 +62,7 @@ export class AccountGeneralController {
       const pagination = buildPaginationMeta(page, limit, total);
       const response = createPaginatedResponse(accounts, pagination);
 
-      reply.status(HTTP_STATUS.OK).send(response);
+      res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       request.log.error({ error, query: request.query }, 'Failed to get account generals');
       throw new AppError('Failed to retrieve account generals', 500, 'INTERNAL_ERROR');
@@ -72,9 +72,9 @@ export class AccountGeneralController {
   /**
    * Get general account by ID
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async getAccountById(request, reply) {
+  async getAccountById(request, res) {
     try {
       const { id } = request.params;
       const { includeDeleted } = request.query;
@@ -86,7 +86,7 @@ export class AccountGeneralController {
       }
 
       const response = createSuccessResponse(account);
-      reply.status(HTTP_STATUS.OK).send(response);
+      res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       if (error.statusCode) {
         throw error;
@@ -100,9 +100,9 @@ export class AccountGeneralController {
   /**
    * Update general account
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async updateAccount(request, reply) {
+  async updateAccount(request, res) {
     try {
       const { id } = request.params;
       const updateData = request.body;
@@ -118,7 +118,7 @@ export class AccountGeneralController {
         updatedAccount,
         'Account general updated successfully'
       );
-      reply.status(HTTP_STATUS.OK).send(response);
+      res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       request.log.error(
         {
@@ -140,9 +140,9 @@ export class AccountGeneralController {
   /**
    * Soft delete general account
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async deleteAccount(request, reply) {
+  async deleteAccount(request, res) {
     try {
       const { id } = request.params;
       const deletedBy = request.user.userId;
@@ -153,7 +153,7 @@ export class AccountGeneralController {
         deletedAccount,
         'Account general deleted successfully'
       );
-      reply.status(HTTP_STATUS.OK).send(response);
+      res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       request.log.error(
         { error, accountId: request.params.id },

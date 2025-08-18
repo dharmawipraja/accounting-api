@@ -144,7 +144,7 @@ export function auditLogger(logger) {
             audit: {
               action: `${req.method} ${req.url}`,
               userId: req.user?.id || 'anonymous',
-              userEmail: req.user?.email,
+              username: req.user?.username || 'anonymous',
               ip: req.ip,
               userAgent: req.get('User-Agent'),
               statusCode: res.statusCode,
@@ -152,7 +152,7 @@ export function auditLogger(logger) {
               resource: req.url.split('/')[1] || 'unknown'
             }
           },
-          `Audit: ${req.method} ${req.url} by ${req.user?.email || 'anonymous'}`
+          `Audit: ${req.method} ${req.url} by ${req.user?.username || 'anonymous'}`
         );
 
         return originalSend.call(this, data);

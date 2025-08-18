@@ -203,8 +203,7 @@ router.post(
         name,
         type,
         description,
-        balance: 0, // Default balance
-        isActive: true
+        balance: 0 // Default balance
       }
     });
 

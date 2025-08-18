@@ -16,48 +16,22 @@ export class AuthController {
   /**
    * Handle login request
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async login(request, reply) {
+  async login(request, res) {
     try {
       const { username, password } = request.body;
 
       const authResult = await this.authService.authenticate(username, password);
 
       // Log successful login
-      if (request.server.securityAudit) {
-        request.server.securityAudit.logLoginSuccess(
-          authResult.user.id,
-          authResult.user.username,
-          request.ip,
-          request.headers['user-agent'],
-          request.id
-        );
-      }
 
       const response = createSuccessResponse(authResult, 'Login successful');
-      reply.status(200).send(response);
+      res.status(200).json(response);
     } catch (error) {
-      request.log.error({ error, username: request.body?.username }, 'Login failed');
-
-      // Debug logging
-      console.log('Auth error caught:', {
-        message: error.message,
-        name: error.name,
-        statusCode: error.statusCode,
-        stack: error.stack?.split('\n')[0]
-      });
+      console.error({ error, username: request.body?.username }, 'Login failed');
 
       // Log failed login attempt
-      if (request.server.securityAudit) {
-        request.server.securityAudit.logLoginFailure(
-          request.body?.username,
-          request.ip,
-          request.headers['user-agent'],
-          error.message,
-          request.id
-        );
-      }
 
       if (error.message === 'Invalid credentials') {
         const authError = new AuthenticationError('Invalid username or password');
@@ -74,24 +48,10 @@ export class AuthController {
   /**
    * Handle logout request (optional - mainly for client-side token removal)
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async logout(request, reply) {
+  async logout(_request, res) {
     // Log logout event
-    if (request.server.securityAudit && request.user) {
-      request.server.securityAudit.logEvent({
-        eventType: 'logout',
-        riskLevel: 'low',
-        timestamp: new Date(),
-        userId: request.user.userId,
-        userEmail: request.user.username,
-        ipAddress: request.ip,
-        userAgent: request.headers['user-agent'],
-        action: 'logout',
-        success: true,
-        requestId: request.id
-      });
-    }
 
     // For JWT, logout is typically handled client-side by removing the token
     // You could implement token blacklisting here if needed
@@ -99,19 +59,19 @@ export class AuthController {
       { message: 'Logout successful' },
       'Please remove the token from your client'
     );
-    reply.status(200).send(response);
+    res.status(200).json(response);
   }
 
   /**
    * Get current user profile
    * @param {Object} request - Express request object
-   * @param {Object} reply - Express response object
+   * @param {Object} res - Express response object
    */
-  async getProfile(request, reply) {
+  async getProfile(request, res) {
     try {
       const { userId } = request.user;
 
-      const user = await request.server.prisma.user.findUnique({
+      const user = await request.app.locals.prisma.user.findUnique({
         where: { id: userId },
         select: {
           id: true,
@@ -129,7 +89,7 @@ export class AuthController {
       }
 
       const response = createSuccessResponse(user);
-      reply.status(200).send(response);
+      res.status(200).json(response);
     } catch (error) {
       if (error.statusCode) {
         throw error;

@@ -21,8 +21,13 @@ const validationMiddleware = (req, res, next) => {
 
 // Validation helpers for common patterns
 export const commonValidations = {
-  id: param('id').isUUID().withMessage('Invalid ID format'),
-  email: body('email').isEmail().normalizeEmail().withMessage('Invalid email format'),
+  id: param('id').isString().withMessage('Invalid ID format'),
+  username: body('username')
+    .trim()
+    .isLength({ min: 3, max: 50 })
+    .withMessage('Username must be between 3 and 50 characters')
+    .matches(/^[a-zA-Z0-9_]+$/)
+    .withMessage('Username can only contain letters, numbers, and underscores'),
   password: body('password')
     .isLength({ min: 8 })
     .withMessage('Password must be at least 8 characters long')

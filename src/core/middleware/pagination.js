@@ -16,7 +16,7 @@ import { PAGINATION } from '../../shared/constants/index.js';
 export function parsePagination(options = {}) {
   const { defaultLimit = PAGINATION.DEFAULT_LIMIT, maxLimit = PAGINATION.MAX_LIMIT } = options;
 
-  return async (request, _reply) => {
+  return async (request, _res, next) => {
     const query = request.query || {};
 
     let page = parseInt(query.page) || 1;
@@ -37,6 +37,8 @@ export function parsePagination(options = {}) {
       defaultLimit,
       maxLimit
     };
+
+    next();
   };
 }
 

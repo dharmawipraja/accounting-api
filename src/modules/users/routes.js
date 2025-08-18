@@ -78,9 +78,8 @@ router.get(
         select: {
           id: true,
           username: true,
-          email: true,
           role: true,
-          isActive: true,
+          status: true,
           createdAt: true,
           updatedAt: true
         },
@@ -133,9 +132,8 @@ router.get(
       select: {
         id: true,
         username: true,
-        email: true,
         role: true,
-        isActive: true,
+        status: true,
         createdAt: true,
         updatedAt: true
       }
@@ -193,13 +191,7 @@ router.post(
   '/',
   requireAdmin,
   [
-    body('username')
-      .trim()
-      .isLength({ min: 3, max: 50 })
-      .withMessage('Username must be between 3 and 50 characters')
-      .matches(/^[a-zA-Z0-9_]+$/)
-      .withMessage('Username can only contain letters, numbers, and underscores'),
-    commonValidations.email,
+    commonValidations.username,
     commonValidations.password,
     body('role').isIn(['ADMIN', 'MANAJER', 'AKUNTAN', 'USER']).withMessage('Invalid role')
   ],
@@ -232,14 +224,13 @@ router.post(
         email,
         password: hashedPassword,
         role,
-        isActive: true
+        status: true
       },
       select: {
         id: true,
         username: true,
-        email: true,
         role: true,
-        isActive: true,
+        status: true,
         createdAt: true
       }
     });
@@ -323,9 +314,8 @@ router.put(
       select: {
         id: true,
         username: true,
-        email: true,
         role: true,
-        isActive: true,
+        status: true,
         updatedAt: true
       }
     });

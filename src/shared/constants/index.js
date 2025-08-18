@@ -95,7 +95,18 @@ export const ERROR_MESSAGES = {
   ALREADY_EXISTS: 'Resource already exists',
   VALIDATION_FAILED: 'Validation failed',
   DATABASE_ERROR: 'Database operation failed',
-  INTERNAL_ERROR: 'Internal server error'
+  INTERNAL_ERROR: 'Internal server error',
+
+  // Authentication specific messages
+  AUTH: {
+    MISSING_TOKEN: 'Authentication token is required',
+    INVALID_TOKEN: 'Invalid authentication token',
+    TOKEN_EXPIRED: 'Authentication token has expired',
+    USER_NOT_FOUND: 'User not found',
+    USER_INACTIVE: 'User account is inactive',
+    NOT_AUTHENTICATED: 'Authentication required',
+    INSUFFICIENT_PERMISSIONS: 'Insufficient permissions to access this resource'
+  }
 };
 
 // Success Messages

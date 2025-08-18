@@ -93,7 +93,7 @@ export class AuditLogger {
       ip: requestData.ip,
       userAgent: requestData.userAgent,
       requestId: requestData.requestId,
-      email: requestData.email,
+      username: requestData.username,
       reason: requestData.reason
     });
   }
@@ -214,11 +214,11 @@ export const auditMiddleware = {};
  */
 export const withAudit = (event, options = {}) => {
   return handler => {
-    return async (request, reply) => {
+    return async (request, res, next) => {
       const startTime = Date.now();
 
       try {
-        const result = await handler(request, reply);
+        const result = await handler(request, res, next);
 
         // Log successful operation
         if (options.logSuccess !== false) {
