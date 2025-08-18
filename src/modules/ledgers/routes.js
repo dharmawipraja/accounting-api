@@ -4,7 +4,8 @@
  */
 
 import { Router } from 'express';
-import { body, param, query } from 'express-validator';
+import { body, query } from 'express-validator';
+import { ulid } from 'ulid';
 import {
   asyncHandler,
   createPaginatedResponse,
@@ -44,10 +45,15 @@ router.use(requireAccountingAccess);
  *           maximum: 100
  *         description: Number of entries per page
  *       - in: query
- *         name: accountId
+ *         name: accountDetailId
  *         schema:
  *           type: string
- *         description: Filter by account ID
+ *         description: Filter by account detail ID
+ *       - in: query
+ *         name: accountGeneralId
+ *         schema:
+ *           type: string
+ *         description: Filter by account general ID
  *     responses:
  *       200:
  *         description: Ledger entries retrieved successfully
@@ -56,38 +62,44 @@ router.get(
   '/',
   [
     ...commonValidations.pagination,
-    query('accountId').optional().isUUID().withMessage('Invalid account ID format')
+    query('accountDetailId').optional().isString().withMessage('Invalid account detail ID format'),
+    query('accountGeneralId').optional().isString().withMessage('Invalid account general ID format')
   ],
   validationMiddleware,
   asyncHandler(async (req, res) => {
-    const { page = 1, limit = 10, accountId } = req.query;
+    const { page = 1, limit = 10, accountDetailId, accountGeneralId } = req.query;
     const skip = (page - 1) * limit;
 
-    const whereClause = accountId ? { accountId } : {};
+    const whereClause = {
+      deletedAt: null,
+      ...(accountDetailId && { accountDetailId }),
+      ...(accountGeneralId && { accountGeneralId })
+    };
 
     const [entries, total] = await Promise.all([
-      req.app.locals.prisma.ledgerEntry.findMany({
+      req.app.locals.prisma.ledger.findMany({
         where: whereClause,
         include: {
-          account: {
-            select: {
-              code: true,
-              name: true
-            }
-          },
-          transaction: {
+          accountDetail: {
             select: {
               id: true,
-              description: true,
-              date: true
+              accountNumber: true,
+              accountName: true
+            }
+          },
+          accountGeneral: {
+            select: {
+              id: true,
+              accountNumber: true,
+              accountName: true
             }
           }
         },
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' }
+        orderBy: { ledgerDate: 'desc' }
       }),
-      req.app.locals.prisma.ledgerEntry.count({ where: whereClause })
+      req.app.locals.prisma.ledger.count({ where: whereClause })
     ]);
 
     res.json(
@@ -128,11 +140,28 @@ router.get(
   asyncHandler(async (req, res) => {
     const { id } = req.params;
 
-    const entry = await req.app.locals.prisma.ledgerEntry.findUnique({
-      where: { id },
+    const entry = await req.app.locals.prisma.ledger.findFirst({
+      where: {
+        id,
+        deletedAt: null
+      },
       include: {
-        account: true,
-        transaction: true
+        accountDetail: {
+          select: {
+            id: true,
+            accountNumber: true,
+            accountName: true,
+            accountCategory: true
+          }
+        },
+        accountGeneral: {
+          select: {
+            id: true,
+            accountNumber: true,
+            accountName: true,
+            accountCategory: true
+          }
+        }
       }
     });
 
@@ -150,9 +179,9 @@ router.get(
 
 /**
  * @swagger
- * /ledgers/transactions:
+ * /ledgers:
  *   post:
- *     summary: Create new transaction with ledger entries
+ *     summary: Create new ledger entry
  *     tags: [Ledgers]
  *     security:
  *       - bearerAuth: []
@@ -163,154 +192,140 @@ router.get(
  *           schema:
  *             type: object
  *             required:
+ *               - referenceNumber
+ *               - amount
  *               - description
- *               - entries
+ *               - accountDetailId
+ *               - accountGeneralId
+ *               - ledgerType
+ *               - transactionType
+ *               - ledgerDate
  *             properties:
+ *               referenceNumber:
+ *                 type: string
+ *               amount:
+ *                 type: number
+ *                 minimum: 0
  *               description:
  *                 type: string
- *               date:
+ *               accountDetailId:
  *                 type: string
- *                 format: date
- *               entries:
- *                 type: array
- *                 items:
- *                   type: object
- *                   required:
- *                     - accountId
- *                     - type
- *                     - amount
- *                   properties:
- *                     accountId:
- *                       type: string
- *                     type:
- *                       type: string
- *                       enum: [debit, credit]
- *                     amount:
- *                       type: number
+ *               accountGeneralId:
+ *                 type: string
+ *               ledgerType:
+ *                 type: string
+ *                 enum: [KAS_MASUK, KAS_KELUAR]
+ *               transactionType:
+ *                 type: string
+ *                 enum: [DEBIT, CREDIT]
+ *               ledgerDate:
+ *                 type: string
+ *                 format: date-time
+ *               postingStatus:
+ *                 type: string
+ *                 enum: [PENDING, POSTED]
  *     responses:
  *       201:
- *         description: Transaction created successfully
+ *         description: Ledger entry created successfully
  *       400:
  *         description: Validation error
  */
 router.post(
-  '/transactions',
+  '/',
   [
+    body('referenceNumber').trim().notEmpty().withMessage('Reference number is required'),
+    body('amount').isFloat({ min: 0.01 }).withMessage('Amount must be a positive number'),
     body('description')
       .trim()
       .notEmpty()
       .withMessage('Description is required')
-      .isLength({ min: 1, max: 500 })
-      .withMessage('Description must be between 1 and 500 characters'),
-    body('date').optional().isISO8601().withMessage('Invalid date format'),
-    body('entries')
-      .isArray({ min: 2 })
-      .withMessage('At least 2 entries are required for a transaction'),
-    body('entries.*.accountId').isUUID().withMessage('Invalid account ID format'),
-    body('entries.*.type')
-      .isIn(['debit', 'credit'])
-      .withMessage('Entry type must be debit or credit'),
-    body('entries.*.amount').isFloat({ min: 0.01 }).withMessage('Amount must be a positive number')
+      .isLength({ max: 500 })
+      .withMessage('Description must not exceed 500 characters'),
+    body('accountDetailId').notEmpty().withMessage('Account detail ID is required'),
+    body('accountGeneralId').notEmpty().withMessage('Account general ID is required'),
+    body('ledgerType').isIn(['KAS_MASUK', 'KAS_KELUAR']).withMessage('Invalid ledger type'),
+    body('transactionType').isIn(['DEBIT', 'CREDIT']).withMessage('Invalid transaction type'),
+    body('ledgerDate').isISO8601().withMessage('Invalid ledger date format'),
+    body('postingStatus')
+      .optional()
+      .isIn(['PENDING', 'POSTED'])
+      .withMessage('Invalid posting status')
   ],
   validationMiddleware,
   asyncHandler(async (req, res) => {
-    const { description, date, entries } = req.body;
+    const {
+      referenceNumber,
+      amount,
+      description,
+      accountDetailId,
+      accountGeneralId,
+      ledgerType,
+      transactionType,
+      ledgerDate,
+      postingStatus = 'PENDING'
+    } = req.body;
 
-    // Validate that debits equal credits
-    const totalDebits = entries
-      .filter(entry => entry.type === 'debit')
-      .reduce((sum, entry) => sum + entry.amount, 0);
+    const userId = req.user?.userId || req.user?.id;
 
-    const totalCredits = entries
-      .filter(entry => entry.type === 'credit')
-      .reduce((sum, entry) => sum + entry.amount, 0);
+    // Verify account detail exists
+    const accountDetail = await req.app.locals.prisma.accountDetail.findFirst({
+      where: {
+        id: accountDetailId,
+        deletedAt: null
+      }
+    });
 
-    if (totalDebits !== totalCredits) {
+    if (!accountDetail) {
       return res.status(400).json({
         success: false,
         error: 'Validation Error',
-        message: 'Total debits must equal total credits'
+        message: 'Account detail not found'
       });
     }
 
-    // Create transaction with ledger entries in a database transaction
-    const result = await req.app.locals.prisma.$transaction(async prisma => {
-      // Create the transaction record
-      const transaction = await prisma.transaction.create({
-        data: {
-          description,
-          date: date ? new Date(date) : new Date(),
-          amount: totalDebits, // Store total amount
-          userId: req.user.id
-        }
-      });
-
-      // Create ledger entries
-      const ledgerEntries = await Promise.all(
-        entries.map(entry =>
-          prisma.ledgerEntry.create({
-            data: {
-              accountId: entry.accountId,
-              transactionId: transaction.id,
-              type: entry.type.toUpperCase(),
-              amount: entry.amount,
-              description: entry.description || description
-            }
-          })
-        )
-      );
-
-      // Note: Account balances are maintained in the amountCredit/amountDebit fields
-      // and should be updated through proper accounting procedures
-      // This is a simplified implementation - in a real system, you'd want more sophisticated balance management
-
-      return { transaction, ledgerEntries };
+    // Verify account general exists
+    const accountGeneral = await req.app.locals.prisma.accountGeneral.findFirst({
+      where: {
+        id: accountGeneralId,
+        deletedAt: null
+      }
     });
 
-    res.status(201).json(createSuccessResponse(result, 'Transaction created successfully'));
-  })
-);
+    if (!accountGeneral) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation Error',
+        message: 'Account general not found'
+      });
+    }
 
-/**
- * @swagger
- * /ledgers/balance/{accountId}:
- *   get:
- *     summary: Get account balance from ledger entries
- *     tags: [Ledgers]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: accountId
- *         required: true
- *         schema:
- *           type: string
- *         description: Account Detail ID
- *     responses:
- *       200:
- *         description: Account balance retrieved successfully
- *       404:
- *         description: Account not found
- */
-router.get(
-  '/balance/:accountId',
-  [param('accountId').isString().withMessage('Invalid account ID format')],
-  validationMiddleware,
-  asyncHandler(async (req, res) => {
-    const { accountId } = req.params;
-
-    // Get account detail information
-    const accountDetail = await req.app.locals.prisma.accountDetail.findFirst({
-      where: {
-        id: accountId,
-        deletedAt: null
+    // Create ledger entry
+    const ledgerEntry = await req.app.locals.prisma.ledger.create({
+      data: {
+        id: ulid(),
+        referenceNumber,
+        amount: parseFloat(amount),
+        description,
+        accountDetailId,
+        ledgerType,
+        transactionType,
+        accountGeneralId,
+        ledgerDate: new Date(ledgerDate),
+        postingStatus,
+        postingAt: postingStatus === 'POSTED' ? new Date() : null,
+        createdBy: userId,
+        updatedBy: userId,
+        createdAt: new Date(),
+        updatedAt: new Date()
       },
-      select: {
-        id: true,
-        accountNumber: true,
-        accountName: true,
-        amountCredit: true,
-        amountDebit: true,
+      include: {
+        accountDetail: {
+          select: {
+            id: true,
+            accountNumber: true,
+            accountName: true
+          }
+        },
         accountGeneral: {
           select: {
             id: true,
@@ -321,51 +336,7 @@ router.get(
       }
     });
 
-    if (!accountDetail) {
-      return res.status(404).json({
-        success: false,
-        error: 'Not Found',
-        message: 'Account not found'
-      });
-    }
-
-    // Calculate balance from ledger entries
-    const ledgerSummary = await req.app.locals.prisma.ledger.aggregate({
-      where: {
-        accountDetailId: accountId,
-        deletedAt: null,
-        postingStatus: 'POSTED'
-      },
-      _sum: {
-        amount: true
-      },
-      _count: {
-        id: true
-      }
-    });
-
-    const ledgerBalance = ledgerSummary._sum.amount || 0;
-    const transactionCount = ledgerSummary._count.id || 0;
-
-    // Calculate net balance (debit - credit amounts)
-    const netBalance =
-      parseFloat(accountDetail.amountDebit) - parseFloat(accountDetail.amountCredit);
-
-    res.json(
-      createSuccessResponse(
-        {
-          account: accountDetail,
-          ledgerBalance: parseFloat(ledgerBalance),
-          netBalance,
-          transactionCount,
-          balanceDetails: {
-            amountDebit: parseFloat(accountDetail.amountDebit),
-            amountCredit: parseFloat(accountDetail.amountCredit)
-          }
-        },
-        'Account balance retrieved successfully'
-      )
-    );
+    res.status(201).json(createSuccessResponse(ledgerEntry, 'Ledger entry created successfully'));
   })
 );
 
