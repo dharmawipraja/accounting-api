@@ -163,7 +163,7 @@ router.post(
     const {
       accountNumber,
       accountName,
-      accountGeneralId,
+      accountGeneralAccountNumber,
       accountCategory,
       reportType,
       transactionType,
@@ -192,7 +192,7 @@ router.post(
     // Check if general account exists
     const generalAccount = await req.app.locals.prisma.accountGeneral.findFirst({
       where: {
-        id: accountGeneralId,
+        accountNumber: accountGeneralAccountNumber,
         deletedAt: null
       }
     });
@@ -211,7 +211,7 @@ router.post(
         accountNumber,
         accountName,
         accountType: 'DETAIL',
-        accountGeneralId,
+        accountGeneralAccountNumber,
         accountCategory,
         reportType,
         transactionType,
@@ -348,7 +348,7 @@ router.delete(
     // Check if account has ledger entries
     const ledgerCount = await req.app.locals.prisma.ledger.count({
       where: {
-        accountDetailId: id,
+        accountDetailAccountNumber: existingAccount.accountNumber,
         deletedAt: null
       }
     });

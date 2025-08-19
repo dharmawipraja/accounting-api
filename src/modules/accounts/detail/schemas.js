@@ -28,7 +28,7 @@ export const AccountDetailCreateSchema = z.object({
     .min(3, 'Account name must be at least 3 characters')
     .max(100, 'Account name must be less than 100 characters')
     .trim(),
-  accountGeneralId: UUIDSchema,
+  accountGeneralId: z.string().min(1, 'Account general number is required'),
   accountCategory: AccountCategorySchema,
   reportType: ReportTypeSchema,
   transactionType: TransactionTypeSchema,
@@ -54,7 +54,7 @@ export const AccountDetailResponseSchema = z
     transactionType: TransactionTypeSchema,
     amountCredit: z.number(),
     amountDebit: z.number(),
-    accountGeneralId: UUIDSchema,
+    accountGeneralAccountNumber: z.string(),
     createdBy: z.string(),
     updatedBy: z.string(),
     deletedAt: z.date().nullable().optional(),

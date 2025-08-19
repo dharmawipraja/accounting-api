@@ -289,7 +289,7 @@ router.delete(
     // Check if account has detail accounts
     const detailAccountsCount = await req.app.locals.prisma.accountDetail.count({
       where: {
-        accountGeneralId: id,
+        accountGeneralAccountNumber: existingAccount.accountNumber,
         deletedAt: null
       }
     });
@@ -305,7 +305,7 @@ router.delete(
     // Check if account has ledger entries
     const ledgerCount = await req.app.locals.prisma.ledger.count({
       where: {
-        accountGeneralId: id,
+        accountGeneralAccountNumber: existingAccount.accountNumber,
         deletedAt: null
       }
     });

@@ -24,7 +24,7 @@ export class LedgersService {
     const referenceNumber = this.generateReferenceNumber();
 
     // Validate all account references exist and get ID mappings
-    const { detailAccountMap, generalAccountMap } = await this.validateAccountReferences(ledgers);
+    await this.validateAccountReferences(ledgers);
 
     // Format ledger data for database
     const formattedLedgers = ledgers.map(ledger => ({
@@ -34,9 +34,6 @@ export class LedgersService {
       amount: formatMoneyForDb(ledger.amount),
       ledgerDate: new Date(ledger.ledgerDate),
       postingStatus: 'PENDING',
-      // Convert accountNumber to actual ID
-      accountDetailId: detailAccountMap[ledger.accountDetailId],
-      accountGeneralId: generalAccountMap[ledger.accountGeneralId],
       createdBy,
       updatedBy: createdBy,
       createdAt: new Date(),
@@ -101,8 +98,8 @@ export class LedgersService {
       ...(ledgerType && { ledgerType }),
       ...(transactionType && { transactionType }),
       ...(postingStatus && { postingStatus }),
-      ...(accountDetailId && { accountDetailId }),
-      ...(accountGeneralId && { accountGeneralId }),
+      ...(accountDetailId && { accountDetailAccountNumber: accountDetailId }),
+      ...(accountGeneralId && { accountGeneralAccountNumber: accountGeneralId }),
       ...buildDateRangeFilter(startDate, endDate, 'ledgerDate')
     };
 
@@ -245,7 +242,7 @@ export class LedgersService {
   /**
    * Validate that all account references exist and are active
    * @param {Array} ledgers - Array of ledger data
-   * @returns {Object} Account ID mappings
+   * @returns {void} Throws error if accounts don't exist
    * @private
    */
   async validateAccountReferences(ledgers) {
@@ -288,19 +285,6 @@ export class LedgersService {
       const missingNumbers = accountGeneralNumbers.filter(num => !foundNumbers.includes(num));
       throw new Error(`General account(s) not found: ${missingNumbers.join(', ')}`);
     }
-
-    // Create mappings from accountNumber to id
-    const detailAccountMap = {};
-    detailAccounts.forEach(acc => {
-      detailAccountMap[acc.accountNumber] = acc.id;
-    });
-
-    const generalAccountMap = {};
-    generalAccounts.forEach(acc => {
-      generalAccountMap[acc.accountNumber] = acc.id;
-    });
-
-    return { detailAccountMap, generalAccountMap };
   }
 
   /**

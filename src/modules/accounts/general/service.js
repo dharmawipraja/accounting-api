@@ -172,7 +172,7 @@ export class AccountGeneralService {
 
     // Check if account has associated detail accounts
     const detailAccountsCount = await this.prisma.accountDetail.count({
-      where: { accountGeneralId: accountId, deletedAt: null }
+      where: { accountGeneralAccountNumber: existingAccount.accountNumber, deletedAt: null }
     });
 
     if (detailAccountsCount > 0) {

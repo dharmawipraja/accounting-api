@@ -66,8 +66,8 @@ export const LedgerResponseSchema = z
     postingStatus: PostingStatusSchema,
     ledgerDate: DateSchema,
     postingAt: z.date().nullable().optional(),
-    accountDetailId: UUIDSchema,
-    accountGeneralId: UUIDSchema,
+    accountDetailAccountNumber: z.string(),
+    accountGeneralAccountNumber: z.string(),
     createdBy: z.string(),
     updatedBy: z.string(),
     accountDetail: z

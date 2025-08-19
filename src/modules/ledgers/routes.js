@@ -35,8 +35,8 @@ router.get(
 
     const whereClause = {
       deletedAt: null,
-      ...(accountDetailId && { accountDetailId }),
-      ...(accountGeneralId && { accountGeneralId })
+      ...(accountDetailId && { accountDetailAccountNumber: accountDetailId }),
+      ...(accountGeneralId && { accountGeneralAccountNumber: accountGeneralId })
     };
 
     const [entries, total] = await Promise.all([

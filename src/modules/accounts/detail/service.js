@@ -33,7 +33,7 @@ export class AccountDetailService {
     // Verify that the general account exists
     const generalAccount = await this.prisma.accountGeneral.findFirst({
       where: {
-        id: accountData.accountGeneralId,
+        accountNumber: accountData.accountGeneralId, // accountGeneralId should contain account number
         deletedAt: null
       }
     });
@@ -46,8 +46,13 @@ export class AccountDetailService {
     const formattedData = {
       ...accountData,
       amountCredit: formatMoneyForDb(accountData.amountCredit || 0),
-      amountDebit: formatMoneyForDb(accountData.amountDebit || 0)
+      amountDebit: formatMoneyForDb(accountData.amountDebit || 0),
+      // Map accountGeneralId to the correct database field name
+      accountGeneralAccountNumber: accountData.accountGeneralId
     };
+
+    // Remove the old field name to avoid conflicts
+    delete formattedData.accountGeneralId;
 
     const newAccount = await this.prisma.accountDetail.create({
       data: {
@@ -101,7 +106,7 @@ export class AccountDetailService {
       ...(accountCategory && { accountCategory }),
       ...(reportType && { reportType }),
       ...(transactionType && { transactionType }),
-      ...(accountGeneralId && { accountGeneralId })
+      ...(accountGeneralId && { accountGeneralAccountNumber: accountGeneralId })
     };
 
     // Build include clause
@@ -245,7 +250,7 @@ export class AccountDetailService {
 
     // Check if account has associated ledger entries
     const ledgerEntriesCount = await this.prisma.ledger.count({
-      where: { accountDetailId: accountId, deletedAt: null }
+      where: { accountDetailAccountNumber: existingAccount.accountNumber, deletedAt: null }
     });
 
     if (ledgerEntriesCount > 0) {
