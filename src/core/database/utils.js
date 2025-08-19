@@ -5,8 +5,49 @@
 
 import Decimal from 'decimal.js';
 
-// Re-export database health check from config
-export { checkDatabaseHealth, getDatabaseInfo } from '../../config/database.js';
+/**
+ * Check database health
+ * @param {Object} prisma - Prisma client instance
+ * @returns {Promise<Object>} Database health information
+ */
+export async function checkDatabaseHealth(prisma) {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      database: 'connected'
+    };
+  } catch (error) {
+    return {
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      database: 'disconnected',
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Get database connection information
+ * @param {Object} prisma - Prisma client instance
+ * @returns {Promise<Object>} Database information
+ */
+export async function getDatabaseInfo(prisma) {
+  try {
+    const result = await prisma.$queryRaw`SELECT version() as version`;
+    return {
+      version: result[0]?.version || 'unknown',
+      status: 'connected'
+    };
+  } catch (error) {
+    return {
+      version: 'unknown',
+      status: 'disconnected',
+      error: error.message
+    };
+  }
+}
 
 /**
  * Get database statistics

@@ -107,4 +107,30 @@ export class AuthService {
   async verifyPassword(password, hashedPassword) {
     return bcrypt.compare(password, hashedPassword);
   }
+
+  /**
+   * Get user profile by ID
+   * @param {string} userId
+   * @returns {Promise<Object>} User profile
+   */
+  async getUserProfile(userId) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        username: true,
+        name: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    return user;
+  }
 }

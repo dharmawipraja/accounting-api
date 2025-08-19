@@ -7,11 +7,10 @@ import AppError from '../../core/errors/AppError.js';
 import AuthenticationError from '../../core/errors/AuthenticationError.js';
 import logger from '../../core/logging/index.js';
 import { createSuccessResponse } from '../../shared/utils/response.js';
-import { AuthService } from './service.js';
 
 export class AuthController {
-  constructor(prisma, jwtSecret) {
-    this.authService = new AuthService(prisma, jwtSecret);
+  constructor(authService) {
+    this.authService = authService;
   }
 
   /**
@@ -70,26 +69,9 @@ export class AuthController {
    */
   async getProfile(request, res) {
     try {
-      const { userId } = request.user;
+      const user = await this.authService.getUserProfile(request.user.userId);
 
-      const user = await request.app.locals.prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          id: true,
-          username: true,
-          name: true,
-          role: true,
-          status: true,
-          createdAt: true,
-          updatedAt: true
-        }
-      });
-
-      if (!user) {
-        throw new AppError('User not found', 404, 'USER_NOT_FOUND');
-      }
-
-      const response = createSuccessResponse(user);
+      const response = createSuccessResponse(user, 'Profile retrieved successfully');
       res.status(200).json(response);
     } catch (error) {
       if (error.statusCode) {
@@ -98,6 +80,27 @@ export class AuthController {
 
       request.log.error({ error, userId: request.user?.userId }, 'Failed to get user profile');
       throw new AppError('Failed to retrieve profile', 500, 'PROFILE_RETRIEVAL_FAILED');
+    }
+  }
+
+  /**
+   * Refresh JWT token
+   * @param {Object} request - Express request object
+   * @param {Object} res - Express response object
+   */
+  async refreshToken(request, res) {
+    try {
+      const newToken = this.authService.generateToken({
+        userId: request.user.userId,
+        username: request.user.username,
+        role: request.user.role
+      });
+
+      const response = createSuccessResponse({ token: newToken }, 'Token refreshed successfully');
+      res.status(200).json(response);
+    } catch (error) {
+      request.log.error({ error, userId: request.user?.userId }, 'Failed to refresh token');
+      throw new AppError('Failed to refresh token', 500, 'TOKEN_REFRESH_FAILED');
     }
   }
 }

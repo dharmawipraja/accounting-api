@@ -1,77 +1,54 @@
+/**
+ * Server Entry Point
+ * Express server using modern patterns and dependency injection
+ */
+
 import 'dotenv/config';
-import { buildApp } from './src/app.js';
-import env from './src/config/env.js';
+import { createApp, gracefulShutdown } from './src/app/factory.js';
+import config from './src/config/index.js';
 import logger from './src/core/logging/index.js';
 
-const start = async () => {
+async function startServer() {
   try {
-    // Build the Express app
-    const app = await buildApp();
+    // Create Express application
+    const app = await createApp();
+
+    // Get server configuration
+    const { server } = config.getConfig();
+    const { port } = server;
+    const { host } = server;
 
     // Start the server
-    const port = env.PORT || 3000;
-    const host = env.HOST || '0.0.0.0';
-
-    const server = app.listen(port, host, () => {
-      logger.info(`🚀 Express server running on http://${host}:${port}`);
-
-      if (env.NODE_ENV === 'development') {
-        logger.info('🛠  Development mode enabled');
-        logger.info(`📚 API Documentation: http://${host}:${port}/docs`);
-        logger.info(`❤️  Health Check: http://${host}:${port}/health`);
-      }
+    const server_instance = app.listen(port, host, () => {
+      logger.info(`🚀 Server running on http://${host}:${port}`);
+      logger.info(`� Health check: http://${host}:${port}/health`);
+      logger.info(`🔧 Readiness check: http://${host}:${port}/ready`);
+      logger.info(`� API documentation: http://${host}:${port}/api`);
+      logger.info(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     });
 
-    // Graceful shutdown handling
-    const gracefulShutdown = signal => {
-      logger.info(`\n📴 Received ${signal}, shutting down gracefully...`);
+    // Graceful shutdown handlers
+    process.on('SIGTERM', () => gracefulShutdown(server_instance));
+    process.on('SIGINT', () => gracefulShutdown(server_instance));
 
-      server.close(() => {
-        logger.info('✅ HTTP server closed');
-
-        // Close database connections
-        if (app.locals.prisma) {
-          app.locals.prisma
-            .$disconnect()
-            .then(() => {
-              logger.info('✅ Database disconnected');
-              process.exit(0);
-            })
-            .catch(err => {
-              logger.error('❌ Error disconnecting from database:', err);
-              process.exit(1);
-            });
-        } else {
-          process.exit(0);
-        }
-      });
-
-      // Force shutdown after 10 seconds
-      global.setTimeout(() => {
-        logger.error('❌ Could not close connections in time, forcefully shutting down');
-        process.exit(1);
-      }, 10000);
-    };
-
-    // Handle different shutdown signals
-    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-
-    // Handle uncaught exceptions
-    process.on('uncaughtException', err => {
-      logger.fatal('💥 Uncaught Exception:', err);
-      process.exit(1);
-    });
-
-    // Handle unhandled promise rejections
-    process.on('unhandledRejection', (reason, promise) => {
-      logger.fatal('💥 Unhandled Rejection at:', promise, 'reason:', reason);
-      process.exit(1);
-    });
-  } catch (err) {
-    logger.fatal('❌ Server startup failed:', err);
+    return server_instance;
+  } catch (error) {
+    logger.error('❌ Failed to start server:', error);
     process.exit(1);
   }
-};
+}
 
-start();
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  process.exit(1);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', error => {
+  logger.error('Uncaught Exception:', error);
+  process.exit(1);
+});
+
+// Start the server
+startServer();

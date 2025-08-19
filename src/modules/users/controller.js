@@ -3,21 +3,18 @@
  * HTTP request handlers for user operations
  */
 
-/**
- * Users Controller
- * HTTP request handlers for user operations
- */
-
 import AppError from '../../core/errors/AppError.js';
 import ValidationError from '../../core/errors/ValidationError.js';
-import { buildPaginationMeta } from '../../core/middleware/pagination.js';
 import { HTTP_STATUS } from '../../shared/constants/index.js';
-import { createPaginatedResponse, createSuccessResponse } from '../../shared/utils/response.js';
-import { UsersService } from './service.js';
+import {
+  calculatePagination,
+  createPaginatedResponse,
+  createSuccessResponse
+} from '../../shared/utils/response.js';
 
 export class UsersController {
-  constructor(prisma) {
-    this.usersService = new UsersService(prisma);
+  constructor(usersService) {
+    this.usersService = usersService;
   }
 
   /**
@@ -63,7 +60,7 @@ export class UsersController {
         status
       });
 
-      const pagination = buildPaginationMeta(page, limit, total);
+      const pagination = calculatePagination(page, limit, total);
       const response = createPaginatedResponse(users, pagination);
 
       res.status(HTTP_STATUS.OK).json(response);

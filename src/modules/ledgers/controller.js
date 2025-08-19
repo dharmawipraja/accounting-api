@@ -8,11 +8,10 @@ import ValidationError from '../../core/errors/ValidationError.js';
 import { buildPaginationMeta } from '../../core/middleware/pagination.js';
 import { HTTP_STATUS } from '../../shared/constants/index.js';
 import { createPaginatedResponse, createSuccessResponse } from '../../shared/utils/response.js';
-import { LedgersService } from './service.js';
 
 export class LedgersController {
-  constructor(prisma) {
-    this.ledgersService = new LedgersService(prisma);
+  constructor(ledgersService) {
+    this.ledgersService = ledgersService;
   }
 
   /**

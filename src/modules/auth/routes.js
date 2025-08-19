@@ -1,94 +1,74 @@
 /**
  * Express Auth Routes
- * Authentication endpoints for Express.js
+ * Authentication endpoints for Express.js using dependency injection
  */
 
 import { Router } from 'express';
 import { body } from 'express-validator';
-import { env } from '../../config/env.js';
-import { asyncHandler, createSuccessResponse } from '../../core/errors/index.js';
+import { asyncHandler } from '../../core/errors/index.js';
 import { authenticate } from '../../core/middleware/auth.js';
 import { validationMiddleware } from '../../core/security/security.js';
-import { AuthController } from './controller.js';
 
-const router = Router();
+/**
+ * Create auth routes with dependency injection
+ * @param {Object} container - Dependency injection container
+ * @returns {Router} Express router
+ */
+export function createAuthRoutes(container) {
+  const router = Router();
+  const authController = container.get('authController');
 
-router.post(
-  '/login',
-  // Validation middleware
-  [
-    body('username')
-      .trim()
-      .notEmpty()
-      .withMessage('Username is required')
-      .isLength({ min: 3, max: 50 })
-      .withMessage('Username must be between 3 and 50 characters'),
-    body('password')
-      .notEmpty()
-      .withMessage('Password is required')
-      .isLength({ min: 6 })
-      .withMessage('Password must be at least 6 characters')
-  ],
-  validationMiddleware,
-  asyncHandler(async (req, res) => {
-    const jwtSecret = env.JWT_SECRET || req.app.locals.config?.security?.jwtSecret;
-    const authController = new AuthController(req.app.locals.prisma, jwtSecret);
+  // Login endpoint
+  router.post(
+    '/login',
+    [
+      body('username')
+        .trim()
+        .notEmpty()
+        .withMessage('Username is required')
+        .isLength({ min: 3, max: 50 })
+        .withMessage('Username must be between 3 and 50 characters'),
+      body('password')
+        .notEmpty()
+        .withMessage('Password is required')
+        .isLength({ min: 6 })
+        .withMessage('Password must be at least 6 characters')
+    ],
+    validationMiddleware,
+    asyncHandler(async (req, res) => {
+      await authController.login(req, res);
+    })
+  );
 
-    await authController.login(req, res);
-  })
-);
+  // Logout endpoint
+  router.post(
+    '/logout',
+    authenticate,
+    asyncHandler(async (req, res) => {
+      await authController.logout(req, res);
+    })
+  );
 
-router.post(
-  '/logout',
-  authenticate,
-  asyncHandler(async (req, res) => {
-    // In JWT-based auth, logout is primarily client-side token removal
-    // But we can log the logout event for audit purposes
-    req.log?.info(
-      {
-        audit: {
-          action: 'logout',
-          userId: req.user.id,
-          userEmail: req.user.email,
-          ip: req.ip,
-          timestamp: new Date().toISOString()
-        }
-      },
-      `User logout: ${req.user.email}`
-    );
+  // Get profile endpoint
+  router.get(
+    '/profile',
+    authenticate,
+    asyncHandler(async (req, res) => {
+      await authController.getProfile(req, res);
+    })
+  );
 
-    res.json(createSuccessResponse({ message: 'Logged out successfully' }, 'Logout successful'));
-  })
-);
+  // Refresh token endpoint
+  router.post(
+    '/refresh',
+    authenticate,
+    asyncHandler(async (req, res) => {
+      await authController.refreshToken(req, res);
+    })
+  );
 
-router.get(
-  '/profile',
-  authenticate,
-  asyncHandler(async (req, res) => {
-    // Return user profile without sensitive information
-    // eslint-disable-next-line no-unused-vars
-    const { password: _password, ...userProfile } = req.user;
+  return router;
+}
 
-    res.json(createSuccessResponse({ user: userProfile }, 'Profile retrieved successfully'));
-  })
-);
-
-router.post(
-  '/refresh',
-  authenticate,
-  asyncHandler(async (req, res) => {
-    const jwtSecret = env.JWT_SECRET || req.app.locals.config?.security?.jwtSecret;
-    const authController = new AuthController(req.app.locals.prisma, jwtSecret);
-
-    // Generate new token with current user data
-    const newToken = authController.generateToken({
-      userId: req.user.id,
-      username: req.user.username,
-      role: req.user.role
-    });
-
-    res.json(createSuccessResponse({ token: newToken }, 'Token refreshed successfully'));
-  })
-);
-
-export { router as authRoutes };
+// Export for backward compatibility
+export { createAuthRoutes as authRoutes };
