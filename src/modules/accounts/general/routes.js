@@ -10,9 +10,9 @@ import {
   asyncHandler,
   createPaginatedResponse,
   createSuccessResponse
-} from '../../core/errors/index.js';
-import { authenticate, requireAccountingAccess } from '../../core/middleware/auth.js';
-import { commonValidations, validationMiddleware } from '../../core/security/security.js';
+} from '../../../core/errors/index.js';
+import { authenticate, requireAccountingAccess } from '../../../core/middleware/auth.js';
+import { commonValidations, validationMiddleware } from '../../../core/security/security.js';
 
 const router = Router();
 

@@ -23,7 +23,7 @@ export class AccountGeneralController {
   async createAccount(request, res) {
     try {
       const accountData = request.body;
-      const createdBy = request.user.userId;
+      const createdBy = request.user.id;
 
       const newAccount = await this.accountGeneralService.createAccount(accountData, createdBy);
 
@@ -106,7 +106,7 @@ export class AccountGeneralController {
     try {
       const { id } = request.params;
       const updateData = request.body;
-      const updatedBy = request.user.userId;
+      const updatedBy = request.user.id;
 
       const updatedAccount = await this.accountGeneralService.updateAccount(
         id,
@@ -145,7 +145,7 @@ export class AccountGeneralController {
   async deleteAccount(request, res) {
     try {
       const { id } = request.params;
-      const deletedBy = request.user.userId;
+      const deletedBy = request.user.id;
 
       const deletedAccount = await this.accountGeneralService.deleteAccount(id, deletedBy);
 

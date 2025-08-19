@@ -72,6 +72,7 @@ export function validate(schemas = {}) {
     }
 
     if (errors.length > 0) {
+      console.log('============= Validation Errors =============', errors);
       const error = new ValidationError('Validation failed');
       error.details = { validationErrors: errors };
       throw error;

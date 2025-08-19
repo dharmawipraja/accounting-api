@@ -4,7 +4,7 @@
  */
 
 import { accountDetailRoutes } from './modules/accounts/detail/routes.js';
-import { accountGeneralRoutes } from './modules/accounts/routes.js';
+import { accountGeneralRoutes } from './modules/accounts/general/routes.js';
 import { authRoutes } from './modules/auth/routes.js';
 import { ledgersRoutes } from './modules/ledgers/routes.js';
 import { userRoutes } from './modules/users/routes.js';

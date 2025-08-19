@@ -52,8 +52,6 @@ export async function authenticate(req, res, next) {
         }
       });
 
-      console.log('=========USER==========', user);
-
       if (!user) {
         throw new AuthenticationError(ERROR_MESSAGES.AUTH.USER_NOT_FOUND);
       }

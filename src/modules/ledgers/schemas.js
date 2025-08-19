@@ -24,8 +24,8 @@ export const LedgerItemSchema = z.object({
     .min(3, 'Description must be at least 3 characters')
     .max(500, 'Description must be less than 500 characters')
     .trim(),
-  accountDetailId: UUIDSchema,
-  accountGeneralId: UUIDSchema,
+  accountDetailId: z.string().min(1, 'Account detail number is required'),
+  accountGeneralId: z.string().min(1, 'Account general number is required'),
   ledgerType: LedgerTypeSchema,
   transactionType: TransactionTypeSchema,
   ledgerDate: DateSchema

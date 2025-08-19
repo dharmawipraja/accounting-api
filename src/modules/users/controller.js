@@ -28,7 +28,7 @@ export class UsersController {
   async createUser(request, res) {
     try {
       const userData = request.body;
-      const createdBy = request.user.userId;
+      const createdBy = request.user.id;
 
       const newUser = await this.usersService.createUser(userData, createdBy);
 
@@ -109,7 +109,7 @@ export class UsersController {
     try {
       const { id } = request.params;
       const updateData = request.body;
-      const updatedBy = request.user.userId;
+      const updatedBy = request.user.id;
 
       const updatedUser = await this.usersService.updateUser(id, updateData, updatedBy);
 
@@ -142,7 +142,7 @@ export class UsersController {
   async deleteUser(request, res) {
     try {
       const { id } = request.params;
-      const deletedBy = request.user.userId;
+      const deletedBy = request.user.id;
 
       const deletedUser = await this.usersService.deleteUser(id, deletedBy);
 

@@ -23,7 +23,7 @@ export class LedgersController {
   async createBulkLedgers(request, res) {
     try {
       const ledgerData = request.body;
-      const createdBy = request.user.userId;
+      const createdBy = request.user.id;
 
       const result = await this.ledgersService.createBulkLedgers(ledgerData, createdBy);
 
@@ -122,7 +122,7 @@ export class LedgersController {
     try {
       const { id } = request.params;
       const updateData = request.body;
-      const updatedBy = request.user.userId;
+      const updatedBy = request.user.id;
 
       const updatedLedger = await this.ledgersService.updateLedger(id, updateData, updatedBy);
 
@@ -158,7 +158,7 @@ export class LedgersController {
   async deleteLedger(request, res) {
     try {
       const { id } = request.params;
-      const deletedBy = request.user.userId;
+      const deletedBy = request.user.id;
 
       const result = await this.ledgersService.deleteLedger(id, deletedBy);
 

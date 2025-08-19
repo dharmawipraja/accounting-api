@@ -23,8 +23,8 @@ export class LedgersService {
     // Generate a unique reference number for this batch
     const referenceNumber = this.generateReferenceNumber();
 
-    // Validate all account references exist
-    await this.validateAccountReferences(ledgers);
+    // Validate all account references exist and get ID mappings
+    const { detailAccountMap, generalAccountMap } = await this.validateAccountReferences(ledgers);
 
     // Format ledger data for database
     const formattedLedgers = ledgers.map(ledger => ({
@@ -32,7 +32,11 @@ export class LedgersService {
       ...ledger,
       referenceNumber,
       amount: formatMoneyForDb(ledger.amount),
+      ledgerDate: new Date(ledger.ledgerDate),
       postingStatus: 'PENDING',
+      // Convert accountNumber to actual ID
+      accountDetailId: detailAccountMap[ledger.accountDetailId],
+      accountGeneralId: generalAccountMap[ledger.accountGeneralId],
       createdBy,
       updatedBy: createdBy,
       createdAt: new Date(),
@@ -43,7 +47,7 @@ export class LedgersService {
     const createdLedgers = await this.prisma.$transaction(async prisma => {
       const results = [];
       for (const ledgerData of formattedLedgers) {
-        const ledger = await prisma.ledger.create({
+        const ledger = await this.prisma.ledger.create({
           data: ledgerData,
           include: {
             accountDetail: {
@@ -241,37 +245,62 @@ export class LedgersService {
   /**
    * Validate that all account references exist and are active
    * @param {Array} ledgers - Array of ledger data
+   * @returns {Object} Account ID mappings
    * @private
    */
   async validateAccountReferences(ledgers) {
-    const accountDetailIds = [...new Set(ledgers.map(l => l.accountDetailId))];
-    const accountGeneralIds = [...new Set(ledgers.map(l => l.accountGeneralId))];
+    const accountDetailNumbers = [...new Set(ledgers.map(l => l.accountDetailId))];
+    const accountGeneralNumbers = [...new Set(ledgers.map(l => l.accountGeneralId))];
+
+    console.log('Account Detail Numbers:', accountDetailNumbers);
+    console.log('Account General Numbers:', accountGeneralNumbers);
 
     // Check detail accounts
     const detailAccounts = await this.prisma.accountDetail.findMany({
       where: {
-        id: { in: accountDetailIds },
+        accountNumber: { in: accountDetailNumbers },
         deletedAt: null
       },
-      select: { id: true }
+      select: { id: true, accountNumber: true }
     });
 
-    if (detailAccounts.length !== accountDetailIds.length) {
-      throw new Error('One or more detail accounts not found or inactive');
+    console.log('Detail Accounts:', detailAccounts);
+
+    if (detailAccounts.length !== accountDetailNumbers.length) {
+      const foundNumbers = detailAccounts.map(acc => acc.accountNumber);
+      const missingNumbers = accountDetailNumbers.filter(num => !foundNumbers.includes(num));
+      throw new Error(`Detail account(s) not found: ${missingNumbers.join(', ')}`);
     }
 
     // Check general accounts
     const generalAccounts = await this.prisma.accountGeneral.findMany({
       where: {
-        id: { in: accountGeneralIds },
+        accountNumber: { in: accountGeneralNumbers },
         deletedAt: null
       },
-      select: { id: true }
+      select: { id: true, accountNumber: true }
     });
 
-    if (generalAccounts.length !== accountGeneralIds.length) {
-      throw new Error('One or more general accounts not found or inactive');
+    console.log('General Accounts:', generalAccounts);
+
+    if (generalAccounts.length !== accountGeneralNumbers.length) {
+      const foundNumbers = generalAccounts.map(acc => acc.accountNumber);
+      const missingNumbers = accountGeneralNumbers.filter(num => !foundNumbers.includes(num));
+      throw new Error(`General account(s) not found: ${missingNumbers.join(', ')}`);
     }
+
+    // Create mappings from accountNumber to id
+    const detailAccountMap = {};
+    detailAccounts.forEach(acc => {
+      detailAccountMap[acc.accountNumber] = acc.id;
+    });
+
+    const generalAccountMap = {};
+    generalAccounts.forEach(acc => {
+      generalAccountMap[acc.accountNumber] = acc.id;
+    });
+
+    return { detailAccountMap, generalAccountMap };
   }
 
   /**

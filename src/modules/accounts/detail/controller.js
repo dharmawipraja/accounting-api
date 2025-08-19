@@ -23,7 +23,7 @@ export class AccountDetailController {
   async createAccount(request, res) {
     try {
       const accountData = request.body;
-      const createdBy = request.user.userId;
+      const createdBy = request.user.id;
 
       const newAccount = await this.accountDetailService.createAccount(accountData, createdBy);
 
@@ -125,7 +125,7 @@ export class AccountDetailController {
     try {
       const { id } = request.params;
       const updateData = request.body;
-      const updatedBy = request.user.userId;
+      const updatedBy = request.user.id;
 
       const updatedAccount = await this.accountDetailService.updateAccount(
         id,
@@ -161,7 +161,7 @@ export class AccountDetailController {
   async deleteAccount(request, res) {
     try {
       const { id } = request.params;
-      const deletedBy = request.user.userId;
+      const deletedBy = request.user.id;
 
       const deletedAccount = await this.accountDetailService.deleteAccount(id, deletedBy);
 

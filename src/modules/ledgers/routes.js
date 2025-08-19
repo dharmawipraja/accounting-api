@@ -5,7 +5,6 @@
 
 import { Router } from 'express';
 import { body, query } from 'express-validator';
-import { ulid } from 'ulid';
 import {
   asyncHandler,
   createPaginatedResponse,
@@ -179,6 +178,97 @@ router.get(
 
 /**
  * @swagger
+ * /ledgers/bulk:
+ *   post:
+ *     summary: Create multiple ledger entries in bulk
+ *     tags: [Ledgers]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - ledgers
+ *             properties:
+ *               ledgers:
+ *                 type: array
+ *                 minItems: 1
+ *                 maxItems: 100
+ *                 items:
+ *                   type: object
+ *                   required:
+ *                     - amount
+ *                     - description
+ *                     - accountDetailId
+ *                     - accountGeneralId
+ *                     - ledgerType
+ *                     - transactionType
+ *                     - ledgerDate
+ *                   properties:
+ *                     amount:
+ *                       type: number
+ *                       minimum: 0.01
+ *                     description:
+ *                       type: string
+ *                       maxLength: 500
+ *                     accountDetailId:
+ *                       type: string
+ *                     accountGeneralId:
+ *                       type: string
+ *                     ledgerType:
+ *                       type: string
+ *                       enum: [KAS_MASUK, KAS_KELUAR]
+ *                     transactionType:
+ *                       type: string
+ *                       enum: [DEBIT, CREDIT]
+ *                     ledgerDate:
+ *                       type: string
+ *                       format: date-time
+ *     responses:
+ *       201:
+ *         description: Ledger entries created successfully
+ *       400:
+ *         description: Validation error
+ */
+router.post(
+  '/',
+  [
+    body('ledgers')
+      .isArray({ min: 1, max: 100 })
+      .withMessage('Ledgers must be an array with 1-100 entries'),
+    body('ledgers.*.amount').isFloat({ min: 0.01 }).withMessage('Amount must be a positive number'),
+    body('ledgers.*.description')
+      .trim()
+      .notEmpty()
+      .withMessage('Description is required')
+      .isLength({ max: 500 })
+      .withMessage('Description must not exceed 500 characters'),
+    body('ledgers.*.accountDetailId').notEmpty().withMessage('Account detail ID is required'),
+    body('ledgers.*.accountGeneralId').notEmpty().withMessage('Account general ID is required'),
+    body('ledgers.*.ledgerType')
+      .isIn(['KAS_MASUK', 'KAS_KELUAR'])
+      .withMessage('Invalid ledger type'),
+    body('ledgers.*.transactionType')
+      .isIn(['DEBIT', 'CREDIT'])
+      .withMessage('Invalid transaction type'),
+    body('ledgers.*.ledgerDate').isISO8601().withMessage('Invalid ledger date format')
+  ],
+  validationMiddleware,
+  asyncHandler(async (req, res) => {
+    // Import the controller
+    const { LedgersController } = await import('./controller.js');
+    const ledgersController = new LedgersController(req.app.locals.prisma);
+
+    // Use the controller method
+    await ledgersController.createBulkLedgers(req, res);
+  })
+);
+
+/**
+ * @swagger
  * /ledgers:
  *   post:
  *     summary: Create new ledger entry
@@ -230,114 +320,114 @@ router.get(
  *       400:
  *         description: Validation error
  */
-router.post(
-  '/',
-  [
-    body('referenceNumber').trim().notEmpty().withMessage('Reference number is required'),
-    body('amount').isFloat({ min: 0.01 }).withMessage('Amount must be a positive number'),
-    body('description')
-      .trim()
-      .notEmpty()
-      .withMessage('Description is required')
-      .isLength({ max: 500 })
-      .withMessage('Description must not exceed 500 characters'),
-    body('accountDetailId').notEmpty().withMessage('Account detail ID is required'),
-    body('accountGeneralId').notEmpty().withMessage('Account general ID is required'),
-    body('ledgerType').isIn(['KAS_MASUK', 'KAS_KELUAR']).withMessage('Invalid ledger type'),
-    body('transactionType').isIn(['DEBIT', 'CREDIT']).withMessage('Invalid transaction type'),
-    body('ledgerDate').isISO8601().withMessage('Invalid ledger date format'),
-    body('postingStatus')
-      .optional()
-      .isIn(['PENDING', 'POSTED'])
-      .withMessage('Invalid posting status')
-  ],
-  validationMiddleware,
-  asyncHandler(async (req, res) => {
-    const {
-      referenceNumber,
-      amount,
-      description,
-      accountDetailId,
-      accountGeneralId,
-      ledgerType,
-      transactionType,
-      ledgerDate,
-      postingStatus = 'PENDING'
-    } = req.body;
+// router.post(
+//   '/',
+//   [
+//     body('referenceNumber').trim().notEmpty().withMessage('Reference number is required'),
+//     body('amount').isFloat({ min: 0.01 }).withMessage('Amount must be a positive number'),
+//     body('description')
+//       .trim()
+//       .notEmpty()
+//       .withMessage('Description is required')
+//       .isLength({ max: 500 })
+//       .withMessage('Description must not exceed 500 characters'),
+//     body('accountDetailId').notEmpty().withMessage('Account detail ID is required'),
+//     body('accountGeneralId').notEmpty().withMessage('Account general ID is required'),
+//     body('ledgerType').isIn(['KAS_MASUK', 'KAS_KELUAR']).withMessage('Invalid ledger type'),
+//     body('transactionType').isIn(['DEBIT', 'CREDIT']).withMessage('Invalid transaction type'),
+//     body('ledgerDate').isISO8601().withMessage('Invalid ledger date format'),
+//     body('postingStatus')
+//       .optional()
+//       .isIn(['PENDING', 'POSTED'])
+//       .withMessage('Invalid posting status')
+//   ],
+//   validationMiddleware,
+//   asyncHandler(async (req, res) => {
+//     const {
+//       referenceNumber,
+//       amount,
+//       description,
+//       accountDetailId,
+//       accountGeneralId,
+//       ledgerType,
+//       transactionType,
+//       ledgerDate,
+//       postingStatus = 'PENDING'
+//     } = req.body;
 
-    const userId = req.user?.userId || req.user?.id;
+//     const userId = req.user?.userId || req.user?.id;
 
-    // Verify account detail exists
-    const accountDetail = await req.app.locals.prisma.accountDetail.findFirst({
-      where: {
-        id: accountDetailId,
-        deletedAt: null
-      }
-    });
+//     // Verify account detail exists
+//     const accountDetail = await req.app.locals.prisma.accountDetail.findFirst({
+//       where: {
+//         id: accountDetailId,
+//         deletedAt: null
+//       }
+//     });
 
-    if (!accountDetail) {
-      return res.status(400).json({
-        success: false,
-        error: 'Validation Error',
-        message: 'Account detail not found'
-      });
-    }
+//     if (!accountDetail) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Validation Error',
+//         message: 'Account detail not found'
+//       });
+//     }
 
-    // Verify account general exists
-    const accountGeneral = await req.app.locals.prisma.accountGeneral.findFirst({
-      where: {
-        id: accountGeneralId,
-        deletedAt: null
-      }
-    });
+//     // Verify account general exists
+//     const accountGeneral = await req.app.locals.prisma.accountGeneral.findFirst({
+//       where: {
+//         id: accountGeneralId,
+//         deletedAt: null
+//       }
+//     });
 
-    if (!accountGeneral) {
-      return res.status(400).json({
-        success: false,
-        error: 'Validation Error',
-        message: 'Account general not found'
-      });
-    }
+//     if (!accountGeneral) {
+//       return res.status(400).json({
+//         success: false,
+//         error: 'Validation Error',
+//         message: 'Account general not found'
+//       });
+//     }
 
-    // Create ledger entry
-    const ledgerEntry = await req.app.locals.prisma.ledger.create({
-      data: {
-        id: ulid(),
-        referenceNumber,
-        amount: parseFloat(amount),
-        description,
-        accountDetailId,
-        ledgerType,
-        transactionType,
-        accountGeneralId,
-        ledgerDate: new Date(ledgerDate),
-        postingStatus,
-        postingAt: postingStatus === 'POSTED' ? new Date() : null,
-        createdBy: userId,
-        updatedBy: userId,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      },
-      include: {
-        accountDetail: {
-          select: {
-            id: true,
-            accountNumber: true,
-            accountName: true
-          }
-        },
-        accountGeneral: {
-          select: {
-            id: true,
-            accountNumber: true,
-            accountName: true
-          }
-        }
-      }
-    });
+//     // Create ledger entry
+//     const ledgerEntry = await req.app.locals.prisma.ledger.create({
+//       data: {
+//         id: ulid(),
+//         referenceNumber,
+//         amount: parseFloat(amount),
+//         description,
+//         accountDetailId,
+//         ledgerType,
+//         transactionType,
+//         accountGeneralId,
+//         ledgerDate: new Date(ledgerDate),
+//         postingStatus,
+//         postingAt: postingStatus === 'POSTED' ? new Date() : null,
+//         createdBy: userId,
+//         updatedBy: userId,
+//         createdAt: new Date(),
+//         updatedAt: new Date()
+//       },
+//       include: {
+//         accountDetail: {
+//           select: {
+//             id: true,
+//             accountNumber: true,
+//             accountName: true
+//           }
+//         },
+//         accountGeneral: {
+//           select: {
+//             id: true,
+//             accountNumber: true,
+//             accountName: true
+//           }
+//         }
+//       }
+//     });
 
-    res.status(201).json(createSuccessResponse(ledgerEntry, 'Ledger entry created successfully'));
-  })
-);
+//     res.status(201).json(createSuccessResponse(ledgerEntry, 'Ledger entry created successfully'));
+//   })
+// );
 
 export { router as ledgersRoutes };
