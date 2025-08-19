@@ -249,9 +249,6 @@ export class LedgersService {
     const accountDetailNumbers = [...new Set(ledgers.map(l => l.accountDetailId))];
     const accountGeneralNumbers = [...new Set(ledgers.map(l => l.accountGeneralId))];
 
-    console.log('Account Detail Numbers:', accountDetailNumbers);
-    console.log('Account General Numbers:', accountGeneralNumbers);
-
     // Check detail accounts
     const detailAccounts = await this.prisma.accountDetail.findMany({
       where: {
@@ -260,8 +257,6 @@ export class LedgersService {
       },
       select: { id: true, accountNumber: true }
     });
-
-    console.log('Detail Accounts:', detailAccounts);
 
     if (detailAccounts.length !== accountDetailNumbers.length) {
       const foundNumbers = detailAccounts.map(acc => acc.accountNumber);
@@ -277,8 +272,6 @@ export class LedgersService {
       },
       select: { id: true, accountNumber: true }
     });
-
-    console.log('General Accounts:', generalAccounts);
 
     if (generalAccounts.length !== accountGeneralNumbers.length) {
       const foundNumbers = generalAccounts.map(acc => acc.accountNumber);

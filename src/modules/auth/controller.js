@@ -5,6 +5,7 @@
 
 import AppError from '../../core/errors/AppError.js';
 import AuthenticationError from '../../core/errors/AuthenticationError.js';
+import logger from '../../core/logging/index.js';
 import { createSuccessResponse } from '../../shared/utils/response.js';
 import { AuthService } from './service.js';
 
@@ -29,18 +30,18 @@ export class AuthController {
       const response = createSuccessResponse(authResult, 'Login successful');
       res.status(200).json(response);
     } catch (error) {
-      console.error({ error, username: request.body?.username }, 'Login failed');
+      logger.error({ error, username: request.body?.username }, 'Login failed');
 
       // Log failed login attempt
 
       if (error.message === 'Invalid credentials') {
         const authError = new AuthenticationError('Invalid username or password');
-        console.log('Throwing AuthenticationError:', authError.toJSON());
+        logger.debug('Throwing AuthenticationError:', authError.toJSON());
         throw authError;
       }
 
       const appError = new AppError('Authentication failed', 500, 'AUTH_FAILED');
-      console.log('Throwing AppError:', appError.toJSON());
+      logger.debug('Throwing AppError:', appError.toJSON());
       throw appError;
     }
   }

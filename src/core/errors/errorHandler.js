@@ -4,6 +4,7 @@
  */
 
 import { isProduction } from '../../config/env.js';
+import logger from '../logging/index.js';
 import AppError from './AppError.js';
 import AuthenticationError from './AuthenticationError.js';
 import AuthorizationError from './AuthorizationError.js';
@@ -156,7 +157,7 @@ export function globalErrorHandler(err, req, res, _next) {
   }
 
   // Log unexpected errors
-  console.error('Unexpected error:', err);
+  (req.log || logger).error('Unexpected error:', err);
 
   // Generic error response for unexpected errors
   const statusCode = err.statusCode || 500;

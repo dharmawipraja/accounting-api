@@ -4,6 +4,8 @@
  * Creates initial admin user for the accounting system
  */
 
+/* eslint-disable no-console */
+
 import { PrismaClient } from '@prisma/client';
 import { ulid } from 'ulid';
 import { hashPassword } from '../src/core/middleware/auth.js';

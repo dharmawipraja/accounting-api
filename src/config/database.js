@@ -2,6 +2,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { createSoftDeleteExtension } from 'prisma-extension-soft-delete';
+import logger from '../core/logging/index.js';
 import { env, isDevelopment, isTest } from './env.js';
 
 /**
@@ -126,14 +127,14 @@ export const getDatabaseInfo = async prisma => {
 /**
  * Gracefully disconnect from database
  */
-export const disconnectDatabase = async (prisma, logger) => {
+export const disconnectDatabase = async (prisma, providedLogger) => {
   try {
     await prisma.$disconnect();
-    if (logger) logger.info('Database connection closed');
-    else console.log('Database connection closed');
+    if (providedLogger) providedLogger.info('Database connection closed');
+    else logger.info('Database connection closed');
   } catch (error) {
-    if (logger) logger.error('Error closing database connection:', error);
-    else console.error('Error closing database connection:', error);
+    if (providedLogger) providedLogger.error('Error closing database connection:', error);
+    else logger.error('Error closing database connection:', error);
   }
 };
 
@@ -161,7 +162,7 @@ export const withTransaction = async (prisma, operations, retries = 3) => {
       if (attempt < retries) {
         const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
         await new Promise(resolve => global.setTimeout(resolve, delay));
-        console.log(
+        logger.warn(
           `🔄 Retrying transaction (attempt ${attempt + 1}/${retries}) after ${delay}ms delay`
         );
       }
@@ -188,23 +189,23 @@ export const databaseMiddleware = async app => {
     await client.$connect();
     await client.$queryRaw`SELECT 1`;
 
-    console.log('✅ Database connected successfully');
+    logger.info('✅ Database connected successfully');
 
     // Store Prisma client in app.locals for access in routes
     app.locals.prisma = client;
 
     // Graceful shutdown handling
     const gracefulShutdown = async () => {
-      console.log('📴 Disconnecting from database...');
+      logger.info('📴 Disconnecting from database...');
       await client.$disconnect();
-      console.log('✅ Database disconnected');
+      logger.info('✅ Database disconnected');
     };
 
     process.on('SIGTERM', gracefulShutdown);
     process.on('SIGINT', gracefulShutdown);
     process.on('beforeExit', gracefulShutdown);
   } catch (error) {
-    console.error('❌ Database connection failed:', error);
+    logger.error('❌ Database connection failed:', error);
     throw error;
   }
 };
