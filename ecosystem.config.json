@@ -2,7 +2,7 @@
   "apps": [
     {
       "name": "accounting-api-express",
-      "script": "server-express.js",
+      "script": "server.js",
       "instances": "max",
       "exec_mode": "cluster",
       "env": {

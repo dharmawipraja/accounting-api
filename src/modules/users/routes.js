@@ -18,39 +18,6 @@ const router = Router();
 // Apply authentication to all user routes
 router.use(authenticate);
 
-/**
- * @swagger
- * /users:
- *   get:
- *     summary: Get all users (Admin only)
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: page
- *         schema:
- *           type: integer
- *           minimum: 1
- *         description: Page number
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *           minimum: 1
- *           maximum: 100
- *         description: Number of users per page
- *       - in: query
- *         name: search
- *         schema:
- *           type: string
- *         description: Search users by name or email
- *     responses:
- *       200:
- *         description: Users retrieved successfully
- *       403:
- *         description: Forbidden - Admin access required
- */
 router.get(
   '/',
   requireAdmin,
@@ -96,29 +63,6 @@ router.get(
   })
 );
 
-/**
- * @swagger
- * /users/{id}:
- *   get:
- *     summary: Get user by ID
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: User ID
- *     responses:
- *       200:
- *         description: User retrieved successfully
- *       404:
- *         description: User not found
- *       403:
- *         description: Forbidden - Can only access own profile unless admin
- */
 router.get(
   '/:id',
   [commonValidations.id],
@@ -151,42 +95,6 @@ router.get(
   })
 );
 
-/**
- * @swagger
- * /users:
- *   post:
- *     summary: Create new user (Admin only)
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - username
- *               - email
- *               - password
- *               - role
- *             properties:
- *               username:
- *                 type: string
- *               email:
- *                 type: string
- *               password:
- *                 type: string
- *               role:
- *                 type: string
- *     responses:
- *       201:
- *         description: User created successfully
- *       400:
- *         description: Validation error
- *       403:
- *         description: Forbidden - Admin access required
- */
 router.post(
   '/',
   requireAdmin,
@@ -239,42 +147,6 @@ router.post(
   })
 );
 
-/**
- * @swagger
- * /users/{id}:
- *   put:
- *     summary: Update user
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: User ID
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               email:
- *                 type: string
- *               role:
- *                 type: string
- *               isActive:
- *                 type: boolean
- *     responses:
- *       200:
- *         description: User updated successfully
- *       404:
- *         description: User not found
- *       403:
- *         description: Forbidden
- */
 router.put(
   '/:id',
   [commonValidations.id],
@@ -324,29 +196,6 @@ router.put(
   })
 );
 
-/**
- * @swagger
- * /users/{id}:
- *   delete:
- *     summary: Delete user (Admin only)
- *     tags: [Users]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: User ID
- *     responses:
- *       200:
- *         description: User deleted successfully
- *       404:
- *         description: User not found
- *       403:
- *         description: Forbidden - Admin access required
- */
 router.delete(
   '/:id',
   requireAdmin,

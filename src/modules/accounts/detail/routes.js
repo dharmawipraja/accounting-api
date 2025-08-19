@@ -22,43 +22,6 @@ router.use(authenticate);
 // Require accounting access for all routes
 router.use(requireAccountingAccess);
 
-/**
- * @swagger
- * /accounts/detail:
- *   get:
- *     summary: Get all detail accounts
- *     tags: [Account Details]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: page
- *         schema:
- *           type: integer
- *           minimum: 1
- *         description: Page number
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *           minimum: 1
- *           maximum: 100
- *         description: Number of accounts per page
- *       - in: query
- *         name: accountCategory
- *         schema:
- *           type: string
- *           enum: [ASSET, HUTANG, MODAL, PENDAPATAN, BIAYA]
- *         description: Filter by account category
- *       - in: query
- *         name: accountGeneralId
- *         schema:
- *           type: string
- *         description: Filter by general account ID
- *     responses:
- *       200:
- *         description: Detail accounts retrieved successfully
- */
 router.get(
   '/',
   [
@@ -113,27 +76,6 @@ router.get(
   })
 );
 
-/**
- * @swagger
- * /accounts/detail/{id}:
- *   get:
- *     summary: Get detail account by ID
- *     tags: [Account Details]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: Detail Account ID
- *     responses:
- *       200:
- *         description: Detail account retrieved successfully
- *       404:
- *         description: Detail account not found
- */
 router.get(
   '/:id',
   [commonValidations.id],
@@ -184,56 +126,6 @@ router.get(
   })
 );
 
-/**
- * @swagger
- * /accounts/detail:
- *   post:
- *     summary: Create new detail account
- *     tags: [Account Details]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - accountNumber
- *               - accountName
- *               - accountGeneralId
- *               - accountCategory
- *               - reportType
- *               - transactionType
- *             properties:
- *               accountNumber:
- *                 type: string
- *                 pattern: '^[0-9\-]+$'
- *               accountName:
- *                 type: string
- *               accountGeneralId:
- *                 type: string
- *               accountCategory:
- *                 type: string
- *                 enum: [ASSET, HUTANG, MODAL, PENDAPATAN, BIAYA]
- *               reportType:
- *                 type: string
- *                 enum: [NERACA, LABA_RUGI]
- *               transactionType:
- *                 type: string
- *                 enum: [DEBIT, CREDIT]
- *               amountCredit:
- *                 type: number
- *                 minimum: 0
- *               amountDebit:
- *                 type: number
- *                 minimum: 0
- *     responses:
- *       201:
- *         description: Detail account created successfully
- *       400:
- *         description: Validation error
- */
 router.post(
   '/',
   [
@@ -346,51 +238,6 @@ router.post(
   })
 );
 
-/**
- * @swagger
- * /accounts/detail/{id}:
- *   put:
- *     summary: Update detail account
- *     tags: [Account Details]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: Detail Account ID
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               accountName:
- *                 type: string
- *               accountCategory:
- *                 type: string
- *                 enum: [ASSET, HUTANG, MODAL, PENDAPATAN, BIAYA]
- *               reportType:
- *                 type: string
- *                 enum: [NERACA, LABA_RUGI]
- *               transactionType:
- *                 type: string
- *                 enum: [DEBIT, CREDIT]
- *               amountCredit:
- *                 type: number
- *                 minimum: 0
- *               amountDebit:
- *                 type: number
- *                 minimum: 0
- *     responses:
- *       200:
- *         description: Detail account updated successfully
- *       404:
- *         description: Detail account not found
- */
 router.put(
   '/:id',
   [
@@ -474,29 +321,6 @@ router.put(
   })
 );
 
-/**
- * @swagger
- * /accounts/detail/{id}:
- *   delete:
- *     summary: Delete detail account (soft delete)
- *     tags: [Account Details]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: Detail Account ID
- *     responses:
- *       200:
- *         description: Detail account deleted successfully
- *       404:
- *         description: Detail account not found
- *       400:
- *         description: Cannot delete account with existing ledger entries
- */
 router.delete(
   '/:id',
   [commonValidations.id],

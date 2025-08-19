@@ -13,52 +13,6 @@ import { AuthController } from './controller.js';
 
 const router = Router();
 
-/**
- * @swagger
- * /auth/login:
- *   post:
- *     summary: User login
- *     tags: [Authentication]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - username
- *               - password
- *             properties:
- *               username:
- *                 type: string
- *                 description: Username or email
- *               password:
- *                 type: string
- *                 description: User password
- *     responses:
- *       200:
- *         description: Login successful
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 message:
- *                   type: string
- *                 data:
- *                   type: object
- *                   properties:
- *                     token:
- *                       type: string
- *                     user:
- *                       type: object
- *       400:
- *         description: Invalid credentials
- *       429:
- *         description: Too many requests
- */
 router.post(
   '/login',
   // Validation middleware
@@ -84,34 +38,6 @@ router.post(
   })
 );
 
-/**
- * @swagger
- * /auth/logout:
- *   post:
- *     summary: User logout
- *     tags: [Authentication]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Logout successful
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 message:
- *                   type: string
- *                 data:
- *                   type: object
- *                   properties:
- *                     message:
- *                       type: string
- *       401:
- *         description: Unauthorized
- */
 router.post(
   '/logout',
   authenticate,
@@ -135,34 +61,6 @@ router.post(
   })
 );
 
-/**
- * @swagger
- * /auth/profile:
- *   get:
- *     summary: Get current user profile
- *     tags: [Authentication]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Profile retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 message:
- *                   type: string
- *                 data:
- *                   type: object
- *                   properties:
- *                     user:
- *                       type: object
- *       401:
- *         description: Unauthorized
- */
 router.get(
   '/profile',
   authenticate,
@@ -175,34 +73,6 @@ router.get(
   })
 );
 
-/**
- * @swagger
- * /auth/refresh:
- *   post:
- *     summary: Refresh JWT token
- *     tags: [Authentication]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Token refreshed successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 message:
- *                   type: string
- *                 data:
- *                   type: object
- *                   properties:
- *                     token:
- *                       type: string
- *       401:
- *         description: Unauthorized
- */
 router.post(
   '/refresh',
   authenticate,

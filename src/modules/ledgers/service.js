@@ -44,7 +44,7 @@ export class LedgersService {
     }));
 
     // Create all ledgers in a transaction
-    const createdLedgers = await this.prisma.$transaction(async prisma => {
+    const createdLedgers = await this.prisma.$transaction(async _prisma => {
       const results = [];
       for (const ledgerData of formattedLedgers) {
         const ledger = await this.prisma.ledger.create({

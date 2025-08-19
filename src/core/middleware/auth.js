@@ -107,11 +107,6 @@ export function authorize(...allowedRoles) {
 export const requireAdmin = authorize(USER_ROLES.ADMIN);
 
 /**
- * Admin or Manager middleware
- */
-export const requireAdminOrManager = authorize(USER_ROLES.ADMIN, USER_ROLES.MANAJER);
-
-/**
  * Admin, Manager, or Accountant middleware
  */
 export const requireAccountingAccess = authorize(
@@ -155,27 +150,6 @@ export function generateToken(payload, secret, options = {}) {
   };
 
   return jwt.sign(payload, secret, { ...defaultOptions, ...options });
-}
-
-/**
- * Optional authentication middleware
- * Attaches user to request if token is provided, but doesn't require it
- */
-export async function optionalAuth(req, res, next) {
-  try {
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return next(); // No token provided, continue without user
-    }
-
-    // If token is provided, try to authenticate
-    await authenticate(req, res, next);
-  } catch (error) {
-    // If authentication fails, continue without user (don't throw error)
-    req.log?.warn('Optional authentication failed:', error.message);
-    next();
-  }
 }
 
 /**
