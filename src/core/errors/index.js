@@ -13,8 +13,8 @@ import { asyncHandler, globalErrorHandler, notFoundHandler } from './errorHandle
 import ValidationError from './ValidationError.js';
 
 // Convenience factory functions
-export const createValidationError = (zodError, message) =>
-  ValidationError.fromZodError(zodError, message);
+export const createValidationError = (validationErrors, message) =>
+  ValidationError.fromValidationError(validationErrors, message);
 export const createDatabaseError = (prismaError, message) =>
   DatabaseError.fromPrismaError(prismaError, message);
 export const createAuthError = (message, details) => new AuthenticationError(message, details);

@@ -12,7 +12,7 @@ This API follows Express.js best practices with a clean, maintainable architectu
 - **Layered Architecture** - Clear separation: Routes → Controllers → Services → Data Layer
 - **Modular Design** - Feature-based module organization for better maintainability
 - **Clean Code** - Readable, testable, and extensible codebase
-- **Type Safety** - Comprehensive validation with Zod schemas
+- **Input Validation** - Comprehensive validation with express-validator
 - **Security First** - Built-in security measures and authentication
 
 ### 📁 Project Structure
@@ -56,13 +56,11 @@ src/
 │   ├── auth/           # Authentication & authorization
 │   │   ├── controller.js # HTTP handlers for auth operations
 │   │   ├── service.js   # Authentication business logic
-│   │   ├── routes.js    # Auth route definitions with validation
-│   │   └── schemas.js   # Zod validation schemas for auth
+│   │   └── routes.js    # Auth route definitions with validation
 │   ├── users/          # User management
 │   │   ├── controller.js # User CRUD operations
 │   │   ├── service.js   # User business logic
-│   │   ├── routes.js    # User routes with role-based access
-│   │   ├── schemas.js   # User validation schemas
+│   │   └── routes.js    # User routes with role-based access
 │   │   └── index.js     # Module exports
 │   ├── accounts/       # Chart of accounts management
 │   │   ├── controller.js # Account operations (general/detail)
@@ -77,10 +75,6 @@ src/
 ├── shared/             # Shared utilities across modules
 │   ├── constants/      # Application-wide constants
 │   │   └── index.js    # HTTP status, pagination, validation limits
-│   ├── schemas/        # Common Zod validation schemas
-│   │   ├── base.js     # Base schemas (ID, date, decimal)
-│   │   ├── common.js   # Common validation patterns
-│   │   └── index.js    # Schema exports
 │   └── utils/          # Utility functions
 │       ├── errors.js   # Error utility functions
 │       ├── helpers.js  # General helper functions
@@ -334,7 +328,7 @@ npm run monitor        # PM2 monitoring dashboard
 - **Rate Limiting** - Configurable request limiting to prevent abuse
 - **CORS** - Cross-origin resource sharing with environment-specific settings
 - **JWT Authentication** - Stateless authentication with secure signing
-- **Input Validation** - Zod schema validation for all inputs
+- **Input Validation** - Express-validator schema validation for all inputs
 - **SQL Injection Prevention** - Prisma ORM with parameterized queries
 - **Password Security** - Bcrypt hashing with configurable rounds
 - **Request Sanitization** - Automatic input sanitization and validation
@@ -634,7 +628,7 @@ The database includes initial data:
 3. **Comprehensive testing** - Add tests for new functionality
 4. **Code quality** - Follow ESLint + Prettier standards
 5. **Documentation** - Update API docs for any changes
-6. **Type safety** - Use Zod schemas for validation
+6. **Input validation** - Use express-validator for validation
 
 ### Code Style Standards
 
@@ -669,13 +663,12 @@ npm run test           # Run all tests
 ### Adding New Features
 
 1. **Create module** in `src/modules/[feature]/`
-2. **Define schemas** using Zod in `schemas.js`
-3. **Implement service** with business logic
-4. **Create controller** with HTTP handlers
-5. **Add routes** with validation middleware
-6. **Register in DI container**
-7. **Add tests** for all components
-8. **Update documentation**
+2. **Implement service** with business logic
+3. **Create controller** with HTTP handlers
+4. **Add routes** with express-validator validation
+5. **Register in DI container**
+6. **Add tests** for all components
+7. **Update documentation**
 
 ### Git Commit Guidelines
 
@@ -692,7 +685,7 @@ npm run test           # Run all tests
 - **Framework:** Express.js 4.19+ with modern middleware
 - **Database:** PostgreSQL with Prisma ORM 6.13+
 - **Authentication:** JWT with bcrypt password hashing
-- **Validation:** Zod schemas for type-safe validation
+- **Validation:** Express-validator for input validation
 - **Testing:** Vitest with V8 coverage provider
 - **Logging:** Pino structured logging
 - **Process Management:** PM2 for production clustering
@@ -706,7 +699,7 @@ npm run test           # Run all tests
     "express": "^4.19.2", // Web framework
     "jsonwebtoken": "^9.0.2", // JWT authentication
     "bcrypt": "^6.0.0", // Password hashing
-    "zod": "^4.0.17", // Schema validation
+    "express-validator": "^7.2.0", // Input validation
     "pino": "^9.9.0", // Structured logging
     "helmet": "^7.1.0", // Security middleware
     "express-rate-limit": "^7.4.0", // Rate limiting
@@ -731,7 +724,7 @@ npm run test           # Run all tests
 - **[Prisma Documentation](https://www.prisma.io/docs)** - Database ORM and migrations
 - **[JWT.io](https://jwt.io/)** - JWT token standards and debugging
 - **[Node.js Best Practices](https://github.com/goldbergyoni/nodebestpractices)** - Comprehensive Node.js guide
-- **[Zod Documentation](https://zod.dev/)** - Schema validation and TypeScript integration
+- **[Express-validator Documentation](https://express-validator.github.io/)** - Input validation middleware
 
 ### Related Projects
 

@@ -1,32 +1,32 @@
 /**
  * Validation Error Class
  *
- * Handles Zod validation errors and provides structured field-level
+ * Handles validation errors and provides structured field-level
  * error information for client consumption.
  */
 
 import AppError from './AppError.js';
 
 class ValidationError extends AppError {
-  constructor(zodError, message = 'Validation failed') {
-    // Extract detailed field errors from Zod error
-    const details = ValidationError.extractZodErrors(zodError);
+  constructor(validationErrors, message = 'Validation failed') {
+    // Extract detailed field errors from validation error
+    const details = ValidationError.extractValidationErrors(validationErrors);
 
     super(message, 400, 'VALIDATION_ERROR', details);
 
-    this.originalError = zodError;
+    this.originalError = validationErrors;
   }
 
   /**
-   * Extract structured errors from Zod error object
+   * Extract structured errors from validation error object
    */
-  static extractZodErrors(zodError) {
-    if (!zodError?.errors) {
+  static extractValidationErrors(validationErrors) {
+    if (!validationErrors?.errors) {
       return null;
     }
 
-    return zodError.errors.map(err => {
-      const field = err.path.join('.');
+    return validationErrors.errors.map(err => {
+      const field = err.path?.join?.('.') || err.path || err.field;
 
       return {
         field: field || 'unknown',
@@ -40,11 +40,11 @@ class ValidationError extends AppError {
   }
 
   /**
-   * Create ValidationError from Zod parsing result
+   * Create ValidationError from validation parsing result
    */
-  static fromZodError(zodError, customMessage = null) {
+  static fromValidationError(validationErrors, customMessage = null) {
     const message = customMessage || 'Invalid input data provided';
-    return new ValidationError(zodError, message);
+    return new ValidationError(validationErrors, message);
   }
 
   /**
