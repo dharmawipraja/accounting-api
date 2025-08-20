@@ -3,14 +3,16 @@
  * HTTP request handlers for user operations
  */
 
-import AppError from '../../core/errors/AppError.js';
 import ValidationError from '../../core/errors/ValidationError.js';
 import { HTTP_STATUS } from '../../shared/constants/index.js';
 import {
-  calculatePagination,
+  buildPaginationMeta,
   createPaginatedResponse,
-  createSuccessResponse
-} from '../../shared/utils/response.js';
+  createSuccessResponse,
+  extractId,
+  extractPagination,
+  resourceErrors
+} from '../../shared/utils/index.js';
 
 export class UsersController {
   constructor(usersService) {
@@ -38,7 +40,7 @@ export class UsersController {
         throw new ValidationError(error.message);
       }
 
-      throw new AppError('Failed to create user', 500, 'INTERNAL_ERROR');
+      throw resourceErrors.createFailed('User');
     }
   }
 
@@ -49,7 +51,7 @@ export class UsersController {
    */
   async getUsers(request, res) {
     try {
-      const { page, limit, skip } = request.pagination;
+      const { page, limit, skip } = extractPagination(request);
       const { search, role, status } = request.query;
 
       const { users, total } = await this.usersService.getUsers({
@@ -60,13 +62,13 @@ export class UsersController {
         status
       });
 
-      const pagination = calculatePagination(page, limit, total);
+      const pagination = buildPaginationMeta(page, limit, total);
       const response = createPaginatedResponse(users, pagination);
 
       res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       request.log.error({ error, query: request.query }, 'Failed to get users');
-      throw new AppError('Failed to retrieve users', 500, 'INTERNAL_ERROR');
+      throw resourceErrors.listFailed('Users');
     }
   }
 
@@ -77,12 +79,12 @@ export class UsersController {
    */
   async getUserById(request, res) {
     try {
-      const { id } = request.params;
+      const id = extractId(request);
 
       const user = await this.usersService.getUserById(id);
 
       if (!user) {
-        throw new AppError('User not found', 404, 'NOT_FOUND');
+        throw resourceErrors.notFound('User');
       }
 
       const response = createSuccessResponse(user);
@@ -93,7 +95,7 @@ export class UsersController {
       }
 
       request.log.error({ error, userId: request.params.id }, 'Failed to get user');
-      throw new AppError('Failed to retrieve user', 500, 'INTERNAL_ERROR');
+      throw resourceErrors.retrieveFailed('User');
     }
   }
 
@@ -104,7 +106,7 @@ export class UsersController {
    */
   async updateUser(request, res) {
     try {
-      const { id } = request.params;
+      const id = extractId(request);
       const updateData = request.body;
       const updatedBy = request.user.id;
 
@@ -124,10 +126,10 @@ export class UsersController {
 
       if (error.code === 'P2025') {
         // Prisma record not found
-        throw new AppError('User not found', 404, 'NOT_FOUND');
+        throw resourceErrors.notFound('User');
       }
 
-      throw new AppError('Failed to update user', 500, 'INTERNAL_ERROR');
+      throw resourceErrors.updateFailed('User');
     }
   }
 
@@ -138,7 +140,7 @@ export class UsersController {
    */
   async deleteUser(request, res) {
     try {
-      const { id } = request.params;
+      const id = extractId(request);
       const deletedBy = request.user.id;
 
       const deletedUser = await this.usersService.deleteUser(id, deletedBy);
@@ -146,14 +148,16 @@ export class UsersController {
       const response = createSuccessResponse(deletedUser, 'User deleted successfully');
       res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
-      request.log.error({ error, userId: request.params.id }, 'Failed to delete user');
-
-      if (error.code === 'P2025') {
-        // Prisma record not found
-        throw new AppError('User not found', 404, 'NOT_FOUND');
+      if (error.statusCode) {
+        throw error;
       }
 
-      throw new AppError('Failed to delete user', 500, 'INTERNAL_ERROR');
+      if (error.message === 'User not found') {
+        throw resourceErrors.notFound('User');
+      }
+
+      request.log.error({ error, userId: request.params.id }, 'Failed to delete user');
+      throw resourceErrors.deleteFailed('User');
     }
   }
 
@@ -164,28 +168,25 @@ export class UsersController {
    */
   async changePassword(request, res) {
     try {
-      const { userId } = request.user;
+      const id = extractId(request);
       const { currentPassword, newPassword } = request.body;
 
-      await this.usersService.changePassword(userId, currentPassword, newPassword);
+      const result = await this.usersService.changePassword(id, currentPassword, newPassword);
 
-      const response = createSuccessResponse(
-        { message: 'Password changed successfully' },
-        'Password updated'
-      );
+      const response = createSuccessResponse(result, 'Password changed successfully');
+
       res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
-      request.log.error({ error, userId: request.user?.userId }, 'Failed to change password');
+      if (error.statusCode) {
+        throw error;
+      }
 
       if (error.message === 'User not found') {
-        throw new AppError(error.message, 404, 'NOT_FOUND');
+        throw resourceErrors.notFound('User');
       }
 
-      if (error.message === 'Current password is incorrect') {
-        throw new ValidationError(error.message);
-      }
-
-      throw new AppError('Failed to change password', 500, 'INTERNAL_ERROR');
+      request.log.error({ error, userId: request.params.id }, 'Failed to delete user');
+      throw resourceErrors.deleteFailed('User');
     }
   }
 }

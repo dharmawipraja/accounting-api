@@ -72,11 +72,11 @@ export class AccountService {
    * Create general account
    */
   async createGeneralAccount(accountData, userId) {
-    const { ulid } = await import('ulid');
+    const { generateId } = await import('../../shared/utils/id.js');
 
     const account = await this.prisma.accountGeneral.create({
       data: {
-        id: ulid(),
+        id: generateId(),
         ...accountData,
         accountType: 'GENERAL',
         amountCredit: 0,

@@ -41,27 +41,3 @@ export function parsePagination(options = {}) {
     next();
   };
 }
-
-/**
- * Build pagination metadata for responses
- * @param {number} page - Current page
- * @param {number} limit - Items per page
- * @param {number} total - Total items
- * @returns {Object} Pagination metadata
- */
-export function buildPaginationMeta(page, limit, total) {
-  const totalPages = Math.ceil(total / limit) || 1;
-  const hasNext = page < totalPages;
-  const hasPrev = page > 1;
-
-  return {
-    page,
-    limit,
-    total,
-    totalPages,
-    hasNext,
-    hasPrev,
-    nextPage: hasNext ? page + 1 : null,
-    prevPage: hasPrev ? page - 1 : null
-  };
-}

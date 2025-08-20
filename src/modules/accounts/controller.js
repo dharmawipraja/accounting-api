@@ -3,7 +3,13 @@
  * HTTP request handlers for account operations
  */
 
-import { createPaginatedResponse, createSuccessResponse } from '../../shared/utils/response.js';
+import {
+  buildPaginationMeta,
+  createPaginatedResponse,
+  createSuccessResponse,
+  extractId,
+  resourceErrors
+} from '../../shared/utils/index.js';
 
 export class AccountController {
   constructor(accountService) {
@@ -13,9 +19,9 @@ export class AccountController {
   /**
    * Get general accounts
    */
-  async getGeneralAccounts(req, res) {
+  async getGeneralAccounts(request, res) {
     try {
-      const { page = 1, limit = 10, accountCategory } = req.query;
+      const { page = 1, limit = 10, accountCategory } = request.query;
 
       const { accounts, total } = await this.accountService.getGeneralAccounts({
         page: parseInt(page),
@@ -23,45 +29,50 @@ export class AccountController {
         accountCategory
       });
 
-      res.json(
-        createPaginatedResponse(accounts, { page, limit, total }, 'Accounts retrieved successfully')
+      const pagination = buildPaginationMeta(parseInt(page), parseInt(limit), total);
+      const response = createPaginatedResponse(
+        accounts,
+        pagination,
+        'Accounts retrieved successfully'
       );
+      res.json(response);
     } catch (error) {
-      req.log?.error({ error }, 'Failed to get general accounts');
-      throw error;
+      request.log?.error({ error }, 'Failed to get general accounts');
+      throw resourceErrors.listFailed('General accounts');
     }
   }
 
   /**
    * Get general account by ID
    */
-  async getGeneralAccountById(req, res) {
+  async getGeneralAccountById(request, res) {
     try {
-      const { id } = req.params;
+      const id = extractId(request);
 
       const account = await this.accountService.getGeneralAccountById(id);
 
       if (!account) {
-        return res.status(404).json({
-          success: false,
-          error: 'Not Found',
-          message: 'Account not found'
-        });
+        throw resourceErrors.notFound('Account');
       }
 
       res.json(createSuccessResponse(account, 'Account retrieved successfully'));
     } catch (error) {
-      req.log?.error({ error, accountId: req.params.id }, 'Failed to get general account');
-      throw error;
+      if (error.statusCode) {
+        throw error;
+      }
+
+      request.log?.error({ error, accountId: request.params.id }, 'Failed to get general account');
+      throw resourceErrors.retrieveFailed('Account');
     }
   }
 
   /**
    * Create general account
    */
-  async createGeneralAccount(req, res) {
+  async createGeneralAccount(request, res) {
     try {
-      const { accountNumber, accountName, accountCategory, reportType, transactionType } = req.body;
+      const { accountNumber, accountName, accountCategory, reportType, transactionType } =
+        request.body;
 
       const account = await this.accountService.createGeneralAccount(
         {
@@ -71,22 +82,22 @@ export class AccountController {
           reportType,
           transactionType
         },
-        req.user.userId
+        request.user.userId
       );
 
       res.status(201).json(createSuccessResponse(account, 'Account created successfully'));
     } catch (error) {
-      req.log?.error({ error, body: req.body }, 'Failed to create general account');
-      throw error;
+      request.log?.error({ error, body: request.body }, 'Failed to create general account');
+      throw resourceErrors.createFailed('Account');
     }
   }
 
   /**
    * Get detail accounts
    */
-  async getDetailAccounts(req, res) {
+  async getDetailAccounts(request, res) {
     try {
-      const { page = 1, limit = 10, accountCategory, accountGeneralId } = req.query;
+      const { page = 1, limit = 10, accountCategory, accountGeneralId } = request.query;
 
       const { accounts, total } = await this.accountService.getDetailAccounts({
         page: parseInt(page),
@@ -95,16 +106,16 @@ export class AccountController {
         accountGeneralId
       });
 
-      res.json(
-        createPaginatedResponse(
-          accounts,
-          { page, limit, total },
-          'Detail accounts retrieved successfully'
-        )
+      const pagination = buildPaginationMeta(parseInt(page), parseInt(limit), total);
+      const response = createPaginatedResponse(
+        accounts,
+        pagination,
+        'Detail accounts retrieved successfully'
       );
+      res.json(response);
     } catch (error) {
-      req.log?.error({ error }, 'Failed to get detail accounts');
-      throw error;
+      request.log?.error({ error }, 'Failed to get detail accounts');
+      throw resourceErrors.listFailed('Detail accounts');
     }
   }
 }

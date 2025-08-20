@@ -6,7 +6,7 @@
 import AppError from '../../core/errors/AppError.js';
 import AuthenticationError from '../../core/errors/AuthenticationError.js';
 import logger from '../../core/logging/index.js';
-import { createSuccessResponse } from '../../shared/utils/response.js';
+import { createSuccessResponse } from '../../shared/utils/index.js';
 
 export class AuthController {
   constructor(authService) {

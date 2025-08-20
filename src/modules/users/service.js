@@ -4,8 +4,8 @@
  */
 
 import bcrypt from 'bcrypt';
-import { ulid } from 'ulid';
 import { USER_STATUS } from '../../shared/constants/index.js';
+import { generateId } from '../../shared/utils/id.js';
 
 export class UsersService {
   constructor(prisma) {
@@ -36,7 +36,7 @@ export class UsersService {
     // Create user
     const newUser = await this.prisma.user.create({
       data: {
-        id: ulid(),
+        id: generateId(),
         ...otherData,
         password: hashedPassword,
         createdBy,

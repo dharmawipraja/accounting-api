@@ -9,14 +9,7 @@ import AuthenticationError from './AuthenticationError.js';
 import AuthorizationError from './AuthorizationError.js';
 import BusinessLogicError from './BusinessLogicError.js';
 import DatabaseError from './DatabaseError.js';
-import {
-  asyncHandler,
-  createErrorResponse,
-  createPaginatedResponse,
-  createSuccessResponse,
-  globalErrorHandler,
-  notFoundHandler
-} from './errorHandler.js';
+import { asyncHandler, globalErrorHandler, notFoundHandler } from './errorHandler.js';
 import ValidationError from './ValidationError.js';
 
 // Convenience factory functions
@@ -25,19 +18,6 @@ export const createValidationError = (zodError, message) =>
 export const createDatabaseError = (prismaError, message) =>
   DatabaseError.fromPrismaError(prismaError, message);
 export const createAuthError = (message, details) => new AuthenticationError(message, details);
-
-// Common HTTP error factory functions
-export const createNotFoundError = (message = 'Resource not found', code = 'RESOURCE_NOT_FOUND') =>
-  new AppError(message, 404, code);
-export const createInternalError = (message = 'Internal server error', code = 'INTERNAL_ERROR') =>
-  new AppError(message, 500, code);
-export const createUnauthorizedError = (message = 'Unauthorized', code = 'UNAUTHORIZED') =>
-  new AuthenticationError(message, { code });
-export const createForbiddenError = (message = 'Forbidden', code = 'FORBIDDEN') =>
-  new AuthorizationError(message, { code });
-export const createBadRequestError = (message = 'Bad request', code = 'BAD_REQUEST') =>
-  new ValidationError(message, { code });
-export const createAuthzError = (message, details) => new AuthorizationError(message, details);
 export const createBusinessError = (message, details, statusCode) =>
   new BusinessLogicError(message, details, statusCode);
 
@@ -87,9 +67,6 @@ export {
   AuthenticationError,
   AuthorizationError,
   BusinessLogicError,
-  createErrorResponse,
-  createPaginatedResponse,
-  createSuccessResponse,
   DatabaseError,
   globalErrorHandler,
   notFoundHandler,

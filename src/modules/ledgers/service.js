@@ -3,8 +3,8 @@
  * Business logic for ledger operations
  */
 
-import { ulid } from 'ulid';
 import { buildDateRangeFilter, formatMoneyForDb } from '../../core/database/utils.js';
+import { generateId } from '../../shared/utils/id.js';
 
 export class LedgersService {
   constructor(prisma) {
@@ -28,7 +28,7 @@ export class LedgersService {
 
     // Format ledger data for database
     const formattedLedgers = ledgers.map(ledger => ({
-      id: ulid(),
+      id: generateId(),
       ...ledger,
       referenceNumber,
       amount: formatMoneyForDb(ledger.amount),

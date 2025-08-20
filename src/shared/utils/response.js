@@ -7,56 +7,84 @@
  * Create a success response
  * @param {*} data - Response data
  * @param {string} [message] - Optional success message
+ * @param {Object} [meta] - Optional metadata
  * @returns {Object} Success response object
  */
-export const createSuccessResponse = (data, message) => ({
+export const createSuccessResponse = (data, message = 'Operation successful', meta = {}) => ({
   success: true,
+  message,
   data,
-  ...(message && { message })
+  ...meta
 });
 
 /**
  * Create a paginated response
  * @param {Array} data - Array of items
  * @param {Object} pagination - Pagination metadata
- * @param {number} pagination.page - Current page
- * @param {number} pagination.limit - Items per page
- * @param {number} pagination.total - Total items
- * @param {number} pagination.pages - Total pages
+ * @param {string} [message] - Optional success message
  * @returns {Object} Paginated response object
  */
-export const createPaginatedResponse = (data, pagination) => ({
-  success: true,
+export const createPaginatedResponse = (
   data,
-  pagination
+  pagination,
+  message = 'Data retrieved successfully'
+) => ({
+  success: true,
+  message,
+  data,
+  pagination: {
+    page: pagination.page,
+    limit: pagination.limit,
+    total: pagination.total,
+    totalPages: Math.ceil(pagination.total / pagination.limit),
+    hasNextPage: pagination.page < Math.ceil(pagination.total / pagination.limit),
+    hasPrevPage: pagination.page > 1
+  }
 });
 
 /**
  * Create an error response
- * @param {string} error - Error message
- * @param {number} statusCode - HTTP status code
+ * @param {string} message - Error message
+ * @param {string} [error] - Error type
+ * @param {number} [statusCode] - HTTP status code
  * @param {Object} [details] - Additional error details
  * @returns {Object} Error response object
  */
-export const createErrorResponse = (error, statusCode, details) => ({
-  success: false,
-  error,
-  statusCode,
-  ...(details && { details })
-});
+export const createErrorResponse = (message, error = 'Error', statusCode = 500, details = null) => {
+  const response = {
+    success: false,
+    statusCode,
+    error,
+    message
+  };
+
+  if (details) {
+    response.details = details;
+  }
+
+  return response;
+};
 
 /**
- * Calculate pagination metadata
+ * Build pagination metadata for responses (unified function)
  * @param {number} page - Current page
  * @param {number} limit - Items per page
  * @param {number} total - Total items
  * @returns {Object} Pagination metadata
  */
-export const calculatePagination = (page, limit, total) => ({
-  page,
-  limit,
-  total,
-  pages: Math.ceil(total / limit),
-  hasNext: page < Math.ceil(total / limit),
-  hasPrev: page > 1
-});
+export const buildPaginationMeta = (page, limit, total) => {
+  const totalPages = Math.ceil(total / limit) || 1;
+  const hasNext = page < totalPages;
+  const hasPrev = page > 1;
+
+  return {
+    page,
+    limit,
+    total,
+    totalPages,
+    hasNext,
+    hasPrev,
+    nextPage: hasNext ? page + 1 : null,
+    prevPage: hasPrev ? page - 1 : null
+  };
+};
