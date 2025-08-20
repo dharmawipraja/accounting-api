@@ -32,14 +32,7 @@ export const createPaginatedResponse = (
   success: true,
   message,
   data,
-  pagination: {
-    page: pagination.page,
-    limit: pagination.limit,
-    total: pagination.total,
-    totalPages: Math.ceil(pagination.total / pagination.limit),
-    hasNextPage: pagination.page < Math.ceil(pagination.total / pagination.limit),
-    hasPrevPage: pagination.page > 1
-  }
+  pagination
 });
 
 /**
