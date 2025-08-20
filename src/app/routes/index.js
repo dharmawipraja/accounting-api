@@ -32,11 +32,11 @@ export async function registerRoutes(app) {
 
   // Account General management routes
   const accountGeneralRoutes = createAccountGeneralRoutes(container);
-  app.use(`${apiBase}/accounts-general`, accountGeneralRoutes);
+  app.use(`${apiBase}/accounts/general`, accountGeneralRoutes);
 
   // Account Detail management routes
   const accountDetailRoutes = createAccountDetailRoutes(container);
-  app.use(`${apiBase}/accounts-detail`, accountDetailRoutes);
+  app.use(`${apiBase}/accounts/detail`, accountDetailRoutes);
 
   // Root API endpoint
   app.get('/api', (req, res) => {
@@ -51,8 +51,8 @@ export async function registerRoutes(app) {
         auth: `${apiBase}/auth`,
         users: `${apiBase}/users`,
         ledgers: `${apiBase}/ledgers`,
-        accountsGeneral: `${apiBase}/accounts-general`,
-        accountsDetail: `${apiBase}/accounts-detail`
+        accountsGeneral: `${apiBase}/accounts/general`,
+        accountsDetail: `${apiBase}/accounts/detail`
       }
     });
   });

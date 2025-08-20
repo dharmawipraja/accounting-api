@@ -82,7 +82,30 @@ async function main() {
     ];
 
     const createdUsers = [];
+
+    // Create admin user first to use as createdBy for other users
+    const adminUserData = users.find(u => u.role === 'ADMIN');
+    const hashedAdminPassword = await hashPassword(adminUserData.password);
+    const adminUser = await prisma.user.create({
+      data: {
+        id: ulid(),
+        username: adminUserData.username,
+        password: hashedAdminPassword,
+        name: adminUserData.name,
+        role: adminUserData.role,
+        status: 'ACTIVE',
+        createdBy: 'SYSTEM', // System creates the first admin
+        forceLogout: false,
+        updatedAt: new Date()
+      }
+    });
+    createdUsers.push(adminUser);
+    console.log(`   ✅ Created user: ${adminUserData.username} (${adminUserData.role})`);
+
+    // Create other users with admin as createdBy
     for (const userData of users) {
+      if (userData.role === 'ADMIN') continue; // Already created
+
       const hashedPassword = await hashPassword(userData.password);
       const user = await prisma.user.create({
         data: {
@@ -92,6 +115,8 @@ async function main() {
           name: userData.name,
           role: userData.role,
           status: 'ACTIVE',
+          createdBy: adminUser.id,
+          forceLogout: false,
           updatedAt: new Date()
         }
       });
@@ -99,7 +124,8 @@ async function main() {
       console.log(`   ✅ Created user: ${userData.username} (${userData.role})`);
     }
 
-    const adminUser = createdUsers.find(u => u.role === 'ADMIN');
+    // Get admin user reference for creating accounts
+    const adminUserRef = createdUsers.find(u => u.role === 'ADMIN');
 
     // ========================
     // SEED ACCOUNT GENERAL
@@ -248,10 +274,14 @@ async function main() {
           accountCategory: account.accountCategory,
           reportType: account.reportType,
           transactionType: account.transactionType,
+          initialAmountCredit: 0,
+          initialAmountDebit: 0,
+          accumulationAmountCredit: 0,
+          accumulationAmountDebit: 0,
           amountCredit: 0,
           amountDebit: 0,
-          createdBy: adminUser.id,
-          updatedBy: adminUser.id,
+          createdBy: adminUserRef.id,
+          updatedBy: adminUserRef.id,
           updatedAt: new Date()
         }
       });
@@ -615,10 +645,14 @@ async function main() {
           reportType: account.reportType,
           transactionType: account.transactionType,
           accountGeneralAccountNumber: account.parentAccountNumber,
+          initialAmountCredit: 0,
+          initialAmountDebit: 0,
+          accumulationAmountCredit: 0,
+          accumulationAmountDebit: 0,
           amountCredit: 0,
           amountDebit: 0,
-          createdBy: adminUser.id,
-          updatedBy: adminUser.id,
+          createdBy: adminUserRef.id,
+          updatedBy: adminUserRef.id,
           updatedAt: new Date()
         }
       });
