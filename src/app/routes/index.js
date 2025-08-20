@@ -4,7 +4,8 @@
  */
 
 import container from '../../core/container/index.js';
-import { createAccountRoutes } from '../../modules/accounts/routes.js';
+import { createAccountDetailRoutes } from '../../modules/accountDetail/routes.js';
+import { createAccountGeneralRoutes } from '../../modules/accountGeneral/routes.js';
 import { createAuthRoutes } from '../../modules/auth/routes.js';
 import { createLedgerRoutes } from '../../modules/ledgers/routes.js';
 import { createUserRoutes } from '../../modules/users/routes.js';
@@ -29,9 +30,13 @@ export async function registerRoutes(app) {
   const ledgerRoutes = createLedgerRoutes(container);
   app.use(`${apiBase}/ledgers`, ledgerRoutes);
 
-  // Account management routes
-  const accountRoutes = createAccountRoutes(container);
-  app.use(`${apiBase}/accounts`, accountRoutes);
+  // Account General management routes
+  const accountGeneralRoutes = createAccountGeneralRoutes(container);
+  app.use(`${apiBase}/accounts-general`, accountGeneralRoutes);
+
+  // Account Detail management routes
+  const accountDetailRoutes = createAccountDetailRoutes(container);
+  app.use(`${apiBase}/accounts-detail`, accountDetailRoutes);
 
   // Root API endpoint
   app.get('/api', (req, res) => {
@@ -46,7 +51,8 @@ export async function registerRoutes(app) {
         auth: `${apiBase}/auth`,
         users: `${apiBase}/users`,
         ledgers: `${apiBase}/ledgers`,
-        accounts: `${apiBase}/accounts`
+        accountsGeneral: `${apiBase}/accounts-general`,
+        accountsDetail: `${apiBase}/accounts-detail`
       }
     });
   });

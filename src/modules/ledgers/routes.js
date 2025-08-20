@@ -126,6 +126,3 @@ export function createLedgerRoutes(container) {
 
   return router;
 }
-
-// Export for backward compatibility
-export { createLedgerRoutes as ledgersRoutes };

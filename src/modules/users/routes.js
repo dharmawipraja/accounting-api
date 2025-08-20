@@ -111,6 +111,3 @@ export function createUserRoutes(container) {
 
   return router;
 }
-
-// Export for backward compatibility
-export { createUserRoutes as userRoutes };

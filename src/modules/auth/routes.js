@@ -69,6 +69,3 @@ export function createAuthRoutes(container) {
 
   return router;
 }
-
-// Export for backward compatibility
-export { createAuthRoutes as authRoutes };

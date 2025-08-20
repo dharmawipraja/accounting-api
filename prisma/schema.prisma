@@ -55,14 +55,16 @@ enum UserStatus {
 }
 
 model User {
-  id        String     @id
-  username  String     @unique
-  password  String
-  name      String
-  role      Role       @default(NASABAH)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime
-  status    UserStatus @default(ACTIVE)
+  id          String     @id
+  username    String     @unique
+  password    String
+  name        String
+  role        Role       @default(NASABAH)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime
+  status      UserStatus @default(ACTIVE)
+  createdBy   String
+  forceLogout Boolean    @default(false)
 
   @@map("users")
 }
@@ -78,8 +80,12 @@ model AccountDetail {
   updatedBy                   String
   accountGeneralAccountNumber String
   accountCategory             AccountCategory
-  amountCredit                Decimal         @db.Decimal(10, 2)
-  amountDebit                 Decimal         @db.Decimal(10, 2)
+  initialAmountCredit         Decimal         @default(0) @db.Decimal(10, 2)
+  initialAmountDebit          Decimal         @default(0) @db.Decimal(10, 2)
+  accumulationAmountCredit    Decimal         @default(0) @db.Decimal(10, 2)
+  accumulationAmountDebit     Decimal         @default(0) @db.Decimal(10, 2)
+  amountCredit                Decimal         @default(0) @db.Decimal(10, 2)
+  amountDebit                 Decimal         @default(0) @db.Decimal(10, 2)
   deletedAt                   DateTime?
   reportType                  ReportType
   transactionType             TransactionType
@@ -90,22 +96,26 @@ model AccountDetail {
 }
 
 model AccountGeneral {
-  id              String          @id
-  accountNumber   String          @unique
-  accountName     String
-  accountType     AccountType     @default(GENERAL)
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime
-  createdBy       String
-  updatedBy       String
-  accountCategory AccountCategory
-  amountCredit    Decimal         @db.Decimal(10, 2)
-  amountDebit     Decimal         @db.Decimal(10, 2)
-  deletedAt       DateTime?
-  reportType      ReportType
-  transactionType TransactionType
-  accountsDetail  AccountDetail[]
-  ledgers         Ledger[]
+  id                       String          @id
+  accountNumber            String          @unique
+  accountName              String
+  accountType              AccountType     @default(GENERAL)
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime
+  createdBy                String
+  updatedBy                String
+  accountCategory          AccountCategory
+  initialAmountCredit      Decimal         @default(0) @db.Decimal(10, 2)
+  initialAmountDebit       Decimal         @default(0) @db.Decimal(10, 2)
+  accumulationAmountCredit Decimal         @default(0) @db.Decimal(10, 2)
+  accumulationAmountDebit  Decimal         @default(0) @db.Decimal(10, 2)
+  amountCredit             Decimal         @default(0) @db.Decimal(10, 2)
+  amountDebit              Decimal         @default(0) @db.Decimal(10, 2)
+  deletedAt                DateTime?
+  reportType               ReportType
+  transactionType          TransactionType
+  accountsDetail           AccountDetail[]
+  ledgers                  Ledger[]
 
   @@map("accounts_general")
 }

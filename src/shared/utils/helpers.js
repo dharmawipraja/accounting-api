@@ -22,3 +22,13 @@ export const extractPagination = request => {
   const { page, limit, skip } = request.pagination || {};
   return { page, limit, skip };
 };
+
+/**
+ * Extract account number from request parameters
+ * @param {Object} request - Express request object
+ * @returns {string} Account number from params
+ */
+export const extractAccountNumber = request => {
+  const { accountNumber } = request.params;
+  return accountNumber;
+};

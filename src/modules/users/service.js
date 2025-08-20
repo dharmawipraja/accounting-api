@@ -40,7 +40,6 @@ export class UsersService {
         ...otherData,
         password: hashedPassword,
         createdBy,
-        updatedBy: createdBy,
         createdAt: new Date(),
         updatedAt: new Date()
       },
@@ -50,6 +49,8 @@ export class UsersService {
         name: true,
         role: true,
         status: true,
+        forceLogout: true,
+        createdBy: true,
         createdAt: true,
         updatedAt: true
       }
@@ -86,6 +87,8 @@ export class UsersService {
           name: true,
           role: true,
           status: true,
+          forceLogout: true,
+          createdBy: true,
           createdAt: true,
           updatedAt: true
         },
@@ -113,6 +116,8 @@ export class UsersService {
         name: true,
         role: true,
         status: true,
+        forceLogout: true,
+        createdBy: true,
         createdAt: true,
         updatedAt: true
       }

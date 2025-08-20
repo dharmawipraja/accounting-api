@@ -5,8 +5,10 @@
 
 import { PrismaClient } from '@prisma/client';
 import { env } from '../../config/env.js';
-import { AccountController } from '../../modules/accounts/controller.js';
-import { AccountService } from '../../modules/accounts/service.js';
+import { AccountDetailController } from '../../modules/accountDetail/controller.js';
+import { AccountDetailService } from '../../modules/accountDetail/service.js';
+import { AccountGeneralController } from '../../modules/accountGeneral/controller.js';
+import { AccountGeneralService } from '../../modules/accountGeneral/service.js';
 import { AuthController } from '../../modules/auth/controller.js';
 import { AuthService } from '../../modules/auth/service.js';
 import { LedgersController } from '../../modules/ledgers/controller.js';
@@ -78,9 +80,13 @@ class DIContainer {
     const usersService = new UsersService(prisma);
     this.register('usersService', usersService);
 
-    // Account service
-    const accountService = new AccountService(prisma);
-    this.register('accountService', accountService);
+    // Account General service
+    const accountGeneralService = new AccountGeneralService(prisma);
+    this.register('accountGeneralService', accountGeneralService);
+
+    // Account Detail service
+    const accountDetailService = new AccountDetailService(prisma);
+    this.register('accountDetailService', accountDetailService);
 
     // Ledgers service
     const ledgersService = new LedgersService(prisma);
@@ -101,10 +107,15 @@ class DIContainer {
     const usersController = new UsersController(usersService);
     this.register('usersController', usersController);
 
-    // Account controller
-    const accountService = this.get('accountService');
-    const accountController = new AccountController(accountService);
-    this.register('accountController', accountController);
+    // Account General controller
+    const accountGeneralService = this.get('accountGeneralService');
+    const accountGeneralController = new AccountGeneralController(accountGeneralService);
+    this.register('accountGeneralController', accountGeneralController);
+
+    // Account Detail controller
+    const accountDetailService = this.get('accountDetailService');
+    const accountDetailController = new AccountDetailController(accountDetailService);
+    this.register('accountDetailController', accountDetailController);
 
     // Ledgers controller
     const ledgersService = this.get('ledgersService');
