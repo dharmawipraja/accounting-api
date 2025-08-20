@@ -1,0 +1,679 @@
+{
+  "info": {
+    "name": "Accounting API",
+    "description": "Complete API collection for the Accounting API with automatic authentication and configurable base URL",
+    "version": "1.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3001",
+      "type": "string",
+      "description": "Base URL for the API"
+    },
+    {
+      "key": "authToken",
+      "value": "",
+      "type": "string",
+      "description": "JWT token for authentication - automatically set after login"
+    },
+    {
+      "key": "apiVersion",
+      "value": "v1",
+      "type": "string",
+      "description": "API version"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{authToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Auto-set Content-Type for POST/PUT requests",
+          "if (pm.request.method === 'POST' || pm.request.method === 'PUT') {",
+          "    if (!pm.request.headers.has('Content-Type')) {",
+          "        pm.request.headers.add({",
+          "            key: 'Content-Type',",
+          "            value: 'application/json'",
+          "        });",
+          "    }",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Health & Info",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Application health check with database connectivity"
+          },
+          "response": []
+        },
+        {
+          "name": "Readiness Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ready",
+              "host": ["{{baseUrl}}"],
+              "path": ["ready"]
+            },
+            "description": "Readiness probe for container orchestration"
+          },
+          "response": []
+        },
+        {
+          "name": "Liveness Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/live",
+              "host": ["{{baseUrl}}"],
+              "path": ["live"]
+            },
+            "description": "Liveness probe for container orchestration"
+          },
+          "response": []
+        },
+        {
+          "name": "API Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api",
+              "host": ["{{baseUrl}}"],
+              "path": ["api"]
+            },
+            "description": "API information and available endpoints"
+          },
+          "response": []
+        }
+      ],
+      "description": "Health checks and API information endpoints"
+    },
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Auto-extract and set auth token from login response",
+                  "if (pm.response.code === 200) {",
+                  "    const jsonData = pm.response.json();",
+                  "    if (jsonData.success && jsonData.data && jsonData.data.token) {",
+                  "        pm.collectionVariables.set('authToken', jsonData.data.token);",
+                  "        console.log('Auth token automatically set:', jsonData.data.token);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/{{apiVersion}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "{{apiVersion}}", "auth", "login"]
+            },
+            "description": "User login - automatically sets auth token for collection"
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/{{apiVersion}}/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "{{apiVersion}}", "auth", "logout"]
+            },
+            "description": "User logout"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/{{apiVersion}}/auth/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "{{apiVersion}}", "auth", "profile"]
+            },
+            "description": "Get authenticated user profile"
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Auto-update auth token from refresh response",
+                  "if (pm.response.code === 200) {",
+                  "    const jsonData = pm.response.json();",
+                  "    if (jsonData.success && jsonData.data && jsonData.data.token) {",
+                  "        pm.collectionVariables.set('authToken', jsonData.data.token);",
+                  "        console.log('Auth token refreshed and updated:', jsonData.data.token);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/{{apiVersion}}/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "{{apiVersion}}", "auth", "refresh"]
+            },
+            "description": "Refresh JWT token - automatically updates auth token"
+          },
+          "response": []
+        }
+      ],
+      "description": "Authentication endpoints with automatic token management"
+    },
+    {
+      "name": "User Management",
+      "item": [
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/{{apiVersion}}/users?page=1&limit=10&search=&role=&status=",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "{{apiVersion}}", "users"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (default: 1)"
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Items per page (default: 10)"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "Search term (optional)"
+                },
+                {
+                  "key": "role",
+                  "value": "",
+                  "description": "Filter by role: ADMIN, MANAJER, AKUNTAN, KASIR, KOLEKTOR, NASABAH"
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "description": "Filter by status: ACTIVE, INACTIVE"
+                }
+              ]
+            },
+            "description": "List users with pagination and filtering (Admin only)"
+          },
+          "response": []
+        },
+        {
+          "name": "Get User by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/{{apiVersion}}/users/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "{{apiVersion}}", "users", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "user_id_here",
+                  "description": "User ID"
+                }
+              ]
+            },
+            "description": "Get user details by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Create User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"newuser\",\n  \"password\": \"password123\",\n  \"name\": \"New User\",\n  \"role\": \"KASIR\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/{{apiVersion}}/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "{{apiVersion}}", "users"]
+            },
+            "description": "Create new user (Admin only)"
+          },
+          "response": []
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"updateduser\",\n  \"name\": \"Updated User Name\",\n  \"role\": \"AKUNTAN\",\n  \"status\": \"ACTIVE\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/{{apiVersion}}/users/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "{{apiVersion}}", "users", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "user_id_here",
+                  "description": "User ID"
+                }
+              ]
+            },
+            "description": "Update user information"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete User",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/{{apiVersion}}/users/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "{{apiVersion}}", "users", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "user_id_here",
+                  "description": "User ID"
+                }
+              ]
+            },
+            "description": "Soft delete user (Admin only)"
+          },
+          "response": []
+        }
+      ],
+      "description": "User management endpoints"
+    },
+    {
+      "name": "Account Management",
+      "item": [
+        {
+          "name": "General Accounts",
+          "item": [
+            {
+              "name": "List General Accounts",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/accounts/general?page=1&limit=10&accountCategory=",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "accounts", "general"],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "Page number (default: 1)"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "10",
+                      "description": "Items per page (default: 10)"
+                    },
+                    {
+                      "key": "accountCategory",
+                      "value": "",
+                      "description": "Filter by category: ASSET, HUTANG, MODAL, PENDAPATAN, BIAYA"
+                    }
+                  ]
+                },
+                "description": "List general accounts with pagination"
+              },
+              "response": []
+            },
+            {
+              "name": "Get General Account by ID",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/accounts/general/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "accounts", "general", ":id"],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "account_id_here",
+                      "description": "General Account ID"
+                    }
+                  ]
+                },
+                "description": "Get general account details by ID"
+              },
+              "response": []
+            },
+            {
+              "name": "Create General Account",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"accountNumber\": \"1000\",\n  \"accountName\": \"Cash\",\n  \"accountCategory\": \"ASSET\",\n  \"reportType\": \"NERACA\",\n  \"transactionType\": \"DEBIT\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/accounts/general",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "accounts", "general"]
+                },
+                "description": "Create new general account"
+              },
+              "response": []
+            }
+          ],
+          "description": "General account management (top-level accounts)"
+        },
+        {
+          "name": "Detail Accounts",
+          "item": [
+            {
+              "name": "List Detail Accounts",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/accounts/detail?page=1&limit=10&accountCategory=&accountGeneralId=",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "accounts", "detail"],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "1",
+                      "description": "Page number (default: 1)"
+                    },
+                    {
+                      "key": "limit",
+                      "value": "10",
+                      "description": "Items per page (default: 10)"
+                    },
+                    {
+                      "key": "accountCategory",
+                      "value": "",
+                      "description": "Filter by category: ASSET, HUTANG, MODAL, PENDAPATAN, BIAYA"
+                    },
+                    {
+                      "key": "accountGeneralId",
+                      "value": "",
+                      "description": "Filter by general account ID"
+                    }
+                  ]
+                },
+                "description": "List detail accounts with pagination and filtering"
+              },
+              "response": []
+            }
+          ],
+          "description": "Detail account management (sub-accounts)"
+        }
+      ],
+      "description": "Chart of accounts management"
+    },
+    {
+      "name": "Ledger Management",
+      "item": [
+        {
+          "name": "List Ledger Entries",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/{{apiVersion}}/ledgers?page=1&limit=10&search=&referenceNumber=&ledgerType=&transactionType=&postingStatus=&startDate=&endDate=&accountDetailId=&accountGeneralId=&includeAccounts=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "{{apiVersion}}", "ledgers"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Page number (default: 1)"
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Items per page (default: 10)"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "Search in description or reference number"
+                },
+                {
+                  "key": "referenceNumber",
+                  "value": "",
+                  "description": "Filter by reference number"
+                },
+                {
+                  "key": "ledgerType",
+                  "value": "",
+                  "description": "Filter by ledger type: KAS_MASUK, KAS_KELUAR"
+                },
+                {
+                  "key": "transactionType",
+                  "value": "",
+                  "description": "Filter by transaction type: DEBIT, CREDIT"
+                },
+                {
+                  "key": "postingStatus",
+                  "value": "",
+                  "description": "Filter by posting status: PENDING, POSTED"
+                },
+                {
+                  "key": "startDate",
+                  "value": "",
+                  "description": "Start date (ISO 8601 format)"
+                },
+                {
+                  "key": "endDate",
+                  "value": "",
+                  "description": "End date (ISO 8601 format)"
+                },
+                {
+                  "key": "accountDetailId",
+                  "value": "",
+                  "description": "Filter by detail account ID"
+                },
+                {
+                  "key": "accountGeneralId",
+                  "value": "",
+                  "description": "Filter by general account ID"
+                },
+                {
+                  "key": "includeAccounts",
+                  "value": "true",
+                  "description": "Include account details in response"
+                }
+              ]
+            },
+            "description": "List ledger entries with pagination and extensive filtering"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Ledger Entry by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/{{apiVersion}}/ledgers/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "{{apiVersion}}", "ledgers", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "ledger_id_here",
+                  "description": "Ledger Entry ID"
+                }
+              ]
+            },
+            "description": "Get specific ledger entry details"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Bulk Ledger Entries",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ledgers\": [\n    {\n      \"description\": \"Cash payment received\",\n      \"amount\": 1000.00,\n      \"transactionType\": \"DEBIT\",\n      \"accountDetailId\": \"detail_account_id_1\",\n      \"accountGeneralId\": \"general_account_id_1\"\n    },\n    {\n      \"description\": \"Revenue recognition\",\n      \"amount\": 1000.00,\n      \"transactionType\": \"CREDIT\",\n      \"accountDetailId\": \"detail_account_id_2\",\n      \"accountGeneralId\": \"general_account_id_2\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/{{apiVersion}}/ledgers",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "{{apiVersion}}", "ledgers"]
+            },
+            "description": "Create bulk ledger entries with auto-balancing (Double-entry bookkeeping)"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Ledger Entry",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Updated description\",\n  \"amount\": 1500.00,\n  \"transactionType\": \"DEBIT\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/{{apiVersion}}/ledgers/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "{{apiVersion}}", "ledgers", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "ledger_id_here",
+                  "description": "Ledger Entry ID"
+                }
+              ]
+            },
+            "description": "Update existing ledger entry"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Ledger Entry",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/{{apiVersion}}/ledgers/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "{{apiVersion}}", "ledgers", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "ledger_id_here",
+                  "description": "Ledger Entry ID"
+                }
+              ]
+            },
+            "description": "Soft delete ledger entry"
+          },
+          "response": []
+        }
+      ],
+      "description": "Double-entry bookkeeping ledger management"
+    }
+  ]
+}

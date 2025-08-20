@@ -35,7 +35,12 @@ export async function authenticate(req, res, next) {
       const decoded = jwt.verify(token, jwtSecret);
 
       // Get user from database
-      const { prisma } = req.app.locals;
+      const { container } = req.app.locals;
+      if (!container) {
+        throw new AppError('Application container not available', 500);
+      }
+
+      const prisma = container.get('prisma');
       if (!prisma) {
         throw new AppError('Database connection not available', 500);
       }
