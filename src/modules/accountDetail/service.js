@@ -3,7 +3,7 @@
  * Business logic for account detail operations
  */
 
-import { BusinessLogicError } from '../../core/errors/index.js';
+import { businessErrors } from '../../core/errors/index.js';
 
 export class AccountDetailService {
   constructor(prisma) {
@@ -118,7 +118,7 @@ export class AccountDetailService {
     });
 
     if (existingAccount) {
-      throw new BusinessLogicError('Account number already exists');
+      throw businessErrors.accountExists();
     }
 
     // Check if general account exists
@@ -130,7 +130,7 @@ export class AccountDetailService {
     });
 
     if (!generalAccount) {
-      throw new BusinessLogicError('General account not found');
+      throw businessErrors.accountNotFound();
     }
 
     const account = await this.prisma.accountDetail.create({
@@ -176,7 +176,7 @@ export class AccountDetailService {
     });
 
     if (!existingAccount) {
-      throw new BusinessLogicError('Account not found');
+      throw businessErrors.accountNotFound();
     }
 
     // If updating account number, check if new number already exists
@@ -189,7 +189,7 @@ export class AccountDetailService {
       });
 
       if (accountWithNewNumber) {
-        throw new BusinessLogicError('Account number already exists');
+        throw businessErrors.accountExists();
       }
     }
 
@@ -203,7 +203,7 @@ export class AccountDetailService {
       });
 
       if (!generalAccount) {
-        throw new BusinessLogicError('General account not found');
+        throw businessErrors.accountNotFound();
       }
     }
 
@@ -249,12 +249,12 @@ export class AccountDetailService {
     });
 
     if (!existingAccount) {
-      throw new BusinessLogicError('Account not found');
+      throw businessErrors.accountNotFound();
     }
 
     // Check if account has ledger entries
     if (existingAccount.ledgers.length > 0) {
-      throw new BusinessLogicError('Cannot delete account with existing ledger entries');
+      throw businessErrors.cannotDeleteAccount('existing ledger entries');
     }
 
     const deletedAccount = await this.prisma.accountDetail.update({

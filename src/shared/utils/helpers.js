@@ -1,6 +1,6 @@
 /**
  * Controller Helper Utilities
- * Simple helper functions for controller operations
+ * Helper functions for controller operations
  */
 
 /**

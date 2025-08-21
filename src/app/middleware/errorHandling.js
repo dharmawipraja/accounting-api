@@ -3,7 +3,7 @@
  * Centralized error handling configuration
  */
 
-import { globalErrorHandler, notFoundHandler } from '../../core/errors/index.js';
+import { errorHandler, notFoundHandler } from '../../core/errors/index.js';
 import logger from '../../core/logging/index.js';
 
 /**
@@ -15,7 +15,7 @@ export function setupErrorHandling(app) {
   app.use(notFoundHandler);
 
   // Global error handler (must be last)
-  app.use(globalErrorHandler);
+  app.use(errorHandler);
 
   // Handle unhandled promise rejections
   process.on('unhandledRejection', (reason, promise) => {

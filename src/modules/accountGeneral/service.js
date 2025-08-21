@@ -3,7 +3,7 @@
  * Business logic for account general operations
  */
 
-import { BusinessLogicError } from '../../core/errors/index.js';
+import { businessErrors } from '../../core/errors/index.js';
 
 export class AccountGeneralService {
   constructor(prisma) {
@@ -97,7 +97,7 @@ export class AccountGeneralService {
     });
 
     if (existingAccount) {
-      throw new BusinessLogicError('Account number already exists');
+      throw businessErrors.accountExists();
     }
 
     const account = await this.prisma.accountGeneral.create({
@@ -141,7 +141,7 @@ export class AccountGeneralService {
     });
 
     if (!existingAccount) {
-      throw new BusinessLogicError('Account not found');
+      throw businessErrors.accountNotFound();
     }
 
     // If updating account number, check if new number already exists
@@ -154,7 +154,7 @@ export class AccountGeneralService {
       });
 
       if (accountWithNewNumber) {
-        throw new BusinessLogicError('Account number already exists');
+        throw businessErrors.accountExists();
       }
     }
 
@@ -203,16 +203,16 @@ export class AccountGeneralService {
     });
 
     if (!existingAccount) {
-      throw new BusinessLogicError('Account not found');
+      throw businessErrors.accountNotFound();
     }
 
     // Check if account has detail accounts or ledgers
     if (existingAccount.accountsDetail.length > 0) {
-      throw new BusinessLogicError('Cannot delete account with existing detail accounts');
+      throw businessErrors.cannotDeleteAccount('existing detail accounts');
     }
 
     if (existingAccount.ledgers.length > 0) {
-      throw new BusinessLogicError('Cannot delete account with existing ledger entries');
+      throw businessErrors.cannotDeleteAccount('existing ledger entries');
     }
 
     const deletedAccount = await this.prisma.accountGeneral.update({

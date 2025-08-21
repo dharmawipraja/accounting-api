@@ -1,5 +1,5 @@
 /**
- * (Authentication and Authorization Middleware
+ * Authentication and Authorization Middleware
  * Centralized auth logic for Express.js
  */
 
@@ -7,9 +7,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { env } from '../../config/env.js';
 import { ERROR_MESSAGES, USER_ROLES } from '../../shared/constants/index.js';
-import AppError from '../errors/AppError.js';
-import AuthenticationError from '../errors/AuthenticationError.js';
-import AuthorizationError from '../errors/AuthorizationError.js';
+import { authErrors, errors } from '../errors/index.js';
 
 /**
  * JWT Authentication middleware
@@ -20,7 +18,7 @@ export async function authenticate(req, res, next) {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new AuthenticationError(ERROR_MESSAGES.AUTH.MISSING_TOKEN);
+      throw authErrors.missingToken();
     }
 
     const token = authHeader.substring(7); // Remove 'Bearer ' prefix
@@ -29,7 +27,7 @@ export async function authenticate(req, res, next) {
       // Use JWT secret from environment or config
       const jwtSecret = env.JWT_SECRET || req.app.locals.config?.security?.jwtSecret;
       if (!jwtSecret) {
-        throw new AppError('JWT secret not configured', 500);
+        throw errors.internal('JWT secret not configured');
       }
 
       const decoded = jwt.verify(token, jwtSecret);
@@ -37,12 +35,12 @@ export async function authenticate(req, res, next) {
       // Get user from database
       const { container } = req.app.locals;
       if (!container) {
-        throw new AppError('Application container not available', 500);
+        throw errors.internal('Application container not available');
       }
 
       const prisma = container.get('prisma');
       if (!prisma) {
-        throw new AppError('Database connection not available', 500);
+        throw errors.internal('Database connection not available');
       }
 
       const user = await prisma.user.findUnique({
@@ -58,11 +56,11 @@ export async function authenticate(req, res, next) {
       });
 
       if (!user) {
-        throw new AuthenticationError(ERROR_MESSAGES.AUTH.USER_NOT_FOUND);
+        throw authErrors.userNotFound();
       }
 
       if (user.status !== 'ACTIVE') {
-        throw new AuthenticationError(ERROR_MESSAGES.AUTH.USER_INACTIVE);
+        throw authErrors.userInactive();
       }
 
       // Attach user to request
@@ -70,10 +68,10 @@ export async function authenticate(req, res, next) {
       next();
     } catch (jwtError) {
       if (jwtError.name === 'TokenExpiredError') {
-        throw new AuthenticationError(ERROR_MESSAGES.AUTH.TOKEN_EXPIRED);
+        throw authErrors.tokenExpired();
       }
       if (jwtError.name === 'JsonWebTokenError') {
-        throw new AuthenticationError(ERROR_MESSAGES.AUTH.INVALID_TOKEN);
+        throw authErrors.invalidToken();
       }
       throw jwtError;
     }
@@ -92,13 +90,14 @@ export function authorize(...allowedRoles) {
   return (req, res, next) => {
     try {
       if (!req.user) {
-        throw new AuthenticationError(ERROR_MESSAGES.AUTH.NOT_AUTHENTICATED);
+        throw authErrors.missingToken();
       }
 
       if (!allowedRoles.includes(req.user.role)) {
-        throw new AuthorizationError(ERROR_MESSAGES.AUTH.INSUFFICIENT_PERMISSIONS);
+        throw errors.authorization(ERROR_MESSAGES.AUTH.INSUFFICIENT_PERMISSIONS);
       }
 
+      next();
       next();
     } catch (error) {
       next(error);
@@ -165,7 +164,7 @@ export function requireOwnership(userIdParam = 'userId') {
   return (req, res, next) => {
     try {
       if (!req.user) {
-        throw new AuthenticationError(ERROR_MESSAGES.AUTH.NOT_AUTHENTICATED);
+        throw authErrors.missingToken();
       }
 
       const requestedUserId = req.params[userIdParam];
@@ -177,7 +176,7 @@ export function requireOwnership(userIdParam = 'userId') {
 
       // User can only access their own resources
       if (req.user.id !== requestedUserId) {
-        throw new AuthorizationError(ERROR_MESSAGES.AUTH.INSUFFICIENT_PERMISSIONS);
+        throw errors.authorization(ERROR_MESSAGES.AUTH.INSUFFICIENT_PERMISSIONS);
       }
 
       next();

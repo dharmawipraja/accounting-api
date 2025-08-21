@@ -3,7 +3,7 @@
  * HTTP request handlers for ledger operations
  */
 
-import ValidationError from '../../core/errors/ValidationError.js';
+import { businessErrors, errors } from '../../core/errors/index.js';
 import { HTTP_STATUS } from '../../shared/constants/index.js';
 import {
   buildPaginationMeta,
@@ -37,7 +37,7 @@ export class LedgersController {
       request.log.error({ error, ledgerData: request.body }, 'Failed to create bulk ledgers');
 
       if (error.message.includes('accounts not found')) {
-        throw new ValidationError(error.message);
+        throw errors.validation(error.message);
       }
 
       throw resourceErrors.createFailed('Ledger entries');
@@ -147,7 +147,7 @@ export class LedgersController {
       }
 
       if (error.message === 'Cannot update posted ledger entries') {
-        throw new ValidationError(error.message);
+        throw businessErrors.cannotUpdatePostedLedger();
       }
 
       throw resourceErrors.updateFailed('Ledger entry');
@@ -178,7 +178,7 @@ export class LedgersController {
       }
 
       if (error.message === 'Cannot delete posted ledger entries') {
-        throw new ValidationError(error.message);
+        throw businessErrors.cannotUpdatePostedLedger();
       }
 
       request.log.error({ error, ledgerId: request.params.id }, 'Failed to delete ledger');
@@ -206,7 +206,7 @@ export class LedgersController {
       }
 
       if (error.message === 'No pending ledgers found for the specified date') {
-        throw new ValidationError(error.message);
+        throw businessErrors.noPendingLedgers();
       }
 
       request.log.error(
@@ -239,11 +239,11 @@ export class LedgersController {
       }
 
       if (error.message === 'No ledgers found for the specified date') {
-        throw new ValidationError(error.message);
+        throw errors.validation(error.message);
       }
 
       if (error.message.includes('Invalid date format')) {
-        throw new ValidationError(error.message);
+        throw errors.validation(error.message);
       }
 
       request.log.error(
@@ -277,7 +277,7 @@ export class LedgersController {
       }
 
       if (error.message === 'No posted ledgers found for the specified date') {
-        throw new ValidationError(error.message);
+        throw errors.validation(error.message);
       }
 
       request.log.error(

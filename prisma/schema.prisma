@@ -120,17 +120,6 @@ model AccountGeneral {
   @@map("accounts_general")
 }
 
-model Balances {
-  id        String   @id
-  amount    Decimal  @db.Decimal(10, 2)
-  createdAt DateTime @default(now())
-  updatedAt DateTime
-  createdBy String
-  updatedBy String
-
-  @@map("balances")
-}
-
 model Ledger {
   id                          String          @id
   referenceNumber             String
@@ -169,6 +158,17 @@ model JournalLedger {
   createdBy                   String
 
   @@map("journal_ledgers")
+}
+
+model Balance {
+  id        String   @id
+  amount    Decimal  @db.Decimal(10, 2)
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  createdBy String
+  updatedBy String
+
+  @@map("balances")
 }
 
 model JournalBalance {

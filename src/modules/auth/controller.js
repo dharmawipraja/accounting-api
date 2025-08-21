@@ -3,8 +3,7 @@
  * HTTP request handlers for authentication
  */
 
-import AppError from '../../core/errors/AppError.js';
-import AuthenticationError from '../../core/errors/AuthenticationError.js';
+import { authErrors, errors } from '../../core/errors/index.js';
 import logger from '../../core/logging/index.js';
 import { createSuccessResponse } from '../../shared/utils/index.js';
 
@@ -34,14 +33,10 @@ export class AuthController {
       // Log failed login attempt
 
       if (error.message === 'Invalid credentials') {
-        const authError = new AuthenticationError('Invalid username or password');
-        logger.debug('Throwing AuthenticationError:', authError.toJSON());
-        throw authError;
+        throw authErrors.invalidCredentials();
       }
 
-      const appError = new AppError('Authentication failed', 500, 'AUTH_FAILED');
-      logger.debug('Throwing AppError:', appError.toJSON());
-      throw appError;
+      throw errors.internal('Authentication failed');
     }
   }
 
@@ -79,7 +74,7 @@ export class AuthController {
       }
 
       request.log.error({ error, userId: request.user?.userId }, 'Failed to get user profile');
-      throw new AppError('Failed to retrieve profile', 500, 'PROFILE_RETRIEVAL_FAILED');
+      throw errors.internal('Failed to retrieve profile');
     }
   }
 
@@ -100,7 +95,7 @@ export class AuthController {
       res.status(200).json(response);
     } catch (error) {
       request.log.error({ error, userId: request.user?.userId }, 'Failed to refresh token');
-      throw new AppError('Failed to refresh token', 500, 'TOKEN_REFRESH_FAILED');
+      throw errors.internal('Failed to refresh token');
     }
   }
 }

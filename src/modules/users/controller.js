@@ -3,7 +3,7 @@
  * HTTP request handlers for user operations
  */
 
-import ValidationError from '../../core/errors/ValidationError.js';
+import { errors } from '../../core/errors/index.js';
 import { HTTP_STATUS } from '../../shared/constants/index.js';
 import {
   buildPaginationMeta,
@@ -37,7 +37,7 @@ export class UsersController {
       request.log.error({ error, userData: request.body }, 'Failed to create user');
 
       if (error.message === 'Username already exists') {
-        throw new ValidationError(error.message);
+        throw errors.validation(error.message);
       }
 
       throw resourceErrors.createFailed('User');
@@ -121,7 +121,7 @@ export class UsersController {
       );
 
       if (error.message === 'Username already exists') {
-        throw new ValidationError(error.message);
+        throw errors.validation(error.message);
       }
 
       if (error.code === 'P2025') {

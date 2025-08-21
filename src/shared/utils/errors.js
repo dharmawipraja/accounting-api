@@ -3,66 +3,66 @@
  * Common error creation functions to reduce code duplication
  */
 
-import AppError from '../../core/errors/AppError.js';
+import { errors } from '../../core/errors/index.js';
 
 /**
  * Create a 404 Not Found error
  * @param {string} message - Error message
  * @param {string} [code] - Error code
- * @returns {AppError} Not found error
+ * @returns {Error} Not found error
  */
-export const createNotFoundError = (message = 'Resource not found', code = 'NOT_FOUND') => {
-  return new AppError(message, 404, code);
+export const createNotFoundError = (message = 'Resource not found') => {
+  return errors.notFound(message);
 };
 
 /**
  * Create a 500 Internal Server error
  * @param {string} message - Error message
  * @param {string} [code] - Error code
- * @returns {AppError} Internal server error
+ * @returns {Error} Internal server error
  */
-export const createInternalError = (message = 'Internal server error', code = 'INTERNAL_ERROR') => {
-  return new AppError(message, 500, code);
+export const createInternalError = (message = 'Internal server error') => {
+  return errors.internal(message);
 };
 
 /**
  * Create a 400 Bad Request error
  * @param {string} message - Error message
  * @param {string} [code] - Error code
- * @returns {AppError} Bad request error
+ * @returns {Error} Bad request error
  */
-export const createBadRequestError = (message = 'Bad request', code = 'BAD_REQUEST') => {
-  return new AppError(message, 400, code);
+export const createBadRequestError = (message = 'Bad request') => {
+  return errors.validation(message);
 };
 
 /**
  * Create a 403 Forbidden error
  * @param {string} message - Error message
  * @param {string} [code] - Error code
- * @returns {AppError} Forbidden error
+ * @returns {Error} Forbidden error
  */
-export const createForbiddenError = (message = 'Forbidden', code = 'FORBIDDEN') => {
-  return new AppError(message, 403, code);
+export const createForbiddenError = (message = 'Forbidden') => {
+  return errors.authorization(message);
 };
 
 /**
  * Create a 401 Unauthorized error
  * @param {string} message - Error message
  * @param {string} [code] - Error code
- * @returns {AppError} Unauthorized error
+ * @returns {Error} Unauthorized error
  */
-export const createUnauthorizedError = (message = 'Unauthorized', code = 'UNAUTHORIZED') => {
-  return new AppError(message, 401, code);
+export const createUnauthorizedError = (message = 'Unauthorized') => {
+  return errors.authentication(message);
 };
 
 /**
  * Create a 409 Conflict error
  * @param {string} message - Error message
  * @param {string} [code] - Error code
- * @returns {AppError} Conflict error
+ * @returns {Error} Conflict error
  */
-export const createConflictError = (message = 'Conflict', code = 'CONFLICT') => {
-  return new AppError(message, 409, code);
+export const createConflictError = (message = 'Conflict') => {
+  return errors.conflict(message);
 };
 
 /**
