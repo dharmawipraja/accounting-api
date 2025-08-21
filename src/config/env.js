@@ -37,6 +37,11 @@ export const env = {
 
   // Logging
   LOG_LEVEL: process.env.LOG_LEVEL || 'info',
+  LOG_RETENTION_DAYS: toNumber(
+    process.env.LOG_RETENTION_DAYS,
+    process.env.NODE_ENV === 'production' ? 14 : 1
+  ),
+  LOG_MAX_SIZE: process.env.LOG_MAX_SIZE || '100M',
 
   // Rate Limiting
   RATE_LIMIT_MAX: toNumber(process.env.RATE_LIMIT_MAX, 100),
