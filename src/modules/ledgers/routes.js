@@ -4,7 +4,7 @@
  */
 
 import { Router } from 'express';
-import { body, query } from 'express-validator';
+import { body, param, query } from 'express-validator';
 import { asyncHandler } from '../../core/errors/index.js';
 import { authenticate, requireAccountingAccess } from '../../core/middleware/auth.js';
 import { commonValidations, validationMiddleware } from '../../core/security/security.js';
@@ -121,6 +121,57 @@ export function createLedgerRoutes(container) {
     validationMiddleware,
     asyncHandler(async (req, res) => {
       await ledgersController.deleteLedger(req, res);
+    })
+  );
+
+  // Post ledgers by date
+  router.post(
+    '/posting',
+    [
+      body('ledgerDate')
+        .trim()
+        .notEmpty()
+        .withMessage('Ledger date is required')
+        .isISO8601()
+        .withMessage('Invalid ledger date format')
+    ],
+    validationMiddleware,
+    asyncHandler(async (req, res) => {
+      await ledgersController.postLedgersByDate(req, res);
+    })
+  );
+
+  // Get ledgers by date
+  router.get(
+    '/date/:ledgerDate',
+    [
+      param('ledgerDate')
+        .trim()
+        .notEmpty()
+        .withMessage('Ledger date is required')
+        .isISO8601()
+        .withMessage('Invalid ledger date format')
+    ],
+    validationMiddleware,
+    asyncHandler(async (req, res) => {
+      await ledgersController.getLedgersByDate(req, res);
+    })
+  );
+
+  // Unpost ledgers by date
+  router.post(
+    '/unposting',
+    [
+      body('ledgerDate')
+        .trim()
+        .notEmpty()
+        .withMessage('Ledger date is required')
+        .isISO8601()
+        .withMessage('Invalid ledger date format')
+    ],
+    validationMiddleware,
+    asyncHandler(async (req, res) => {
+      await ledgersController.unpostLedgersByDate(req, res);
     })
   );
 

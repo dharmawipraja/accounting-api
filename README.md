@@ -227,10 +227,12 @@ npm run monitor        # PM2 monitoring dashboard
 
 - `GET /api/v1/ledgers` - List ledger entries with pagination & filtering
 - `GET /api/v1/ledgers/:id` - Get specific ledger entry
+- `GET /api/v1/ledgers/by-date` - Get ledgers by date with totals (ADMIN, MANAJER, AKUNTAN only)
 - `POST /api/v1/ledgers` - Create bulk ledger entries (auto-balancing)
 - `PUT /api/v1/ledgers/:id` - Update ledger entry
 - `DELETE /api/v1/ledgers/:id` - Soft delete ledger entry
-- `PATCH /api/v1/ledgers/:id/posting` - Update posting status
+- `POST /api/v1/ledgers/posting` - Post ledgers by date (ADMIN, MANAJER, AKUNTAN only)
+- `POST /api/v1/ledgers/unposting` - Unpost ledgers by date (ADMIN, MANAJER, AKUNTAN only)
 
 **Ledger Query Parameters:**
 
@@ -243,6 +245,64 @@ npm run monitor        # PM2 monitoring dashboard
 - `?accountDetailId=` - Filter by detail account
 - `?accountGeneralId=` - Filter by general account
 - `?includeAccounts=true` - Include account details in response
+
+**Special Ledger Endpoints:**
+
+**Get Ledgers by Date** - `POST /api/v1/ledgers/by-date`
+
+```json
+{
+  "ledgerDate": "21-08-25"
+}
+```
+
+Response includes totals and all ledger entries for the date:
+
+```json
+{
+  "success": true,
+  "message": "Ledgers retrieved successfully",
+  "data": {
+    "date": "21-08-25",
+    "fullDate": "21-08-2025",
+    "totalEntries": 10,
+    "totalAmountCredit": 15000.00,
+    "totalAmountDebit": 15000.00,
+    "ledgers": [...]
+  }
+}
+```
+
+**Post Ledgers by Date** - `POST /api/v1/ledgers/posting`
+
+```json
+{
+  "ledgerDate": "2025-08-21"
+}
+```
+
+**Unpost Ledgers by Date** - `POST /api/v1/ledgers/unposting`
+
+```json
+{
+  "ledgerDate": "2025-08-21"
+}
+```
+
+Response includes:
+
+```json
+{
+  "success": true,
+  "message": "Ledgers unposted successfully",
+  "data": {
+    "unpostedCount": 10,
+    "journalEntriesDeleted": 10,
+    "unpostingTimestamp": "2025-08-21T...",
+    "ledgers": [...]
+  }
+}
+```
 
 ### ❤️ Health & Monitoring
 

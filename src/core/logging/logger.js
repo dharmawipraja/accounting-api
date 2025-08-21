@@ -21,8 +21,7 @@ export function createLogger(config) {
       bindings: bindings => {
         return {
           pid: bindings.pid,
-          hostname: bindings.hostname,
-          node_version: process.version
+          hostname: bindings.hostname
         };
       }
     },
