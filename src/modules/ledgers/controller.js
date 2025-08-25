@@ -187,40 +187,6 @@ export class LedgersController {
   }
 
   /**
-   * Post ledgers for a specific date
-   * @param {Object} request - Express request object
-   * @param {Object} res - Express response object
-   */
-  async postLedgersByDate(request, res) {
-    try {
-      const { ledgerDate } = request.body;
-      const postedBy = request.user.id;
-
-      const result = await this.ledgersService.postLedgersByDate(ledgerDate, postedBy);
-
-      const response = createSuccessResponse(result, 'Ledgers posted successfully');
-      res.status(HTTP_STATUS.OK).json(response);
-    } catch (error) {
-      if (error.statusCode) {
-        throw error;
-      }
-
-      if (error.message === 'No pending ledgers found for the specified date') {
-        throw businessErrors.noPendingLedgers();
-      }
-
-      request.log.error(
-        {
-          error,
-          ledgerDate: request.body.ledgerDate
-        },
-        'Failed to post ledgers'
-      );
-      throw resourceErrors.updateFailed('Ledger posting');
-    }
-  }
-
-  /**
    * Get ledgers by specific date
    * @param {Object} request - Express request object
    * @param {Object} res - Express response object
@@ -254,40 +220,6 @@ export class LedgersController {
         'Failed to get ledgers by date'
       );
       throw resourceErrors.retrieveFailed('Ledgers by date');
-    }
-  }
-
-  /**
-   * Unpost ledgers for a specific date
-   * @param {Object} request - Express request object
-   * @param {Object} res - Express response object
-   */
-  async unpostLedgersByDate(request, res) {
-    try {
-      const { ledgerDate } = request.body;
-      const unpostedBy = request.user.id;
-
-      const result = await this.ledgersService.unpostLedgersByDate(ledgerDate, unpostedBy);
-
-      const response = createSuccessResponse(result, 'Ledgers unposted successfully');
-      res.status(HTTP_STATUS.OK).json(response);
-    } catch (error) {
-      if (error.statusCode) {
-        throw error;
-      }
-
-      if (error.message === 'No posted ledgers found for the specified date') {
-        throw errors.validation(error.message);
-      }
-
-      request.log.error(
-        {
-          error,
-          ledgerDate: request.body.ledgerDate
-        },
-        'Failed to unpost ledgers'
-      );
-      throw resourceErrors.updateFailed('Ledger unposting');
     }
   }
 }

@@ -26,7 +26,7 @@ export const generateIds = count => {
  * @returns {boolean} True if valid ULID
  */
 export const isValidId = id => {
-  if (typeof id !== 'string' || id.length !== 26) {
+  if (typeof id !== 'string') {
     return false;
   }
 

@@ -13,6 +13,8 @@ import { AuthController } from '../../modules/auth/controller.js';
 import { AuthService } from '../../modules/auth/service.js';
 import { LedgersController } from '../../modules/ledgers/controller.js';
 import { LedgersService } from '../../modules/ledgers/service.js';
+import { PostingController } from '../../modules/posting/controller.js';
+import { PostingService } from '../../modules/posting/service.js';
 import { UsersController } from '../../modules/users/controller.js';
 import { UsersService } from '../../modules/users/service.js';
 
@@ -91,6 +93,10 @@ class DIContainer {
     // Ledgers service
     const ledgersService = new LedgersService(prisma);
     this.register('ledgersService', ledgersService);
+
+    // Posting service
+    const postingService = new PostingService(prisma);
+    this.register('postingService', postingService);
   }
 
   /**
@@ -121,6 +127,11 @@ class DIContainer {
     const ledgersService = this.get('ledgersService');
     const ledgersController = new LedgersController(ledgersService);
     this.register('ledgersController', ledgersController);
+
+    // Posting controller
+    const postingService = this.get('postingService');
+    const postingController = new PostingController(postingService);
+    this.register('postingController', postingController);
   }
 
   /**

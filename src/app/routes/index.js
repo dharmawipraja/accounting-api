@@ -8,6 +8,7 @@ import { createAccountDetailRoutes } from '../../modules/accountDetail/routes.js
 import { createAccountGeneralRoutes } from '../../modules/accountGeneral/routes.js';
 import { createAuthRoutes } from '../../modules/auth/routes.js';
 import { createLedgerRoutes } from '../../modules/ledgers/routes.js';
+import { createPostingRoutes } from '../../modules/posting/routes.js';
 import { createUserRoutes } from '../../modules/users/routes.js';
 
 /**
@@ -30,6 +31,10 @@ export async function registerRoutes(app) {
   const ledgerRoutes = createLedgerRoutes(container);
   app.use(`${apiBase}/ledgers`, ledgerRoutes);
 
+  // Posting management routes
+  const postingRoutes = createPostingRoutes(container);
+  app.use(`${apiBase}/posting`, postingRoutes);
+
   // Account General management routes
   const accountGeneralRoutes = createAccountGeneralRoutes(container);
   app.use(`${apiBase}/accounts/general`, accountGeneralRoutes);
@@ -51,6 +56,7 @@ export async function registerRoutes(app) {
         auth: `${apiBase}/auth`,
         users: `${apiBase}/users`,
         ledgers: `${apiBase}/ledgers`,
+        posting: `${apiBase}/posting`,
         accountsGeneral: `${apiBase}/accounts/general`,
         accountsDetail: `${apiBase}/accounts/detail`
       }

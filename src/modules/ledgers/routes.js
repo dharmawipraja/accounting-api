@@ -124,23 +124,6 @@ export function createLedgerRoutes(container) {
     })
   );
 
-  // Post ledgers by date
-  router.post(
-    '/posting',
-    [
-      body('ledgerDate')
-        .trim()
-        .notEmpty()
-        .withMessage('Ledger date is required')
-        .isISO8601()
-        .withMessage('Invalid ledger date format')
-    ],
-    validationMiddleware,
-    asyncHandler(async (req, res) => {
-      await ledgersController.postLedgersByDate(req, res);
-    })
-  );
-
   // Get ledgers by date
   router.get(
     '/date/:ledgerDate',
@@ -155,23 +138,6 @@ export function createLedgerRoutes(container) {
     validationMiddleware,
     asyncHandler(async (req, res) => {
       await ledgersController.getLedgersByDate(req, res);
-    })
-  );
-
-  // Unpost ledgers by date
-  router.post(
-    '/unposting',
-    [
-      body('ledgerDate')
-        .trim()
-        .notEmpty()
-        .withMessage('Ledger date is required')
-        .isISO8601()
-        .withMessage('Invalid ledger date format')
-    ],
-    validationMiddleware,
-    asyncHandler(async (req, res) => {
-      await ledgersController.unpostLedgersByDate(req, res);
     })
   );
 

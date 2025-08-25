@@ -179,5 +179,6 @@ export const businessErrors = {
   cannotDeleteAccount: reason => errors.businessLogic(`Cannot delete account: ${reason}`),
   ledgerNotFound: () => errors.notFound('Ledger entry not found'),
   cannotUpdatePostedLedger: () => errors.businessLogic('Cannot update posted ledger entries'),
-  noPendingLedgers: () => errors.businessLogic('No pending ledgers found for the specified date')
+  noPendingLedgers: () => errors.businessLogic('No pending ledgers found for the specified date'),
+  alreadyPosted: () => errors.businessLogic('Records have already been posted for this date')
 };

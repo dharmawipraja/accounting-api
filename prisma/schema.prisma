@@ -145,12 +145,12 @@ model Ledger {
 
 model JournalLedger {
   id                          String          @id
-  referenceNumber             String
   accountDetailAccountNumber  String
   accountGeneralAccountNumber String
-  transactionType             TransactionType
-  amount                      Decimal         @default(0) @db.Decimal(10, 2)
-  reportType                  ReportType
+  debit                       Decimal         @default(0) @db.Decimal(10, 2)
+  credit                      Decimal         @default(0) @db.Decimal(10, 2)
+  amountDebit                 Decimal         @default(0) @db.Decimal(10, 2)
+  amountCredit                Decimal         @default(0) @db.Decimal(10, 2)
   ledgerDate                  DateTime
   postingStatus               PostingStatus   @default(PENDING)
   postingAt                   DateTime?
@@ -158,31 +158,6 @@ model JournalLedger {
   createdBy                   String
 
   @@map("journal_ledgers")
-}
-
-model Balance {
-  id        String   @id
-  amount    Decimal  @db.Decimal(10, 2)
-  createdAt DateTime @default(now())
-  updatedAt DateTime
-  createdBy String
-  updatedBy String
-
-  @@map("balances")
-}
-
-model JournalBalance {
-  id                          String          @id
-  accountDetailAccountNumber  String
-  accountGeneralAccountNumber String
-  transactionType             TransactionType
-  amountCredit                Decimal         @default(0) @db.Decimal(10, 2)
-  amountDebit                 Decimal         @default(0) @db.Decimal(10, 2)
-  reportType                  ReportType
-  createdAt                   DateTime        @default(now())
-  createdBy                   String
-
-  @@map("journal_balances")
 }
 
 model SisaHasilUsaha {
