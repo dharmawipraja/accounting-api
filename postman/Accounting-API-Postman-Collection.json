@@ -1,39 +1,20 @@
 {
   "info": {
     "name": "Accounting API",
-    "description": "Complete API collection for the Accounting API with automatic authentication and configurable base URL",
+    "description": "Postman collection generated from project routes",
     "version": "1.0.0",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    {
-      "key": "baseUrl",
-      "value": "http://localhost:3001",
-      "type": "string",
-      "description": "Base URL for the API"
-    },
-    {
-      "key": "authToken",
-      "value": "",
-      "type": "string",
-      "description": "JWT token for authentication - automatically set after login"
-    },
-    {
-      "key": "apiVersion",
-      "value": "v1",
-      "type": "string",
-      "description": "API version"
-    }
+    { "key": "baseUrl", "value": "http://localhost:3001", "type": "string" },
+    { "key": "apiVersion", "value": "v1", "type": "string" },
+    { "key": "adminUsername", "value": "admin", "type": "string" },
+    { "key": "adminPassword", "value": "admin123456", "type": "string" },
+    { "key": "authToken", "value": "", "type": "string" }
   ],
   "auth": {
     "type": "bearer",
-    "bearer": [
-      {
-        "key": "token",
-        "value": "{{authToken}}",
-        "type": "string"
-      }
-    ]
+    "bearer": [{ "key": "token", "value": "{{authToken}}", "type": "string" }]
   },
   "event": [
     {
@@ -41,14 +22,8 @@
       "script": {
         "type": "text/javascript",
         "exec": [
-          "// Auto-set Content-Type for POST/PUT requests",
           "if (pm.request.method === 'POST' || pm.request.method === 'PUT') {",
-          "    if (!pm.request.headers.has('Content-Type')) {",
-          "        pm.request.headers.add({",
-          "            key: 'Content-Type',",
-          "            value: 'application/json'",
-          "        });",
-          "    }",
+          "  if (!pm.request.headers.has('Content-Type')) pm.request.headers.add({ key: 'Content-Type', value: 'application/json' });",
           "}"
         ]
       }
@@ -63,40 +38,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/health",
-              "host": ["{{baseUrl}}"],
-              "path": ["health"]
-            },
-            "description": "Application health check with database connectivity"
-          },
-          "response": []
-        },
-        {
-          "name": "Readiness Check",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/ready",
-              "host": ["{{baseUrl}}"],
-              "path": ["ready"]
-            },
-            "description": "Readiness probe for container orchestration"
-          },
-          "response": []
-        },
-        {
-          "name": "Liveness Check",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/live",
-              "host": ["{{baseUrl}}"],
-              "path": ["live"]
-            },
-            "description": "Liveness probe for container orchestration"
+            "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
           },
           "response": []
         },
@@ -105,17 +47,11 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api",
-              "host": ["{{baseUrl}}"],
-              "path": ["api"]
-            },
-            "description": "API information and available endpoints"
+            "url": { "raw": "{{baseUrl}}/api", "host": ["{{baseUrl}}"], "path": ["api"] }
           },
           "response": []
         }
-      ],
-      "description": "Health checks and API information endpoints"
+      ]
     },
     {
       "name": "Authentication",
@@ -128,39 +64,28 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// Auto-extract and set auth token from login response",
                   "if (pm.response.code === 200) {",
-                  "    const jsonData = pm.response.json();",
-                  "    if (jsonData.success && jsonData.data && jsonData.data.token) {",
-                  "        pm.collectionVariables.set('authToken', jsonData.data.token);",
-                  "        console.log('Auth token automatically set:', jsonData.data.token);",
-                  "    }",
+                  "  let jsonData = {};",
+                  "  try { jsonData = pm.response.json(); } catch (e) { jsonData = {}; }",
+                  "  if (jsonData && jsonData.data && jsonData.data.token) pm.collectionVariables.set('authToken', jsonData.data.token);",
                   "}"
                 ]
               }
             }
           ],
           "request": {
-            "auth": {
-              "type": "noauth"
-            },
+            "auth": { "type": "noauth" },
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123456\"\n}"
+              "raw": "{\n  \"username\": \"{{adminUsername}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/{{apiVersion}}/auth/login",
               "host": ["{{baseUrl}}"],
               "path": ["api", "{{apiVersion}}", "auth", "login"]
-            },
-            "description": "User login - automatically sets auth token for collection"
+            }
           },
           "response": []
         },
@@ -173,8 +98,7 @@
               "raw": "{{baseUrl}}/api/{{apiVersion}}/auth/logout",
               "host": ["{{baseUrl}}"],
               "path": ["api", "{{apiVersion}}", "auth", "logout"]
-            },
-            "description": "User logout"
+            }
           },
           "response": []
         },
@@ -187,48 +111,14 @@
               "raw": "{{baseUrl}}/api/{{apiVersion}}/auth/profile",
               "host": ["{{baseUrl}}"],
               "path": ["api", "{{apiVersion}}", "auth", "profile"]
-            },
-            "description": "Get authenticated user profile"
-          },
-          "response": []
-        },
-        {
-          "name": "Refresh Token",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "// Auto-update auth token from refresh response",
-                  "if (pm.response.code === 200) {",
-                  "    const jsonData = pm.response.json();",
-                  "    if (jsonData.success && jsonData.data && jsonData.data.token) {",
-                  "        pm.collectionVariables.set('authToken', jsonData.data.token);",
-                  "        console.log('Auth token refreshed and updated:', jsonData.data.token);",
-                  "    }",
-                  "}"
-                ]
-              }
             }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/{{apiVersion}}/auth/refresh",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "{{apiVersion}}", "auth", "refresh"]
-            },
-            "description": "Refresh JWT token - automatically updates auth token"
           },
           "response": []
         }
-      ],
-      "description": "Authentication endpoints with automatic token management"
+      ]
     },
     {
-      "name": "User Management",
+      "name": "Users",
       "item": [
         {
           "name": "List Users",
@@ -236,43 +126,19 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/{{apiVersion}}/users?page=1&limit=10&search=&role=&status=",
+              "raw": "{{baseUrl}}/api/{{apiVersion}}/users?page=1&limit=10",
               "host": ["{{baseUrl}}"],
               "path": ["api", "{{apiVersion}}", "users"],
               "query": [
-                {
-                  "key": "page",
-                  "value": "1",
-                  "description": "Page number (default: 1)"
-                },
-                {
-                  "key": "limit",
-                  "value": "10",
-                  "description": "Items per page (default: 10)"
-                },
-                {
-                  "key": "search",
-                  "value": "",
-                  "description": "Search term (optional)"
-                },
-                {
-                  "key": "role",
-                  "value": "",
-                  "description": "Filter by role: ADMIN, MANAJER, AKUNTAN, KASIR, KOLEKTOR, NASABAH"
-                },
-                {
-                  "key": "status",
-                  "value": "",
-                  "description": "Filter by status: ACTIVE, INACTIVE"
-                }
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" }
               ]
-            },
-            "description": "List users with pagination and filtering (Admin only)"
+            }
           },
           "response": []
         },
         {
-          "name": "Get User by ID",
+          "name": "Get User",
           "request": {
             "method": "GET",
             "header": [],
@@ -280,15 +146,8 @@
               "raw": "{{baseUrl}}/api/{{apiVersion}}/users/:id",
               "host": ["{{baseUrl}}"],
               "path": ["api", "{{apiVersion}}", "users", ":id"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "user_id_here",
-                  "description": "User ID"
-                }
-              ]
-            },
-            "description": "Get user details by ID"
+              "variable": [{ "key": "id", "value": "user_id_here" }]
+            }
           },
           "response": []
         },
@@ -296,22 +155,16 @@
           "name": "Create User",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"newuser\",\n  \"password\": \"password123\",\n  \"name\": \"New User\",\n  \"role\": \"KASIR\"\n}"
+              "raw": "{\n  \"username\": \"newuser\",\n  \"password\": \"secret123\",\n  \"role\": \"ADMIN\",\n  \"fullName\": \"New User\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/{{apiVersion}}/users",
               "host": ["{{baseUrl}}"],
               "path": ["api", "{{apiVersion}}", "users"]
-            },
-            "description": "Create new user (Admin only)"
+            }
           },
           "response": []
         },
@@ -319,29 +172,17 @@
           "name": "Update User",
           "request": {
             "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"updateduser\",\n  \"name\": \"Updated User Name\",\n  \"role\": \"AKUNTAN\",\n  \"status\": \"ACTIVE\"\n}"
+              "raw": "{\n  \"fullName\": \"Updated Name\",\n  \"status\": \"ACTIVE\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/{{apiVersion}}/users/:id",
               "host": ["{{baseUrl}}"],
               "path": ["api", "{{apiVersion}}", "users", ":id"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "user_id_here",
-                  "description": "User ID"
-                }
-              ]
-            },
-            "description": "Update user information"
+              "variable": [{ "key": "id", "value": "user_id_here" }]
+            }
           },
           "response": []
         },
@@ -354,26 +195,18 @@
               "raw": "{{baseUrl}}/api/{{apiVersion}}/users/:id",
               "host": ["{{baseUrl}}"],
               "path": ["api", "{{apiVersion}}", "users", ":id"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "user_id_here",
-                  "description": "User ID"
-                }
-              ]
-            },
-            "description": "Soft delete user (Admin only)"
+              "variable": [{ "key": "id", "value": "user_id_here" }]
+            }
           },
           "response": []
         }
-      ],
-      "description": "User management endpoints"
+      ]
     },
     {
-      "name": "Account Management",
+      "name": "Accounts",
       "item": [
         {
-          "name": "General Accounts",
+          "name": "General",
           "item": [
             {
               "name": "List General Accounts",
@@ -381,49 +214,28 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{baseUrl}}/api/{{apiVersion}}/accounts/general?page=1&limit=10&accountCategory=",
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/accounts/general?page=1&limit=10",
                   "host": ["{{baseUrl}}"],
                   "path": ["api", "{{apiVersion}}", "accounts", "general"],
                   "query": [
-                    {
-                      "key": "page",
-                      "value": "1",
-                      "description": "Page number (default: 1)"
-                    },
-                    {
-                      "key": "limit",
-                      "value": "10",
-                      "description": "Items per page (default: 10)"
-                    },
-                    {
-                      "key": "accountCategory",
-                      "value": "",
-                      "description": "Filter by category: ASSET, HUTANG, MODAL, PENDAPATAN, BIAYA"
-                    }
+                    { "key": "page", "value": "1" },
+                    { "key": "limit", "value": "10" }
                   ]
-                },
-                "description": "List general accounts with pagination"
+                }
               },
               "response": []
             },
             {
-              "name": "Get General Account by ID",
+              "name": "Get General Account",
               "request": {
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{baseUrl}}/api/{{apiVersion}}/accounts/general/:id",
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/accounts/general/:accountNumber",
                   "host": ["{{baseUrl}}"],
-                  "path": ["api", "{{apiVersion}}", "accounts", "general", ":id"],
-                  "variable": [
-                    {
-                      "key": "id",
-                      "value": "account_id_here",
-                      "description": "General Account ID"
-                    }
-                  ]
-                },
-                "description": "Get general account details by ID"
+                  "path": ["api", "{{apiVersion}}", "accounts", "general", ":accountNumber"],
+                  "variable": [{ "key": "accountNumber", "value": "1000" }]
+                }
               },
               "response": []
             },
@@ -431,12 +243,7 @@
               "name": "Create General Account",
               "request": {
                 "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"accountNumber\": \"1000\",\n  \"accountName\": \"Cash\",\n  \"accountCategory\": \"ASSET\",\n  \"reportType\": \"NERACA\",\n  \"transactionType\": \"DEBIT\"\n}"
@@ -445,16 +252,46 @@
                   "raw": "{{baseUrl}}/api/{{apiVersion}}/accounts/general",
                   "host": ["{{baseUrl}}"],
                   "path": ["api", "{{apiVersion}}", "accounts", "general"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update General Account",
+              "request": {
+                "method": "PUT",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"accountName\": \"Updated Name\",\n  \"transactionType\": \"DEBIT\"\n}"
                 },
-                "description": "Create new general account"
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/accounts/general/:accountNumber",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "accounts", "general", ":accountNumber"],
+                  "variable": [{ "key": "accountNumber", "value": "1000" }]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Delete General Account",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/accounts/general/:accountNumber",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "accounts", "general", ":accountNumber"],
+                  "variable": [{ "key": "accountNumber", "value": "1000" }]
+                }
               },
               "response": []
             }
-          ],
-          "description": "General account management (top-level accounts)"
+          ]
         },
         {
-          "name": "Detail Accounts",
+          "name": "Detail",
           "item": [
             {
               "name": "List Detail Accounts",
@@ -462,218 +299,249 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{baseUrl}}/api/{{apiVersion}}/accounts/detail?page=1&limit=10&accountCategory=&accountGeneralId=",
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/accounts/detail?page=1&limit=10",
                   "host": ["{{baseUrl}}"],
                   "path": ["api", "{{apiVersion}}", "accounts", "detail"],
                   "query": [
-                    {
-                      "key": "page",
-                      "value": "1",
-                      "description": "Page number (default: 1)"
-                    },
-                    {
-                      "key": "limit",
-                      "value": "10",
-                      "description": "Items per page (default: 10)"
-                    },
-                    {
-                      "key": "accountCategory",
-                      "value": "",
-                      "description": "Filter by category: ASSET, HUTANG, MODAL, PENDAPATAN, BIAYA"
-                    },
-                    {
-                      "key": "accountGeneralId",
-                      "value": "",
-                      "description": "Filter by general account ID"
-                    }
+                    { "key": "page", "value": "1" },
+                    { "key": "limit", "value": "10" }
                   ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Get Detail Account",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/accounts/detail/:accountNumber",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "accounts", "detail", ":accountNumber"],
+                  "variable": [{ "key": "accountNumber", "value": "1000.01" }]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Create Detail Account",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"accountNumber\": \"1000.01\",\n  \"accountName\": \"Cash on Hand\",\n  \"accountGeneralAccountNumber\": \"1000\",\n  \"accountCategory\": \"ASSET\",\n  \"reportType\": \"NERACA\",\n  \"transactionType\": \"DEBIT\",\n  \"initialAmountDebit\": 0\n}"
                 },
-                "description": "List detail accounts with pagination and filtering"
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/accounts/detail",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "accounts", "detail"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Update Detail Account",
+              "request": {
+                "method": "PUT",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"accountName\": \"Updated Cash on Hand\",\n  \"transactionType\": \"DEBIT\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/accounts/detail/:accountNumber",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "accounts", "detail", ":accountNumber"],
+                  "variable": [{ "key": "accountNumber", "value": "1000.01" }]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Delete Detail Account",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/accounts/detail/:accountNumber",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "accounts", "detail", ":accountNumber"],
+                  "variable": [{ "key": "accountNumber", "value": "1000.01" }]
+                }
               },
               "response": []
             }
-          ],
-          "description": "Detail account management (sub-accounts)"
+          ]
         }
-      ],
-      "description": "Chart of accounts management"
+      ]
     },
     {
-      "name": "Ledger Management",
+      "name": "Ledgers & Posting",
       "item": [
         {
-          "name": "List Ledger Entries",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/{{apiVersion}}/ledgers?page=1&limit=10&search=&referenceNumber=&ledgerType=&transactionType=&postingStatus=&startDate=&endDate=&accountDetailId=&accountGeneralId=&includeAccounts=true",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "{{apiVersion}}", "ledgers"],
-              "query": [
-                {
-                  "key": "page",
-                  "value": "1",
-                  "description": "Page number (default: 1)"
-                },
-                {
-                  "key": "limit",
-                  "value": "10",
-                  "description": "Items per page (default: 10)"
-                },
-                {
-                  "key": "search",
-                  "value": "",
-                  "description": "Search in description or reference number"
-                },
-                {
-                  "key": "referenceNumber",
-                  "value": "",
-                  "description": "Filter by reference number"
-                },
-                {
-                  "key": "ledgerType",
-                  "value": "",
-                  "description": "Filter by ledger type: KAS_MASUK, KAS_KELUAR"
-                },
-                {
-                  "key": "transactionType",
-                  "value": "",
-                  "description": "Filter by transaction type: DEBIT, CREDIT"
-                },
-                {
-                  "key": "postingStatus",
-                  "value": "",
-                  "description": "Filter by posting status: PENDING, POSTED"
-                },
-                {
-                  "key": "startDate",
-                  "value": "",
-                  "description": "Start date (ISO 8601 format)"
-                },
-                {
-                  "key": "endDate",
-                  "value": "",
-                  "description": "End date (ISO 8601 format)"
-                },
-                {
-                  "key": "accountDetailId",
-                  "value": "",
-                  "description": "Filter by detail account ID"
-                },
-                {
-                  "key": "accountGeneralId",
-                  "value": "",
-                  "description": "Filter by general account ID"
-                },
-                {
-                  "key": "includeAccounts",
-                  "value": "true",
-                  "description": "Include account details in response"
+          "name": "Ledgers",
+          "item": [
+            {
+              "name": "List Ledgers",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/ledgers?page=1&limit=10",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "ledgers"],
+                  "query": [
+                    { "key": "page", "value": "1" },
+                    { "key": "limit", "value": "10" }
+                  ]
                 }
-              ]
+              },
+              "response": []
             },
-            "description": "List ledger entries with pagination and extensive filtering"
-          },
-          "response": []
+            {
+              "name": "Get Ledger",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/ledgers/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "ledgers", ":id"],
+                  "variable": [{ "key": "id", "value": "ledger_id_here" }]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Create Bulk Ledgers",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"ledgers\": [\n    {\n      \"description\": \"Cash payment received\",\n      \"amount\": 1000.00,\n      \"transactionType\": \"DEBIT\",\n      \"accountDetailId\": \"detail_account_id_1\",\n      \"accountGeneralId\": \"general_account_id_1\"\n    },\n    {\n      \"description\": \"Revenue recognition\",\n      \"amount\": 1000.00,\n      \"transactionType\": \"CREDIT\",\n      \"accountDetailId\": \"detail_account_id_2\",\n      \"accountGeneralId\": \"general_account_id_2\"\n    }\n  ]\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/ledgers",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "ledgers"]
+                },
+                "description": "Create bulk ledger entries"
+              },
+              "response": []
+            },
+            {
+              "name": "Update Ledger",
+              "request": {
+                "method": "PUT",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"description\": \"Updated description\",\n  \"amount\": 1500.00,\n  \"transactionType\": \"DEBIT\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/ledgers/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "ledgers", ":id"],
+                  "variable": [{ "key": "id", "value": "ledger_id_here" }]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Delete Ledger",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/ledgers/:id",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "ledgers", ":id"],
+                  "variable": [{ "key": "id", "value": "ledger_id_here" }]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Get Ledgers by Date",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/ledgers/date/:ledgerDate",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "ledgers", "date", ":ledgerDate"],
+                  "variable": [{ "key": "ledgerDate", "value": "2025-08-25" }]
+                }
+              },
+              "response": []
+            }
+          ]
         },
         {
-          "name": "Get Ledger Entry by ID",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/{{apiVersion}}/ledgers/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "{{apiVersion}}", "ledgers", ":id"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "ledger_id_here",
-                  "description": "Ledger Entry ID"
+          "name": "Posting",
+          "item": [
+            {
+              "name": "Post Ledger",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{\n  \"ledgerDate\": \"2025-08-25\"\n}" },
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/posting/ledger",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "posting", "ledger"]
                 }
-              ]
+              },
+              "response": []
             },
-            "description": "Get specific ledger entry details"
-          },
-          "response": []
-        },
-        {
-          "name": "Create Bulk Ledger Entries",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"ledgers\": [\n    {\n      \"description\": \"Cash payment received\",\n      \"amount\": 1000.00,\n      \"transactionType\": \"DEBIT\",\n      \"accountDetailId\": \"detail_account_id_1\",\n      \"accountGeneralId\": \"general_account_id_1\"\n    },\n    {\n      \"description\": \"Revenue recognition\",\n      \"amount\": 1000.00,\n      \"transactionType\": \"CREDIT\",\n      \"accountDetailId\": \"detail_account_id_2\",\n      \"accountGeneralId\": \"general_account_id_2\"\n    }\n  ]\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/{{apiVersion}}/ledgers",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "{{apiVersion}}", "ledgers"]
-            },
-            "description": "Create bulk ledger entries with auto-balancing (Double-entry bookkeeping)"
-          },
-          "response": []
-        },
-        {
-          "name": "Update Ledger Entry",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"description\": \"Updated description\",\n  \"amount\": 1500.00,\n  \"transactionType\": \"DEBIT\"\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/{{apiVersion}}/ledgers/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "{{apiVersion}}", "ledgers", ":id"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "ledger_id_here",
-                  "description": "Ledger Entry ID"
+            {
+              "name": "Post Balance",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{\n  \"date\": \"25-08-2025\"\n}" },
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/posting/balance",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "posting", "balance"]
                 }
-              ]
+              },
+              "response": []
             },
-            "description": "Update existing ledger entry"
-          },
-          "response": []
-        },
-        {
-          "name": "Delete Ledger Entry",
-          "request": {
-            "method": "DELETE",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/{{apiVersion}}/ledgers/:id",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "{{apiVersion}}", "ledgers", ":id"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": "ledger_id_here",
-                  "description": "Ledger Entry ID"
+            {
+              "name": "Unpost Ledger",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{\n  \"ledgerDate\": \"2025-08-25\"\n}" },
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/posting/unposting/ledger",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "posting", "unposting", "ledger"]
                 }
-              ]
+              },
+              "response": []
             },
-            "description": "Soft delete ledger entry"
-          },
-          "response": []
+            {
+              "name": "Unpost Balance",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{\n  \"date\": \"25-08-2025\"\n}" },
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/posting/unposting/balance",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "posting", "unposting", "balance"]
+                }
+              },
+              "response": []
+            }
+          ]
         }
-      ],
-      "description": "Double-entry bookkeeping ledger management"
+      ]
     }
   ]
 }

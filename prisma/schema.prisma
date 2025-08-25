@@ -144,28 +144,30 @@ model Ledger {
 }
 
 model JournalLedger {
-  id                          String          @id
+  id                          String        @id
   accountDetailAccountNumber  String
   accountGeneralAccountNumber String
-  debit                       Decimal         @default(0) @db.Decimal(10, 2)
-  credit                      Decimal         @default(0) @db.Decimal(10, 2)
-  amountDebit                 Decimal         @default(0) @db.Decimal(10, 2)
-  amountCredit                Decimal         @default(0) @db.Decimal(10, 2)
+  debit                       Decimal       @default(0) @db.Decimal(10, 2)
+  credit                      Decimal       @default(0) @db.Decimal(10, 2)
+  amountDebit                 Decimal       @default(0) @db.Decimal(10, 2)
+  amountCredit                Decimal       @default(0) @db.Decimal(10, 2)
   ledgerDate                  DateTime
-  postingStatus               PostingStatus   @default(PENDING)
+  postingStatus               PostingStatus @default(PENDING)
   postingAt                   DateTime?
-  createdAt                   DateTime        @default(now())
+  createdAt                   DateTime      @default(now())
   createdBy                   String
 
   @@map("journal_ledgers")
 }
 
 model SisaHasilUsaha {
-  id        String   @id
-  year      String
-  amount    Decimal  @db.Decimal(10, 2)
-  createdAt DateTime @default(now())
-  updatedAt DateTime
+  id                          String   @id
+  year                        String
+  amount                      Decimal  @db.Decimal(10, 2)
+  accountDetailAccountNumber  String
+  accountGeneralAccountNumber String
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime
 
   @@map("sisa_hasil_usaha")
 }

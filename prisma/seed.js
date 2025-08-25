@@ -478,6 +478,23 @@ async function main() {
         reportType: 'NERACA',
         transactionType: 'CREDIT'
       },
+      // SHU DETAILS
+      {
+        accountNumber: '3203',
+        accountName: 'SHU',
+        parentAccountNumber: '3200',
+        accountCategory: 'MODAL',
+        reportType: 'NERACA',
+        transactionType: 'CREDIT'
+      },
+      {
+        accountNumber: '3204',
+        accountName: 'SHU Tahun Lalu',
+        parentAccountNumber: '3200',
+        accountCategory: 'MODAL',
+        reportType: 'NERACA',
+        transactionType: 'CREDIT'
+      },
 
       // LABA DITAHAN DETAILS
       {

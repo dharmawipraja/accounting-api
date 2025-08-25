@@ -17,6 +17,7 @@
     "prisma:format": "prisma format",
     "prisma:generate": "prisma generate --no-engine",
     "prisma:migrate": "prisma migrate dev",
+    "prisma:push": "prisma db push",
     "prisma:reset": "prisma migrate reset",
     "prisma:prod": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
