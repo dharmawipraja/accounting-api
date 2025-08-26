@@ -50,6 +50,24 @@
             "url": { "raw": "{{baseUrl}}/api", "host": ["{{baseUrl}}"], "path": ["api"] }
           },
           "response": []
+        },
+        {
+          "name": "Readiness Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/ready", "host": ["{{baseUrl}}"], "path": ["ready"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Liveness Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/live", "host": ["{{baseUrl}}"], "path": ["live"] }
+          },
+          "response": []
         }
       ]
     },
@@ -114,6 +132,19 @@
             }
           },
           "response": []
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/{{apiVersion}}/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "{{apiVersion}}", "auth", "refresh"]
+            }
+          },
+          "response": []
         }
       ]
     },
@@ -126,12 +157,13 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/{{apiVersion}}/users?page=1&limit=10",
+              "raw": "{{baseUrl}}/api/{{apiVersion}}/users?page=1&limit=10&search=admin",
               "host": ["{{baseUrl}}"],
               "path": ["api", "{{apiVersion}}", "users"],
               "query": [
                 { "key": "page", "value": "1" },
-                { "key": "limit", "value": "10" }
+                { "key": "limit", "value": "10" },
+                { "key": "search", "value": "admin", "disabled": true }
               ]
             }
           },
@@ -158,7 +190,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"newuser\",\n  \"password\": \"secret123\",\n  \"role\": \"ADMIN\",\n  \"fullName\": \"New User\"\n}"
+              "raw": "{\n  \"username\": \"newuser\",\n  \"password\": \"secret123\",\n  \"role\": \"ADMIN\",\n  \"name\": \"New User\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/{{apiVersion}}/users",
@@ -175,7 +207,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fullName\": \"Updated Name\",\n  \"status\": \"ACTIVE\"\n}"
+              "raw": "{\n  \"name\": \"Updated Name\",\n  \"status\": \"ACTIVE\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/{{apiVersion}}/users/:id",
@@ -214,12 +246,15 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{baseUrl}}/api/{{apiVersion}}/accounts/general?page=1&limit=10",
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/accounts/general?page=1&limit=10&accountCategory=ASSET&reportType=NERACA&search=cash",
                   "host": ["{{baseUrl}}"],
                   "path": ["api", "{{apiVersion}}", "accounts", "general"],
                   "query": [
                     { "key": "page", "value": "1" },
-                    { "key": "limit", "value": "10" }
+                    { "key": "limit", "value": "10" },
+                    { "key": "accountCategory", "value": "ASSET", "disabled": true },
+                    { "key": "reportType", "value": "NERACA", "disabled": true },
+                    { "key": "search", "value": "cash", "disabled": true }
                   ]
                 }
               },
@@ -299,12 +334,16 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{baseUrl}}/api/{{apiVersion}}/accounts/detail?page=1&limit=10",
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/accounts/detail?page=1&limit=10&accountCategory=ASSET&reportType=NERACA&accountGeneralAccountNumber=1000&search=cash",
                   "host": ["{{baseUrl}}"],
                   "path": ["api", "{{apiVersion}}", "accounts", "detail"],
                   "query": [
                     { "key": "page", "value": "1" },
-                    { "key": "limit", "value": "10" }
+                    { "key": "limit", "value": "10" },
+                    { "key": "accountCategory", "value": "ASSET", "disabled": true },
+                    { "key": "reportType", "value": "NERACA", "disabled": true },
+                    { "key": "accountGeneralAccountNumber", "value": "1000", "disabled": true },
+                    { "key": "search", "value": "cash", "disabled": true }
                   ]
                 }
               },
@@ -389,12 +428,16 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{baseUrl}}/api/{{apiVersion}}/ledgers?page=1&limit=10",
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/ledgers?page=1&limit=10&accountDetailId=detail_id&accountGeneralId=general_id&startDate=2025-08-01&endDate=2025-08-31",
                   "host": ["{{baseUrl}}"],
                   "path": ["api", "{{apiVersion}}", "ledgers"],
                   "query": [
                     { "key": "page", "value": "1" },
-                    { "key": "limit", "value": "10" }
+                    { "key": "limit", "value": "10" },
+                    { "key": "accountDetailId", "value": "detail_id", "disabled": true },
+                    { "key": "accountGeneralId", "value": "general_id", "disabled": true },
+                    { "key": "startDate", "value": "2025-08-01", "disabled": true },
+                    { "key": "endDate", "value": "2025-08-31", "disabled": true }
                   ]
                 }
               },
@@ -484,57 +527,99 @@
           "name": "Posting",
           "item": [
             {
-              "name": "Post Ledger",
+              "name": "Post Buku Besar (Ledgers)",
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": { "mode": "raw", "raw": "{\n  \"ledgerDate\": \"2025-08-25\"\n}" },
                 "url": {
-                  "raw": "{{baseUrl}}/api/{{apiVersion}}/posting/ledger",
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/posting/buku-besar",
                   "host": ["{{baseUrl}}"],
-                  "path": ["api", "{{apiVersion}}", "posting", "ledger"]
+                  "path": ["api", "{{apiVersion}}", "posting", "buku-besar"]
                 }
               },
               "response": []
             },
             {
-              "name": "Post Balance",
+              "name": "Post Neraca Detail",
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": { "mode": "raw", "raw": "{\n  \"date\": \"25-08-2025\"\n}" },
                 "url": {
-                  "raw": "{{baseUrl}}/api/{{apiVersion}}/posting/balance",
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/posting/neraca-detail",
                   "host": ["{{baseUrl}}"],
-                  "path": ["api", "{{apiVersion}}", "posting", "balance"]
+                  "path": ["api", "{{apiVersion}}", "posting", "neraca-detail"]
                 }
               },
               "response": []
             },
             {
-              "name": "Unpost Ledger",
+              "name": "Calculate Neraca Balance",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/posting/neraca-balance/calculate?date=25-08-2025",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "posting", "neraca-balance", "calculate"],
+                  "query": [{ "key": "date", "value": "25-08-2025" }]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Post Neraca Balance (SHU)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{\n  \"date\": \"25-08-2025\",\n  \"sisaHasilUsahaAmount\": 1000000\n}" },
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/posting/neraca-balance",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "posting", "neraca-balance"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Post Neraca Akhir",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": { "mode": "raw", "raw": "{\n  \"date\": \"25-08-2025\"\n}" },
+                "url": {
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/posting/neraca-akhir",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "{{apiVersion}}", "posting", "neraca-akhir"]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Unpost Buku Besar (Ledgers)",
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": { "mode": "raw", "raw": "{\n  \"ledgerDate\": \"2025-08-25\"\n}" },
                 "url": {
-                  "raw": "{{baseUrl}}/api/{{apiVersion}}/posting/unposting/ledger",
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/posting/unposting/buku-besar",
                   "host": ["{{baseUrl}}"],
-                  "path": ["api", "{{apiVersion}}", "posting", "unposting", "ledger"]
+                  "path": ["api", "{{apiVersion}}", "posting", "unposting", "buku-besar"]
                 }
               },
               "response": []
             },
             {
-              "name": "Unpost Balance",
+              "name": "Unpost Neraca Detail",
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
                 "body": { "mode": "raw", "raw": "{\n  \"date\": \"25-08-2025\"\n}" },
                 "url": {
-                  "raw": "{{baseUrl}}/api/{{apiVersion}}/posting/unposting/balance",
+                  "raw": "{{baseUrl}}/api/{{apiVersion}}/posting/unposting/neraca-detail",
                   "host": ["{{baseUrl}}"],
-                  "path": ["api", "{{apiVersion}}", "posting", "unposting", "balance"]
+                  "path": ["api", "{{apiVersion}}", "posting", "unposting", "neraca-detail"]
                 }
               },
               "response": []
