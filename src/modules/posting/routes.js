@@ -4,7 +4,7 @@
  */
 
 import { Router } from 'express';
-import { body } from 'express-validator';
+import { body, query } from 'express-validator';
 import { asyncHandler } from '../../core/errors/index.js';
 import { authenticate, requireAccountingAccess } from '../../core/middleware/auth.js';
 import { validationMiddleware } from '../../core/security/security.js';
@@ -58,7 +58,24 @@ export function createPostingRoutes(container) {
     })
   );
 
-  // Post neraca balance by date - new endpoint for SHU calculation
+  // Calculate neraca balance by date - preview SHU calculation
+  router.get(
+    '/neraca-balance/calculate',
+    [
+      query('date')
+        .trim()
+        .notEmpty()
+        .withMessage('Date is required')
+        .matches(/^\d{2}-\d{2}-\d{4}$/)
+        .withMessage('Date must be in dd-mm-yyyy format')
+    ],
+    validationMiddleware,
+    asyncHandler(async (req, res) => {
+      await postingController.calculateNeracaBalance(req, res);
+    })
+  );
+
+  // Post neraca balance by date - save SHU to database
   router.post(
     '/neraca-balance',
     [
@@ -67,7 +84,13 @@ export function createPostingRoutes(container) {
         .notEmpty()
         .withMessage('Date is required')
         .matches(/^\d{2}-\d{2}-\d{4}$/)
-        .withMessage('Date must be in dd-mm-yyyy format')
+        .withMessage('Date must be in dd-mm-yyyy format'),
+      body('sisaHasilUsahaAmount')
+        .notEmpty()
+        .withMessage('sisaHasilUsahaAmount is required')
+        .isNumeric()
+        .withMessage('sisaHasilUsahaAmount must be a number')
+        .toFloat()
     ],
     validationMiddleware,
     asyncHandler(async (req, res) => {

@@ -173,16 +173,56 @@ export class PostingController {
   }
 
   /**
-   * Post neraca balance (SHU calculation) for a specific date
+   * Calculate neraca balance (SHU) without saving to database
+   * @param {Object} request - Express request object
+   * @param {Object} res - Express response object
+   */
+  async calculateNeracaBalance(request, res) {
+    try {
+      const { date } = request.query;
+
+      const result = await this.postingService.calculateNeracaBalance(date);
+
+      const response = createSuccessResponse(
+        result,
+        'Neraca balance (SHU) calculated successfully'
+      );
+      res.status(HTTP_STATUS.OK).json(response);
+    } catch (error) {
+      if (error.statusCode) {
+        throw error;
+      }
+
+      if (error.message === 'No LABA_RUGI accounts found in the system') {
+        throw errors.validation(error.message);
+      }
+
+      request.log.error(
+        {
+          error,
+          date: request.query.date
+        },
+        'Failed to calculate neraca balance'
+      );
+      throw resourceErrors.updateFailed('Neraca balance calculation');
+    }
+  }
+
+  /**
+   * Post neraca balance (SHU) to database
    * @param {Object} request - Express request object
    * @param {Object} res - Express response object
    */
   async postNeracaBalance(request, res) {
     try {
-      const { date } = request.body;
+      const { date, sisaHasilUsahaAmount } = request.body;
       const postedBy = request.user.id;
 
-      const result = await this.postingService.postNeracaBalance(date, postedBy);
+      const result = await this.postingService.postNeracaBalance(
+        date,
+        sisaHasilUsahaAmount,
+        postedBy
+      );
 
       const response = createSuccessResponse(result, 'Neraca balance (SHU) posted successfully');
       res.status(HTTP_STATUS.OK).json(response);
@@ -195,6 +235,10 @@ export class PostingController {
         throw businessErrors.operationNotAllowed(error.message);
       }
 
+      if (error.message.includes('sisaHasilUsahaAmount must be a valid number')) {
+        throw errors.validation(error.message);
+      }
+
       if (
         error.message.includes('Account Detail with number 3200') &&
         error.message.includes('not found')
@@ -205,7 +249,8 @@ export class PostingController {
       request.log.error(
         {
           error,
-          date: request.body.date
+          date: request.body.date,
+          sisaHasilUsahaAmount: request.body.sisaHasilUsahaAmount
         },
         'Failed to post neraca balance'
       );

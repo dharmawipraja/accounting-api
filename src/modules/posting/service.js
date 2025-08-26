@@ -570,13 +570,12 @@ export class PostingService {
   }
 
   /**
-   * Post neraca balance (SHU calculation) for a specific date
+   * Calculate neraca balance (SHU calculation) without saving to database
    * Calculates SHU by summing current balances of all LABA_RUGI account details
    * @param {string} date - Date string in format dd-mm-yyyy (used for year calculation)
-   * @param {string} postedBy - ID of user posting the balance
-   * @returns {Promise<Object>} Result of neraca balance posting operation
+   * @returns {Promise<Object>} Result of neraca balance calculation
    */
-  async postNeracaBalance(date, postedBy) {
+  async calculateNeracaBalance(date) {
     // Parse date from dd-mm-yyyy format to Date object
     const [day, month, year] = date.split('-');
     const targetDate = new Date(year, month - 1, day);
@@ -588,12 +587,6 @@ export class PostingService {
         year
       }
     });
-
-    if (existingSHU && existingSHU.accountingClose) {
-      throw new Error(
-        `Sisa Hasil Usaha for year ${year} has been closed and cannot be modified. Please contact administrator.`
-      );
-    }
 
     // Find all account details with ReportType LABA_RUGI
     const labaRugiAccounts = await this.prisma.accountDetail.findMany({
@@ -633,6 +626,63 @@ export class PostingService {
     // SHU = Total Pendapatan - Total Biaya
     const sisaHasilUsaha = totalPendapatan - totalBiaya;
 
+    return {
+      message: `Successfully calculated Sisa Hasil Usaha for year ${year}`,
+      data: {
+        calculationDetails: {
+          totalPendapatan: formatMoneyForDb(totalPendapatan),
+          totalBiaya: formatMoneyForDb(totalBiaya),
+          sisaHasilUsaha: formatMoneyForDb(sisaHasilUsaha),
+          accountsProcessed: labaRugiAccounts.length,
+          year,
+          calculationDate: targetDate.toISOString().split('T')[0]
+        },
+        existingRecord: existingSHU
+          ? {
+              id: existingSHU.id,
+              currentAmount: formatMoneyForDb(parseFloat(existingSHU.amount)),
+              accountingClose: existingSHU.accountingClose,
+              createdAt: existingSHU.createdAt,
+              updatedAt: existingSHU.updatedAt
+            }
+          : null,
+        canSave: !existingSHU || !existingSHU.accountingClose
+      }
+    };
+  }
+
+  /**
+   * Post neraca balance (SHU) to database
+   * Saves or updates the calculated SHU value to database
+   * @param {string} date - Date string in format dd-mm-yyyy (used for year calculation)
+   * @param {number} sisaHasilUsahaAmount - The calculated SHU amount to save
+   * @param {string} postedBy - ID of user posting the balance
+   * @returns {Promise<Object>} Result of neraca balance posting operation
+   */
+  async postNeracaBalance(date, sisaHasilUsahaAmount, postedBy) {
+    // Parse date from dd-mm-yyyy format to Date object
+    const [day, month, year] = date.split('-');
+    const targetDate = new Date(year, month - 1, day);
+    targetDate.setHours(23, 59, 59, 999); // End of target day
+
+    // Validate sisaHasilUsahaAmount parameter
+    if (typeof sisaHasilUsahaAmount !== 'number' || isNaN(sisaHasilUsahaAmount)) {
+      throw new Error('sisaHasilUsahaAmount must be a valid number');
+    }
+
+    // Check if SHU for this year already exists
+    const existingSHU = await this.prisma.sisaHasilUsaha.findFirst({
+      where: {
+        year
+      }
+    });
+
+    if (existingSHU && existingSHU.accountingClose) {
+      throw new Error(
+        `Sisa Hasil Usaha for year ${year} has been closed and cannot be modified. Please contact administrator.`
+      );
+    }
+
     // Find account detail 3200 (SHU)
     const shuAccount = await this.prisma.accountDetail.findUnique({
       where: {
@@ -656,7 +706,7 @@ export class PostingService {
             id: existingSHU.id
           },
           data: {
-            amount: formatMoneyForDb(sisaHasilUsaha),
+            amount: formatMoneyForDb(sisaHasilUsahaAmount),
             accountDetailAccountNumber: shuAccount.accountNumber,
             accountGeneralAccountNumber: shuAccount.accountGeneralAccountNumber,
             updatedAt: postingTimestamp
@@ -668,7 +718,7 @@ export class PostingService {
           data: {
             id: generateId(),
             year,
-            amount: formatMoneyForDb(sisaHasilUsaha),
+            amount: formatMoneyForDb(sisaHasilUsahaAmount),
             accountDetailAccountNumber: shuAccount.accountNumber,
             accountGeneralAccountNumber: shuAccount.accountGeneralAccountNumber,
             accountingClose: false,
@@ -685,10 +735,12 @@ export class PostingService {
         },
         data: {
           accumulationAmountCredit: {
-            increment: formatMoneyForDb(sisaHasilUsaha > 0 ? sisaHasilUsaha : 0)
+            increment: formatMoneyForDb(sisaHasilUsahaAmount > 0 ? sisaHasilUsahaAmount : 0)
           },
           accumulationAmountDebit: {
-            increment: formatMoneyForDb(sisaHasilUsaha < 0 ? Math.abs(sisaHasilUsaha) : 0)
+            increment: formatMoneyForDb(
+              sisaHasilUsahaAmount < 0 ? Math.abs(sisaHasilUsahaAmount) : 0
+            )
           },
           updatedBy: postedBy,
           updatedAt: postingTimestamp
@@ -698,14 +750,11 @@ export class PostingService {
       return {
         sisaHasilUsahaRecord,
         updatedShuAccount,
-        calculationDetails: {
-          totalPendapatan: formatMoneyForDb(totalPendapatan),
-          totalBiaya: formatMoneyForDb(totalBiaya),
-          sisaHasilUsaha: formatMoneyForDb(sisaHasilUsaha),
+        postingDetails: {
+          sisaHasilUsaha: formatMoneyForDb(sisaHasilUsahaAmount),
           operation: existingSHU ? 'updated' : 'created',
-          accountsProcessed: labaRugiAccounts.length,
           year,
-          calculationDate: targetDate.toISOString().split('T')[0]
+          postingDate: targetDate.toISOString().split('T')[0]
         },
         postingTimestamp
       };
