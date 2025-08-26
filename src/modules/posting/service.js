@@ -718,6 +718,130 @@ export class PostingService {
   }
 
   /**
+   * Post neraca akhir by updating AccountGeneral amounts from AccountDetail sums
+   * @param {string} date - Date string in format dd-mm-yyyy
+   * @param {string} postedBy - ID of user posting the neraca akhir
+   * @returns {Promise<Object>} Result of neraca akhir posting operation
+   */
+  async postNeracaAkhir(date, postedBy) {
+    // Parse date from dd-mm-yyyy format to Date object for logging purposes
+    const [day, month, year] = date.split('-');
+    const targetDate = new Date(year, month - 1, day);
+    targetDate.setHours(23, 59, 59, 999); // End of day
+
+    // Get all AccountDetail records that are not soft deleted
+    const accountDetails = await this.prisma.accountDetail.findMany({
+      where: {
+        deletedAt: null
+      },
+      select: {
+        accountNumber: true,
+        accountName: true,
+        accountGeneralAccountNumber: true,
+        amountCredit: true,
+        amountDebit: true
+      }
+    });
+
+    if (accountDetails.length === 0) {
+      throw new Error('No account details found in the system');
+    }
+
+    // Group account details by accountGeneralAccountNumber and sum their amounts
+    const accountGeneralSums = new Map();
+
+    for (const detail of accountDetails) {
+      const generalAccountNumber = detail.accountGeneralAccountNumber;
+
+      if (!accountGeneralSums.has(generalAccountNumber)) {
+        accountGeneralSums.set(generalAccountNumber, {
+          totalAmountCredit: 0,
+          totalAmountDebit: 0,
+          detailAccounts: []
+        });
+      }
+
+      const sum = accountGeneralSums.get(generalAccountNumber);
+      sum.totalAmountCredit += parseFloat(detail.amountCredit) || 0;
+      sum.totalAmountDebit += parseFloat(detail.amountDebit) || 0;
+      sum.detailAccounts.push({
+        accountNumber: detail.accountNumber,
+        accountName: detail.accountName,
+        amountCredit: parseFloat(detail.amountCredit) || 0,
+        amountDebit: parseFloat(detail.amountDebit) || 0
+      });
+    }
+
+    // Execute updates in a transaction
+    const result = await this.prisma.$transaction(async prisma => {
+      const postingTimestamp = new Date();
+      const updatedAccountGenerals = [];
+
+      // Update each AccountGeneral with the summed amounts
+      for (const [generalAccountNumber, sums] of accountGeneralSums) {
+        // Check if AccountGeneral exists
+        const accountGeneral = await prisma.accountGeneral.findUnique({
+          where: {
+            accountNumber: generalAccountNumber,
+            deletedAt: null
+          },
+          select: {
+            id: true,
+            accountNumber: true,
+            accountName: true,
+            amountCredit: true,
+            amountDebit: true
+          }
+        });
+
+        if (!accountGeneral) {
+          throw new Error(`Account General with number ${generalAccountNumber} not found`);
+        }
+
+        // Update AccountGeneral with the summed amounts
+        const updatedAccountGeneral = await prisma.accountGeneral.update({
+          where: { accountNumber: generalAccountNumber },
+          data: {
+            amountCredit: formatMoneyForDb(sums.totalAmountCredit),
+            amountDebit: formatMoneyForDb(sums.totalAmountDebit),
+            updatedBy: postedBy,
+            updatedAt: postingTimestamp
+          },
+          select: {
+            accountNumber: true,
+            accountName: true,
+            amountCredit: true,
+            amountDebit: true
+          }
+        });
+
+        updatedAccountGenerals.push({
+          ...updatedAccountGeneral,
+          summedFromDetails: {
+            totalAmountCredit: sums.totalAmountCredit,
+            totalAmountDebit: sums.totalAmountDebit,
+            detailAccountsCount: sums.detailAccounts.length,
+            detailAccounts: sums.detailAccounts
+          }
+        });
+      }
+
+      return {
+        updatedAccountGenerals,
+        postingTimestamp,
+        targetDate: date,
+        totalAccountGeneralUpdated: accountGeneralSums.size,
+        totalAccountDetailProcessed: accountDetails.length
+      };
+    });
+
+    return {
+      message: `Successfully posted neraca akhir for ${result.totalAccountGeneralUpdated} account generals from ${result.totalAccountDetailProcessed} account details on ${date}`,
+      data: result
+    };
+  }
+
+  /**
    * Format ledger response to ensure consistent number formatting
    * @param {Object} ledger - Raw ledger data from database
    * @returns {Object} Formatted ledger data

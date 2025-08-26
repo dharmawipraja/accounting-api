@@ -212,4 +212,45 @@ export class PostingController {
       throw resourceErrors.updateFailed('Neraca balance posting');
     }
   }
+
+  /**
+   * Post neraca akhir for a specific date
+   * @param {Object} request - Express request object
+   * @param {Object} res - Express response object
+   */
+  async postNeracaAkhir(request, res) {
+    try {
+      const { date } = request.body;
+      const postedBy = request.user.id;
+
+      const result = await this.postingService.postNeracaAkhir(date, postedBy);
+
+      const response = createSuccessResponse(result, 'Neraca akhir posted successfully');
+      res.status(HTTP_STATUS.OK).json(response);
+    } catch (error) {
+      if (error.statusCode) {
+        throw error;
+      }
+
+      if (error.message === 'No account details found in the system') {
+        throw errors.validation(error.message);
+      }
+
+      if (
+        error.message.includes('Account General with number') &&
+        error.message.includes('not found')
+      ) {
+        throw errors.validation(error.message);
+      }
+
+      request.log.error(
+        {
+          error,
+          date: request.body.date
+        },
+        'Failed to post neraca akhir'
+      );
+      throw resourceErrors.updateFailed('Neraca akhir posting');
+    }
+  }
 }

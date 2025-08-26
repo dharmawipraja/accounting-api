@@ -109,5 +109,22 @@ export function createPostingRoutes(container) {
     })
   );
 
+  // Post neraca akhir by date - update AccountGeneral with AccountDetail sums
+  router.post(
+    '/neraca-akhir',
+    [
+      body('date')
+        .trim()
+        .notEmpty()
+        .withMessage('Date is required')
+        .matches(/^\d{2}-\d{2}-\d{4}$/)
+        .withMessage('Date must be in dd-mm-yyyy format')
+    ],
+    validationMiddleware,
+    asyncHandler(async (req, res) => {
+      await postingController.postNeracaAkhir(req, res);
+    })
+  );
+
   return router;
 }
