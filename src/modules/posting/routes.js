@@ -26,7 +26,7 @@ export function createPostingRoutes(container) {
 
   // Post ledgers by date
   router.post(
-    '/ledger',
+    '/buku-besar',
     [
       body('ledgerDate')
         .trim()
@@ -43,7 +43,7 @@ export function createPostingRoutes(container) {
 
   // Post balance by date - new endpoint
   router.post(
-    '/balance',
+    '/neraca-detail',
     [
       body('date')
         .trim()
@@ -58,9 +58,26 @@ export function createPostingRoutes(container) {
     })
   );
 
+  // Post neraca balance by date - new endpoint for SHU calculation
+  router.post(
+    '/neraca-balance',
+    [
+      body('date')
+        .trim()
+        .notEmpty()
+        .withMessage('Date is required')
+        .matches(/^\d{2}-\d{2}-\d{4}$/)
+        .withMessage('Date must be in dd-mm-yyyy format')
+    ],
+    validationMiddleware,
+    asyncHandler(async (req, res) => {
+      await postingController.postNeracaBalance(req, res);
+    })
+  );
+
   // Unpost ledgers by date
   router.post(
-    '/unposting/ledger',
+    '/unposting/buku-besar',
     [
       body('ledgerDate')
         .trim()
@@ -77,7 +94,7 @@ export function createPostingRoutes(container) {
 
   // Unpost balance by date - new endpoint
   router.post(
-    '/unposting/balance',
+    '/unposting/neraca-detail',
     [
       body('date')
         .trim()

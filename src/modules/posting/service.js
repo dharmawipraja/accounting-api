@@ -13,7 +13,7 @@ export class PostingService {
 
   /**
    * Post all pending ledgers for a specific date
-   * @param {string} ledgerDate - Date string in format dd-mm-yyyy
+   * @param {string} ledgerDate - Date string in ISO format (YYYY-MM-DD)
    * @param {string} postedBy - ID of user posting the ledgers
    * @returns {Promise<Object>} Result of posting operation
    */
@@ -220,7 +220,7 @@ export class PostingService {
 
   /**
    * Unpost all posted ledgers for a specific date
-   * @param {string} ledgerDate - Date string in ISO format
+   * @param {string} ledgerDate - Date string in ISO format (YYYY-MM-DD)
    * @param {string} unpostedBy - ID of user unposting the ledgers
    * @returns {Promise<Object>} Result of unposting operation
    */
@@ -567,6 +567,154 @@ export class PostingService {
         });
       }
     }
+  }
+
+  /**
+   * Post neraca balance (SHU calculation) for a specific date
+   * Calculates SHU by summing current balances of all LABA_RUGI account details
+   * @param {string} date - Date string in format dd-mm-yyyy (used for year calculation)
+   * @param {string} postedBy - ID of user posting the balance
+   * @returns {Promise<Object>} Result of neraca balance posting operation
+   */
+  async postNeracaBalance(date, postedBy) {
+    // Parse date from dd-mm-yyyy format to Date object
+    const [day, month, year] = date.split('-');
+    const targetDate = new Date(year, month - 1, day);
+    targetDate.setHours(23, 59, 59, 999); // End of target day
+
+    // Check if SHU for this year already exists
+    const existingSHU = await this.prisma.sisaHasilUsaha.findFirst({
+      where: {
+        year
+      }
+    });
+
+    if (existingSHU && existingSHU.accountingClose) {
+      throw new Error(
+        `Sisa Hasil Usaha for year ${year} has been closed and cannot be modified. Please contact administrator.`
+      );
+    }
+
+    // Find all account details with ReportType LABA_RUGI
+    const labaRugiAccounts = await this.prisma.accountDetail.findMany({
+      where: {
+        reportType: 'LABA_RUGI',
+        deletedAt: null
+      },
+      select: {
+        id: true,
+        accountNumber: true,
+        accountName: true,
+        accountCategory: true,
+        transactionType: true,
+        amountCredit: true,
+        amountDebit: true
+      }
+    });
+
+    if (labaRugiAccounts.length === 0) {
+      throw new Error('No LABA_RUGI accounts found in the system');
+    }
+
+    // Calculate total SHU amount from AccountDetail balances
+    let totalPendapatan = 0; // CREDIT transaction type accounts (revenue)
+    let totalBiaya = 0; // DEBIT transaction type accounts (expenses)
+
+    for (const account of labaRugiAccounts) {
+      if (account.transactionType === 'CREDIT') {
+        // For CREDIT accounts (revenue), use amountCredit
+        totalPendapatan += parseFloat(account.amountCredit) || 0;
+      } else if (account.transactionType === 'DEBIT') {
+        // For DEBIT accounts (expenses), use amountDebit
+        totalBiaya += parseFloat(account.amountDebit) || 0;
+      }
+    }
+
+    // SHU = Total Pendapatan - Total Biaya
+    const sisaHasilUsaha = totalPendapatan - totalBiaya;
+
+    // Find account detail 3200 (SHU)
+    const shuAccount = await this.prisma.accountDetail.findUnique({
+      where: {
+        accountNumber: '3200'
+      }
+    });
+
+    if (!shuAccount) {
+      throw new Error('Account Detail with number 3200 (SHU) not found');
+    }
+
+    // Execute updates in a transaction
+    const result = await this.prisma.$transaction(async prisma => {
+      const postingTimestamp = new Date();
+      let sisaHasilUsahaRecord;
+
+      if (existingSHU) {
+        // Update existing SHU record
+        sisaHasilUsahaRecord = await prisma.sisaHasilUsaha.update({
+          where: {
+            id: existingSHU.id
+          },
+          data: {
+            amount: formatMoneyForDb(sisaHasilUsaha),
+            accountDetailAccountNumber: shuAccount.accountNumber,
+            accountGeneralAccountNumber: shuAccount.accountGeneralAccountNumber,
+            updatedAt: postingTimestamp
+          }
+        });
+      } else {
+        // Create new SHU record
+        sisaHasilUsahaRecord = await prisma.sisaHasilUsaha.create({
+          data: {
+            id: generateId(),
+            year,
+            amount: formatMoneyForDb(sisaHasilUsaha),
+            accountDetailAccountNumber: shuAccount.accountNumber,
+            accountGeneralAccountNumber: shuAccount.accountGeneralAccountNumber,
+            accountingClose: false,
+            createdAt: postingTimestamp,
+            updatedAt: postingTimestamp
+          }
+        });
+      }
+
+      // Update accumulationAmountCredit for account 3200 (SHU)
+      const updatedShuAccount = await prisma.accountDetail.update({
+        where: {
+          accountNumber: '3200'
+        },
+        data: {
+          accumulationAmountCredit: {
+            increment: formatMoneyForDb(sisaHasilUsaha > 0 ? sisaHasilUsaha : 0)
+          },
+          accumulationAmountDebit: {
+            increment: formatMoneyForDb(sisaHasilUsaha < 0 ? Math.abs(sisaHasilUsaha) : 0)
+          },
+          updatedBy: postedBy,
+          updatedAt: postingTimestamp
+        }
+      });
+
+      return {
+        sisaHasilUsahaRecord,
+        updatedShuAccount,
+        calculationDetails: {
+          totalPendapatan: formatMoneyForDb(totalPendapatan),
+          totalBiaya: formatMoneyForDb(totalBiaya),
+          sisaHasilUsaha: formatMoneyForDb(sisaHasilUsaha),
+          operation: existingSHU ? 'updated' : 'created',
+          accountsProcessed: labaRugiAccounts.length,
+          year,
+          calculationDate: targetDate.toISOString().split('T')[0]
+        },
+        postingTimestamp
+      };
+    });
+
+    return {
+      message: `Successfully ${existingSHU ? 'updated' : 'calculated and posted'} Sisa Hasil Usaha for year ${year}`,
+      data: result
+    };
   }
 
   /**

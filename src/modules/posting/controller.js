@@ -171,4 +171,45 @@ export class PostingController {
       throw resourceErrors.updateFailed('Balance unposting');
     }
   }
+
+  /**
+   * Post neraca balance (SHU calculation) for a specific date
+   * @param {Object} request - Express request object
+   * @param {Object} res - Express response object
+   */
+  async postNeracaBalance(request, res) {
+    try {
+      const { date } = request.body;
+      const postedBy = request.user.id;
+
+      const result = await this.postingService.postNeracaBalance(date, postedBy);
+
+      const response = createSuccessResponse(result, 'Neraca balance (SHU) posted successfully');
+      res.status(HTTP_STATUS.OK).json(response);
+    } catch (error) {
+      if (error.statusCode) {
+        throw error;
+      }
+
+      if (error.message.includes('has been closed and cannot be modified')) {
+        throw businessErrors.operationNotAllowed(error.message);
+      }
+
+      if (
+        error.message.includes('Account Detail with number 3200') &&
+        error.message.includes('not found')
+      ) {
+        throw errors.validation(error.message);
+      }
+
+      request.log.error(
+        {
+          error,
+          date: request.body.date
+        },
+        'Failed to post neraca balance'
+      );
+      throw resourceErrors.updateFailed('Neraca balance posting');
+    }
+  }
 }
