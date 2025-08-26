@@ -159,10 +159,37 @@ function compressionMiddleware(config) {
  * CORS middleware
  */
 function corsMiddleware(config) {
+  // Default CORS configuration for development
+  const defaultOrigins = ['http://localhost:3000', 'http://localhost:3001'];
+  
+  let corsOrigin;
+  
+  if (config.security?.corsOrigin) {
+    // Use configured origins
+    corsOrigin = Array.isArray(config.security.corsOrigin) 
+      ? config.security.corsOrigin 
+      : [config.security.corsOrigin];
+  } else if (config.isDevelopment) {
+    // Development default
+    corsOrigin = defaultOrigins;
+  } else {
+    // Production default - be more restrictive
+    corsOrigin = false;
+  }
+
   return cors({
-    origin: config.security?.corsOrigin || true,
-    credentials: config.security?.corsCredentials || false,
+    origin: corsOrigin,
+    credentials: config.security?.corsCredentials !== undefined ? config.security.corsCredentials : true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+    allowedHeaders: [
+      'Content-Type', 
+      'Authorization', 
+      'X-Requested-With',
+      'Accept',
+      'Origin',
+      'X-Request-ID'
+    ],
+    exposedHeaders: ['X-Request-ID', 'X-Response-Time'],
+    optionsSuccessStatus: 200 // Support legacy browsers
   });
 }

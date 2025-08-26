@@ -98,7 +98,6 @@ export function authorize(...allowedRoles) {
       }
 
       next();
-      next();
     } catch (error) {
       next(error);
     }

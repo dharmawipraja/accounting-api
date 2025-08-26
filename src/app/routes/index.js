@@ -19,6 +19,11 @@ export async function registerRoutes(app) {
   // API base path
   const apiBase = '/api/v1';
 
+  // Ensure container is initialized
+  if (!container.isInitialized()) {
+    await container.initialize();
+  }
+
   // Authentication routes
   const authRoutes = createAuthRoutes(container);
   app.use(`${apiBase}/auth`, authRoutes);
