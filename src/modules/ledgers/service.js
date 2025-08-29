@@ -322,8 +322,8 @@ export class LedgersService {
    * @private
    */
   async validateAccountReferences(ledgers) {
-    const accountDetailNumbers = [...new Set(ledgers.map(l => l.accountDetailId))];
-    const accountGeneralNumbers = [...new Set(ledgers.map(l => l.accountGeneralId))];
+    const accountDetailNumbers = [...new Set(ledgers.map(l => l.accountDetailAccountNumber))];
+    const accountGeneralNumbers = [...new Set(ledgers.map(l => l.accountGeneralAccountNumber))];
 
     // Check detail accounts
     const detailAccounts = await this.prisma.accountDetail.findMany({

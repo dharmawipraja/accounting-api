@@ -573,7 +573,10 @@
               "request": {
                 "method": "POST",
                 "header": [{ "key": "Content-Type", "value": "application/json" }],
-                "body": { "mode": "raw", "raw": "{\n  \"date\": \"25-08-2025\",\n  \"sisaHasilUsahaAmount\": 1000000\n}" },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"date\": \"25-08-2025\",\n  \"sisaHasilUsahaAmount\": 1000000\n}"
+                },
                 "url": {
                   "raw": "{{baseUrl}}/api/{{apiVersion}}/posting/neraca-balance",
                   "host": ["{{baseUrl}}"],

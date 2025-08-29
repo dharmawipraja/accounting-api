@@ -48,7 +48,9 @@ export const env = {
   RATE_LIMIT_TIME_WINDOW: process.env.RATE_LIMIT_TIME_WINDOW || '15 minutes',
 
   // CORS
-  CORS_ORIGIN: process.env.CORS_ORIGIN ? toArray(process.env.CORS_ORIGIN) : ['http://localhost:3000', 'http://localhost:3001'],
+  CORS_ORIGIN: process.env.CORS_ORIGIN
+    ? toArray(process.env.CORS_ORIGIN)
+    : ['http://localhost:3000', 'http://localhost:3001'],
   CORS_CREDENTIALS: toBoolean(process.env.CORS_CREDENTIALS, true),
 
   // Session

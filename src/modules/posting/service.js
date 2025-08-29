@@ -103,16 +103,42 @@ export class PostingService {
         }
       });
 
-      // Create journal ledger entries for each posted ledger
-      const journalEntries = pendingLedgers.map(ledger => ({
+      // Group ledgers by account detail account number and sum amounts
+      const accountGroups = new Map();
+
+      for (const ledger of pendingLedgers) {
+        const accountKey = ledger.accountDetailAccountNumber;
+
+        if (!accountGroups.has(accountKey)) {
+          accountGroups.set(accountKey, {
+            accountDetailAccountNumber: ledger.accountDetailAccountNumber,
+            accountGeneralAccountNumber: ledger.accountGeneralAccountNumber,
+            ledgerDate: ledger.ledgerDate,
+            totalDebit: 0,
+            totalCredit: 0
+          });
+        }
+
+        const group = accountGroups.get(accountKey);
+        const amount = parseFloat(ledger.amount) || 0;
+
+        if (ledger.transactionType === 'DEBIT') {
+          group.totalDebit += amount;
+        } else if (ledger.transactionType === 'CREDIT') {
+          group.totalCredit += amount;
+        }
+      }
+
+      // Create journal ledger entries - one per account with summed amounts
+      const journalEntries = Array.from(accountGroups.values()).map(group => ({
         id: generateId(),
-        accountDetailAccountNumber: ledger.accountDetailAccountNumber,
-        accountGeneralAccountNumber: ledger.accountGeneralAccountNumber,
-        debit: ledger.transactionType === 'DEBIT' ? ledger.amount : 0,
-        credit: ledger.transactionType === 'CREDIT' ? ledger.amount : 0,
-        amountDebit: ledger.transactionType === 'DEBIT' ? ledger.amount : 0,
-        amountCredit: ledger.transactionType === 'CREDIT' ? ledger.amount : 0,
-        ledgerDate: ledger.ledgerDate,
+        accountDetailAccountNumber: group.accountDetailAccountNumber,
+        accountGeneralAccountNumber: group.accountGeneralAccountNumber,
+        debit: formatMoneyForDb(group.totalDebit),
+        credit: formatMoneyForDb(group.totalCredit),
+        amountDebit: formatMoneyForDb(group.totalDebit),
+        amountCredit: formatMoneyForDb(group.totalCredit),
+        ledgerDate: group.ledgerDate,
         postingStatus: 'PENDING',
         createdAt: postingTimestamp,
         createdBy: postedBy
@@ -127,12 +153,13 @@ export class PostingService {
         postedCount: updateResult.count,
         ledgers: pendingLedgers.map(ledger => this.formatLedgerResponse(ledger)),
         journalEntriesCreated: journalEntries.length,
+        accountsGrouped: accountGroups.size,
         postingTimestamp
       };
     });
 
     return {
-      message: `Successfully posted ${result.postedCount} ledger entries for ${ledgerDate}`,
+      message: `Successfully posted ${result.postedCount} ledger entries for ${ledgerDate}, grouped into ${result.accountsGrouped} journal entries by account number`,
       data: result
     };
   }
@@ -683,15 +710,15 @@ export class PostingService {
       );
     }
 
-    // Find account detail 3200 (SHU)
+    // Find account detail 3203 (SHU)
     const shuAccount = await this.prisma.accountDetail.findUnique({
       where: {
-        accountNumber: '3200'
+        accountNumber: '3203'
       }
     });
 
     if (!shuAccount) {
-      throw new Error('Account Detail with number 3200 (SHU) not found');
+      throw new Error('Account Detail with number 3203 (SHU) not found');
     }
 
     // Execute updates in a transaction
@@ -728,20 +755,18 @@ export class PostingService {
         });
       }
 
-      // Update accumulationAmountCredit for account 3200 (SHU)
+      // Update accumulationAmountCredit for account 3203 (SHU) - overwrite instead of increment
       const updatedShuAccount = await prisma.accountDetail.update({
         where: {
-          accountNumber: '3200'
+          accountNumber: '3203'
         },
         data: {
-          accumulationAmountCredit: {
-            increment: formatMoneyForDb(sisaHasilUsahaAmount > 0 ? sisaHasilUsahaAmount : 0)
-          },
-          accumulationAmountDebit: {
-            increment: formatMoneyForDb(
-              sisaHasilUsahaAmount < 0 ? Math.abs(sisaHasilUsahaAmount) : 0
-            )
-          },
+          accumulationAmountCredit: formatMoneyForDb(
+            sisaHasilUsahaAmount > 0 ? sisaHasilUsahaAmount : 0
+          ),
+          accumulationAmountDebit: formatMoneyForDb(
+            sisaHasilUsahaAmount < 0 ? Math.abs(sisaHasilUsahaAmount) : 0
+          ),
           updatedBy: postedBy,
           updatedAt: postingTimestamp
         }

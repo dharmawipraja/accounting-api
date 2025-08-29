@@ -62,6 +62,10 @@ export function createLedgerRoutes(container) {
     [
       body('ledgers').isArray({ min: 1 }).withMessage('Ledgers must be a non-empty array'),
       body('ledgers.*.description').trim().notEmpty().withMessage('Description is required'),
+      body('ledgers.*.ledgerDate')
+        .isISO8601()
+        .withMessage('Ledger date must be a valid ISO 8601 date'),
+      body('ledgers.*.ledgerType').notEmpty().isString().withMessage('Ledger type is required'),
       body('ledgers.*.amount')
         .isNumeric()
         .custom(value => {
@@ -73,14 +77,14 @@ export function createLedgerRoutes(container) {
       body('ledgers.*.transactionType')
         .isIn(['DEBIT', 'CREDIT'])
         .withMessage('Transaction type must be DEBIT or CREDIT'),
-      body('ledgers.*.accountDetailId')
-        .optional()
+      body('ledgers.*.accountDetailAccountNumber')
+        .notEmpty()
         .isString()
-        .withMessage('Account detail ID must be a string'),
-      body('ledgers.*.accountGeneralId')
-        .optional()
+        .withMessage('Account detail account number is required'),
+      body('ledgers.*.accountGeneralAccountNumber')
+        .notEmpty()
         .isString()
-        .withMessage('Account general ID must be a string')
+        .withMessage('Account general account number is required')
     ],
     validationMiddleware,
     asyncHandler(async (req, res) => {
