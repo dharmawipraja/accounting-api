@@ -5,6 +5,7 @@
 
 import { buildDateRangeFilter, formatMoneyForDb } from '../../core/database/utils.js';
 import { generateId } from '../../shared/utils/id.js';
+import { t } from '../../shared/i18n/index.js';
 
 export class LedgersService {
   constructor(prisma) {
@@ -202,7 +203,7 @@ export class LedgersService {
     });
 
     if (ledgers.length === 0) {
-      throw new Error('No ledgers found for the specified date');
+      throw new Error(t('ledgers.noLedgersFoundForDate'));
     }
 
     // Calculate totals
@@ -244,12 +245,12 @@ export class LedgersService {
     });
 
     if (!existingLedger) {
-      throw new Error('Ledger not found');
+      throw new Error(t('ledgers.ledgerNotFound'));
     }
 
     // Don't allow updates to posted ledgers
     if (existingLedger.postingStatus === 'POSTED') {
-      throw new Error('Cannot update posted ledger entries');
+      throw new Error(t('ledgers.cannotUpdatePostedLedger'));
     }
 
     // Format monetary amounts if provided
@@ -299,12 +300,12 @@ export class LedgersService {
     });
 
     if (!existingLedger) {
-      throw new Error('Ledger not found');
+      throw new Error(t('ledgers.ledgerNotFound'));
     }
 
     // Don't allow deletion of posted ledgers
     if (existingLedger.postingStatus === 'POSTED') {
-      throw new Error('Cannot delete posted ledger entries');
+      throw new Error(t('ledgers.cannotDeletePostedLedgerEntries'));
     }
 
     // Hard delete pending ledgers (they haven't affected balances yet)
@@ -312,7 +313,7 @@ export class LedgersService {
       where: { id: ledgerId }
     });
 
-    return { message: 'Ledger entry deleted successfully' };
+    return { message: t('ledgers.ledgerDeletedSuccessfully') };
   }
 
   /**

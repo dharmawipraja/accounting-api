@@ -5,6 +5,7 @@
 
 import { formatMoneyForDb } from '../../core/database/utils.js';
 import { generateId } from '../../shared/utils/id.js';
+import { t } from '../../shared/i18n/index.js';
 
 export class PostingService {
   constructor(prisma) {
@@ -38,9 +39,7 @@ export class PostingService {
     });
 
     if (existingPostedLedgers) {
-      throw new Error(
-        `Ledgers for date ${ledgerDate} have already been posted. Cannot post the same date twice.`
-      );
+      throw new Error(t('posting.ledgersAlreadyPosted', { date: ledgerDate }));
     }
 
     // Find all pending ledgers for the specified date
@@ -78,7 +77,7 @@ export class PostingService {
     });
 
     if (pendingLedgers.length === 0) {
-      throw new Error('No pending ledgers found for the specified date');
+      throw new Error(t('posting.noPendingLedgersFound'));
     }
 
     // Update all pending ledgers to POSTED status in a transaction
@@ -159,7 +158,9 @@ export class PostingService {
     });
 
     return {
-      message: `Successfully posted ${result.postedCount} ledger entries for ${ledgerDate}, grouped into ${result.accountsGrouped} journal entries by account number`,
+      message:
+        t('posting.ledgersPostedSuccessfully', { date: ledgerDate }) +
+        ` (${result.postedCount} entri, ${result.accountsGrouped} jurnal)`,
       data: result
     };
   }
@@ -206,7 +207,7 @@ export class PostingService {
     });
 
     if (pendingJournalLedgers.length === 0) {
-      throw new Error('No pending journal ledger entries found up to the specified date');
+      throw new Error(t('posting.noPendingJournalLedgers'));
     }
 
     // Execute updates in a transaction
@@ -240,7 +241,7 @@ export class PostingService {
     });
 
     return {
-      message: `Successfully posted balance for ${result.postedCount} journal entries up to ${date}`,
+      message: t('posting.balancePostedSuccessfully', { count: result.postedCount, date }),
       data: result
     };
   }
@@ -311,7 +312,7 @@ export class PostingService {
     });
 
     if (postedLedgers.length === 0) {
-      throw new Error('No posted ledgers found for the specified date');
+      throw new Error(t('posting.noPostedLedgersFound'));
     }
 
     // Unpost all posted ledgers for the date in a transaction
@@ -356,7 +357,10 @@ export class PostingService {
     });
 
     return {
-      message: `Successfully unposted ${result.unpostedCount} ledger entries for ${ledgerDate}`,
+      message: t('posting.ledgerUnpostedSuccessfully', {
+        count: result.unpostedCount,
+        date: ledgerDate
+      }),
       data: result
     };
   }
@@ -427,7 +431,7 @@ export class PostingService {
     });
 
     return {
-      message: `Successfully unposted balance for ${result.unpostedCount} journal entries for ${date}`,
+      message: t('posting.balanceUnpostedSuccessfully', { count: result.unpostedCount, date }),
       data: result
     };
   }
@@ -479,7 +483,7 @@ export class PostingService {
       });
 
       if (!accountDetail) {
-        throw new Error(`Account Detail with number ${accountNumber} not found`);
+        throw new Error(t('posting.accountDetailNotFound', { accountNumber }));
       }
 
       // Update account balances
@@ -561,7 +565,7 @@ export class PostingService {
       });
 
       if (!accountDetail) {
-        throw new Error(`Account Detail with number ${accountNumber} not found`);
+        throw new Error(t('posting.accountDetailNotFound', { accountNumber }));
       }
 
       // Update account balances (decrement for unposting)
@@ -633,7 +637,7 @@ export class PostingService {
     });
 
     if (labaRugiAccounts.length === 0) {
-      throw new Error('No LABA_RUGI accounts found in the system');
+      throw new Error(t('posting.noLabaRugiAccounts'));
     }
 
     // Calculate total SHU amount from AccountDetail balances
@@ -694,7 +698,7 @@ export class PostingService {
 
     // Validate sisaHasilUsahaAmount parameter
     if (typeof sisaHasilUsahaAmount !== 'number' || isNaN(sisaHasilUsahaAmount)) {
-      throw new Error('sisaHasilUsahaAmount must be a valid number');
+      throw new Error(t('posting.invalidShuAmount'));
     }
 
     // Check if SHU for this year already exists
@@ -718,7 +722,7 @@ export class PostingService {
     });
 
     if (!shuAccount) {
-      throw new Error('Account Detail with number 3203 (SHU) not found');
+      throw new Error(t('posting.shuAccountNotFound'));
     }
 
     // Execute updates in a transaction
@@ -786,7 +790,10 @@ export class PostingService {
     });
 
     return {
-      message: `Successfully ${existingSHU ? 'updated' : 'calculated and posted'} Sisa Hasil Usaha for year ${year}`,
+      message: t('posting.shuCalculatedSuccessful', {
+        action: t(existingSHU ? 'posting.shuUpdated' : 'posting.shuCalculated'),
+        year
+      }),
       data: result
     };
   }
@@ -818,7 +825,7 @@ export class PostingService {
     });
 
     if (accountDetails.length === 0) {
-      throw new Error('No account details found in the system');
+      throw new Error(t('posting.noAccountDetailsFound'));
     }
 
     // Group account details by accountGeneralAccountNumber and sum their amounts
@@ -910,7 +917,11 @@ export class PostingService {
     });
 
     return {
-      message: `Successfully posted neraca akhir for ${result.totalAccountGeneralUpdated} account generals from ${result.totalAccountDetailProcessed} account details on ${date}`,
+      message: t('posting.neracaAkhirPostedSuccessfully', {
+        generalCount: result.totalAccountGeneralUpdated,
+        detailCount: result.totalAccountDetailProcessed,
+        date
+      }),
       data: result
     };
   }

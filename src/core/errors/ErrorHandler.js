@@ -5,6 +5,7 @@
 
 import createError from 'http-errors';
 import { isProduction } from '../../config/env.js';
+import { t } from '../../shared/i18n/index.js';
 
 /**
  * Create standardized error with consistent response format
@@ -57,34 +58,34 @@ export function errorHandler(err, req, res, _next) {
 
   // Handle specific error types and maintain your exact response format
   if (err.name === 'ValidationError' || statusCode === 400) {
-    errorType = 'Validation Error';
+    errorType = t('errorTypes.ValidationError');
   } else if (err.name === 'UnauthorizedError' || statusCode === 401) {
-    errorType = 'Authentication Error';
+    errorType = t('errorTypes.AuthenticationError');
     // Handle JWT specific errors
     if (err.name === 'JsonWebTokenError') {
-      message = 'Invalid token';
+      message = t('auth.invalidToken');
     } else if (err.name === 'TokenExpiredError') {
-      message = 'Token expired';
+      message = t('auth.tokenExpired');
     }
   } else if (statusCode === 403) {
-    errorType = 'Authorization Error';
+    errorType = t('errorTypes.AuthorizationError');
   } else if (statusCode === 404) {
-    errorType = 'Not Found Error';
+    errorType = t('errorTypes.NotFoundError');
   } else if (statusCode === 409) {
-    errorType = 'Conflict Error';
+    errorType = t('errorTypes.ConflictError');
   } else if (statusCode === 413) {
-    errorType = 'Payload Too Large';
-    message = 'Request body too large';
+    errorType = t('errorTypes.PayloadTooLarge');
+    message = t('http.requestBodyTooLarge');
   } else if (err.type === 'entity.parse.failed') {
-    errorType = 'Parse Error';
-    message = 'Invalid JSON in request body';
+    errorType = t('errorTypes.ParseError');
+    message = t('http.parseError');
   } else if (err.code?.startsWith('P')) {
     // Prisma errors
-    errorType = 'Database Error';
-    message = isProduction() ? 'Database operation failed' : `Database error: ${err.message}`;
+    errorType = t('errorTypes.DatabaseError');
+    message = isProduction() ? t('http.databaseError') : `Database error: ${err.message}`;
   } else if (statusCode >= 500) {
-    errorType = 'Internal Server Error';
-    message = isProduction() ? 'Internal server error' : err.message;
+    errorType = t('errorTypes.InternalServerError');
+    message = isProduction() ? t('http.internalError') : err.message;
   }
 
   // Build response in your exact format
@@ -114,7 +115,7 @@ export function notFoundHandler(req, res, next) {
   const error = createStandardError(
     404,
     `Route ${req.method} ${req.url} not found`,
-    'Not Found Error'
+    t('errorTypes.NotFoundError')
   );
   next(error);
 }
@@ -132,53 +133,55 @@ export function asyncHandler(fn) {
 export const errors = {
   // Validation errors
   validation: (message, details = null) =>
-    createStandardError(400, message, 'Validation Error', details),
+    createStandardError(400, message, t('errorTypes.ValidationError'), details),
 
   // Authentication errors
-  authentication: (message = 'Authentication failed') =>
-    createStandardError(401, message, 'Authentication Error'),
+  authentication: (message = t('auth.notAuthenticated')) =>
+    createStandardError(401, message, t('errorTypes.AuthenticationError')),
 
   // Authorization errors
-  authorization: (message = 'Access denied') =>
-    createStandardError(403, message, 'Authorization Error'),
+  authorization: (message = t('auth.insufficientPermissions')) =>
+    createStandardError(403, message, t('errorTypes.AuthorizationError')),
 
   // Not found errors
-  notFound: (message = 'Resource not found') =>
-    createStandardError(404, message, 'Not Found Error'),
+  notFound: (message = t('http.notFound')) =>
+    createStandardError(404, message, t('errorTypes.NotFoundError')),
 
   // Conflict errors
-  conflict: (message = 'Resource conflict') => createStandardError(409, message, 'Conflict Error'),
+  conflict: (message = t('http.conflict')) =>
+    createStandardError(409, message, t('errorTypes.ConflictError')),
 
   // Business logic errors (400)
   businessLogic: (message, details = null) =>
-    createStandardError(400, message, 'Business Logic Error', details),
+    createStandardError(400, message, t('errorTypes.BusinessLogicError'), details),
 
   // Internal server errors
-  internal: (message = 'Internal server error') =>
-    createStandardError(500, message, 'Internal Server Error'),
+  internal: (message = t('http.internalError')) =>
+    createStandardError(500, message, t('errorTypes.InternalServerError')),
 
   // Database errors
-  database: (message = 'Database operation failed') =>
-    createStandardError(500, message, 'Database Error')
+  database: (message = t('http.databaseError')) =>
+    createStandardError(500, message, t('errorTypes.DatabaseError'))
 };
 
 // Common authentication error creators
 export const authErrors = {
-  missingToken: () => errors.authentication('Authorization token is required'),
-  invalidToken: () => errors.authentication('Invalid authentication token'),
-  tokenExpired: () => errors.authentication('Authentication token has expired'),
-  userNotFound: () => errors.authentication('User not found'),
-  userInactive: () => errors.authentication('User account is inactive'),
-  invalidCredentials: () => errors.authentication('Invalid username or password')
+  missingToken: () => errors.authentication(t('auth.missingToken')),
+  invalidToken: () => errors.authentication(t('auth.invalidToken')),
+  tokenExpired: () => errors.authentication(t('auth.tokenExpired')),
+  userNotFound: () => errors.authentication(t('auth.userNotFound')),
+  userInactive: () => errors.authentication(t('auth.userInactive')),
+  invalidCredentials: () => errors.authentication(t('auth.invalidCredentials'))
 };
 
 // Common business logic error creators
 export const businessErrors = {
-  accountNotFound: () => errors.notFound('Account not found'),
-  accountExists: () => errors.conflict('Account number already exists'),
-  cannotDeleteAccount: reason => errors.businessLogic(`Cannot delete account: ${reason}`),
-  ledgerNotFound: () => errors.notFound('Ledger entry not found'),
-  cannotUpdatePostedLedger: () => errors.businessLogic('Cannot update posted ledger entries'),
-  noPendingLedgers: () => errors.businessLogic('No pending ledgers found for the specified date'),
-  alreadyPosted: () => errors.businessLogic('Records have already been posted for this date')
+  accountNotFound: () => errors.notFound(t('accounts.accountsNotFound')),
+  accountExists: () => errors.conflict(t('http.alreadyExists')),
+  cannotDeleteAccount: reason =>
+    errors.businessLogic(`${t('accounts.cannotDeleteAccount')}: ${reason}`),
+  ledgerNotFound: () => errors.notFound(t('ledgers.ledgerNotFound')),
+  cannotUpdatePostedLedger: () => errors.businessLogic(t('ledgers.cannotUpdatePostedLedger')),
+  noPendingLedgers: () => errors.businessLogic(t('posting.noPendingLedgersFound')),
+  alreadyPosted: date => errors.businessLogic(t('posting.ledgersAlreadyPosted', { date }))
 };

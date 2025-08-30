@@ -13,6 +13,7 @@ import {
   extractPagination,
   resourceErrors
 } from '../../shared/utils/index.js';
+import { t } from '../../shared/i18n/index.js';
 
 export class UsersController {
   constructor(usersService) {
@@ -31,12 +32,12 @@ export class UsersController {
 
       const newUser = await this.usersService.createUser(userData, createdBy);
 
-      const response = createSuccessResponse(newUser, 'User created successfully');
+      const response = createSuccessResponse(newUser, t('users.userCreatedSuccessfully'));
       res.status(HTTP_STATUS.CREATED).json(response);
     } catch (error) {
       request.log.error({ error, userData: request.body }, 'Failed to create user');
 
-      if (error.message === 'Username already exists') {
+      if (error.message === t('users.usernameAlreadyExists')) {
         throw errors.validation(error.message);
       }
 
@@ -112,7 +113,7 @@ export class UsersController {
 
       const updatedUser = await this.usersService.updateUser(id, updateData, updatedBy);
 
-      const response = createSuccessResponse(updatedUser, 'User updated successfully');
+      const response = createSuccessResponse(updatedUser, t('users.userUpdatedSuccessfully'));
       res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       request.log.error(
@@ -120,7 +121,7 @@ export class UsersController {
         'Failed to update user'
       );
 
-      if (error.message === 'Username already exists') {
+      if (error.message === t('users.usernameAlreadyExists')) {
         throw errors.validation(error.message);
       }
 
@@ -145,14 +146,14 @@ export class UsersController {
 
       const deletedUser = await this.usersService.deleteUser(id, deletedBy);
 
-      const response = createSuccessResponse(deletedUser, 'User deleted successfully');
+      const response = createSuccessResponse(deletedUser, t('users.userDeletedSuccessfully'));
       res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       if (error.statusCode) {
         throw error;
       }
 
-      if (error.message === 'User not found') {
+      if (error.message === t('users.userNotFound')) {
         throw resourceErrors.notFound('User');
       }
 
@@ -173,7 +174,7 @@ export class UsersController {
 
       const result = await this.usersService.changePassword(id, currentPassword, newPassword);
 
-      const response = createSuccessResponse(result, 'Password changed successfully');
+      const response = createSuccessResponse(result, t('users.passwordChangedSuccessfully'));
 
       res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
@@ -181,7 +182,7 @@ export class UsersController {
         throw error;
       }
 
-      if (error.message === 'User not found') {
+      if (error.message === t('users.userNotFound')) {
         throw resourceErrors.notFound('User');
       }
 

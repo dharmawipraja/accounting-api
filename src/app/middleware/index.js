@@ -11,6 +11,7 @@ import helmet from 'helmet';
 import pinoHttp from 'pino-http';
 import responseTime from 'response-time';
 import { v4 as uuidv4 } from 'uuid';
+import { t } from '../../shared/i18n/index.js';
 
 /**
  * Apply all middleware to Express app in correct order
@@ -135,7 +136,7 @@ function rateLimitMiddleware(config) {
     message: {
       success: false,
       error: 'Too Many Requests',
-      message: 'Too many requests from this IP, please try again later.'
+      message: t('rateLimit.tooManyRequests')
     },
     standardHeaders: true,
     legacyHeaders: false

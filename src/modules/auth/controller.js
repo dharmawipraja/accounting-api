@@ -6,6 +6,7 @@
 import { authErrors, errors } from '../../core/errors/index.js';
 import logger from '../../core/logging/index.js';
 import { createSuccessResponse } from '../../shared/utils/index.js';
+import { t } from '../../shared/i18n/index.js';
 
 export class AuthController {
   constructor(authService) {
@@ -25,18 +26,18 @@ export class AuthController {
 
       // Log successful login
 
-      const response = createSuccessResponse(authResult, 'Login successful');
+      const response = createSuccessResponse(authResult, t('auth.loginSuccessful'));
       res.status(200).json(response);
     } catch (error) {
       logger.error({ error, username: request.body?.username }, 'Login failed');
 
       // Log failed login attempt
 
-      if (error.message === 'Invalid credentials') {
+      if (error.message === t('auth.invalidCredentials')) {
         throw authErrors.invalidCredentials();
       }
 
-      throw errors.internal('Authentication failed');
+      throw errors.internal(t('auth.authenticationFailed'));
     }
   }
 
@@ -51,8 +52,8 @@ export class AuthController {
     // For JWT, logout is typically handled client-side by removing the token
     // You could implement token blacklisting here if needed
     const response = createSuccessResponse(
-      { message: 'Logout successful' },
-      'Please remove the token from your client'
+      { message: t('auth.logoutSuccessful') },
+      t('auth.pleaseRemoveTokenFromClient')
     );
     res.status(200).json(response);
   }
@@ -66,7 +67,7 @@ export class AuthController {
     try {
       const user = await this.authService.getUserProfile(request.user.userId);
 
-      const response = createSuccessResponse(user, 'Profile retrieved successfully');
+      const response = createSuccessResponse(user, t('auth.profileRetrievedSuccessfully'));
       res.status(200).json(response);
     } catch (error) {
       if (error.statusCode) {
@@ -91,7 +92,10 @@ export class AuthController {
         role: request.user.role
       });
 
-      const response = createSuccessResponse({ token: newToken }, 'Token refreshed successfully');
+      const response = createSuccessResponse(
+        { token: newToken },
+        t('auth.tokenRefreshedSuccessfully')
+      );
       res.status(200).json(response);
     } catch (error) {
       request.log.error({ error, userId: request.user?.userId }, 'Failed to refresh token');

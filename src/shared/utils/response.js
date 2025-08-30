@@ -3,6 +3,8 @@
  * Helper functions for creating consistent API responses
  */
 
+import { t } from '../i18n/index.js';
+
 /**
  * Create a success response
  * @param {*} data - Response data
@@ -10,7 +12,11 @@
  * @param {Object} [meta] - Optional metadata
  * @returns {Object} Success response object
  */
-export const createSuccessResponse = (data, message = 'Operation successful', meta = {}) => ({
+export const createSuccessResponse = (
+  data,
+  message = t('general.operationSuccessful'),
+  meta = {}
+) => ({
   success: true,
   message,
   data,
@@ -27,7 +33,7 @@ export const createSuccessResponse = (data, message = 'Operation successful', me
 export const createPaginatedResponse = (
   data,
   pagination,
-  message = 'Data retrieved successfully'
+  message = t('general.dataRetrievedSuccessfully')
 ) => ({
   success: true,
   message,
@@ -43,7 +49,12 @@ export const createPaginatedResponse = (
  * @param {Object} [details] - Additional error details
  * @returns {Object} Error response object
  */
-export const createErrorResponse = (message, error = 'Error', statusCode = 500, details = null) => {
+export const createErrorResponse = (
+  message,
+  error = t('general.error'),
+  statusCode = 500,
+  details = null
+) => {
   const response = {
     success: false,
     statusCode,

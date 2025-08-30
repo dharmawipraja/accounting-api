@@ -6,6 +6,7 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { USER_STATUS } from '../../shared/constants/index.js';
+import { t } from '../../shared/i18n/index.js';
 
 export class AuthService {
   constructor(prisma, jwtSecret, jwtExpiresIn = '24h') {
@@ -37,13 +38,13 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new Error('Invalid credentials');
+      throw new Error(t('auth.invalidCredentials'));
     }
 
     // Verify password
     const isValidPassword = await bcrypt.compare(password, user.password);
     if (!isValidPassword) {
-      throw new Error('Invalid credentials');
+      throw new Error(t('auth.invalidCredentials'));
     }
 
     // Generate JWT token
@@ -84,7 +85,7 @@ export class AuthService {
     try {
       return jwt.verify(token, this.jwtSecret);
     } catch {
-      throw new Error('Invalid token');
+      throw new Error(t('auth.invalidToken'));
     }
   }
 
@@ -128,7 +129,7 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new Error('User not found');
+      throw new Error(t('auth.userNotFound'));
     }
 
     return user;

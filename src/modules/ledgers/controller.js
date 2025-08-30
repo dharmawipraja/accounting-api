@@ -13,6 +13,7 @@ import {
   extractPagination,
   resourceErrors
 } from '../../shared/utils/index.js';
+import { t } from '../../shared/i18n/index.js';
 
 export class LedgersController {
   constructor(ledgersService) {
@@ -31,7 +32,7 @@ export class LedgersController {
 
       const result = await this.ledgersService.createBulkLedgers(ledgerData, createdBy);
 
-      const response = createSuccessResponse(result, 'Ledger entries created successfully');
+      const response = createSuccessResponse(result, t('ledgers.ledgerEntriesCreatedSuccessfully'));
       res.status(HTTP_STATUS.CREATED).json(response);
     } catch (error) {
       request.log.error({ error, ledgerData: request.body }, 'Failed to create bulk ledgers');
@@ -105,7 +106,7 @@ export class LedgersController {
         throw resourceErrors.notFound('Ledger entry');
       }
 
-      const response = createSuccessResponse(ledger, 'Ledger entry retrieved successfully');
+      const response = createSuccessResponse(ledger, t('ledgers.ledgerEntryRetrievedSuccessfully'));
       res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       if (error.statusCode) {
@@ -130,7 +131,10 @@ export class LedgersController {
 
       const updatedLedger = await this.ledgersService.updateLedger(id, updateData, updatedBy);
 
-      const response = createSuccessResponse(updatedLedger, 'Ledger entry updated successfully');
+      const response = createSuccessResponse(
+        updatedLedger,
+        t('ledgers.ledgerEntryUpdatedSuccessfully')
+      );
       res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       request.log.error(
@@ -166,7 +170,7 @@ export class LedgersController {
 
       const result = await this.ledgersService.deleteLedger(id, deletedBy);
 
-      const response = createSuccessResponse(result, 'Ledger entry deleted successfully');
+      const response = createSuccessResponse(result, t('ledgers.ledgerEntryDeletedSuccessfully'));
       res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       if (error.statusCode) {
@@ -197,7 +201,7 @@ export class LedgersController {
 
       const result = await this.ledgersService.getLedgersByDate(ledgerDate);
 
-      const response = createSuccessResponse(result, 'Ledgers retrieved successfully');
+      const response = createSuccessResponse(result, t('ledgers.ledgersRetrievedSuccessfully'));
       res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
       if (error.statusCode) {

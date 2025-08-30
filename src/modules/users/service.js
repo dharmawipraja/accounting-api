@@ -6,6 +6,7 @@
 import bcrypt from 'bcrypt';
 import { USER_STATUS } from '../../shared/constants/index.js';
 import { generateId } from '../../shared/utils/id.js';
+import { t } from '../../shared/i18n/index.js';
 
 export class UsersService {
   constructor(prisma) {
@@ -27,7 +28,7 @@ export class UsersService {
     });
 
     if (existingUser) {
-      throw new Error('Username already exists');
+      throw new Error(t('users.usernameAlreadyExists'));
     }
 
     // Hash password
@@ -144,7 +145,7 @@ export class UsersService {
       });
 
       if (existingUser) {
-        throw new Error('Username already exists');
+        throw new Error(t('users.usernameAlreadyExists'));
       }
     }
 
@@ -219,13 +220,13 @@ export class UsersService {
     });
 
     if (!user) {
-      throw new Error('User not found');
+      throw new Error(t('users.userNotFound'));
     }
 
     // Verify current password
     const isValidPassword = await bcrypt.compare(currentPassword, user.password);
     if (!isValidPassword) {
-      throw new Error('Current password is incorrect');
+      throw new Error(t('auth.currentPasswordIncorrect'));
     }
 
     // Hash new password and update

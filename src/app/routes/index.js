@@ -4,6 +4,7 @@
  */
 
 import container from '../../core/container/index.js';
+import { t } from '../../shared/i18n/index.js';
 import { createAccountDetailRoutes } from '../../modules/accountDetail/routes.js';
 import { createAccountGeneralRoutes } from '../../modules/accountGeneral/routes.js';
 import { createAuthRoutes } from '../../modules/auth/routes.js';
@@ -52,7 +53,7 @@ export async function registerRoutes(app) {
   app.get('/api', (req, res) => {
     res.json({
       success: true,
-      message: 'Accounting API v1',
+      message: t('api.welcome'),
       version: '1.0.0',
       endpoints: {
         health: '/health',

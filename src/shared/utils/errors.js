@@ -4,6 +4,7 @@
  */
 
 import { errors } from '../../core/errors/index.js';
+import { t } from '../i18n/index.js';
 
 /**
  * Create a 404 Not Found error
@@ -11,7 +12,7 @@ import { errors } from '../../core/errors/index.js';
  * @param {string} [code] - Error code
  * @returns {Error} Not found error
  */
-export const createNotFoundError = (message = 'Resource not found') => {
+export const createNotFoundError = (message = t('http.notFound')) => {
   return errors.notFound(message);
 };
 
@@ -21,7 +22,7 @@ export const createNotFoundError = (message = 'Resource not found') => {
  * @param {string} [code] - Error code
  * @returns {Error} Internal server error
  */
-export const createInternalError = (message = 'Internal server error') => {
+export const createInternalError = (message = t('http.internalError')) => {
   return errors.internal(message);
 };
 
@@ -31,7 +32,7 @@ export const createInternalError = (message = 'Internal server error') => {
  * @param {string} [code] - Error code
  * @returns {Error} Bad request error
  */
-export const createBadRequestError = (message = 'Bad request') => {
+export const createBadRequestError = (message = t('http.badRequest')) => {
   return errors.validation(message);
 };
 
@@ -41,7 +42,7 @@ export const createBadRequestError = (message = 'Bad request') => {
  * @param {string} [code] - Error code
  * @returns {Error} Forbidden error
  */
-export const createForbiddenError = (message = 'Forbidden') => {
+export const createForbiddenError = (message = t('http.forbidden')) => {
   return errors.authorization(message);
 };
 
@@ -51,7 +52,7 @@ export const createForbiddenError = (message = 'Forbidden') => {
  * @param {string} [code] - Error code
  * @returns {Error} Unauthorized error
  */
-export const createUnauthorizedError = (message = 'Unauthorized') => {
+export const createUnauthorizedError = (message = t('http.unauthorized')) => {
   return errors.authentication(message);
 };
 
@@ -61,7 +62,7 @@ export const createUnauthorizedError = (message = 'Unauthorized') => {
  * @param {string} [code] - Error code
  * @returns {Error} Conflict error
  */
-export const createConflictError = (message = 'Conflict') => {
+export const createConflictError = (message = t('http.conflict')) => {
   return errors.conflict(message);
 };
 
@@ -69,15 +70,10 @@ export const createConflictError = (message = 'Conflict') => {
  * Common error factory based on resource operations
  */
 export const resourceErrors = {
-  notFound: resourceName => createNotFoundError(`${resourceName} not found`),
-  createFailed: resourceName =>
-    createInternalError(`Failed to create ${resourceName.toLowerCase()}`),
-  updateFailed: resourceName =>
-    createInternalError(`Failed to update ${resourceName.toLowerCase()}`),
-  deleteFailed: resourceName =>
-    createInternalError(`Failed to delete ${resourceName.toLowerCase()}`),
-  retrieveFailed: resourceName =>
-    createInternalError(`Failed to retrieve ${resourceName.toLowerCase()}`),
-  listFailed: resourceName =>
-    createInternalError(`Failed to retrieve ${resourceName.toLowerCase()} list`)
+  notFound: resourceName => createNotFoundError(t('http.notFound')),
+  createFailed: resourceName => createInternalError(t('http.internalError')),
+  updateFailed: resourceName => createInternalError(t('http.internalError')),
+  deleteFailed: resourceName => createInternalError(t('http.internalError')),
+  retrieveFailed: resourceName => createInternalError(t('http.internalError')),
+  listFailed: resourceName => createInternalError(t('http.internalError'))
 };

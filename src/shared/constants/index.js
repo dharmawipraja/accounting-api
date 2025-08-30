@@ -3,6 +3,8 @@
  * Central location for all application constants
  */
 
+import { t } from '../i18n/index.js';
+
 // User Roles
 export const USER_ROLES = {
   NASABAH: 'NASABAH',
@@ -87,32 +89,32 @@ export const HTTP_STATUS = {
   INTERNAL_SERVER_ERROR: 500
 };
 
-// Error Messages
+// Error Messages (using i18n)
 export const ERROR_MESSAGES = {
-  UNAUTHORIZED: 'Authentication required',
-  FORBIDDEN: 'Insufficient permissions',
-  NOT_FOUND: 'Resource not found',
-  ALREADY_EXISTS: 'Resource already exists',
-  VALIDATION_FAILED: 'Validation failed',
-  DATABASE_ERROR: 'Database operation failed',
-  INTERNAL_ERROR: 'Internal server error',
+  UNAUTHORIZED: () => t('http.unauthorized'),
+  FORBIDDEN: () => t('http.forbidden'),
+  NOT_FOUND: () => t('http.notFound'),
+  ALREADY_EXISTS: () => t('http.alreadyExists'),
+  VALIDATION_FAILED: () => t('http.validationFailed'),
+  DATABASE_ERROR: () => t('http.databaseError'),
+  INTERNAL_ERROR: () => t('http.internalError'),
 
   // Authentication specific messages
   AUTH: {
-    MISSING_TOKEN: 'Authentication token is required',
-    INVALID_TOKEN: 'Invalid authentication token',
-    TOKEN_EXPIRED: 'Authentication token has expired',
-    USER_NOT_FOUND: 'User not found',
-    USER_INACTIVE: 'User account is inactive',
-    NOT_AUTHENTICATED: 'Authentication required',
-    INSUFFICIENT_PERMISSIONS: 'Insufficient permissions to access this resource'
+    MISSING_TOKEN: () => t('auth.missingToken'),
+    INVALID_TOKEN: () => t('auth.invalidToken'),
+    TOKEN_EXPIRED: () => t('auth.tokenExpired'),
+    USER_NOT_FOUND: () => t('auth.userNotFound'),
+    USER_INACTIVE: () => t('auth.userInactive'),
+    NOT_AUTHENTICATED: () => t('auth.notAuthenticated'),
+    INSUFFICIENT_PERMISSIONS: () => t('auth.insufficientPermissions')
   }
 };
 
-// Success Messages
+// Success Messages (using i18n)
 export const SUCCESS_MESSAGES = {
-  CREATED: 'Resource created successfully',
-  UPDATED: 'Resource updated successfully',
-  DELETED: 'Resource deleted successfully',
-  RETRIEVED: 'Resource retrieved successfully'
+  CREATED: () => t('crud.created'),
+  UPDATED: () => t('crud.updated'),
+  DELETED: () => t('crud.deleted'),
+  RETRIEVED: () => t('crud.retrieved')
 };
