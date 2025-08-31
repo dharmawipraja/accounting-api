@@ -4,6 +4,7 @@
  */
 
 import compression from 'compression';
+import cors from 'cors';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
@@ -22,6 +23,9 @@ export async function applyMiddleware(app, config) {
   if (config.server.trustProxy) {
     app.set('trust proxy', config.server.trustProxy);
   }
+
+  // CORS middleware (early, before other middleware)
+  app.use(cors());
 
   // Request ID middleware (early)
   app.use(requestIdMiddleware);
