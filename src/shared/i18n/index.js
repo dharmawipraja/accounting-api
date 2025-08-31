@@ -4,6 +4,7 @@
  */
 
 import { id } from './locales/id.js';
+import logger from '../../core/logging/index.js';
 
 // Available locales
 const locales = {
@@ -32,14 +33,14 @@ export function t(key, params = {}, locale = DEFAULT_LOCALE) {
       value = value[k];
     } else {
       // Return the key if translation not found
-      console.warn(`Translation not found for key: ${key}`);
+      logger.warn(`Translation not found for key: ${key}`);
       return key;
     }
   }
 
   // If no translation found, return the key
   if (typeof value !== 'string') {
-    console.warn(`Translation not found for key: ${key}`);
+    logger.warn(`Translation not found for key: ${key}`);
     return key;
   }
 

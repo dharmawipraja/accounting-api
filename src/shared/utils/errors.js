@@ -70,10 +70,10 @@ export const createConflictError = (message = t('http.conflict')) => {
  * Common error factory based on resource operations
  */
 export const resourceErrors = {
-  notFound: resourceName => createNotFoundError(t('http.notFound')),
-  createFailed: resourceName => createInternalError(t('http.internalError')),
-  updateFailed: resourceName => createInternalError(t('http.internalError')),
-  deleteFailed: resourceName => createInternalError(t('http.internalError')),
-  retrieveFailed: resourceName => createInternalError(t('http.internalError')),
-  listFailed: resourceName => createInternalError(t('http.internalError'))
+  notFound: _resourceName => createNotFoundError(t('http.notFound')),
+  createFailed: _resourceName => createInternalError(t('http.internalError')),
+  updateFailed: _resourceName => createInternalError(t('http.internalError')),
+  deleteFailed: _resourceName => createInternalError(t('http.internalError')),
+  retrieveFailed: _resourceName => createInternalError(t('http.internalError')),
+  listFailed: _resourceName => createInternalError(t('http.internalError'))
 };

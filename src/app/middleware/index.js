@@ -47,7 +47,7 @@ export async function applyMiddleware(app, config) {
   app.use(compressionMiddleware(config));
 
   // CORS configuration
-  app.use(corsMiddleware(config));
+  // app.use(corsMiddleware(config));
 }
 
 /**
