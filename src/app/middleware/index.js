@@ -47,7 +47,7 @@ export async function applyMiddleware(app, config) {
   app.use(compressionMiddleware(config));
 
   // CORS configuration
-  // app.use(corsMiddleware(config));
+  app.use(corsMiddleware(config));
 }
 
 /**
@@ -160,28 +160,10 @@ function compressionMiddleware(config) {
  * CORS middleware
  */
 function corsMiddleware(config) {
-  // Default CORS configuration for development
-  const defaultOrigins = ['http://localhost:3000', 'http://localhost:3001'];
-
-  let corsOrigin;
-
-  if (config.security?.corsOrigin) {
-    // Use configured origins
-    corsOrigin = Array.isArray(config.security.corsOrigin)
-      ? config.security.corsOrigin
-      : [config.security.corsOrigin];
-  } else if (config.isDevelopment) {
-    // Development default
-    corsOrigin = defaultOrigins;
-  } else {
-    // Production default - be more restrictive
-    corsOrigin = false;
-  }
-
+  // Allow all origins for now
   return cors({
-    origin: corsOrigin,
-    credentials:
-      config.security?.corsCredentials !== undefined ? config.security.corsCredentials : true,
+    origin: true, // Allow all origins
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: [
       'Content-Type',
