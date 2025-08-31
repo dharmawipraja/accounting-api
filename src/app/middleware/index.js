@@ -24,6 +24,9 @@ export async function applyMiddleware(app, config) {
     app.set('trust proxy', config.server.trustProxy);
   }
 
+  // CORS configuration (very early, before security middleware)
+  app.use(corsMiddleware(config));
+
   // Request ID middleware (early)
   app.use(requestIdMiddleware);
 
@@ -45,9 +48,6 @@ export async function applyMiddleware(app, config) {
 
   // Compression (after body parsing)
   app.use(compressionMiddleware(config));
-
-  // CORS configuration
-  app.use(corsMiddleware(config));
 }
 
 /**
@@ -107,7 +107,8 @@ function securityMiddleware() {
         imgSrc: ["'self'", 'data:', 'https:']
       }
     },
-    crossOriginEmbedderPolicy: false
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: false // Disable CORP to avoid CORS conflicts
   });
 }
 
@@ -160,20 +161,28 @@ function compressionMiddleware(config) {
  * CORS middleware
  */
 function corsMiddleware(config) {
-  // Allow all origins for now
-  return cors({
-    origin: true, // Allow all origins
+  // Allow all origins for now - completely ignore config
+  const corsOptions = {
+    origin: function (origin, callback) {
+      // Allow all origins (including no origin for same-origin requests)
+      callback(null, true);
+    },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
     allowedHeaders: [
       'Content-Type',
       'Authorization',
       'X-Requested-With',
       'Accept',
       'Origin',
-      'X-Request-ID'
+      'X-Request-ID',
+      'Cache-Control',
+      'Pragma'
     ],
     exposedHeaders: ['X-Request-ID', 'X-Response-Time'],
-    optionsSuccessStatus: 200 // Support legacy browsers
-  });
+    optionsSuccessStatus: 200, // Support legacy browsers
+    preflightContinue: false // Handle preflight requests
+  };
+
+  return cors(corsOptions);
 }
