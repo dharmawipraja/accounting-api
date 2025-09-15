@@ -189,6 +189,7 @@ export const id = {
 
   // Ledger Types (translated)
   ledgerTypes: {
+    KAS: 'Kas',
     KAS_MASUK: 'Kas Masuk',
     KAS_KELUAR: 'Kas Keluar'
   },

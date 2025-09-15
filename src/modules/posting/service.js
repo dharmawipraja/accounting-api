@@ -4,8 +4,8 @@
  */
 
 import { formatMoneyForDb } from '../../core/database/utils.js';
-import { generateId } from '../../shared/utils/id.js';
 import { t } from '../../shared/i18n/index.js';
+import { generateId } from '../../shared/utils/id.js';
 
 export class PostingService {
   constructor(prisma) {
@@ -123,7 +123,7 @@ export class PostingService {
 
         if (ledger.transactionType === 'DEBIT') {
           group.totalDebit += amount;
-        } else if (ledger.transactionType === 'CREDIT') {
+        } else if (ledger.transactionType === 'KREDIT') {
           group.totalCredit += amount;
         }
       }
@@ -641,12 +641,12 @@ export class PostingService {
     }
 
     // Calculate total SHU amount from AccountDetail balances
-    let totalPendapatan = 0; // CREDIT transaction type accounts (revenue)
+    let totalPendapatan = 0; // KREDIT transaction type accounts (revenue)
     let totalBiaya = 0; // DEBIT transaction type accounts (expenses)
 
     for (const account of labaRugiAccounts) {
-      if (account.transactionType === 'CREDIT') {
-        // For CREDIT accounts (revenue), use amountCredit
+      if (account.transactionType === 'KREDIT') {
+        // For KREDIT accounts (revenue), use amountCredit
         totalPendapatan += parseFloat(account.amountCredit) || 0;
       } else if (account.transactionType === 'DEBIT') {
         // For DEBIT accounts (expenses), use amountDebit

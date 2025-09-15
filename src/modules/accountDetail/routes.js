@@ -29,7 +29,7 @@ export function createAccountDetailRoutes(container) {
       ...commonValidations.pagination,
       query('accountCategory')
         .optional()
-        .isIn(['ASSET', 'HUTANG', 'MODAL', 'PENDAPATAN', 'BIAYA'])
+        .isIn(['AKTIVA', 'PASIVA', 'PENJUALAN', 'BEBAN_DAN_BIAYA'])
         .withMessage('Invalid account category'),
       query('reportType')
         .optional()
@@ -92,10 +92,10 @@ export function createAccountDetailRoutes(container) {
         .isLength({ max: 20 })
         .withMessage('Account general account number is too long'),
       body('accountCategory')
-        .isIn(['ASSET', 'HUTANG', 'MODAL', 'PENDAPATAN', 'BIAYA'])
+        .isIn(['AKTIVA', 'PASIVA', 'PENJUALAN', 'BEBAN_DAN_BIAYA'])
         .withMessage('Invalid account category'),
       body('reportType').isIn(['NERACA', 'LABA_RUGI']).withMessage('Invalid report type'),
-      body('transactionType').isIn(['DEBIT', 'CREDIT']).withMessage('Invalid transaction type'),
+      body('transactionType').isIn(['DEBIT', 'KREDIT']).withMessage('Invalid transaction type'),
       body('initialAmountCredit')
         .optional()
         .isNumeric()
@@ -144,7 +144,7 @@ export function createAccountDetailRoutes(container) {
         .withMessage('Account general account number is too long'),
       body('accountCategory')
         .optional()
-        .isIn(['ASSET', 'HUTANG', 'MODAL', 'PENDAPATAN', 'BIAYA'])
+        .isIn(['AKTIVA', 'PASIVA', 'PENJUALAN', 'BEBAN_DAN_BIAYA'])
         .withMessage('Invalid account category'),
       body('reportType')
         .optional()
@@ -152,7 +152,7 @@ export function createAccountDetailRoutes(container) {
         .withMessage('Invalid report type'),
       body('transactionType')
         .optional()
-        .isIn(['DEBIT', 'CREDIT'])
+        .isIn(['DEBIT', 'KREDIT'])
         .withMessage('Invalid transaction type'),
       body('initialAmountCredit')
         .optional()

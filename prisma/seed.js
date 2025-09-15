@@ -654,7 +654,7 @@ async function main() {
         accountSubCategory: 'TAKSIRAN_PAJAK',
         reportType: 'LABA_RUGI',
         transactionType: 'DEBIT'
-      },
+      }
     ];
 
     const createdGeneralAccounts = [];

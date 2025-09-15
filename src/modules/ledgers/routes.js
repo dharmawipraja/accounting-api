@@ -75,8 +75,8 @@ export function createLedgerRoutes(container) {
           return true;
         }),
       body('ledgers.*.transactionType')
-        .isIn(['DEBIT', 'CREDIT'])
-        .withMessage('Transaction type must be DEBIT or CREDIT'),
+        .isIn(['DEBIT', 'KREDIT'])
+        .withMessage('Transaction type must be DEBIT or KREDIT'),
       body('ledgers.*.accountDetailAccountNumber')
         .notEmpty()
         .isString()
@@ -109,7 +109,7 @@ export function createLedgerRoutes(container) {
         }),
       body('transactionType')
         .optional()
-        .isIn(['DEBIT', 'CREDIT'])
+        .isIn(['DEBIT', 'KREDIT'])
         .withMessage('Transaction type must be DEBIT or CREDIT')
     ],
     validationMiddleware,

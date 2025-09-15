@@ -4,8 +4,8 @@
  */
 
 import { buildDateRangeFilter, formatMoneyForDb } from '../../core/database/utils.js';
-import { generateId } from '../../shared/utils/id.js';
 import { t } from '../../shared/i18n/index.js';
+import { generateId } from '../../shared/utils/id.js';
 
 export class LedgersService {
   constructor(prisma) {
@@ -212,7 +212,7 @@ export class LedgersService {
 
     for (const ledger of ledgers) {
       const amount = parseFloat(ledger.amount) || 0;
-      if (ledger.transactionType === 'CREDIT') {
+      if (ledger.transactionType === 'KREDIT') {
         totalAmountCredit += amount;
       } else if (ledger.transactionType === 'DEBIT') {
         totalAmountDebit += amount;

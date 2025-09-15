@@ -156,5 +156,3 @@ function compressionMiddleware(config) {
     threshold: config.features.compressionThreshold || 1024
   });
 }
-
-
