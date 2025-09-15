@@ -8,11 +8,24 @@ datasource db {
 }
 
 enum AccountCategory {
-  ASSET
-  HUTANG
-  MODAL
-  PENDAPATAN
-  BIAYA
+  AKTIVA // 1
+  PASIVA // 2
+  PENJUALAN // 4
+  BEBAN_DAN_BIAYA // Missing Kelompok 5
+}
+
+enum AccountSubCategory {
+  AKTIVA_LANCAR // 10
+  AKTIVA_TETAP // 13
+  AKTIVA_LAINNYA // 14
+  HUTANG // 20
+  MODAL // 30
+  PENJUALAN //? 4 Missing General 40
+  HARGA_POKOK_PENJUALAN // 50
+  BEBAN_TETAP // 51
+  BIAYA_TIDAK_TETAP //52
+  PENDAPATAN_DAN_BIAYA_LAINNYA // 53
+  TAKSIRAN_PAJAK // 54
 }
 
 enum AccountType {
@@ -46,7 +59,7 @@ enum Role {
 
 enum TransactionType {
   DEBIT
-  CREDIT
+  KREDIT
 }
 
 enum UserStatus {
@@ -69,32 +82,6 @@ model User {
   @@map("users")
 }
 
-model AccountDetail {
-  id                          String          @id
-  accountNumber               String          @unique
-  accountName                 String
-  accountType                 AccountType     @default(DETAIL)
-  createdAt                   DateTime        @default(now())
-  updatedAt                   DateTime
-  createdBy                   String
-  updatedBy                   String
-  accountGeneralAccountNumber String
-  accountCategory             AccountCategory
-  initialAmountCredit         Decimal         @default(0) @db.Decimal(10, 2)
-  initialAmountDebit          Decimal         @default(0) @db.Decimal(10, 2)
-  accumulationAmountCredit    Decimal         @default(0) @db.Decimal(10, 2)
-  accumulationAmountDebit     Decimal         @default(0) @db.Decimal(10, 2)
-  amountCredit                Decimal         @default(0) @db.Decimal(10, 2)
-  amountDebit                 Decimal         @default(0) @db.Decimal(10, 2)
-  deletedAt                   DateTime?
-  reportType                  ReportType
-  transactionType             TransactionType
-  accountGeneral              AccountGeneral  @relation(fields: [accountGeneralAccountNumber], references: [accountNumber])
-  ledgers                     Ledger[]
-
-  @@map("accounts_detail")
-}
-
 model AccountGeneral {
   id                       String          @id
   accountNumber            String          @unique
@@ -105,6 +92,7 @@ model AccountGeneral {
   createdBy                String
   updatedBy                String
   accountCategory          AccountCategory
+  accountSubCategory          AccountSubCategory
   initialAmountCredit      Decimal         @default(0) @db.Decimal(10, 2)
   initialAmountDebit       Decimal         @default(0) @db.Decimal(10, 2)
   accumulationAmountCredit Decimal         @default(0) @db.Decimal(10, 2)
@@ -118,6 +106,32 @@ model AccountGeneral {
   ledgers                  Ledger[]
 
   @@map("accounts_general")
+}
+
+model AccountDetail {
+  id                          String          @id
+  accountNumber               String          @unique
+  accountName                 String
+  accountType                 AccountType     @default(DETAIL)
+  accountCategory          AccountCategory
+  createdAt                   DateTime        @default(now())
+  updatedAt                   DateTime
+  createdBy                   String
+  updatedBy                   String
+  accountGeneralAccountNumber String
+  initialAmountCredit         Decimal         @default(0) @db.Decimal(10, 2)
+  initialAmountDebit          Decimal         @default(0) @db.Decimal(10, 2)
+  accumulationAmountCredit    Decimal         @default(0) @db.Decimal(10, 2)
+  accumulationAmountDebit     Decimal         @default(0) @db.Decimal(10, 2)
+  amountCredit                Decimal         @default(0) @db.Decimal(10, 2)
+  amountDebit                 Decimal         @default(0) @db.Decimal(10, 2)
+  deletedAt                   DateTime?
+  reportType                  ReportType
+  transactionType             TransactionType
+  accountGeneral              AccountGeneral  @relation(fields: [accountGeneralAccountNumber], references: [accountNumber])
+  ledgers                     Ledger[]
+
+  @@map("accounts_detail")
 }
 
 model Ledger {
