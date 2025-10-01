@@ -11,6 +11,8 @@ import { AccountGeneralController } from '../../modules/accountGeneral/controlle
 import { AccountGeneralService } from '../../modules/accountGeneral/service.js';
 import { AuthController } from '../../modules/auth/controller.js';
 import { AuthService } from '../../modules/auth/service.js';
+import { JournalLedgersController } from '../../modules/journalLedgers/controller.js';
+import { JournalLedgersService } from '../../modules/journalLedgers/service.js';
 import { LedgersController } from '../../modules/ledgers/controller.js';
 import { LedgersService } from '../../modules/ledgers/service.js';
 import { PostingController } from '../../modules/posting/controller.js';
@@ -97,6 +99,10 @@ class DIContainer {
     // Posting service
     const postingService = new PostingService(prisma);
     this.register('postingService', postingService);
+
+    // Journal Ledgers service
+    const journalLedgersService = new JournalLedgersService(prisma);
+    this.register('journalLedgersService', journalLedgersService);
   }
 
   /**
@@ -132,6 +138,11 @@ class DIContainer {
     const postingService = this.get('postingService');
     const postingController = new PostingController(postingService);
     this.register('postingController', postingController);
+
+    // Journal Ledgers controller
+    const journalLedgersService = this.get('journalLedgersService');
+    const journalLedgersController = new JournalLedgersController(journalLedgersService);
+    this.register('journalLedgersController', journalLedgersController);
   }
 
   /**

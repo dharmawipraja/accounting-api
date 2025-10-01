@@ -4,13 +4,14 @@
  */
 
 import container from '../../core/container/index.js';
-import { t } from '../../shared/i18n/index.js';
 import { createAccountDetailRoutes } from '../../modules/accountDetail/routes.js';
 import { createAccountGeneralRoutes } from '../../modules/accountGeneral/routes.js';
 import { createAuthRoutes } from '../../modules/auth/routes.js';
+import { createJournalLedgerRoutes } from '../../modules/journalLedgers/routes.js';
 import { createLedgerRoutes } from '../../modules/ledgers/routes.js';
 import { createPostingRoutes } from '../../modules/posting/routes.js';
 import { createUserRoutes } from '../../modules/users/routes.js';
+import { t } from '../../shared/i18n/index.js';
 
 /**
  * Register all application routes
@@ -49,6 +50,10 @@ export async function registerRoutes(app) {
   const accountDetailRoutes = createAccountDetailRoutes(container);
   app.use(`${apiBase}/accounts/detail`, accountDetailRoutes);
 
+  // Journal Ledger management routes
+  const journalLedgerRoutes = createJournalLedgerRoutes(container);
+  app.use(`${apiBase}/journal-ledgers`, journalLedgerRoutes);
+
   // Root API endpoint
   app.get('/api', (req, res) => {
     res.json({
@@ -64,7 +69,8 @@ export async function registerRoutes(app) {
         ledgers: `${apiBase}/ledgers`,
         posting: `${apiBase}/posting`,
         accountsGeneral: `${apiBase}/accounts/general`,
-        accountsDetail: `${apiBase}/accounts/detail`
+        accountsDetail: `${apiBase}/accounts/detail`,
+        journalLedgers: `${apiBase}/journal-ledgers`
       }
     });
   });

@@ -97,6 +97,16 @@ export const id = {
     ledgersRetrievedSuccessfully: 'Buku besar berhasil diambil'
   },
 
+  // Journal Ledger Management Messages
+  journalLedgers: {
+    journalLedgerNotFound: 'Entri jurnal buku besar tidak ditemukan',
+    journalLedgerCreatedSuccessfully: 'Entri jurnal buku besar berhasil dibuat',
+    journalLedgerUpdatedSuccessfully: 'Entri jurnal buku besar berhasil diperbarui',
+    journalLedgerDeletedSuccessfully: 'Entri jurnal buku besar berhasil dihapus',
+    journalLedgerEntryRetrievedSuccessfully: 'Entri jurnal buku besar berhasil diambil',
+    journalLedgersRetrievedSuccessfully: 'Jurnal buku besar berhasil diambil'
+  },
+
   // Posting Messages
   posting: {
     noPendingLedgersFound:
