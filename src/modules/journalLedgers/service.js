@@ -65,7 +65,11 @@ export class JournalLedgersService {
         include,
         skip,
         take: limit,
-        orderBy: { ledgerDate: 'desc' }
+        orderBy: [
+          { accountDetailAccountNumber: 'asc' },
+          { accountGeneralAccountNumber: 'asc' },
+          { ledgerDate: 'desc' }
+        ]
       }),
       this.prisma.journalLedger.count({ where })
     ]);
