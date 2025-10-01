@@ -108,10 +108,10 @@ export class LedgersService {
     const include = includeAccounts
       ? {
           accountDetail: {
-            select: { id: true, accountNumber: true, accountName: true }
+            select: { id: true, accountNumber: true, accountName: true, transactionType: true }
           },
           accountGeneral: {
-            select: { id: true, accountNumber: true, accountName: true }
+            select: { id: true, accountNumber: true, accountName: true, transactionType: true }
           }
         }
       : undefined;
@@ -144,10 +144,10 @@ export class LedgersService {
       where: { id: ledgerId },
       include: {
         accountDetail: {
-          select: { id: true, accountNumber: true, accountName: true }
+          select: { id: true, accountNumber: true, accountName: true, transactionType: true }
         },
         accountGeneral: {
-          select: { id: true, accountNumber: true, accountName: true }
+          select: { id: true, accountNumber: true, accountName: true, transactionType: true }
         }
       }
     });
@@ -276,10 +276,10 @@ export class LedgersService {
       },
       include: {
         accountDetail: {
-          select: { id: true, accountNumber: true, accountName: true }
+          select: { id: true, accountNumber: true, accountName: true, transactionType: true }
         },
         accountGeneral: {
-          select: { id: true, accountNumber: true, accountName: true }
+          select: { id: true, accountNumber: true, accountName: true, transactionType: true }
         }
       }
     });

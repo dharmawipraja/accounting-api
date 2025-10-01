@@ -84,22 +84,22 @@ model User {
 }
 
 model AccountGeneral {
-  id                       String          @id
-  accountNumber            String          @unique
+  id                       String             @id
+  accountNumber            String             @unique
   accountName              String
-  accountType              AccountType     @default(GENERAL)
-  createdAt                DateTime        @default(now())
+  accountType              AccountType        @default(GENERAL)
+  createdAt                DateTime           @default(now())
   updatedAt                DateTime
   createdBy                String
   updatedBy                String
   accountCategory          AccountCategory
-  accountSubCategory          AccountSubCategory
-  initialAmountCredit      Decimal         @default(0) @db.Decimal(10, 2)
-  initialAmountDebit       Decimal         @default(0) @db.Decimal(10, 2)
-  accumulationAmountCredit Decimal         @default(0) @db.Decimal(10, 2)
-  accumulationAmountDebit  Decimal         @default(0) @db.Decimal(10, 2)
-  amountCredit             Decimal         @default(0) @db.Decimal(10, 2)
-  amountDebit              Decimal         @default(0) @db.Decimal(10, 2)
+  accountSubCategory       AccountSubCategory
+  initialAmountCredit      Decimal            @default(0) @db.Decimal(10, 2)
+  initialAmountDebit       Decimal            @default(0) @db.Decimal(10, 2)
+  accumulationAmountCredit Decimal            @default(0) @db.Decimal(10, 2)
+  accumulationAmountDebit  Decimal            @default(0) @db.Decimal(10, 2)
+  amountCredit             Decimal            @default(0) @db.Decimal(10, 2)
+  amountDebit              Decimal            @default(0) @db.Decimal(10, 2)
   deletedAt                DateTime?
   reportType               ReportType
   transactionType          TransactionType
@@ -114,7 +114,7 @@ model AccountDetail {
   accountNumber               String          @unique
   accountName                 String
   accountType                 AccountType     @default(DETAIL)
-  accountCategory          AccountCategory
+  accountCategory             AccountCategory
   createdAt                   DateTime        @default(now())
   updatedAt                   DateTime
   createdBy                   String
@@ -145,7 +145,7 @@ model Ledger {
   createdBy                   String
   updatedBy                   String
   accountDetailAccountNumber  String
-  ledgerType                  LedgerType
+  ledgerType                  LedgerType      @default(KAS)
   transactionType             TransactionType
   postingStatus               PostingStatus   @default(PENDING)
   postingAt                   DateTime?
