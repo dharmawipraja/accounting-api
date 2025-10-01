@@ -76,11 +76,26 @@ export class JournalLedgersService {
       enrichedJournalLedgers = await this.enrichWithAccountDetails(journalLedgers);
     }
 
+    // Format journal ledgers
+    const formattedJournalLedgers = enrichedJournalLedgers.map(journalLedger =>
+      this.formatJournalLedgerResponse(journalLedger)
+    );
+
+    // Calculate totals
+    const totalDebit = formattedJournalLedgers.reduce(
+      (sum, journalLedger) => sum + (journalLedger.debit || 0),
+      0
+    );
+    const totalCredit = formattedJournalLedgers.reduce(
+      (sum, journalLedger) => sum + (journalLedger.credit || 0),
+      0
+    );
+
     return {
-      journalLedgers: enrichedJournalLedgers.map(journalLedger =>
-        this.formatJournalLedgerResponse(journalLedger)
-      ),
-      total
+      journalLedgers: formattedJournalLedgers,
+      total,
+      totalDebit: parseFloat(totalDebit.toFixed(2)),
+      totalCredit: parseFloat(totalCredit.toFixed(2))
     };
   }
 

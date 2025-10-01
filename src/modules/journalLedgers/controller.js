@@ -37,20 +37,24 @@ export class JournalLedgersController {
         includeAccounts
       } = request.query;
 
-      const { journalLedgers, total } = await this.journalLedgersService.getJournalLedgers({
-        limit,
-        skip,
-        search,
-        postingStatus,
-        accountDetailId,
-        accountGeneralId,
-        startDate,
-        endDate,
-        includeAccounts
-      });
+      const { journalLedgers, total, totalDebit, totalCredit } =
+        await this.journalLedgersService.getJournalLedgers({
+          limit,
+          skip,
+          search,
+          postingStatus,
+          accountDetailId,
+          accountGeneralId,
+          startDate,
+          endDate,
+          includeAccounts
+        });
 
       const pagination = buildPaginationMeta(page, limit, total);
-      const response = createPaginatedResponse(journalLedgers, pagination);
+      const response = createPaginatedResponse(
+        { journalLedgers, totalDebit, totalCredit },
+        pagination
+      );
 
       res.status(HTTP_STATUS.OK).json(response);
     } catch (error) {
