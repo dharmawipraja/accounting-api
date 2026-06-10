@@ -6,10 +6,18 @@ export class Money {
   private readonly value: Decimal;
 
   private constructor(value: Decimal) {
+    if (!value.isFinite()) {
+      throw new Error(
+        `Money cannot represent a non-finite value: ${value.toString()}`,
+      );
+    }
+    // ROUND_HALF_UP matches Indonesian tax-invoice (Faktur Pajak) rounding.
     this.value = value.toDecimalPlaces(SCALE, Decimal.ROUND_HALF_UP);
   }
 
-  static of(amount: string | number | Decimal): Money {
+  // Accepts string | Decimal only — never a JS number, so float arithmetic
+  // cannot sneak in before the amount is wrapped in exact decimal math.
+  static of(amount: string | Decimal): Money {
     return new Money(new Decimal(amount));
   }
 
@@ -57,11 +65,11 @@ export class Money {
     return this.value.isNegative();
   }
 
-  toString(): string {
+  toPersistence(): string {
     return this.value.toFixed(SCALE);
   }
 
-  toPersistence(): string {
-    return this.value.toFixed(SCALE);
+  toString(): string {
+    return this.toPersistence();
   }
 }
