@@ -1,7 +1,7 @@
 {
-  "name": "_scaffold",
+  "name": "accounting-api",
   "version": "0.0.1",
-  "description": "",
+  "description": "Indonesian accounting API",
   "author": "",
   "private": true,
   "license": "UNLICENSED",
