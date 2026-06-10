@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import * as argon2 from 'argon2';
-import { Role, User } from '@prisma/client';
+import { Prisma, Role, User } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import {
   ConflictDomainError,
@@ -14,7 +14,7 @@ export interface CreateUserInput {
   role: Role;
 }
 
-type SafeUser = Omit<User, 'passwordHash'>;
+export type SafeUser = Omit<User, 'passwordHash'>;
 
 function stripHash(user: User): SafeUser {
   const { passwordHash: _omit, ...rest } = user;
@@ -35,15 +35,29 @@ export class UsersService {
       });
     }
     const passwordHash = await argon2.hash(input.password);
-    const created = await this.prisma.client.user.create({
-      data: {
-        email: input.email,
-        passwordHash,
-        name: input.name,
-        role: input.role,
-      },
-    });
-    return stripHash(created);
+    try {
+      const created = await this.prisma.client.user.create({
+        data: {
+          email: input.email,
+          passwordHash,
+          name: input.name,
+          role: input.role,
+        },
+      });
+      return stripHash(created);
+    } catch (err) {
+      // Concurrent creates can both pass the pre-check above; the unique
+      // constraint is the real guard. Map it to a clean 409.
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictDomainError('A user with this email already exists', {
+          email: input.email,
+        });
+      }
+      throw err;
+    }
   }
 
   async findByEmail(email: string): Promise<SafeUser | null> {
@@ -51,6 +65,10 @@ export class UsersService {
     return user ? stripHash(user) : null;
   }
 
+  /**
+   * For authentication only — returns the full User including passwordHash.
+   * Do NOT use in read/list endpoints (it would leak the hash).
+   */
   async findByEmailWithHash(email: string): Promise<User | null> {
     return this.prisma.client.user.findFirst({ where: { email } });
   }
