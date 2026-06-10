@@ -31,6 +31,7 @@ export class AuthController {
     return user;
   }
 
+  // Phase 1 RBAC smoke surface — replace with a real admin endpoint later.
   @Roles(Role.ADMIN)
   @Get('admin-only')
   adminOnly(): { ok: boolean } {

@@ -74,4 +74,10 @@ describe('RBAC (e2e)', () => {
         expect(body.code).toBe('FORBIDDEN');
       });
   });
+
+  it('returns 401 (not 403) when no token is sent to an admin-only route', () => {
+    return request(app.getHttpServer() as App)
+      .get('/auth/admin-only')
+      .expect(401);
+  });
 });
