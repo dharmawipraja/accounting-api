@@ -5,6 +5,8 @@ import { RefreshDto } from './dto/refresh.dto';
 import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { AuthenticatedUser } from './strategies/jwt.strategy';
+import { Roles } from './decorators/roles.decorator';
+import { Role } from './role.enum';
 
 @Controller('auth')
 export class AuthController {
@@ -27,5 +29,11 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() user: AuthenticatedUser): AuthenticatedUser {
     return user;
+  }
+
+  @Roles(Role.ADMIN)
+  @Get('admin-only')
+  adminOnly(): { ok: boolean } {
+    return { ok: true };
   }
 }
