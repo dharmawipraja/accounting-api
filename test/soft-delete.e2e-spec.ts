@@ -59,4 +59,52 @@ describe('Soft delete extension (e2e)', () => {
       client.user.delete({ where: { id: user.id } }),
     ).rejects.toThrow(/Hard delete forbidden/);
   });
+
+  it('findUnique does not leak a soft-deleted row when select omits deletedAt', async () => {
+    const user = await client.user.create({
+      data: {
+        email: 'sd4@example.com',
+        passwordHash: 'x',
+        name: 'SD Four',
+        role: 'VIEWER',
+      },
+    });
+    await client.user.softDelete({ id: user.id }, 'tester');
+    const found = await client.user.findUnique({
+      where: { id: user.id },
+      select: { id: true, email: true },
+    });
+    expect(found).toBeNull();
+  });
+
+  it('findUniqueOrThrow throws P2025 for a soft-deleted row', async () => {
+    const user = await client.user.create({
+      data: {
+        email: 'sd5@example.com',
+        passwordHash: 'x',
+        name: 'SD Five',
+        role: 'VIEWER',
+      },
+    });
+    await client.user.softDelete({ id: user.id }, 'tester');
+    await expect(
+      client.user.findUniqueOrThrow({ where: { id: user.id } }),
+    ).rejects.toMatchObject({ code: 'P2025' });
+  });
+
+  it('findUnique still returns requested fields for a live row (deletedAt stripped when not requested)', async () => {
+    const user = await client.user.create({
+      data: {
+        email: 'sd6@example.com',
+        passwordHash: 'x',
+        name: 'SD Six',
+        role: 'VIEWER',
+      },
+    });
+    const found = await client.user.findUnique({
+      where: { id: user.id },
+      select: { id: true, email: true },
+    });
+    expect(found).toEqual({ id: user.id, email: 'sd6@example.com' });
+  });
 });
