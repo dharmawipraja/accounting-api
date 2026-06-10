@@ -15,27 +15,36 @@ export interface TestDb {
 
 export async function startTestDb(): Promise<TestDb> {
   const container = await new PostgreSqlContainer('postgres:16').start();
-  const url = container.getConnectionUri();
+  try {
+    const url = container.getConnectionUri();
 
-  // Apply the schema to the fresh container. prisma.config.ts reads DATABASE_URL
-  // from env; dotenv does NOT override an already-set env var, so the container
-  // URL we pass here wins over any .env value.
-  execSync('npx prisma migrate deploy', {
-    env: { ...process.env, DATABASE_URL: url },
-    stdio: 'inherit',
-  });
+    // Apply the schema to the fresh container. prisma.config.ts reads DATABASE_URL
+    // from env; dotenv does NOT override an already-set env var, so the container
+    // URL we pass here wins over any .env value.
+    execSync('npx prisma migrate deploy', {
+      env: { ...process.env, DATABASE_URL: url },
+      stdio: 'inherit',
+    });
 
-  const adapter = new PrismaPg(url);
-  const prisma = new PrismaClient({ adapter });
-  await prisma.$connect();
+    const adapter = new PrismaPg(url);
+    const prisma = new PrismaClient({ adapter });
+    await prisma.$connect();
 
-  return {
-    container,
-    url,
-    prisma,
-    stop: async () => {
-      await prisma.$disconnect();
-      await container.stop();
-    },
-  };
+    return {
+      container,
+      url,
+      prisma,
+      stop: async () => {
+        try {
+          await prisma.$disconnect();
+        } finally {
+          await container.stop();
+        }
+      },
+    };
+  } catch (err) {
+    // Don't leak the container if migration or connection fails mid-setup.
+    await container.stop();
+    throw err;
+  }
 }

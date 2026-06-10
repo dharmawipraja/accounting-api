@@ -8,7 +8,7 @@ describe('Prisma connection (e2e)', () => {
   }, 120_000);
 
   afterAll(async () => {
-    await db.stop();
+    await db?.stop();
   });
 
   it('can query the users table on a migrated database', async () => {
