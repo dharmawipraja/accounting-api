@@ -25,7 +25,7 @@ model User {
   deletedAt    DateTime? @map("deleted_at")
   deletedBy    String?   @map("deleted_by")
 
-  @@unique([email], name: "users_email_unique")
+  @@unique([email]) // DB index name is the Prisma default "users_email_key"
   @@index([deletedAt])
   @@map("users")
 }
