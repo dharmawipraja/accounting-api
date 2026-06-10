@@ -12,6 +12,11 @@ export abstract class DomainError extends Error {
   }
 }
 
+/**
+ * For domain-rule validation failures (e.g. "journal entry does not balance"),
+ * not DTO/request validation — the latter is handled by NestJS ValidationPipe,
+ * which throws an HttpException.
+ */
 export class ValidationFailedError extends DomainError {
   readonly code = 'VALIDATION_FAILED';
   readonly status = 422;

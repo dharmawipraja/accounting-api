@@ -38,16 +38,31 @@ export class AllExceptionsFilter implements ExceptionFilter {
     } else if (exception instanceof HttpException) {
       status = exception.getStatus();
       const res = exception.getResponse();
-      envelope = {
-        code: `HTTP_${status}`,
-        message:
-          typeof res === 'string'
-            ? res
-            : ((res as { message?: string | string[] }).message?.toString() ??
-              exception.message),
-      };
+      if (typeof res === 'string') {
+        envelope = { code: `HTTP_${status}`, message: res };
+      } else {
+        const rawMessage = (res as { message?: string | string[] }).message;
+        if (Array.isArray(rawMessage)) {
+          // class-validator (ValidationPipe) yields an array of per-field
+          // messages — preserve them so the frontend can show field errors.
+          envelope = {
+            code: `HTTP_${status}`,
+            message: 'Validation failed',
+            details: { errors: rawMessage },
+          };
+        } else {
+          envelope = {
+            code: `HTTP_${status}`,
+            message: rawMessage ?? exception.message,
+          };
+        }
+      }
     } else {
-      this.logger.error(exception);
+      const req = ctx.getRequest<{ url?: string }>();
+      this.logger.error(
+        `Unhandled exception on ${req.url ?? 'unknown'}`,
+        exception instanceof Error ? exception.stack : String(exception),
+      );
     }
 
     response.status(status).json(envelope);

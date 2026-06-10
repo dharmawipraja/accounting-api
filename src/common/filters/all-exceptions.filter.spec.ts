@@ -1,4 +1,8 @@
-import { ArgumentsHost, HttpException } from '@nestjs/common';
+import {
+  ArgumentsHost,
+  BadRequestException,
+  HttpException,
+} from '@nestjs/common';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 import { ConflictDomainError } from '../errors/domain-errors';
 
@@ -50,6 +54,23 @@ describe('AllExceptionsFilter', () => {
     filter.catch(new HttpException('nope', 400), m.host);
     expect(m.code()).toBe(400);
     expect(m.payload()).toMatchObject({ code: 'HTTP_400', message: 'nope' });
+  });
+
+  it('preserves validation error arrays in details', () => {
+    const m = mockHost();
+    filter.catch(
+      new BadRequestException([
+        'name must be a string',
+        'email must be an email',
+      ]),
+      m.host,
+    );
+    expect(m.code()).toBe(400);
+    expect(m.payload()).toMatchObject({
+      code: 'HTTP_400',
+      message: 'Validation failed',
+      details: { errors: ['name must be a string', 'email must be an email'] },
+    });
   });
 
   it('maps an unknown error to 500 without leaking internals', () => {
