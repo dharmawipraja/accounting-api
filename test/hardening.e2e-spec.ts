@@ -51,6 +51,16 @@ describe('Hardening (e2e)', () => {
       });
   });
 
+  it('GET /ready returns 503 when the database is down', async () => {
+    const spy = jest
+      .spyOn(prismaOverride, '$queryRaw')
+      .mockRejectedValueOnce(new Error('connection refused'));
+    await request(app.getHttpServer() as App)
+      .get('/ready')
+      .expect(503);
+    spy.mockRestore();
+  });
+
   it('sets security headers via helmet', () => {
     return request(app.getHttpServer() as App)
       .get('/health')

@@ -17,7 +17,11 @@ import { RolesGuard } from './auth/guards/roles.guard';
     LoggerModule.forRoot({
       pinoHttp: {
         autoLogging: true,
-        redact: ['req.headers.authorization'],
+        redact: [
+          'req.headers.authorization',
+          'req.headers.cookie',
+          'res.headers["set-cookie"]',
+        ],
       },
     }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
