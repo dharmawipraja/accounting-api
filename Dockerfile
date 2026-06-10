@@ -4,7 +4,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
-RUN npx prisma generate && npm run build
+# DATABASE_URL here is a dummy so prisma.config.ts resolves during `prisma generate`;
+# generate never connects. The real URL is supplied at runtime via the environment.
+RUN DATABASE_URL="postgresql://build:build@localhost:5432/build?schema=public" npx prisma generate && npm run build
 
 # --- Production stage ---
 FROM node:22-bookworm-slim AS production

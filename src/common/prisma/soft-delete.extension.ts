@@ -113,7 +113,9 @@ export function applySoftDelete(base: PrismaClient) {
           },
           async delete({ model, query, args }) {
             if (isSoftDelete(model)) {
-              // TODO(Task 8): throw a domain error instead of Error so the exception filter maps it cleanly.
+              // Programmer-error guard: no HTTP route performs a hard delete. A plain Error
+              // (→ 500 via the exception filter) is intentional so a stray hard-delete in code
+              // surfaces loudly rather than masquerading as a normal 4xx response.
               throw new Error(
                 `Hard delete forbidden on ${model}; use softDelete()`,
               );
@@ -122,7 +124,9 @@ export function applySoftDelete(base: PrismaClient) {
           },
           async deleteMany({ model, query, args }) {
             if (isSoftDelete(model)) {
-              // TODO(Task 8): throw a domain error instead of Error so the exception filter maps it cleanly.
+              // Programmer-error guard: no HTTP route performs a hard delete. A plain Error
+              // (→ 500 via the exception filter) is intentional so a stray hard-delete in code
+              // surfaces loudly rather than masquerading as a normal 4xx response.
               throw new Error(
                 `Hard delete forbidden on ${model}; soft-delete records individually via softDelete()`,
               );
