@@ -1,9 +1,14 @@
+// Loaded here (not only in main.ts) so unit tests can exercise the decorators
+// in isolation, without NestJS bootstrapping reflect-metadata for us.
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import {
   IsEnum,
   IsInt,
+  IsNotEmpty,
   IsString,
+  Max,
+  Min,
   MinLength,
   validateSync,
 } from 'class-validator';
@@ -19,9 +24,12 @@ export class EnvVars {
   NODE_ENV!: NodeEnv;
 
   @IsInt()
+  @Min(1)
+  @Max(65535)
   PORT!: number;
 
   @IsString()
+  @IsNotEmpty()
   DATABASE_URL!: string;
 
   @IsString()

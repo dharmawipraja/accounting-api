@@ -30,4 +30,17 @@ describe('env validation', () => {
     const result = validate(validEnv);
     expect(result.PORT).toBe(3000);
   });
+
+  it('rejects an out-of-range PORT', () => {
+    expect(() => validate({ ...validEnv, PORT: '0' })).toThrow();
+    expect(() => validate({ ...validEnv, PORT: '99999' })).toThrow();
+  });
+
+  it('rejects an empty DATABASE_URL', () => {
+    expect(() => validate({ ...validEnv, DATABASE_URL: '' })).toThrow();
+  });
+
+  it('rejects an invalid NODE_ENV', () => {
+    expect(() => validate({ ...validEnv, NODE_ENV: 'staging' })).toThrow();
+  });
 });
