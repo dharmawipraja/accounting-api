@@ -43,4 +43,9 @@ describe('env validation', () => {
   it('rejects an invalid NODE_ENV', () => {
     expect(() => validate({ ...validEnv, NODE_ENV: 'staging' })).toThrow();
   });
+
+  it('rejects empty JWT TTLs', () => {
+    expect(() => validate({ ...validEnv, JWT_ACCESS_TTL: '' })).toThrow();
+    expect(() => validate({ ...validEnv, JWT_REFRESH_TTL: '' })).toThrow();
+  });
 });

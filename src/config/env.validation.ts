@@ -41,9 +41,11 @@ export class EnvVars {
   JWT_REFRESH_SECRET!: string;
 
   @IsString()
+  @IsNotEmpty()
   JWT_ACCESS_TTL!: string;
 
   @IsString()
+  @IsNotEmpty()
   JWT_REFRESH_TTL!: string;
 }
 
