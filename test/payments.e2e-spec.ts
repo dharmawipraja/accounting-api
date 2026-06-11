@@ -269,6 +269,48 @@ describe('Payments (e2e)', () => {
       .expect(200);
   });
 
+  it('concurrent post of two full-outstanding payments settles exactly once (one 200, one 409)', async () => {
+    const customerId = await newCustomer('CUST-PAY-RACE');
+    const invoiceId = await makePostedInvoice(customerId); // total 1,110,000
+    const draft = async (): Promise<string> => {
+      const res = await request(server())
+        .post('/payments')
+        .set('Authorization', `Bearer ${acct}`)
+        .send({
+          direction: 'RECEIPT',
+          partnerId: customerId,
+          date: '2026-02-15',
+          cashAccountId: acc['1-1000'],
+          allocations: [{ salesInvoiceId: invoiceId, amount: '1110000' }],
+        })
+        .expect(201);
+      return (res.body as { id: string }).id;
+    };
+    const p1 = await draft();
+    const p2 = await draft();
+    const results = await Promise.allSettled([
+      request(server())
+        .post(`/payments/${p1}/post`)
+        .set('Authorization', `Bearer ${appr}`),
+      request(server())
+        .post(`/payments/${p2}/post`)
+        .set('Authorization', `Bearer ${appr}`),
+    ]);
+    const codes = results.map((r) =>
+      r.status === 'fulfilled' ? r.value.status : 0,
+    );
+    expect(codes.filter((c) => c === 200)).toHaveLength(1); // exactly one settled
+    expect(codes.some((c) => c === 409)).toBe(true); // the other rejected under the FOR UPDATE re-check
+    // The invoice is paid exactly once — no double-settlement, no negative outstanding.
+    const inv = await request(server())
+      .get(`/sales-invoices/${invoiceId}`)
+      .set('Authorization', `Bearer ${appr}`)
+      .expect(200);
+    const body = inv.body as { paymentStatus: string; outstanding: string };
+    expect(body.paymentStatus).toBe('PAID');
+    expect(body.outstanding).toBe('0.0000');
+  });
+
   it('reconciliation invariant: AR control GL balance == Σ all posted invoice outstanding', async () => {
     const customerId = await newCustomer('CUST-RECON');
     const invoiceId = await makePostedInvoice(customerId);
