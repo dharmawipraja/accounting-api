@@ -107,3 +107,26 @@ model Account {
   @@index([parentId])
   @@map("accounts")
 }
+
+enum PeriodStatus {
+  OPEN
+  CLOSED
+}
+
+model AccountingPeriod {
+  id         String       @id @default(uuid())
+  fiscalYear Int          @map("fiscal_year")
+  sequence   Int
+  name       String       @unique
+  startDate  DateTime     @map("start_date") @db.Date
+  endDate    DateTime     @map("end_date") @db.Date
+  status     PeriodStatus @default(OPEN)
+  closedAt   DateTime?    @map("closed_at")
+  closedBy   String?      @map("closed_by")
+  createdAt  DateTime     @default(now()) @map("created_at")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+
+  @@unique([fiscalYear, sequence])
+  @@index([startDate, endDate])
+  @@map("accounting_periods")
+}
