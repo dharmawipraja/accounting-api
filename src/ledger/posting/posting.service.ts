@@ -6,6 +6,7 @@ import { PeriodsService } from '../periods/periods.service';
 import { Money } from '../../common/money/money';
 import {
   ClosedPeriodError,
+  ClosedYearError,
   InvalidAccountError,
   NotFoundDomainError,
   SegregationOfDutiesError,
@@ -91,6 +92,15 @@ export class PostingService {
       input.date,
       settings.fiscalYearStartMonth,
     );
+    const closedYear = await this.prisma.client.yearEndClosing.findFirst({
+      where: { fiscalYear, status: 'CLOSED' },
+    });
+    if (closedYear) {
+      throw new ClosedYearError(
+        'Fiscal year is closed; reopen it before posting',
+        { fiscalYear },
+      );
+    }
     return { periodId: period.id, fiscalYear };
   }
 
