@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { Account } from '@prisma/client';
 import { AccountsService } from './accounts.service';
@@ -16,14 +17,23 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 import { Role } from '../../auth/role.enum';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
+import { BalancesService } from '../balances/balances.service';
 
 @Controller('ledger/accounts')
 export class AccountsController {
-  constructor(private readonly accounts: AccountsService) {}
+  constructor(
+    private readonly accounts: AccountsService,
+    private readonly balances: BalancesService,
+  ) {}
 
   @Get()
   list(): Promise<Account[]> {
     return this.accounts.list();
+  }
+
+  @Get(':id/balance')
+  balance(@Param('id') id: string, @Query('asOf') asOf?: string) {
+    return this.balances.accountBalance(id, asOf ? new Date(asOf) : new Date());
   }
 
   @Get(':id')
