@@ -141,6 +141,9 @@ enum JournalSourceType {
   MANUAL
   OPENING
   REVERSAL
+  SALES_INVOICE
+  PURCHASE_BILL
+  PAYMENT
 }
 
 model JournalSequence {
@@ -235,4 +238,182 @@ model TaxCode {
   @@unique([code], name: "tax_codes_code_unique")
   @@index([deletedAt])
   @@map("tax_codes")
+}
+
+enum DocumentStatus {
+  DRAFT
+  POSTED
+  VOID
+}
+
+enum PaymentDirection {
+  RECEIPT
+  DISBURSEMENT
+}
+
+model BusinessPartner {
+  id         String    @id @default(uuid())
+  code       String
+  name       String
+  npwp       String?
+  email      String?
+  phone      String?
+  address    String?
+  isCustomer Boolean   @default(false) @map("is_customer")
+  isVendor   Boolean   @default(false) @map("is_vendor")
+  isActive   Boolean   @default(true) @map("is_active")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+  deletedBy  String?   @map("deleted_by")
+
+  @@unique([code], name: "business_partners_code_unique")
+  @@index([deletedAt])
+  @@map("business_partners")
+}
+
+model SalesInvoice {
+  id               String             @id @default(uuid())
+  invoiceNumber    Int?               @map("invoice_number")
+  invoiceRef       String?            @map("invoice_ref")
+  fiscalYear       Int?               @map("fiscal_year")
+  partnerId        String             @map("partner_id")
+  date             DateTime           @db.Date
+  dueDate          DateTime?          @map("due_date") @db.Date
+  description      String?
+  status           DocumentStatus     @default(DRAFT)
+  subtotal         Decimal            @default(0) @db.Decimal(20, 4)
+  taxTotal         Decimal            @default(0) @map("tax_total") @db.Decimal(20, 4)
+  withholdingTotal Decimal            @default(0) @map("withholding_total") @db.Decimal(20, 4)
+  total            Decimal            @default(0) @db.Decimal(20, 4)
+  amountPaid       Decimal            @default(0) @map("amount_paid") @db.Decimal(20, 4)
+  journalEntryId   String?            @map("journal_entry_id")
+  createdBy        String             @map("created_by")
+  postedBy         String?            @map("posted_by")
+  postedAt         DateTime?          @map("posted_at")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+  deletedAt        DateTime?          @map("deleted_at")
+  deletedBy        String?            @map("deleted_by")
+  lines            SalesInvoiceLine[]
+
+  @@unique([fiscalYear, invoiceNumber], name: "sales_invoices_fy_number_unique")
+  @@index([deletedAt])
+  @@index([partnerId])
+  @@map("sales_invoices")
+}
+
+model SalesInvoiceLine {
+  id             String       @id @default(uuid())
+  salesInvoiceId String       @map("sales_invoice_id")
+  invoice        SalesInvoice @relation(fields: [salesInvoiceId], references: [id], onDelete: Cascade)
+  lineNo         Int          @map("line_no")
+  description    String
+  accountId      String       @map("account_id")
+  quantity       Decimal      @db.Decimal(20, 4)
+  unitPrice      Decimal      @map("unit_price") @db.Decimal(20, 4)
+  amount         Decimal      @db.Decimal(20, 4)
+  taxCodeIds     String[]     @map("tax_code_ids")
+
+  @@unique([salesInvoiceId, lineNo])
+  @@map("sales_invoice_lines")
+}
+
+model PurchaseBill {
+  id               String             @id @default(uuid())
+  billNumber       Int?               @map("bill_number")
+  billRef          String?            @map("bill_ref")
+  fiscalYear       Int?               @map("fiscal_year")
+  partnerId        String             @map("partner_id")
+  vendorInvoiceNo  String?            @map("vendor_invoice_no")
+  date             DateTime           @db.Date
+  dueDate          DateTime?          @map("due_date") @db.Date
+  description      String?
+  status           DocumentStatus     @default(DRAFT)
+  subtotal         Decimal            @default(0) @db.Decimal(20, 4)
+  taxTotal         Decimal            @default(0) @map("tax_total") @db.Decimal(20, 4)
+  withholdingTotal Decimal            @default(0) @map("withholding_total") @db.Decimal(20, 4)
+  total            Decimal            @default(0) @db.Decimal(20, 4)
+  amountPaid       Decimal            @default(0) @map("amount_paid") @db.Decimal(20, 4)
+  journalEntryId   String?            @map("journal_entry_id")
+  createdBy        String             @map("created_by")
+  postedBy         String?            @map("posted_by")
+  postedAt         DateTime?          @map("posted_at")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+  deletedAt        DateTime?          @map("deleted_at")
+  deletedBy        String?            @map("deleted_by")
+  lines            PurchaseBillLine[]
+
+  @@unique([fiscalYear, billNumber], name: "purchase_bills_fy_number_unique")
+  @@index([deletedAt])
+  @@index([partnerId])
+  @@map("purchase_bills")
+}
+
+model PurchaseBillLine {
+  id             String       @id @default(uuid())
+  purchaseBillId String       @map("purchase_bill_id")
+  bill           PurchaseBill @relation(fields: [purchaseBillId], references: [id], onDelete: Cascade)
+  lineNo         Int          @map("line_no")
+  description    String
+  accountId      String       @map("account_id")
+  quantity       Decimal      @db.Decimal(20, 4)
+  unitPrice      Decimal      @map("unit_price") @db.Decimal(20, 4)
+  amount         Decimal      @db.Decimal(20, 4)
+  taxCodeIds     String[]     @map("tax_code_ids")
+
+  @@unique([purchaseBillId, lineNo])
+  @@map("purchase_bill_lines")
+}
+
+model Payment {
+  id             String              @id @default(uuid())
+  number         Int?
+  ref            String?
+  fiscalYear     Int?                @map("fiscal_year")
+  direction      PaymentDirection
+  partnerId      String              @map("partner_id")
+  date           DateTime            @db.Date
+  cashAccountId  String              @map("cash_account_id")
+  amount         Decimal             @db.Decimal(20, 4)
+  description    String?
+  status         DocumentStatus      @default(DRAFT)
+  journalEntryId String?             @map("journal_entry_id")
+  createdBy      String              @map("created_by")
+  postedBy       String?             @map("posted_by")
+  postedAt       DateTime?           @map("posted_at")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+  deletedAt      DateTime?           @map("deleted_at")
+  deletedBy      String?             @map("deleted_by")
+  allocations    PaymentAllocation[]
+
+  @@unique([fiscalYear, number], name: "payments_fy_number_unique")
+  @@index([deletedAt])
+  @@index([partnerId])
+  @@map("payments")
+}
+
+model PaymentAllocation {
+  id             String  @id @default(uuid())
+  paymentId      String  @map("payment_id")
+  payment        Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  salesInvoiceId String? @map("sales_invoice_id")
+  purchaseBillId String? @map("purchase_bill_id")
+  amount         Decimal @db.Decimal(20, 4)
+
+  @@index([salesInvoiceId])
+  @@index([purchaseBillId])
+  @@map("payment_allocations")
+}
+
+model DocumentSequence {
+  documentType String   @map("document_type")
+  fiscalYear   Int      @map("fiscal_year")
+  nextNumber   Int      @default(1) @map("next_number")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@id([documentType, fiscalYear])
+  @@map("document_sequences")
 }

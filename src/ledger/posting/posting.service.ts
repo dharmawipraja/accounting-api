@@ -13,6 +13,7 @@ import {
   ValidationFailedError,
 } from '../../common/errors/domain-errors';
 import { PostEntryInput, PostLineInput } from './posting.types';
+import { ExtendedPrismaClient } from '../../common/prisma/soft-delete.extension';
 
 /**
  * The subset of the interactive-tx client that {@link PostingService.nextNumber}
@@ -31,6 +32,14 @@ type RawTxClient = {
   ) => Promise<T>;
 };
 
+/** The interactive-transaction view of the soft-delete-extended client — what the
+ *  `$transaction(async (tx) => …)` callback receives. Shared so document services
+ *  can compose journal posting into their own transactions. */
+export type LedgerTx = Omit<
+  ExtendedPrismaClient,
+  '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends' | '$use'
+>;
+
 @Injectable()
 export class PostingService {
   constructor(
@@ -40,8 +49,21 @@ export class PostingService {
   ) {}
 
   async post(input: PostEntryInput, postedBy: string): Promise<JournalEntry> {
-    this.assertBalanced(input.lines);
+    const { periodId, fiscalYear } = await this.preparePosting(input, postedBy);
+    return this.prisma.client.$transaction((tx) =>
+      this.createPostedEntryInTx(tx, input, postedBy, periodId, fiscalYear),
+    );
+  }
 
+  /** Pre-transaction validation shared by direct posts and document posting.
+   *  Runs the balance, SoD, open-period, and postable-account checks (all reads
+   *  stay OUT of the write transaction to avoid pool contention under concurrency)
+   *  and returns the resolved period + fiscal year. */
+  async preparePosting(
+    input: PostEntryInput,
+    postedBy: string,
+  ): Promise<{ periodId: string; fiscalYear: number }> {
+    this.assertBalanced(input.lines);
     const settings = await this.company.get();
     if (
       settings.segregationOfDutiesEnabled &&
@@ -53,7 +75,6 @@ export class PostingService {
         { createdBy: input.createdBy },
       );
     }
-
     // NOTE: period + account checks are intentionally pre-transaction. For this
     // single-company, low-concurrency phase the TOCTOU window (period closing /
     // account deactivating between check and write) is acceptable; move these
@@ -65,45 +86,52 @@ export class PostingService {
         { date: input.date.toISOString().slice(0, 10) },
       );
     }
-
     await this.assertPostableAccounts(input.lines);
-
     const fiscalYear = this.fiscalYearFor(
       input.date,
       settings.fiscalYearStartMonth,
     );
+    return { periodId: period.id, fiscalYear };
+  }
 
-    return this.prisma.client.$transaction(async (tx) => {
-      const entryNumber = await this.nextNumber(tx, fiscalYear);
-      const entryRef = this.buildEntryRef(fiscalYear, entryNumber);
-      return tx.journalEntry.create({
-        data: {
-          entryNumber,
-          entryRef,
-          fiscalYear,
-          date: input.date,
-          periodId: period.id,
-          description: input.description,
-          sourceType: input.sourceType,
-          sourceId: input.sourceId,
-          status: 'POSTED',
-          createdBy: input.createdBy,
-          postedBy,
-          postedAt: new Date(),
-          lines: {
-            // Normalize to exactly 4dp at the trust boundary so the stored value
-            // is the same one assertBalanced validated (PostingService is the
-            // only writer of posted lines, and non-DTO callers reach here too).
-            create: input.lines.map((l, i) => ({
-              lineNo: i + 1,
-              accountId: l.accountId,
-              debit: Money.of(l.debit ?? '0').toPersistence(),
-              credit: Money.of(l.credit ?? '0').toPersistence(),
-              description: l.description,
-            })),
-          },
+  /** Assigns the gapless JE number and writes the (already-validated, balanced)
+   *  entry within a caller-provided transaction. */
+  async createPostedEntryInTx(
+    tx: LedgerTx,
+    input: PostEntryInput,
+    postedBy: string,
+    periodId: string,
+    fiscalYear: number,
+  ): Promise<JournalEntry> {
+    const entryNumber = await this.nextNumber(tx, fiscalYear);
+    const entryRef = this.buildEntryRef(fiscalYear, entryNumber);
+    return tx.journalEntry.create({
+      data: {
+        entryNumber,
+        entryRef,
+        fiscalYear,
+        date: input.date,
+        periodId,
+        description: input.description,
+        sourceType: input.sourceType,
+        sourceId: input.sourceId,
+        status: 'POSTED',
+        createdBy: input.createdBy,
+        postedBy,
+        postedAt: new Date(),
+        lines: {
+          // Normalize to exactly 4dp at the trust boundary so the stored value
+          // is the same one assertBalanced validated (PostingService is the
+          // only writer of posted lines, and non-DTO callers reach here too).
+          create: input.lines.map((l, i) => ({
+            lineNo: i + 1,
+            accountId: l.accountId,
+            debit: Money.of(l.debit ?? '0').toPersistence(),
+            credit: Money.of(l.credit ?? '0').toPersistence(),
+            description: l.description,
+          })),
         },
-      });
+      },
     });
   }
 
@@ -112,6 +140,49 @@ export class PostingService {
     reversedBy: string,
     date?: Date,
   ): Promise<JournalEntry> {
+    const { original, periodId, fiscalYear } = await this.prepareReversal(
+      entryId,
+      date,
+    );
+    try {
+      return await this.prisma.client.$transaction((tx) =>
+        this.reverseInTx(tx, original, reversedBy, periodId, fiscalYear),
+      );
+    } catch (err) {
+      // The unique on reversal_of_id means a concurrent/retried reverse of the
+      // same entry loses the race — map it to a clean domain error, not a 500.
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ValidationFailedError('Entry has already been reversed', {
+          entryId,
+        });
+      }
+      throw err;
+    }
+  }
+
+  /** Pre-transaction validation for a reversal: loads the original (with lines),
+   *  asserts it is POSTED, resolves the open period + fiscal year for the
+   *  reversal date (defaults to the original's date). All reads stay out of the
+   *  write transaction. */
+  async prepareReversal(
+    entryId: string,
+    date?: Date,
+  ): Promise<{
+    original: JournalEntry & {
+      lines: {
+        lineNo: number;
+        accountId: string;
+        debit: Prisma.Decimal;
+        credit: Prisma.Decimal;
+        description: string | null;
+      }[];
+    };
+    periodId: string;
+    fiscalYear: number;
+  }> {
     const original = await this.prisma.client.journalEntry.findUnique({
       where: { id: entryId },
       include: { lines: { orderBy: { lineNo: 'asc' } } },
@@ -136,55 +207,54 @@ export class PostingService {
       reversalDate,
       settings.fiscalYearStartMonth,
     );
+    return { original, periodId: period.id, fiscalYear };
+  }
 
-    try {
-      return await this.prisma.client.$transaction(async (tx) => {
-        const entryNumber = await this.nextNumber(tx, fiscalYear);
-        const entryRef = this.buildEntryRef(fiscalYear, entryNumber);
-        const reversal = await tx.journalEntry.create({
-          data: {
-            entryNumber,
-            entryRef,
-            fiscalYear,
-            date: reversalDate,
-            periodId: period.id,
-            description: `Reversal of ${original.entryRef}`,
-            sourceType: 'REVERSAL',
-            reversalOfId: original.id,
-            status: 'POSTED',
-            createdBy: reversedBy,
-            postedBy: reversedBy,
-            postedAt: new Date(),
-            lines: {
-              create: original.lines.map((l) => ({
-                lineNo: l.lineNo,
-                accountId: l.accountId,
-                debit: l.credit, // swap debit/credit
-                credit: l.debit,
-                description: l.description,
-              })),
-            },
-          },
-        });
-        await tx.journalEntry.update({
-          where: { id: original.id },
-          data: { status: 'REVERSED', reversedById: reversal.id },
-        });
-        return reversal;
-      });
-    } catch (err) {
-      // The unique on reversal_of_id means a concurrent/retried reverse of the
-      // same entry loses the race — map it to a clean domain error, not a 500.
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
-        throw new ValidationFailedError('Entry has already been reversed', {
-          entryId,
-        });
-      }
-      throw err;
-    }
+  /** Writes the reversal entry (debit/credit swapped) and marks the original
+   *  REVERSED within a caller-provided transaction. Uses `original.date` as the
+   *  reversal date — `prepareReversal` already resolved the period from
+   *  `date ?? original.date`. */
+  async reverseInTx(
+    tx: LedgerTx,
+    original: Awaited<
+      ReturnType<PostingService['prepareReversal']>
+    >['original'],
+    reversedBy: string,
+    periodId: string,
+    fiscalYear: number,
+  ): Promise<JournalEntry> {
+    const entryNumber = await this.nextNumber(tx, fiscalYear);
+    const entryRef = this.buildEntryRef(fiscalYear, entryNumber);
+    const reversal = await tx.journalEntry.create({
+      data: {
+        entryNumber,
+        entryRef,
+        fiscalYear,
+        date: original.date,
+        periodId,
+        description: `Reversal of ${original.entryRef}`,
+        sourceType: 'REVERSAL',
+        reversalOfId: original.id,
+        status: 'POSTED',
+        createdBy: reversedBy,
+        postedBy: reversedBy,
+        postedAt: new Date(),
+        lines: {
+          create: original.lines.map((l) => ({
+            lineNo: l.lineNo,
+            accountId: l.accountId,
+            debit: l.credit, // swap debit/credit
+            credit: l.debit,
+            description: l.description,
+          })),
+        },
+      },
+    });
+    await tx.journalEntry.update({
+      where: { id: original.id },
+      data: { status: 'REVERSED', reversedById: reversal.id },
+    });
+    return reversal;
   }
 
   async postDraft(draftId: string, postedBy: string): Promise<JournalEntry> {
