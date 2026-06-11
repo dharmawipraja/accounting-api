@@ -4,10 +4,13 @@ import { Prisma, PrismaClient } from '@prisma/client';
  * Models subject to soft delete. Add new soft-deletable models here as later
  * phases introduce them (e.g. 'BusinessPartner', 'TaxCode').
  *
- * TODO(Phase 2): update/updateMany/upsert/aggregate/groupBy are NOT yet
- * filtered — they can mutate/resurrect or count soft-deleted rows. Acceptable
- * in Phase 1 (only User, accessed via findFirst-based service), to be
- * hardened in Phase 2.
+ * KNOWN GAP: update/updateMany/upsert/aggregate/groupBy are NOT filtered —
+ * they can mutate/resurrect or count soft-deleted rows. This now affects User,
+ * Account, AND JournalEntry. It is mitigated at the service layer (every write
+ * path does a findFirst-based existence/status check before update), so a
+ * soft-deleted row can't be resurrected through the services. Harden the
+ * extension itself (inject `deletedAt: null` into update/updateMany) if a raw
+ * update path is ever added.
  */
 export const SOFT_DELETE_MODELS = new Set<Prisma.ModelName>([
   'User',

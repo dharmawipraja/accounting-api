@@ -188,10 +188,15 @@ export class AccountsService implements OnModuleInit {
 
   async softDelete(id: string, deletedBy: string): Promise<void> {
     const account = await this.findById(id);
-    const posted = await this.prisma.client.journalLine.count({
-      where: { accountId: id },
+    // Only POSTED/REVERSED lines block deletion — a soft-deleted draft's lines
+    // must not pin the account forever.
+    const postedLineCount = await this.prisma.client.journalLine.count({
+      where: {
+        accountId: id,
+        entry: { status: { in: ['POSTED', 'REVERSED'] } },
+      },
     });
-    if (posted > 0) {
+    if (postedLineCount > 0) {
       throw new ValidationFailedError(
         'Cannot delete an account with posted lines; deactivate instead',
         { id },

@@ -185,12 +185,16 @@ model JournalLine {
   journalEntryId String       @map("journal_entry_id")
   entry          JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
   lineNo         Int          @map("line_no")
+  // accountId is a plain UUID (no FK to Account) by design — postable/active
+  // validity is enforced in PostingService.assertPostableAccounts, and we never
+  // hard-delete accounts (soft delete only), so a DB FK adds no safety here.
   accountId      String       @map("account_id")
   debit          Decimal      @default(0) @db.Decimal(20, 4)
   credit         Decimal      @default(0) @db.Decimal(20, 4)
   description    String?
   createdAt      DateTime     @default(now()) @map("created_at")
 
+  @@unique([journalEntryId, lineNo])
   @@index([accountId])
   @@index([journalEntryId])
   @@map("journal_lines")

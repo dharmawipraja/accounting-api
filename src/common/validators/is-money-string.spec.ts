@@ -16,11 +16,14 @@ describe('IsMoneyString', () => {
     expect(await check('1000')).toBe(true);
     expect(await check('1000.50')).toBe(true);
     expect(await check('0.0001')).toBe(true);
+    expect(await check('0')).toBe(true); // zero allowed; rejected downstream by the CHECK
   });
   it('rejects bad values', async () => {
     expect(await check('1000.123456')).toBe(false);
     expect(await check('-5')).toBe(false);
     expect(await check('abc')).toBe(false);
     expect(await check(1000)).toBe(false);
+    expect(await check(' 5 ')).toBe(false); // no surrounding whitespace
+    expect(await check('')).toBe(false);
   });
 });
