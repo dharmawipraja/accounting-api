@@ -107,6 +107,18 @@ export class YearEndCloseService {
     );
     const incomeStr = netIncome.toPersistence();
     await this.prisma.client.$transaction(async (tx) => {
+      // Serialize concurrent year-end closes for this fiscal year, then re-check
+      // status under the lock — so a double-close can't post (and orphan) a
+      // second closing entry. The advisory lock auto-releases at tx end and
+      // works whether or not the year_end_closings row exists yet.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${fiscalYear})`;
+      const current = await tx.$queryRaw<{ status: string }[]>`
+        SELECT status FROM year_end_closings WHERE fiscal_year = ${fiscalYear}`;
+      if (current.length > 0 && current[0].status === 'CLOSED') {
+        throw new ConflictDomainError('Fiscal year is already closed', {
+          fiscalYear,
+        });
+      }
       const entry = await this.posting.createPostedEntryInTx(
         tx,
         closingInput,
