@@ -360,6 +360,17 @@ export class SalesInvoicesService {
       : outstanding.isZero() || outstanding.isNegative()
         ? 'PAID'
         : 'PARTIAL';
+    // Nested lines (present on getById, absent on list) carry raw Decimals whose
+    // toJSON strips trailing zeros — serialize their money fields to 4dp too.
+    const lines = (
+      inv as SalesInvoice & {
+        lines?: {
+          quantity: Prisma.Decimal;
+          unitPrice: Prisma.Decimal;
+          amount: Prisma.Decimal;
+        }[];
+      }
+    ).lines;
     return {
       ...inv,
       subtotal: inv.subtotal.toFixed(4) as unknown as SalesInvoice['subtotal'],
@@ -371,6 +382,16 @@ export class SalesInvoicesService {
       amountPaid: inv.amountPaid.toFixed(
         4,
       ) as unknown as SalesInvoice['amountPaid'],
+      ...(lines
+        ? {
+            lines: lines.map((l) => ({
+              ...l,
+              quantity: l.quantity.toFixed(4),
+              unitPrice: l.unitPrice.toFixed(4),
+              amount: l.amount.toFixed(4),
+            })),
+          }
+        : {}),
       outstanding: outstanding.toPersistence(),
       paymentStatus,
     };

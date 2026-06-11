@@ -102,12 +102,16 @@ describe('SalesInvoices (e2e)', () => {
       taxTotal: string;
       total: string;
       invoiceNumber: number | null;
+      lines: { amount: string; unitPrice: string }[];
     };
     expect(body.status).toBe('DRAFT');
     expect(body.subtotal).toBe('1000000.0000');
     expect(body.taxTotal).toBe('110000.0000');
     expect(body.total).toBe('1110000.0000');
     expect(body.invoiceNumber).toBeNull();
+    // Line-level money is serialized to the same 4dp convention.
+    expect(body.lines[0].amount).toBe('1000000.0000');
+    expect(body.lines[0].unitPrice).toBe('1000000.0000');
   });
 
   it('posts a DRAFT invoice → POSTED, gapless number, balanced GL entry hitting AR (1-1200)', async () => {
