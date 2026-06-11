@@ -188,17 +188,9 @@ export class AccountsService implements OnModuleInit {
 
   async softDelete(id: string, deletedBy: string): Promise<void> {
     const account = await this.findById(id);
-    // journalLine doesn't exist until Task 5; forward-reference resolves to undefined for now.
-    // TODO(Task 5): replace this block with the typed `prisma.client.journalLine.count(...)`
-    // and REMOVE the `.catch(() => 0)` — once the model exists, a transient DB error must
-    // NOT be swallowed into a 0 count (that would let an account with posted lines be deleted).
-    /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-    const jlModel = (this.prisma.client as any)['journalLine'] as
-      | { count: (a: unknown) => Promise<number> }
-      | undefined;
-    /* eslint-enable @typescript-eslint/no-unsafe-member-access */
-    const posted: number =
-      (await jlModel?.count({ where: { accountId: id } }).catch(() => 0)) ?? 0;
+    const posted = await this.prisma.client.journalLine.count({
+      where: { accountId: id },
+    });
     if (posted > 0) {
       throw new ValidationFailedError(
         'Cannot delete an account with posted lines; deactivate instead',

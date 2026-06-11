@@ -41,3 +41,23 @@ export class ForbiddenDomainError extends DomainError {
   readonly code = 'FORBIDDEN';
   readonly status = 403;
 }
+
+export class UnbalancedEntryError extends DomainError {
+  readonly code = 'UNBALANCED_ENTRY';
+  readonly status = 422;
+}
+
+export class ClosedPeriodError extends DomainError {
+  readonly code = 'CLOSED_PERIOD';
+  readonly status = 409;
+}
+
+export class InvalidAccountError extends DomainError {
+  readonly code = 'INVALID_ACCOUNT';
+  readonly status = 422;
+}
+
+export class SegregationOfDutiesError extends DomainError {
+  readonly code = 'SEGREGATION_OF_DUTIES';
+  readonly status = 403;
+}

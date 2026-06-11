@@ -130,3 +130,77 @@ model AccountingPeriod {
   @@index([startDate, endDate])
   @@map("accounting_periods")
 }
+
+enum JournalStatus {
+  DRAFT
+  POSTED
+  REVERSED
+}
+
+enum JournalSourceType {
+  MANUAL
+  OPENING
+  REVERSAL
+}
+
+model JournalSequence {
+  fiscalYear Int      @id @map("fiscal_year")
+  nextNumber Int      @default(1) @map("next_number")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("journal_sequences")
+}
+
+model JournalEntry {
+  id           String            @id @default(uuid())
+  entryNumber  Int?              @map("entry_number")
+  entryRef     String?           @map("entry_ref")
+  fiscalYear   Int?              @map("fiscal_year")
+  date         DateTime          @db.Date
+  periodId     String?           @map("period_id")
+  description  String
+  sourceType   JournalSourceType @map("source_type")
+  sourceId     String?           @map("source_id")
+  status       JournalStatus     @default(DRAFT)
+  reversalOfId String?           @map("reversal_of_id")
+  reversedById String?           @map("reversed_by_id")
+  createdBy    String            @map("created_by")
+  postedBy     String?           @map("posted_by")
+  postedAt     DateTime?         @map("posted_at")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+  deletedAt    DateTime?         @map("deleted_at")
+  deletedBy    String?           @map("deleted_by")
+  lines        JournalLine[]
+
+  @@unique([fiscalYear, entryNumber], name: "journal_entries_fy_number_unique")
+  @@index([date])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("journal_entries")
+}
+
+model JournalLine {
+  id             String       @id @default(uuid())
+  journalEntryId String       @map("journal_entry_id")
+  entry          JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  lineNo         Int          @map("line_no")
+  accountId      String       @map("account_id")
+  debit          Decimal      @default(0) @db.Decimal(20, 4)
+  credit         Decimal      @default(0) @db.Decimal(20, 4)
+  description    String?
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  @@index([accountId])
+  @@index([journalEntryId])
+  @@map("journal_lines")
+}
+
+model IdempotencyKey {
+  key           String   @id
+  endpoint      String
+  resultEntryId String?  @map("result_entry_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@map("idempotency_keys")
+}
