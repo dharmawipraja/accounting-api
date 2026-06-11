@@ -26,6 +26,8 @@ export class PeriodsService {
       const month = monthIndex % 12; // 0..11
       const start = new Date(Date.UTC(year, month, 1));
       const end = new Date(Date.UTC(year, month + 1, 0));
+      // name is {fiscalYear}-{sequence}, NOT {calendarYear}-{calendarMonth};
+      // for a non-January fiscal start, sequence 1 is the start month.
       const name = `${fiscalYear}-${String(i + 1).padStart(2, '0')}`;
       return {
         fiscalYear,
@@ -51,11 +53,16 @@ export class PeriodsService {
 
   /** The PostingService guard: the OPEN period containing the date, or null. */
   async findOpenPeriodForDate(date: Date): Promise<AccountingPeriod | null> {
+    // Truncate to UTC midnight so a date carrying a time-of-day still matches the
+    // @db.Date bounds (startDate/endDate are stored at 00:00:00).
+    const d = new Date(
+      Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+    );
     return this.prisma.client.accountingPeriod.findFirst({
       where: {
         status: 'OPEN',
-        startDate: { lte: date },
-        endDate: { gte: date },
+        startDate: { lte: d },
+        endDate: { gte: d },
       },
     });
   }
@@ -78,6 +85,8 @@ export class PeriodsService {
       where: { id },
     });
     if (!period) throw new NotFoundDomainError('Period not found', { id });
+    if (period.status === 'OPEN')
+      throw new ConflictDomainError('Period is not closed', { id });
     return this.prisma.client.accountingPeriod.update({
       where: { id },
       data: { status: 'OPEN', closedAt: null, closedBy: null },

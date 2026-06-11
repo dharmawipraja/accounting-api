@@ -74,6 +74,22 @@ describe('Periods (e2e)', () => {
     expect(period!.name).toBe('2026-03');
   });
 
+  it('findOpenPeriodForDate is inclusive on month boundaries and ignores time-of-day', async () => {
+    const first = await periodsService.findOpenPeriodForDate(
+      new Date(Date.UTC(2026, 0, 1)), // 1 Jan
+    );
+    expect(first!.name).toBe('2026-01');
+    const last = await periodsService.findOpenPeriodForDate(
+      new Date(Date.UTC(2026, 11, 31)), // 31 Dec
+    );
+    expect(last!.name).toBe('2026-12');
+    // A date carrying a time-of-day on the last day of February still resolves.
+    const timed = await periodsService.findOpenPeriodForDate(
+      new Date('2026-02-28T18:30:00Z'),
+    );
+    expect(timed!.name).toBe('2026-02');
+  });
+
   it('closes a period (200) and then findOpenPeriodForDate returns null', async () => {
     const periods = await periodsService.list(2026);
     const march = periods.find((p) => p.name === '2026-03')!;

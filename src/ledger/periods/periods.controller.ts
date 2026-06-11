@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   Param,
+  ParseIntPipe,
   Post,
   Query,
 } from '@nestjs/common';
@@ -20,8 +21,10 @@ export class PeriodsController {
   constructor(private readonly periods: PeriodsService) {}
 
   @Get()
-  list(@Query('fiscalYear') fiscalYear: string): Promise<AccountingPeriod[]> {
-    return this.periods.list(Number(fiscalYear));
+  list(
+    @Query('fiscalYear', ParseIntPipe) fiscalYear: number,
+  ): Promise<AccountingPeriod[]> {
+    return this.periods.list(fiscalYear);
   }
 
   @Roles(Role.APPROVER, Role.ADMIN)
