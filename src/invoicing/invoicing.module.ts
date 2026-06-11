@@ -10,6 +10,8 @@ import { SalesInvoicesService } from './sales-invoices.service';
 import { SalesInvoicesController } from './sales-invoices.controller';
 import { PurchaseBillsService } from './purchase-bills.service';
 import { PurchaseBillsController } from './purchase-bills.controller';
+import { PaymentsService } from './payments.service';
+import { PaymentsController } from './payments.controller';
 
 @Module({
   imports: [LedgerModule, TaxModule, CompanyModule],
@@ -19,17 +21,20 @@ import { PurchaseBillsController } from './purchase-bills.controller';
     DocumentPostingService,
     SalesInvoicesService,
     PurchaseBillsService,
+    PaymentsService,
   ],
   controllers: [
     BusinessPartnersController,
     SalesInvoicesController,
     PurchaseBillsController,
+    PaymentsController,
   ],
   exports: [
     DocumentNumberService,
     BusinessPartnersService,
     SalesInvoicesService,
     PurchaseBillsService,
+    PaymentsService,
   ],
 })
 export class InvoicingModule {}
