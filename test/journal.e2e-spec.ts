@@ -254,6 +254,37 @@ describe('JournalEntries (e2e)', () => {
     expect(secondId).toBe(firstId);
   });
 
+  it('concurrent same-key createAndPost posts exactly once (no double-post)', async () => {
+    await app.get(CompanyService).update({ segregationOfDutiesEnabled: false });
+    const key = `idem-concurrent-${Date.now()}`;
+    const desc = `Concurrent ${Date.now()}`;
+    const payload = { ...balancedBody(), description: desc };
+    const before = await prismaOverride.client.journalEntry.count({
+      where: { description: desc, status: 'POSTED' },
+    });
+    const both = await Promise.allSettled([
+      request(app.getHttpServer() as App)
+        .post('/ledger/journal-entries?post=true')
+        .set('Authorization', `Bearer ${approverToken}`)
+        .set('Idempotency-Key', key)
+        .send(payload),
+      request(app.getHttpServer() as App)
+        .post('/ledger/journal-entries?post=true')
+        .set('Authorization', `Bearer ${approverToken}`)
+        .set('Idempotency-Key', key)
+        .send(payload),
+    ]);
+    const after = await prismaOverride.client.journalEntry.count({
+      where: { description: desc, status: 'POSTED' },
+    });
+    expect(after - before).toBe(1); // exactly one entry — no double-post
+    const codes = both.map((r) =>
+      r.status === 'fulfilled' ? r.value.status : 0,
+    );
+    expect(codes.filter((c) => c === 201).length).toBeGreaterThanOrEqual(1);
+    codes.forEach((c) => expect([201, 409]).toContain(c));
+  });
+
   it('opening balances auto-plug credits Saldo Awal (3-9000) (200, sourceType=OPENING)', async () => {
     const res = await request(app.getHttpServer() as App)
       .post('/ledger/opening-balances')

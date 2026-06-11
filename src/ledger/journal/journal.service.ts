@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { JournalEntry } from '@prisma/client';
+import { JournalEntry, Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PostingService } from '../posting/posting.service';
 import { AccountsService } from '../accounts/accounts.service';
@@ -7,6 +7,7 @@ import { PostLineInput } from '../posting/posting.types';
 import { Money } from '../../common/money/money';
 import { OPENING_BALANCE_EQUITY_CODE } from '../accounts/chart-of-accounts.seed';
 import {
+  ConflictDomainError,
   NotFoundDomainError,
   ValidationFailedError,
 } from '../../common/errors/domain-errors';
@@ -83,11 +84,9 @@ export class JournalService {
     postedBy: string,
     idempotencyKey?: string,
   ): Promise<JournalEntry> {
-    const existing = await this.lookupIdempotent(idempotencyKey);
-    if (existing) return existing;
-    const posted = await this.posting.postDraft(id, postedBy);
-    await this.recordIdempotent(idempotencyKey, 'postDraft', posted.id);
-    return posted;
+    return this.runIdempotent(idempotencyKey, 'postDraft', () =>
+      this.posting.postDraft(id, postedBy),
+    );
   }
 
   async reverse(
@@ -95,11 +94,9 @@ export class JournalService {
     reversedBy: string,
     idempotencyKey?: string,
   ): Promise<JournalEntry> {
-    const existing = await this.lookupIdempotent(idempotencyKey);
-    if (existing) return existing;
-    const reversal = await this.posting.reverse(id, reversedBy);
-    await this.recordIdempotent(idempotencyKey, 'reverse', reversal.id);
-    return reversal;
+    return this.runIdempotent(idempotencyKey, 'reverse', () =>
+      this.posting.reverse(id, reversedBy),
+    );
   }
 
   /** Direct create-and-post (used when Segregation of Duties is off). */
@@ -108,20 +105,18 @@ export class JournalService {
     postedBy: string,
     idempotencyKey?: string,
   ): Promise<JournalEntry> {
-    const existing = await this.lookupIdempotent(idempotencyKey);
-    if (existing) return existing;
-    const posted = await this.posting.post(
-      {
-        date: input.date,
-        description: input.description,
-        sourceType: 'MANUAL',
-        createdBy: input.createdBy,
-        lines: input.lines,
-      },
-      postedBy,
+    return this.runIdempotent(idempotencyKey, 'createAndPost', () =>
+      this.posting.post(
+        {
+          date: input.date,
+          description: input.description,
+          sourceType: 'MANUAL',
+          createdBy: input.createdBy,
+          lines: input.lines,
+        },
+        postedBy,
+      ),
     );
-    await this.recordIdempotent(idempotencyKey, 'createAndPost', posted.id);
-    return posted;
   }
 
   /**
@@ -135,71 +130,112 @@ export class JournalService {
     postedBy: string,
     idempotencyKey?: string,
   ): Promise<JournalEntry> {
-    const existing = await this.lookupIdempotent(idempotencyKey);
-    if (existing) return existing;
+    return this.runIdempotent(idempotencyKey, 'openingBalances', async () => {
+      let debit = Money.zero();
+      let credit = Money.zero();
+      for (const b of balances) {
+        debit = debit.add(Money.of(b.debit ?? '0'));
+        credit = credit.add(Money.of(b.credit ?? '0'));
+      }
 
-    let debit = Money.zero();
-    let credit = Money.zero();
-    for (const b of balances) {
-      debit = debit.add(Money.of(b.debit ?? '0'));
-      credit = credit.add(Money.of(b.credit ?? '0'));
-    }
-
-    const equity = (await this.accounts.list()).find(
-      (a) => a.code === OPENING_BALANCE_EQUITY_CODE,
-    );
-    if (!equity) {
-      throw new ValidationFailedError(
-        'Opening Balance Equity account missing from chart',
+      const equity = (await this.accounts.list()).find(
+        (a) => a.code === OPENING_BALANCE_EQUITY_CODE,
       );
-    }
+      if (!equity) {
+        throw new ValidationFailedError(
+          'Opening Balance Equity account missing from chart',
+        );
+      }
 
-    const diff = debit.subtract(credit); // debits>credits -> plug is a credit to equity
-    const lines: PostLineInput[] = [...balances];
-    // A zero plug would violate the line CHECK (debit > 0 OR credit > 0), so
-    // only add the plug when the balances do not already net to zero.
-    if (!diff.isZero()) {
-      lines.push(
-        diff.isNegative()
-          ? { accountId: equity.id, debit: diff.multiply('-1').toString() }
-          : { accountId: equity.id, credit: diff.toString() },
+      const diff = debit.subtract(credit); // debits>credits -> plug is a credit to equity
+      const lines: PostLineInput[] = [...balances];
+      // A zero plug would violate the line CHECK (debit > 0 OR credit > 0), so
+      // only add the plug when the balances do not already net to zero.
+      if (!diff.isZero()) {
+        lines.push(
+          diff.isNegative()
+            ? { accountId: equity.id, debit: diff.multiply('-1').toString() }
+            : { accountId: equity.id, credit: diff.toString() },
+        );
+      }
+
+      return this.posting.post(
+        {
+          date,
+          description: 'Opening balances',
+          sourceType: 'OPENING',
+          createdBy: postedBy,
+          lines,
+        },
+        postedBy,
       );
-    }
-
-    const posted = await this.posting.post(
-      {
-        date,
-        description: 'Opening balances',
-        sourceType: 'OPENING',
-        createdBy: postedBy,
-        lines,
-      },
-      postedBy,
-    );
-    await this.recordIdempotent(idempotencyKey, 'openingBalances', posted.id);
-    return posted;
-  }
-
-  // ---- idempotency helpers ----
-  private async lookupIdempotent(key?: string): Promise<JournalEntry | null> {
-    if (!key) return null;
-    const record = await this.prisma.client.idempotencyKey.findUnique({
-      where: { key },
-    });
-    if (!record?.resultEntryId) return null;
-    return this.prisma.client.journalEntry.findFirst({
-      where: { id: record.resultEntryId },
     });
   }
 
-  private async recordIdempotent(
+  // ---- idempotency (reserve-first, so concurrent same-key requests cannot double-post) ----
+
+  /**
+   * Runs `op` under an idempotency key. A repeated key returns the recorded
+   * entry; a key currently held by an in-flight request throws
+   * ConflictDomainError (409); if `op` throws, the reservation is released so a
+   * later retry can re-attempt (failures are not cached).
+   */
+  private async runIdempotent(
     key: string | undefined,
     endpoint: string,
-    entryId: string,
-  ): Promise<void> {
-    if (!key) return;
-    await this.prisma.client.idempotencyKey.create({
-      data: { key, endpoint, resultEntryId: entryId },
-    });
+    op: () => Promise<JournalEntry>,
+  ): Promise<JournalEntry> {
+    if (!key) return op();
+    const reserved = await this.reserveIdempotent(key, endpoint);
+    if (reserved !== 'OWNED') return reserved;
+    try {
+      const result = await op();
+      await this.prisma.client.idempotencyKey.update({
+        where: { key },
+        data: { resultEntryId: result.id },
+      });
+      return result;
+    } catch (err) {
+      await this.prisma.client.idempotencyKey
+        .delete({ where: { key } })
+        .catch(() => undefined);
+      throw err;
+    }
+  }
+
+  /**
+   * Inserts the key. Returns 'OWNED' if we now hold it; the recorded entry if it
+   * was already completed; throws ConflictDomainError if another request holds it.
+   */
+  private async reserveIdempotent(
+    key: string,
+    endpoint: string,
+  ): Promise<JournalEntry | 'OWNED'> {
+    try {
+      await this.prisma.client.idempotencyKey.create({
+        data: { key, endpoint },
+      });
+      return 'OWNED';
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        const record = await this.prisma.client.idempotencyKey.findUnique({
+          where: { key },
+        });
+        if (record?.resultEntryId) {
+          const entry = await this.prisma.client.journalEntry.findFirst({
+            where: { id: record.resultEntryId },
+          });
+          if (entry) return entry;
+        }
+        throw new ConflictDomainError(
+          'A request with this idempotency key is already in progress',
+          { key },
+        );
+      }
+      throw err;
+    }
   }
 }
