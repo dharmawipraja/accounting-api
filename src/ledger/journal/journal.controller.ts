@@ -3,9 +3,11 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   Param,
   Post,
+  Query,
 } from '@nestjs/common';
 import { JournalEntry } from '@prisma/client';
 import { JournalService } from './journal.service';
@@ -26,16 +28,22 @@ export class JournalController {
 
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
   @Post()
-  createDraft(
+  async createOrPost(
     @Body() dto: CreateJournalEntryDto,
+    @Query('post') post: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<JournalEntry> {
-    return this.journal.createDraft({
+    const input = {
       date: new Date(dto.date),
       description: dto.description,
       lines: dto.lines,
       createdBy: user.id,
-    });
+    };
+    if (post === 'true') {
+      return this.journal.createAndPost(input, user.id, idempotencyKey);
+    }
+    return this.journal.createDraft(input);
   }
 
   @Roles(Role.APPROVER, Role.ADMIN)
@@ -44,8 +52,9 @@ export class JournalController {
   post(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<JournalEntry> {
-    return this.journal.postDraft(id, user.id);
+    return this.journal.postDraft(id, user.id, idempotencyKey);
   }
 
   @Roles(Role.APPROVER, Role.ADMIN)
@@ -54,8 +63,9 @@ export class JournalController {
   reverse(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<JournalEntry> {
-    return this.journal.reverse(id, user.id);
+    return this.journal.reverse(id, user.id, idempotencyKey);
   }
 
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
