@@ -94,4 +94,42 @@ describe('Balances (e2e)', () => {
     const body = res.body as { balance: string };
     expect(body.balance).toBe('500000.0000'); // Kas is DEBIT-normal
   });
+
+  it('a reversed entry nets to zero in balances (posted_at filter includes REVERSED)', async () => {
+    const posting = app.get(PostingService);
+    const kasBalance = async (): Promise<string> => {
+      const r = await request(app.getHttpServer() as App)
+        .get(`/ledger/accounts/${kasId}/balance?asOf=2026-12-31`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      return (r.body as { balance: string }).balance;
+    };
+    // Post an extra entry: Kas 500000 -> 600000.
+    const entry = await posting.post(
+      {
+        date: new Date('2026-02-10'),
+        description: 'extra',
+        sourceType: 'MANUAL',
+        createdBy: 'c',
+        lines: [
+          { accountId: kasId, debit: '100000' },
+          { accountId: modalId, credit: '100000' },
+        ],
+      },
+      'p',
+    );
+    expect(await kasBalance()).toBe('600000.0000');
+
+    // Reverse it: the REVERSED original + its POSTED reversal both count -> back to 500000.
+    await posting.reverse(entry.id, 'p');
+    expect(await kasBalance()).toBe('500000.0000');
+
+    // Trial balance still nets to zero.
+    const tb = await request(app.getHttpServer() as App)
+      .get('/ledger/trial-balance?asOf=2026-12-31')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    const body = tb.body as { totalDebit: string; totalCredit: string };
+    expect(body.totalDebit).toBe(body.totalCredit);
+  });
 });
