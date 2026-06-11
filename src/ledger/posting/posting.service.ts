@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { JournalEntry } from '@prisma/client';
+import { JournalEntry, Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CompanyService } from '../../company/company.service';
 import { PeriodsService } from '../periods/periods.service';
@@ -75,7 +75,7 @@ export class PostingService {
 
     return this.prisma.client.$transaction(async (tx) => {
       const entryNumber = await this.nextNumber(tx, fiscalYear);
-      const entryRef = `JE/${fiscalYear}/${String(entryNumber).padStart(6, '0')}`;
+      const entryRef = this.buildEntryRef(fiscalYear, entryNumber);
       return tx.journalEntry.create({
         data: {
           entryNumber,
@@ -112,7 +112,7 @@ export class PostingService {
     reversedBy: string,
     date?: Date,
   ): Promise<JournalEntry> {
-    const original = await this.prisma.client.journalEntry.findFirst({
+    const original = await this.prisma.client.journalEntry.findUnique({
       where: { id: entryId },
       include: { lines: { orderBy: { lineNo: 'asc' } } },
     });
@@ -137,40 +137,59 @@ export class PostingService {
       settings.fiscalYearStartMonth,
     );
 
-    return this.prisma.client.$transaction(async (tx) => {
-      const entryNumber = await this.nextNumber(tx, fiscalYear);
-      const entryRef = `JE/${fiscalYear}/${String(entryNumber).padStart(6, '0')}`;
-      const reversal = await tx.journalEntry.create({
-        data: {
-          entryNumber,
-          entryRef,
-          fiscalYear,
-          date: reversalDate,
-          periodId: period.id,
-          description: `Reversal of ${original.entryRef}`,
-          sourceType: 'REVERSAL',
-          reversalOfId: original.id,
-          status: 'POSTED',
-          createdBy: reversedBy,
-          postedBy: reversedBy,
-          postedAt: new Date(),
-          lines: {
-            create: original.lines.map((l) => ({
-              lineNo: l.lineNo,
-              accountId: l.accountId,
-              debit: l.credit, // swap debit/credit
-              credit: l.debit,
-              description: l.description,
-            })),
+    try {
+      return await this.prisma.client.$transaction(async (tx) => {
+        const entryNumber = await this.nextNumber(tx, fiscalYear);
+        const entryRef = this.buildEntryRef(fiscalYear, entryNumber);
+        const reversal = await tx.journalEntry.create({
+          data: {
+            entryNumber,
+            entryRef,
+            fiscalYear,
+            date: reversalDate,
+            periodId: period.id,
+            description: `Reversal of ${original.entryRef}`,
+            sourceType: 'REVERSAL',
+            reversalOfId: original.id,
+            status: 'POSTED',
+            createdBy: reversedBy,
+            postedBy: reversedBy,
+            postedAt: new Date(),
+            lines: {
+              create: original.lines.map((l) => ({
+                lineNo: l.lineNo,
+                accountId: l.accountId,
+                debit: l.credit, // swap debit/credit
+                credit: l.debit,
+                description: l.description,
+              })),
+            },
           },
-        },
+        });
+        await tx.journalEntry.update({
+          where: { id: original.id },
+          data: { status: 'REVERSED', reversedById: reversal.id },
+        });
+        return reversal;
       });
-      await tx.journalEntry.update({
-        where: { id: original.id },
-        data: { status: 'REVERSED', reversedById: reversal.id },
-      });
-      return reversal;
-    });
+    } catch (err) {
+      // The unique on reversal_of_id means a concurrent/retried reverse of the
+      // same entry loses the race — map it to a clean domain error, not a 500.
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ValidationFailedError('Entry has already been reversed', {
+          entryId,
+        });
+      }
+      throw err;
+    }
+  }
+
+  /** Human-readable posted-entry reference, e.g. JE/2026/000123. */
+  private buildEntryRef(fiscalYear: number, entryNumber: number): string {
+    return `JE/${fiscalYear}/${String(entryNumber).padStart(6, '0')}`;
   }
 
   /** Lock-and-increment the per-fiscal-year counter; gapless because it lives in the tx. */

@@ -131,7 +131,20 @@ describe('PostingService (e2e)', () => {
       where: { journalEntryId: reversal.id },
       orderBy: { lineNo: 'asc' },
     });
-    expect(lines[0].credit.toString()).toBe('1000000'); // original line 1 debit -> reversal credit
+    // original line 1 (Kas debit) -> reversal credit; line 2 (Modal credit) -> reversal debit
+    expect(lines[0].credit.toString()).toBe('1000000');
+    expect(lines[0].debit.toString()).toBe('0');
+    expect(lines[1].debit.toString()).toBe('1000000');
+    expect(lines[1].credit.toString()).toBe('0');
+  });
+
+  it('rejects reversing an already-reversed entry (422)', async () => {
+    await app.get(CompanyService).update({ segregationOfDutiesEnabled: false });
+    const entry = await posting.post(balanced(), 'p');
+    await posting.reverse(entry.id, 'p');
+    await expect(posting.reverse(entry.id, 'p')).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+    });
   });
 
   it('consumes no number when posting fails (gapless under failure)', async () => {
