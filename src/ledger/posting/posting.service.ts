@@ -52,6 +52,10 @@ export class PostingService {
       );
     }
 
+    // NOTE: period + account checks are intentionally pre-transaction. For this
+    // single-company, low-concurrency phase the TOCTOU window (period closing /
+    // account deactivating between check and write) is acceptable; move these
+    // inside the $transaction (with FOR SHARE on the period) if concurrency grows.
     const period = await this.periods.findOpenPeriodForDate(input.date);
     if (!period) {
       throw new ClosedPeriodError(
@@ -85,11 +89,14 @@ export class PostingService {
           postedBy,
           postedAt: new Date(),
           lines: {
+            // Normalize to exactly 4dp at the trust boundary so the stored value
+            // is the same one assertBalanced validated (PostingService is the
+            // only writer of posted lines, and non-DTO callers reach here too).
             create: input.lines.map((l, i) => ({
               lineNo: i + 1,
               accountId: l.accountId,
-              debit: l.debit ?? '0',
-              credit: l.credit ?? '0',
+              debit: Money.of(l.debit ?? '0').toPersistence(),
+              credit: Money.of(l.credit ?? '0').toPersistence(),
               description: l.description,
             })),
           },
