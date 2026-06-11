@@ -7,8 +7,10 @@ import { Money } from '../../common/money/money';
 import {
   ClosedPeriodError,
   InvalidAccountError,
+  NotFoundDomainError,
   SegregationOfDutiesError,
   UnbalancedEntryError,
+  ValidationFailedError,
 } from '../../common/errors/domain-errors';
 import { PostEntryInput, PostLineInput } from './posting.types';
 
@@ -102,6 +104,72 @@ export class PostingService {
           },
         },
       });
+    });
+  }
+
+  async reverse(
+    entryId: string,
+    reversedBy: string,
+    date?: Date,
+  ): Promise<JournalEntry> {
+    const original = await this.prisma.client.journalEntry.findFirst({
+      where: { id: entryId },
+      include: { lines: { orderBy: { lineNo: 'asc' } } },
+    });
+    if (!original)
+      throw new NotFoundDomainError('Journal entry not found', { entryId });
+    if (original.status !== 'POSTED') {
+      throw new ValidationFailedError('Only a POSTED entry can be reversed', {
+        entryId,
+        status: original.status,
+      });
+    }
+    const reversalDate = date ?? original.date;
+    const period = await this.periods.findOpenPeriodForDate(reversalDate);
+    if (!period) {
+      throw new ClosedPeriodError('No open period for the reversal date', {
+        date: reversalDate.toISOString().slice(0, 10),
+      });
+    }
+    const settings = await this.company.get();
+    const fiscalYear = this.fiscalYearFor(
+      reversalDate,
+      settings.fiscalYearStartMonth,
+    );
+
+    return this.prisma.client.$transaction(async (tx) => {
+      const entryNumber = await this.nextNumber(tx, fiscalYear);
+      const entryRef = `JE/${fiscalYear}/${String(entryNumber).padStart(6, '0')}`;
+      const reversal = await tx.journalEntry.create({
+        data: {
+          entryNumber,
+          entryRef,
+          fiscalYear,
+          date: reversalDate,
+          periodId: period.id,
+          description: `Reversal of ${original.entryRef}`,
+          sourceType: 'REVERSAL',
+          reversalOfId: original.id,
+          status: 'POSTED',
+          createdBy: reversedBy,
+          postedBy: reversedBy,
+          postedAt: new Date(),
+          lines: {
+            create: original.lines.map((l) => ({
+              lineNo: l.lineNo,
+              accountId: l.accountId,
+              debit: l.credit, // swap debit/credit
+              credit: l.debit,
+              description: l.description,
+            })),
+          },
+        },
+      });
+      await tx.journalEntry.update({
+        where: { id: original.id },
+        data: { status: 'REVERSED', reversedById: reversal.id },
+      });
+      return reversal;
     });
   }
 

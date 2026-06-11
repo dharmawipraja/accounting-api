@@ -115,4 +115,44 @@ describe('PostingService (e2e)', () => {
     });
     expect(after - before).toBe(N);
   });
+
+  it('reverses a posted entry; original -> REVERSED, reversal posted, swapped lines', async () => {
+    await app.get(CompanyService).update({ segregationOfDutiesEnabled: false });
+    const entry = await posting.post(balanced(), 'p');
+    const reversal = await posting.reverse(entry.id, 'p');
+    expect(reversal.sourceType).toBe('REVERSAL');
+    expect(reversal.reversalOfId).toBe(entry.id);
+    const original = await prisma.client.journalEntry.findUnique({
+      where: { id: entry.id },
+    });
+    expect(original?.status).toBe('REVERSED');
+    expect(original?.reversedById).toBe(reversal.id);
+    const lines = await prisma.client.journalLine.findMany({
+      where: { journalEntryId: reversal.id },
+      orderBy: { lineNo: 'asc' },
+    });
+    expect(lines[0].credit.toString()).toBe('1000000'); // original line 1 debit -> reversal credit
+  });
+
+  it('consumes no number when posting fails (gapless under failure)', async () => {
+    const seqBefore = await prisma.client.journalSequence.findUnique({
+      where: { fiscalYear: 2026 },
+    });
+    await expect(
+      posting.post(
+        {
+          ...balanced(),
+          lines: [
+            { accountId: kasId, debit: '5' },
+            { accountId: modalId, credit: '4' },
+          ],
+        },
+        'p',
+      ),
+    ).rejects.toBeInstanceOf(UnbalancedEntryError);
+    const seqAfter = await prisma.client.journalSequence.findUnique({
+      where: { fiscalYear: 2026 },
+    });
+    expect(seqAfter?.nextNumber).toBe(seqBefore?.nextNumber);
+  });
 });
