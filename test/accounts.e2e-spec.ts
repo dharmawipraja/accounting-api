@@ -127,4 +127,51 @@ describe('Accounts (e2e)', () => {
       })
       .expect(422);
   });
+
+  it('deactivates an account (200, isActive false)', async () => {
+    const created = await request(app.getHttpServer() as App)
+      .post('/ledger/accounts')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: '1-1610',
+        name: 'To Deactivate',
+        type: 'ASSET',
+        subtype: 'CURRENT_ASSET',
+        normalBalance: 'DEBIT',
+        parentCode: '1-0000',
+      })
+      .expect(201);
+    const id = (created.body as { id: string }).id;
+    await request(app.getHttpServer() as App)
+      .post(`/ledger/accounts/${id}/deactivate`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200)
+      .expect((r) =>
+        expect((r.body as { isActive: boolean }).isActive).toBe(false),
+      );
+  });
+
+  it('soft-deletes an account (204) then hides it (404)', async () => {
+    const created = await request(app.getHttpServer() as App)
+      .post('/ledger/accounts')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: '1-1620',
+        name: 'To Delete',
+        type: 'ASSET',
+        subtype: 'CURRENT_ASSET',
+        normalBalance: 'DEBIT',
+        parentCode: '1-0000',
+      })
+      .expect(201);
+    const id = (created.body as { id: string }).id;
+    await request(app.getHttpServer() as App)
+      .delete(`/ledger/accounts/${id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(204);
+    await request(app.getHttpServer() as App)
+      .get(`/ledger/accounts/${id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(404);
+  });
 });

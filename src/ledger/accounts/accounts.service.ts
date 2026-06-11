@@ -45,7 +45,7 @@ export class AccountsService implements OnModuleInit {
     await this.seedIfEmpty();
   }
 
-  /** Idempotent: seeds the SAK chart only when no accounts exist. */
+  /** Idempotent and race-safe: seeds the SAK chart only when no accounts exist. */
   async seedIfEmpty(): Promise<void> {
     const count = await this.prisma.client.account.count();
     if (count > 0) return;
@@ -53,21 +53,44 @@ export class AccountsService implements OnModuleInit {
     const ordered = [...CHART_OF_ACCOUNTS].sort(
       (a, b) => Number(b.isPostable === false) - Number(a.isPostable === false),
     );
-    const idByCode = new Map<string, string>();
-    for (const a of ordered) {
-      const created = await this.prisma.client.account.create({
-        data: {
-          code: a.code,
-          name: a.name,
-          type: a.type,
-          subtype: a.subtype,
-          normalBalance: a.normalBalance,
-          cashFlowCategory: a.cashFlowCategory ?? 'NONE',
-          isPostable: a.isPostable ?? true,
-          parentId: a.parentCode ? idByCode.get(a.parentCode) : null,
-        },
+    try {
+      // One transaction so a lost boot race rolls back cleanly (no partial chart).
+      await this.prisma.client.$transaction(async (tx) => {
+        const idByCode = new Map<string, string>();
+        for (const a of ordered) {
+          let parentId: string | null = null;
+          if (a.parentCode) {
+            parentId = idByCode.get(a.parentCode) ?? null;
+            if (!parentId) {
+              throw new Error(
+                `Seed: parent code '${a.parentCode}' not found for '${a.code}'`,
+              );
+            }
+          }
+          const created = await tx.account.create({
+            data: {
+              code: a.code,
+              name: a.name,
+              type: a.type,
+              subtype: a.subtype,
+              normalBalance: a.normalBalance,
+              cashFlowCategory: a.cashFlowCategory ?? 'NONE',
+              isPostable: a.isPostable ?? true,
+              parentId,
+            },
+          });
+          idByCode.set(a.code, created.id);
+        }
       });
-      idByCode.set(a.code, created.id);
+    } catch (err) {
+      // Another instance seeded first (whole transaction rolled back); chart exists.
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        return;
+      }
+      throw err;
     }
   }
 
@@ -165,7 +188,10 @@ export class AccountsService implements OnModuleInit {
 
   async softDelete(id: string, deletedBy: string): Promise<void> {
     const account = await this.findById(id);
-    // journalLine doesn't exist until Task 5; forward-reference guarded by .catch(() => 0).
+    // journalLine doesn't exist until Task 5; forward-reference resolves to undefined for now.
+    // TODO(Task 5): replace this block with the typed `prisma.client.journalLine.count(...)`
+    // and REMOVE the `.catch(() => 0)` — once the model exists, a transient DB error must
+    // NOT be swallowed into a 0 count (that would let an account with posted lines be deleted).
     /* eslint-disable @typescript-eslint/no-unsafe-member-access */
     const jlModel = (this.prisma.client as any)['journalLine'] as
       | { count: (a: unknown) => Promise<number> }
