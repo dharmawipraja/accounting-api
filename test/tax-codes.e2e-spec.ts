@@ -1,0 +1,144 @@
+import { Test } from '@nestjs/testing';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import * as request from 'supertest';
+import { type App } from 'supertest/types';
+import { AppModule } from '../src/app.module';
+import { PrismaService } from '../src/common/prisma/prisma.service';
+import { AccountsService } from '../src/ledger/accounts/accounts.service';
+import { TaxCodesService } from '../src/tax/tax-codes.service';
+import { AuthService } from '../src/auth/auth.service';
+import { UsersService } from '../src/users/users.service';
+import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
+import { makePrismaOverride } from './e2e-helpers';
+import { startTestDb, TestDb } from './testcontainers';
+
+describe('TaxCodes (e2e)', () => {
+  let app: INestApplication;
+  let db: TestDb;
+  let prisma: PrismaService;
+  let adminToken: string;
+  let ppnKeluaranId: string; // 2-1100 CREDIT
+  let kasId: string; // 1-1000 DEBIT (wrong side for PPN_OUTPUT)
+
+  beforeAll(async () => {
+    db = await startTestDb();
+    prisma = makePrismaOverride(db.url);
+    await prisma.$connect();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(PrismaService)
+      .useValue(prisma)
+      .compile();
+    app = moduleRef.createNestApplication();
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
+    app.useGlobalFilters(new AllExceptionsFilter());
+    await app.init();
+    await app.get(AccountsService).seedIfEmpty();
+    await app.get(UsersService).create({
+      email: 'admin@tax.test',
+      password: 'secret123',
+      name: 'Admin',
+      role: 'ADMIN',
+    });
+    adminToken = (
+      await app.get(AuthService).login('admin@tax.test', 'secret123')
+    ).accessToken;
+    const accounts = await app.get(AccountsService).list();
+    ppnKeluaranId = accounts.find((a) => a.code === '2-1100')!.id;
+    kasId = accounts.find((a) => a.code === '1-1000')!.id;
+  }, 120_000);
+
+  afterAll(async () => {
+    await app.close();
+    await prisma.$disconnect();
+    await db?.stop();
+  });
+
+  it('seeds the 6 standard tax codes on boot (idempotent)', async () => {
+    await app.get(TaxCodesService).seedIfEmpty();
+    const res = await request(app.getHttpServer() as App)
+      .get('/tax/codes')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const codes = res.body as { code: string }[];
+    expect(codes).toHaveLength(6);
+    expect(codes.map((c) => c.code).sort()).toEqual([
+      'PPH23-PAY',
+      'PPH23-PRE',
+      'PPH42-PAY',
+      'PPH42-PRE',
+      'PPN-IN-11',
+      'PPN-OUT-11',
+    ]);
+  });
+
+  it('creates a tax code with a matching-normal-balance account (201)', async () => {
+    const res = await request(app.getHttpServer() as App)
+      .post('/tax/codes')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'PPN-OUT-12',
+        name: 'PPN Keluaran 12%',
+        kind: 'PPN_OUTPUT',
+        rate: '0.12',
+        taxAccountId: ppnKeluaranId,
+      })
+      .expect(201);
+    expect((res.body as { kind: string }).kind).toBe('PPN_OUTPUT');
+  });
+
+  it('rejects a PPN_OUTPUT code pointed at a DEBIT-normal account (422)', async () => {
+    await request(app.getHttpServer() as App)
+      .post('/tax/codes')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'BAD-SIDE',
+        name: 'Wrong side',
+        kind: 'PPN_OUTPUT',
+        rate: '0.11',
+        taxAccountId: kasId,
+      })
+      .expect(422);
+  });
+
+  it('rejects a rate outside (0,1) (422)', async () => {
+    await request(app.getHttpServer() as App)
+      .post('/tax/codes')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'BAD-RATE',
+        name: 'Bad rate',
+        kind: 'PPN_OUTPUT',
+        rate: '1.5',
+        taxAccountId: ppnKeluaranId,
+      })
+      .expect(422);
+  });
+
+  it('soft-deletes a tax code (204) then it disappears from the list', async () => {
+    const created = await request(app.getHttpServer() as App)
+      .post('/tax/codes')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'TEMP-DEL',
+        name: 'Temp',
+        kind: 'PPN_OUTPUT',
+        rate: '0.05',
+        taxAccountId: ppnKeluaranId,
+      })
+      .expect(201);
+    const id = (created.body as { id: string }).id;
+    await request(app.getHttpServer() as App)
+      .delete(`/tax/codes/${id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(204);
+    const list = await request(app.getHttpServer() as App)
+      .get('/tax/codes')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect((list.body as { id: string }[]).some((c) => c.id === id)).toBe(
+      false,
+    );
+  });
+});
