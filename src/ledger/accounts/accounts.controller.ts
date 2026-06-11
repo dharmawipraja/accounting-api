@@ -1,0 +1,65 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+} from '@nestjs/common';
+import { Account } from '@prisma/client';
+import { AccountsService } from './accounts.service';
+import { CreateAccountDto } from './dto/create-account.dto';
+import { UpdateAccountDto } from './dto/update-account.dto';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { Role } from '../../auth/role.enum';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
+
+@Controller('ledger/accounts')
+export class AccountsController {
+  constructor(private readonly accounts: AccountsService) {}
+
+  @Get()
+  list(): Promise<Account[]> {
+    return this.accounts.list();
+  }
+
+  @Get(':id')
+  get(@Param('id') id: string): Promise<Account> {
+    return this.accounts.findById(id);
+  }
+
+  @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
+  @Post()
+  create(@Body() dto: CreateAccountDto): Promise<Account> {
+    return this.accounts.create(dto);
+  }
+
+  @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body() dto: UpdateAccountDto,
+  ): Promise<Account> {
+    return this.accounts.update(id, dto);
+  }
+
+  @Roles(Role.ADMIN)
+  @Post(':id/deactivate')
+  @HttpCode(200)
+  deactivate(@Param('id') id: string): Promise<Account> {
+    return this.accounts.deactivate(id);
+  }
+
+  @Roles(Role.ADMIN)
+  @Delete(':id')
+  @HttpCode(204)
+  async remove(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<void> {
+    await this.accounts.softDelete(id, user.id);
+  }
+}
