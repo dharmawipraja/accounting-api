@@ -389,7 +389,9 @@ model Payment {
   deletedBy      String?             @map("deleted_by")
   allocations    PaymentAllocation[]
 
-  @@unique([fiscalYear, number], name: "payments_fy_number_unique")
+  // RECEIPT and DISBURSEMENT have independent gapless sequences (PAY-RCV / PAY-DSB),
+  // so the number is unique per (direction, fiscalYear), not per fiscalYear alone.
+  @@unique([direction, fiscalYear, number], name: "payments_direction_fy_number_unique")
   @@index([deletedAt])
   @@index([partnerId])
   @@map("payments")

@@ -11,6 +11,7 @@ import { BalancesService } from '../src/ledger/balances/balances.service';
 import { TaxCodesService } from '../src/tax/tax-codes.service';
 import { BusinessPartnersService } from '../src/invoicing/business-partners.service';
 import { SalesInvoicesService } from '../src/invoicing/sales-invoices.service';
+import { PurchaseBillsService } from '../src/invoicing/purchase-bills.service';
 import { PaymentsService } from '../src/invoicing/payments.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
@@ -27,6 +28,8 @@ describe('Reporting AR/AP aging (e2e)', () => {
   let code: Record<string, string>;
   let firstInvoiceRef: string;
   let secondInvoiceRef: string;
+  let acctUserId: string;
+  let apprUserId: string;
 
   beforeAll(async () => {
     db = await startTestDb();
@@ -68,6 +71,8 @@ describe('Reporting AR/AP aging (e2e)', () => {
       name: 'Viewer',
       role: 'VIEWER',
     });
+    acctUserId = acctUser.id;
+    apprUserId = apprUser.id;
     const auth = app.get(AuthService);
     viewerToken = (await auth.login('view@aging.test', 'secret123'))
       .accessToken;
@@ -178,5 +183,67 @@ describe('Reporting AR/AP aging (e2e)', () => {
       .get(BalancesService)
       .accountBalance(acc['1-1200'], new Date('2026-03-15'));
     expect(body.totalOutstanding).toBe(Number(arControl.balance).toFixed(4));
+  });
+
+  it('AP aging: a partially-paid bill ages into 31-60 and ties to the AP control (2-1000)', async () => {
+    const vendor = await app.get(BusinessPartnersService).create({
+      code: 'VEND-AGING-1',
+      name: 'Pemasok Aging',
+      isVendor: true,
+    });
+    const bills = app.get(PurchaseBillsService);
+    // Bill dated 2026-01-12, due 2026-02-11, total 1,110,000 (1,000,000 + 11% PPN Masukan).
+    const draft = await bills.createDraft({
+      partnerId: vendor.id,
+      date: new Date('2026-01-12'),
+      dueDate: new Date('2026-02-11'),
+      description: 'Tagihan jasa',
+      lines: [
+        {
+          description: 'Jasa vendor',
+          accountId: acc['5-2000'],
+          quantity: '1',
+          unitPrice: '1000000',
+          taxCodeIds: [code['PPN-IN-11']],
+        },
+      ],
+      createdBy: acctUserId,
+    });
+    const bill = await bills.post(draft.id, apprUserId);
+
+    // A disbursement of 400,000 dated 2026-02-20, allocated to the bill.
+    const payments = app.get(PaymentsService);
+    const draftPay = await payments.createDraft({
+      direction: 'DISBURSEMENT',
+      partnerId: vendor.id,
+      date: new Date('2026-02-20'),
+      cashAccountId: acc['1-1000'],
+      allocations: [{ purchaseBillId: bill.id, amount: '400000' }],
+      createdBy: acctUserId,
+    });
+    await payments.post(draftPay.id, apprUserId);
+
+    const res = await get('/reports/ap-aging?asOf=2026-03-15').expect(200);
+    const body = res.body as {
+      partners: {
+        documents: {
+          ref: string | null;
+          outstanding: string;
+          bucket: string;
+        }[];
+      }[];
+      totalOutstanding: string;
+    };
+    const doc = body.partners
+      .flatMap((p) => p.documents)
+      .find((d) => d.ref === bill.billRef);
+    expect(doc).toBeDefined();
+    expect(doc!.outstanding).toBe('710000.0000'); // 1,110,000 − 400,000
+    expect(doc!.bucket).toBe('31-60'); // due 2026-02-11; asOf 2026-03-15 → 32 days
+
+    const apControl = await app
+      .get(BalancesService)
+      .accountBalance(acc['2-1000'], new Date('2026-03-15'));
+    expect(body.totalOutstanding).toBe(Number(apControl.balance).toFixed(4));
   });
 });
