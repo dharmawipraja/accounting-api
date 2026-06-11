@@ -8,6 +8,7 @@ import { AccountsService } from '../src/ledger/accounts/accounts.service';
 import { PeriodsService } from '../src/ledger/periods/periods.service';
 import { CompanyService } from '../src/company/company.service';
 import { PostingService } from '../src/ledger/posting/posting.service';
+import { BalancesService } from '../src/ledger/balances/balances.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
@@ -131,5 +132,30 @@ describe('Balances (e2e)', () => {
       .expect(200);
     const body = tb.body as { totalDebit: string; totalCredit: string };
     expect(body.totalDebit).toBe(body.totalCredit);
+  });
+
+  it('balancesAsOf returns per-account rows with metadata (Kas debit-side)', async () => {
+    const rows = await app
+      .get(BalancesService)
+      .balancesAsOf(new Date('2026-12-31'));
+    const kas = rows.find((r) => r.code === '1-1000');
+    expect(kas).toBeDefined();
+    expect(kas!.type).toBe('ASSET');
+    expect(Number(kas!.debit)).toBeGreaterThan(0);
+    // every posted account present; totals tie (Σ debit == Σ credit)
+    const td = rows.reduce((s, r) => s + Number(r.debit), 0);
+    const tc = rows.reduce((s, r) => s + Number(r.credit), 0);
+    expect(td).toBeCloseTo(tc, 4);
+  });
+
+  it('movementsBetween sums only entries dated in the range', async () => {
+    const all = await app
+      .get(BalancesService)
+      .movementsBetween(new Date('2026-01-01'), new Date('2026-12-31'));
+    const none = await app
+      .get(BalancesService)
+      .movementsBetween(new Date('2027-01-01'), new Date('2027-12-31'));
+    expect(all.length).toBeGreaterThan(0);
+    expect(none.length).toBe(0);
   });
 });

@@ -12,6 +12,7 @@ import { CompanyModule } from './company/company.module';
 import { LedgerModule } from './ledger/ledger.module';
 import { TaxModule } from './tax/tax.module';
 import { InvoicingModule } from './invoicing/invoicing.module';
+import { ReportingModule } from './reporting/reporting.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 
@@ -36,6 +37,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
     LedgerModule,
     TaxModule,
     InvoicingModule,
+    ReportingModule,
   ],
   controllers: [HealthController],
   providers: [
