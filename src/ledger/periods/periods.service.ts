@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { AccountingPeriod } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CompanyService } from '../../company/company.service';
@@ -8,11 +8,24 @@ import {
 } from '../../common/errors/domain-errors';
 
 @Injectable()
-export class PeriodsService {
+export class PeriodsService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly company: CompanyService,
   ) {}
+
+  /** On boot, ensure the current fiscal year's periods exist so a fresh deploy
+   *  can accept postings immediately (idempotent). */
+  async onModuleInit(): Promise<void> {
+    const settings = await this.company.get();
+    const now = new Date();
+    const month = now.getUTCMonth() + 1;
+    const fiscalYear =
+      month >= settings.fiscalYearStartMonth
+        ? now.getUTCFullYear()
+        : now.getUTCFullYear() - 1;
+    await this.generatePeriods(fiscalYear);
+  }
 
   /** Idempotent: generates the 12 monthly periods for a fiscal year if absent. */
   async generatePeriods(fiscalYear: number): Promise<AccountingPeriod[]> {

@@ -168,4 +168,30 @@ describe('PostingService (e2e)', () => {
     });
     expect(seqAfter?.nextNumber).toBe(seqBefore?.nextNumber);
   });
+
+  it('rejects posting into a CLOSED period', async () => {
+    const periods = await app.get(PeriodsService).list(2026);
+    const april = periods.find((p) => p.name === '2026-04')!;
+    await app.get(PeriodsService).close(april.id, 'admin');
+    await expect(
+      posting.post({ ...balanced(), date: new Date('2026-04-15') }, 'p'),
+    ).rejects.toBeInstanceOf(ClosedPeriodError);
+  });
+
+  it('rejects posting to a non-postable header account', async () => {
+    const accounts = await app.get(AccountsService).list();
+    const header = accounts.find((a) => a.code === '1-0000')!; // Aset header, isPostable=false
+    await expect(
+      posting.post(
+        {
+          ...balanced(),
+          lines: [
+            { accountId: header.id, debit: '1000000' },
+            { accountId: modalId, credit: '1000000' },
+          ],
+        },
+        'p',
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_ACCOUNT' });
+  });
 });

@@ -16,6 +16,7 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 import { Role } from '../../auth/role.enum';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
+import { ForbiddenDomainError } from '../../common/errors/domain-errors';
 
 @Controller('ledger/journal-entries')
 export class JournalController {
@@ -41,6 +42,16 @@ export class JournalController {
       createdBy: user.id,
     };
     if (post === 'true') {
+      // Posting authority is APPROVER+ (the route allows ACCOUNTANT only to
+      // create drafts). Block an accountant from create-and-post directly.
+      if (user.role === Role.ACCOUNTANT) {
+        throw new ForbiddenDomainError(
+          'Posting requires an Approver or Admin',
+          {
+            role: user.role,
+          },
+        );
+      }
       return this.journal.createAndPost(input, user.id, idempotencyKey);
     }
     return this.journal.createDraft(input);

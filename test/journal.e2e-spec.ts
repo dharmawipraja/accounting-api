@@ -232,6 +232,15 @@ describe('JournalEntries (e2e)', () => {
     expect(body.id).toBeDefined();
   });
 
+  it('blocks an ACCOUNTANT from create-and-post (?post=true) with 403', async () => {
+    await app.get(CompanyService).update({ segregationOfDutiesEnabled: false });
+    await request(app.getHttpServer() as App)
+      .post('/ledger/journal-entries?post=true')
+      .set('Authorization', `Bearer ${accountantToken}`)
+      .send(balancedBody())
+      .expect(403);
+  });
+
   it('createAndPost is idempotent: same Idempotency-Key returns the same entry', async () => {
     await app.get(CompanyService).update({ segregationOfDutiesEnabled: false });
     const key = `idem-${Date.now()}`;
