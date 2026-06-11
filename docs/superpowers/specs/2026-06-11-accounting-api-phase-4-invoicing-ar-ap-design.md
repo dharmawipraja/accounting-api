@@ -118,10 +118,10 @@ Sales invoices:  GET /sales-invoices (filters) · GET /sales-invoices/:id ·
                  DELETE /sales-invoices/:id (ACCT+)
 Purchase bills:  GET /purchase-bills … (same shape; post/void APPROVER+)
 Payments:        GET /payments (filters) · GET /payments/:id · POST /payments (draft, ACCT+) ·
-                 PATCH /payments/:id (ACCT+) · POST /payments/:id/post (APPROVER+) ·
+                 POST /payments/:id/post (APPROVER+) ·
                  POST /payments/:id/void (APPROVER+) · DELETE /payments/:id (ACCT+)
 ```
-"ACCT+" = ACCOUNTANT/APPROVER/ADMIN. Post/void responses include derived `outstanding`/`paymentStatus`.
+"ACCT+" = ACCOUNTANT/APPROVER/ADMIN. Post/void responses include derived `outstanding`/`paymentStatus`. A draft payment has no PATCH — its `amount` is derived from its allocations, so a correction is a delete + re-create (unlike invoices/bills, which support PATCH to re-edit lines).
 
 ## 8. Testing strategy
 
