@@ -5,6 +5,7 @@ import { BalanceSheetService } from './balance-sheet.service';
 import { IncomeStatementService } from './income-statement.service';
 import { GeneralLedgerService } from './general-ledger.service';
 import { AgingService } from './aging.service';
+import { CashFlowService } from './cash-flow.service';
 import { ReportsController } from './reports.controller';
 
 @Module({
@@ -14,6 +15,7 @@ import { ReportsController } from './reports.controller';
     IncomeStatementService,
     GeneralLedgerService,
     AgingService,
+    CashFlowService,
   ],
   controllers: [ReportsController],
   exports: [],

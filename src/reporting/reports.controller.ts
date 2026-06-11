@@ -8,6 +8,7 @@ import { BalanceSheetService } from './balance-sheet.service';
 import { IncomeStatementService } from './income-statement.service';
 import { GeneralLedgerService } from './general-ledger.service';
 import { AgingService } from './aging.service';
+import { CashFlowService } from './cash-flow.service';
 import { ValidationFailedError } from '../common/errors/domain-errors';
 
 @Controller('reports')
@@ -17,6 +18,7 @@ export class ReportsController {
     private readonly incomeStatementSvc: IncomeStatementService,
     private readonly generalLedgerSvc: GeneralLedgerService,
     private readonly aging: AgingService,
+    private readonly cashFlow: CashFlowService,
   ) {}
 
   private range(q: { from: string; to: string }): { from: Date; to: Date } {
@@ -58,5 +60,11 @@ export class ReportsController {
   @Get('ap-aging')
   apAging(@Query() q: AsOfQueryDto) {
     return this.aging.aging('AP', q.asOf ? new Date(q.asOf) : new Date());
+  }
+
+  @Get('cash-flow')
+  cashFlowReport(@Query() q: RangeQueryDto) {
+    const { from, to } = this.range(q);
+    return this.cashFlow.generate(from, to);
   }
 }
