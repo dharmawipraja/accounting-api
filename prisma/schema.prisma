@@ -45,3 +45,65 @@ model CompanySettings {
 
   @@map("company_settings")
 }
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum AccountSubtype {
+  CURRENT_ASSET
+  NON_CURRENT_ASSET
+  FIXED_ASSET
+  ACCUMULATED_DEPRECIATION
+  CURRENT_LIABILITY
+  NON_CURRENT_LIABILITY
+  EQUITY
+  REVENUE
+  COGS
+  OPERATING_EXPENSE
+  OTHER_INCOME
+  OTHER_EXPENSE
+  TAX_PAYABLE
+  TAX_RECEIVABLE
+}
+
+enum CashFlowCategory {
+  OPERATING
+  INVESTING
+  FINANCING
+  NONE
+}
+
+enum NormalBalance {
+  DEBIT
+  CREDIT
+}
+
+model Account {
+  id               String           @id @default(uuid())
+  code             String
+  name             String
+  type             AccountType
+  subtype          AccountSubtype
+  cashFlowCategory CashFlowCategory @default(NONE) @map("cash_flow_category")
+  normalBalance    NormalBalance    @map("normal_balance")
+  parentId         String?          @map("parent_id")
+  parent           Account?         @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children         Account[]        @relation("AccountHierarchy")
+  isPostable       Boolean          @default(true) @map("is_postable")
+  isActive         Boolean          @default(true) @map("is_active")
+  currency         String           @default("IDR")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+  deletedAt        DateTime?        @map("deleted_at")
+  deletedBy        String?          @map("deleted_by")
+
+  @@unique([code], name: "accounts_code_unique")
+  @@index([deletedAt])
+  @@index([parentId])
+  @@map("accounts")
+}

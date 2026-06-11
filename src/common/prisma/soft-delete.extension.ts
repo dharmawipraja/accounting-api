@@ -9,7 +9,10 @@ import { Prisma, PrismaClient } from '@prisma/client';
  * in Phase 1 (only User, accessed via findFirst-based service), to be
  * hardened in Phase 2.
  */
-export const SOFT_DELETE_MODELS = new Set<Prisma.ModelName>(['User']);
+export const SOFT_DELETE_MODELS = new Set<Prisma.ModelName>([
+  'User',
+  'Account',
+]);
 
 function isSoftDelete(model: string | undefined): boolean {
   return !!model && SOFT_DELETE_MODELS.has(model as Prisma.ModelName);
