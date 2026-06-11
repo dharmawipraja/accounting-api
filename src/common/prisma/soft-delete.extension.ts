@@ -16,6 +16,7 @@ export const SOFT_DELETE_MODELS = new Set<Prisma.ModelName>([
   'User',
   'Account',
   'JournalEntry',
+  'TaxCode',
 ]);
 
 function isSoftDelete(model: string | undefined): boolean {

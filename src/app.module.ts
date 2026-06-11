@@ -10,6 +10,7 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { CompanyModule } from './company/company.module';
 import { LedgerModule } from './ledger/ledger.module';
+import { TaxModule } from './tax/tax.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 
@@ -32,6 +33,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
     AuthModule,
     CompanyModule,
     LedgerModule,
+    TaxModule,
   ],
   controllers: [HealthController],
   providers: [
