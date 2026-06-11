@@ -4,6 +4,7 @@ import { CompanyModule } from '../company/company.module';
 import { BalanceSheetService } from './balance-sheet.service';
 import { IncomeStatementService } from './income-statement.service';
 import { GeneralLedgerService } from './general-ledger.service';
+import { AgingService } from './aging.service';
 import { ReportsController } from './reports.controller';
 
 @Module({
@@ -12,6 +13,7 @@ import { ReportsController } from './reports.controller';
     BalanceSheetService,
     IncomeStatementService,
     GeneralLedgerService,
+    AgingService,
   ],
   controllers: [ReportsController],
   exports: [],
