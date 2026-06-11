@@ -177,6 +177,7 @@ export const CHART_OF_ACCOUNTS: SeedAccount[] = [
     type: 'EQUITY',
     subtype: 'EQUITY',
     normalBalance: 'CREDIT',
+    cashFlowCategory: 'FINANCING',
     parentCode: '3-0000',
   },
   {

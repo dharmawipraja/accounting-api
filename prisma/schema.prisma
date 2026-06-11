@@ -144,6 +144,12 @@ enum JournalSourceType {
   SALES_INVOICE
   PURCHASE_BILL
   PAYMENT
+  CLOSING
+}
+
+enum CloseStatus {
+  OPEN
+  CLOSED
 }
 
 model JournalSequence {
@@ -418,4 +424,36 @@ model DocumentSequence {
 
   @@id([documentType, fiscalYear])
   @@map("document_sequences")
+}
+
+model YearEndClosing {
+  fiscalYear     Int         @id @map("fiscal_year")
+  status         CloseStatus
+  closingEntryId String?     @map("closing_entry_id")
+  netIncome      Decimal     @default(0) @map("net_income") @db.Decimal(20, 4)
+  closedAt       DateTime    @map("closed_at")
+  closedBy       String      @map("closed_by")
+  reopenedAt     DateTime?   @map("reopened_at")
+  reopenedBy     String?     @map("reopened_by")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  @@map("year_end_closings")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  timestamp  DateTime @default(now())
+  userId     String?  @map("user_id")
+  userRole   String?  @map("user_role")
+  method     String
+  path       String
+  params     Json?
+  body       Json?
+  statusCode Int      @map("status_code")
+  durationMs Int      @map("duration_ms")
+  ip         String?
+
+  @@index([timestamp])
+  @@index([userId])
+  @@map("audit_log")
 }

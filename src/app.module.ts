@@ -13,6 +13,8 @@ import { LedgerModule } from './ledger/ledger.module';
 import { TaxModule } from './tax/tax.module';
 import { InvoicingModule } from './invoicing/invoicing.module';
 import { ReportingModule } from './reporting/reporting.module';
+import { CloseModule } from './close/close.module';
+import { AuditModule } from './audit/audit.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 
@@ -38,6 +40,8 @@ import { RolesGuard } from './auth/guards/roles.guard';
     TaxModule,
     InvoicingModule,
     ReportingModule,
+    CloseModule,
+    AuditModule,
   ],
   controllers: [HealthController],
   providers: [

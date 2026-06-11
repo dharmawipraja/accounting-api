@@ -52,6 +52,11 @@ export class ClosedPeriodError extends DomainError {
   readonly status = 409;
 }
 
+export class ClosedYearError extends DomainError {
+  readonly code = 'CLOSED_YEAR';
+  readonly status = 409;
+}
+
 export class InvalidAccountError extends DomainError {
   readonly code = 'INVALID_ACCOUNT';
   readonly status = 422;
