@@ -116,6 +116,26 @@ describe('TaxCodes (e2e)', () => {
       .expect(422);
   });
 
+  it('rejects a duplicate code (409)', async () => {
+    const body = {
+      code: 'DUP-CODE',
+      name: 'Dup',
+      kind: 'PPN_OUTPUT',
+      rate: '0.03',
+      taxAccountId: ppnKeluaranId,
+    };
+    await request(app.getHttpServer() as App)
+      .post('/tax/codes')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send(body)
+      .expect(201);
+    await request(app.getHttpServer() as App)
+      .post('/tax/codes')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send(body)
+      .expect(409);
+  });
+
   it('soft-deletes a tax code (204) then it disappears from the list', async () => {
     const created = await request(app.getHttpServer() as App)
       .post('/tax/codes')

@@ -14,8 +14,9 @@ export class UpdateTaxCodeDto {
 
   @IsOptional()
   @IsString()
-  @Matches(/^\d+(\.\d+)?$/, {
-    message: 'rate must be a numeric decimal string like 0.11',
+  @Matches(/^\d+(\.\d{1,6})?$/, {
+    message:
+      'rate must be a numeric decimal string with up to 6 decimals, e.g. 0.11',
   })
   rate?: string;
 

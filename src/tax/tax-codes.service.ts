@@ -78,15 +78,28 @@ export class TaxCodesService implements OnModuleInit {
         code: input.code,
       });
     }
-    return this.prisma.client.taxCode.create({
-      data: {
-        code: input.code,
-        name: input.name,
-        kind: input.kind,
-        rate: input.rate,
-        taxAccountId: input.taxAccountId,
-      },
-    });
+    try {
+      return await this.prisma.client.taxCode.create({
+        data: {
+          code: input.code,
+          name: input.name,
+          kind: input.kind,
+          rate: input.rate,
+          taxAccountId: input.taxAccountId,
+        },
+      });
+    } catch (err) {
+      // A concurrent create with the same code lost the race past the pre-check.
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictDomainError('Tax code already exists', {
+          code: input.code,
+        });
+      }
+      throw err;
+    }
   }
 
   async list(): Promise<TaxCode[]> {
