@@ -321,6 +321,17 @@ export class PostingService {
       draft.date,
       settings.fiscalYearStartMonth,
     );
+    // Same year-lock as preparePosting: a draft created while the year was open
+    // must not be postable into it once the year has been closed.
+    const closedYear = await this.prisma.client.yearEndClosing.findFirst({
+      where: { fiscalYear, status: 'CLOSED' },
+    });
+    if (closedYear) {
+      throw new ClosedYearError(
+        'Fiscal year is closed; reopen it before posting',
+        { fiscalYear },
+      );
+    }
 
     return this.prisma.client.$transaction(async (tx) => {
       // Lock the draft row and re-check status BEFORE consuming a number, so a

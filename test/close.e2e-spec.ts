@@ -10,6 +10,7 @@ import { BalancesService } from '../src/ledger/balances/balances.service';
 import { BalanceSheetService } from '../src/reporting/balance-sheet.service';
 import { CashFlowService } from '../src/reporting/cash-flow.service';
 import { YearEndCloseService } from '../src/close/year-end-close.service';
+import { JournalService } from '../src/ledger/journal/journal.service';
 import { ClosedYearError } from '../src/common/errors/domain-errors';
 import { makePrismaOverride } from './e2e-helpers';
 import { startTestDb, TestDb } from './testcontainers';
@@ -170,5 +171,23 @@ describe('Year-end close (e2e)', () => {
       'p',
     );
     expect(ok.status).toBe('POSTED');
+  });
+
+  it('blocks posting a DRAFT into a year closed after the draft was created', async () => {
+    await app.get(PeriodsService).generatePeriods(2030);
+    const journal = app.get(JournalService);
+    const draft = await journal.createDraft({
+      date: new Date('2030-03-01'),
+      description: 'draft created while 2030 was open',
+      createdBy: 'a',
+      lines: [
+        { accountId: acc['1-1000'], debit: '100' },
+        { accountId: acc['4-1000'], credit: '100' },
+      ],
+    });
+    await close.close(2030, 'admin'); // closes 2030 after the draft exists
+    await expect(journal.postDraft(draft.id, 'p')).rejects.toBeInstanceOf(
+      ClosedYearError,
+    );
   });
 });
