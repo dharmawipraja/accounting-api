@@ -1,12 +1,12 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { CompanySettings } from '@prisma/client';
+import { CompanySettings, Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { NotFoundDomainError } from '../common/errors/domain-errors';
 
 export interface UpdateCompanyInput {
   legalName?: string;
-  npwp?: string | null;
-  address?: string | null;
+  npwp?: string;
+  address?: string;
   fiscalYearStartMonth?: number;
   segregationOfDutiesEnabled?: boolean;
   isPkp?: boolean;
@@ -20,13 +20,24 @@ export class CompanyService implements OnModuleInit {
     await this.seedIfEmpty();
   }
 
-  /** Idempotent: creates the single settings row only if none exists. */
+  /** Idempotent and race-safe: creates the single settings row only if none exists. */
   async seedIfEmpty(): Promise<void> {
     const existing = await this.prisma.client.companySettings.findFirst();
     if (existing) return;
-    await this.prisma.client.companySettings.create({
-      data: { legalName: 'My Company' },
-    });
+    try {
+      await this.prisma.client.companySettings.create({
+        data: { legalName: 'My Company' },
+      });
+    } catch (err) {
+      // Another instance won the boot race; the singleton row now exists.
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        return;
+      }
+      throw err;
+    }
   }
 
   async get(): Promise<CompanySettings> {
