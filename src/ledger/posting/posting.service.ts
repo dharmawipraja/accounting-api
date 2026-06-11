@@ -140,13 +140,18 @@ export class PostingService {
     reversedBy: string,
     date?: Date,
   ): Promise<JournalEntry> {
-    const { original, periodId, fiscalYear } = await this.prepareReversal(
-      entryId,
-      date,
-    );
+    const { original, periodId, fiscalYear, reversalDate } =
+      await this.prepareReversal(entryId, date);
     try {
       return await this.prisma.client.$transaction((tx) =>
-        this.reverseInTx(tx, original, reversedBy, periodId, fiscalYear),
+        this.reverseInTx(
+          tx,
+          original,
+          reversedBy,
+          periodId,
+          fiscalYear,
+          reversalDate,
+        ),
       );
     } catch (err) {
       // The unique on reversal_of_id means a concurrent/retried reverse of the
@@ -182,6 +187,7 @@ export class PostingService {
     };
     periodId: string;
     fiscalYear: number;
+    reversalDate: Date;
   }> {
     const original = await this.prisma.client.journalEntry.findUnique({
       where: { id: entryId },
@@ -207,13 +213,13 @@ export class PostingService {
       reversalDate,
       settings.fiscalYearStartMonth,
     );
-    return { original, periodId: period.id, fiscalYear };
+    return { original, periodId: period.id, fiscalYear, reversalDate };
   }
 
   /** Writes the reversal entry (debit/credit swapped) and marks the original
-   *  REVERSED within a caller-provided transaction. Uses `original.date` as the
-   *  reversal date — `prepareReversal` already resolved the period from
-   *  `date ?? original.date`. */
+   *  REVERSED within a caller-provided transaction. `reversalDate` is the date
+   *  `prepareReversal` resolved the period + fiscal year from, so the entry's
+   *  date always agrees with its period. */
   async reverseInTx(
     tx: LedgerTx,
     original: Awaited<
@@ -222,6 +228,7 @@ export class PostingService {
     reversedBy: string,
     periodId: string,
     fiscalYear: number,
+    reversalDate: Date,
   ): Promise<JournalEntry> {
     const entryNumber = await this.nextNumber(tx, fiscalYear);
     const entryRef = this.buildEntryRef(fiscalYear, entryNumber);
@@ -230,7 +237,7 @@ export class PostingService {
         entryNumber,
         entryRef,
         fiscalYear,
-        date: original.date,
+        date: reversalDate,
         periodId,
         description: `Reversal of ${original.entryRef}`,
         sourceType: 'REVERSAL',

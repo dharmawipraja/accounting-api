@@ -194,4 +194,14 @@ describe('PostingService (e2e)', () => {
       ),
     ).rejects.toMatchObject({ code: 'INVALID_ACCOUNT' });
   });
+
+  it('reverses on a custom date and dates the reversal in that period', async () => {
+    const entry = await posting.post(balanced(), 'p');
+    const reversal = await posting.reverse(
+      entry.id,
+      'p',
+      new Date('2026-03-15'),
+    );
+    expect(reversal.date.toISOString().slice(0, 10)).toBe('2026-03-15');
+  });
 });

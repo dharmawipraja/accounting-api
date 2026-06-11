@@ -1404,7 +1404,7 @@ export class SalesInvoicesService {
     if (!Money.of(inv.amountPaid.toString()).isZero()) {
       throw new ConflictDomainError('Cannot void an invoice with payments; void the payments first', { id });
     }
-    const { original, periodId, fiscalYear } = await this.posting.prepareReversal(inv.journalEntryId!);
+    const { original, periodId, fiscalYear, reversalDate } = await this.posting.prepareReversal(inv.journalEntryId!);
     try {
       await this.prisma.client.$transaction(async (tx) => {
         const locked = await tx.$queryRaw<{ status: string; amount_paid: string }[]>`
@@ -1415,7 +1415,7 @@ export class SalesInvoicesService {
         if (Number(locked[0].amount_paid) !== 0) {
           throw new ConflictDomainError('Cannot void an invoice with payments', { id });
         }
-        await this.posting.reverseInTx(tx, original, voidedBy, periodId, fiscalYear);
+        await this.posting.reverseInTx(tx, original, voidedBy, periodId, fiscalYear, reversalDate);
         await tx.salesInvoice.update({ where: { id }, data: { status: 'VOID' } });
       });
     } catch (err) {
@@ -1658,13 +1658,13 @@ export class PurchaseBillsService {
     const bill = await this.getById(id);
     if (bill.status !== 'POSTED') throw new ValidationFailedError('Only a POSTED bill can be voided', { id, status: bill.status });
     if (!Money.of(bill.amountPaid.toString()).isZero()) throw new ConflictDomainError('Cannot void a bill with payments; void the payments first', { id });
-    const { original, periodId, fiscalYear } = await this.posting.prepareReversal(bill.journalEntryId!);
+    const { original, periodId, fiscalYear, reversalDate } = await this.posting.prepareReversal(bill.journalEntryId!);
     try {
       await this.prisma.client.$transaction(async (tx) => {
         const locked = await tx.$queryRaw<{ status: string; amount_paid: string }[]>`SELECT status, amount_paid FROM purchase_bills WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
         if (locked.length === 0 || locked[0].status !== 'POSTED') throw new ValidationFailedError('Bill is not posted', { id });
         if (Number(locked[0].amount_paid) !== 0) throw new ConflictDomainError('Cannot void a bill with payments', { id });
-        await this.posting.reverseInTx(tx, original, voidedBy, periodId, fiscalYear);
+        await this.posting.reverseInTx(tx, original, voidedBy, periodId, fiscalYear, reversalDate);
         await tx.purchaseBill.update({ where: { id }, data: { status: 'VOID' } });
       });
     } catch (err) {
@@ -1879,7 +1879,7 @@ export class PaymentsService {
     const payment = await this.getById(id);
     if (payment.status !== 'POSTED') throw new ValidationFailedError('Only a POSTED payment can be voided', { id, status: payment.status });
     const allocations = (payment as Payment & { allocations: { salesInvoiceId: string | null; purchaseBillId: string | null; amount: Prisma.Decimal }[] }).allocations;
-    const { original, periodId, fiscalYear } = await this.posting.prepareReversal(payment.journalEntryId!);
+    const { original, periodId, fiscalYear, reversalDate } = await this.posting.prepareReversal(payment.journalEntryId!);
     try {
       await this.prisma.client.$transaction(async (tx) => {
         const locked = await tx.$queryRaw<{ status: string }[]>`SELECT status FROM payments WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
@@ -1888,7 +1888,7 @@ export class PaymentsService {
           if (a.salesInvoiceId) await tx.salesInvoice.update({ where: { id: a.salesInvoiceId }, data: { amountPaid: { decrement: a.amount } } });
           if (a.purchaseBillId) await tx.purchaseBill.update({ where: { id: a.purchaseBillId }, data: { amountPaid: { decrement: a.amount } } });
         }
-        await this.posting.reverseInTx(tx, original, voidedBy, periodId, fiscalYear);
+        await this.posting.reverseInTx(tx, original, voidedBy, periodId, fiscalYear, reversalDate);
         await tx.payment.update({ where: { id }, data: { status: 'VOID' } });
       });
     } catch (err) {
