@@ -8,6 +8,7 @@ import { validate } from './config/env.validation';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
+import { CompanyModule } from './company/company.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 
@@ -28,6 +29,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
     PrismaModule,
     UsersModule,
     AuthModule,
+    CompanyModule,
   ],
   controllers: [HealthController],
   providers: [

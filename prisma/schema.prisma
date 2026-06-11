@@ -29,3 +29,19 @@ model User {
   @@index([deletedAt])
   @@map("users")
 }
+
+model CompanySettings {
+  id                          String   @id @default(uuid())
+  singleton                   Boolean  @unique @default(true)
+  legalName                   String   @map("legal_name")
+  npwp                        String?
+  address                     String?
+  fiscalYearStartMonth        Int      @default(1) @map("fiscal_year_start_month")
+  baseCurrency                String   @default("IDR") @map("base_currency")
+  segregationOfDutiesEnabled  Boolean  @default(true) @map("segregation_of_duties_enabled")
+  isPkp                       Boolean  @default(true) @map("is_pkp")
+  createdAt                   DateTime @default(now()) @map("created_at")
+  updatedAt                   DateTime @updatedAt @map("updated_at")
+
+  @@map("company_settings")
+}
