@@ -61,7 +61,17 @@ export class JournalService {
         status: entry.status,
       });
     }
-    await this.prisma.client.journalEntry.softDelete({ id }, deletedBy);
+    // Conditional soft-delete: only if it is STILL a draft, so a post racing in
+    // between the check above and here cannot have a POSTED entry soft-deleted.
+    const res = await this.prisma.client.journalEntry.updateMany({
+      where: { id, status: 'DRAFT', deletedAt: null },
+      data: { deletedAt: new Date(), deletedBy },
+    });
+    if (res.count !== 1) {
+      throw new ValidationFailedError('Only a DRAFT entry can be deleted', {
+        id,
+      });
+    }
   }
 
   async postDraft(id: string, postedBy: string): Promise<JournalEntry> {

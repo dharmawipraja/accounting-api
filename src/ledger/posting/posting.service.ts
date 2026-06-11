@@ -236,6 +236,17 @@ export class PostingService {
     );
 
     return this.prisma.client.$transaction(async (tx) => {
+      // Lock the draft row and re-check status BEFORE consuming a number, so a
+      // concurrent/retried postDraft of the same draft can't burn a gapless
+      // number (and can't resurrect a soft-deleted draft).
+      const locked = await tx.$queryRaw<{ status: string }[]>`
+        SELECT status FROM journal_entries
+        WHERE id = ${draftId} AND deleted_at IS NULL FOR UPDATE`;
+      if (locked.length === 0 || locked[0].status !== 'DRAFT') {
+        throw new ValidationFailedError('Entry is no longer a draft', {
+          id: draftId,
+        });
+      }
       const entryNumber = await this.nextNumber(tx, fiscalYear);
       const entryRef = this.buildEntryRef(fiscalYear, entryNumber);
       return tx.journalEntry.update({

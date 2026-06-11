@@ -170,4 +170,35 @@ describe('JournalEntries (e2e)', () => {
       .set('Authorization', `Bearer ${accountantToken}`)
       .expect(404);
   });
+
+  it('double-posting the same draft posts once with no number gap', async () => {
+    const draftRes = await request(app.getHttpServer() as App)
+      .post('/ledger/journal-entries')
+      .set('Authorization', `Bearer ${accountantToken}`)
+      .send(balancedBody())
+      .expect(201);
+    const draftId = (draftRes.body as { id: string }).id;
+
+    const seqBefore = await prismaOverride.client.journalSequence.findUnique({
+      where: { fiscalYear: 2026 },
+    });
+    const both = await Promise.allSettled([
+      request(app.getHttpServer() as App)
+        .post(`/ledger/journal-entries/${draftId}/post`)
+        .set('Authorization', `Bearer ${approverToken}`),
+      request(app.getHttpServer() as App)
+        .post(`/ledger/journal-entries/${draftId}/post`)
+        .set('Authorization', `Bearer ${approverToken}`),
+    ]);
+    const codes = both.map((r) =>
+      r.status === 'fulfilled' ? r.value.status : 0,
+    );
+    expect(codes.filter((c) => c === 200)).toHaveLength(1); // exactly one wins
+    expect(codes.some((c) => c >= 400 && c < 500)).toBe(true); // the other is a 4xx
+    const seqAfter = await prismaOverride.client.journalSequence.findUnique({
+      where: { fiscalYear: 2026 },
+    });
+    // Exactly one sequence number consumed — the loser burned none (no gap).
+    expect(seqAfter!.nextNumber - seqBefore!.nextNumber).toBe(1);
+  });
 });
