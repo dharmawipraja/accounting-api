@@ -129,6 +129,12 @@ describe('Reporting cash flow (e2e)', () => {
     // Net income: revenue 2,000,000 − expense 500,000
     expect(body.netIncome).toBe('1500000.0000');
 
+    // Section breakdown (catches miscategorization the reconciliation alone can't):
+    // operating = net income only (no working-capital movement in this seed);
+    // financing = Modal 10,000,000; investing = nothing.
+    expect(body.operating.total).toBe('1500000.0000');
+    expect(body.financing.total).toBe('10000000.0000');
+    expect(body.investing.total).toBe('0.0000');
     // operating + investing + financing === netChange
     const opTotal = Number(body.operating.total);
     const invTotal = Number(body.investing.total);

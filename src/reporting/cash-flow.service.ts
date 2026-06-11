@@ -5,6 +5,11 @@ import {
   AccountBalanceRow,
 } from '../ledger/balances/balances.service';
 
+// IMPORTANT: the cash/bank accounts whose movement this statement explains.
+// If a new cash/bank account is added to the chart (e.g. a second bank), it MUST
+// be added here — otherwise its movements would wrongly appear as operating
+// adjustments and the statement would no longer reconcile to actual cash.
+// (A future `isCash` flag on Account would remove this by-code coupling.)
 const CASH_CODES = new Set(['1-1000', '1-1100']);
 
 export interface CashFlowLine {
