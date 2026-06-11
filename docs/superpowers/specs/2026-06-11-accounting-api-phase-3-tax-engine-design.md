@@ -108,7 +108,7 @@ Dr Uang Muka PPh        20,000
 ```
 Debits 1,110,000 = Credits 1,110,000.
 
-Edge cases: a line with no tax codes contributes only to subtotal + settlement; a fully tax-free transaction yields a balanced 2-sided entry (settlement = subtotal). Settlement is always positive for valid rates (PPh rate < 1 on a subset of the base).
+Edge cases: a line with no tax codes contributes only to subtotal + settlement; a fully tax-free transaction yields a balanced 2-sided entry (settlement = subtotal). A single PPh code (rate < 1) always leaves a positive settlement, but stacking multiple withholding codes can drive `settlement` to zero or negative — `calculate` rejects a non-positive settlement with a 422 (it would otherwise emit a structurally invalid line that fails the ledger's one-sided CHECK in Phase 4). A repeated tax code within one line is also rejected (422).
 
 ## 5. Tax-code seed
 

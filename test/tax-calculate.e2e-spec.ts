@@ -220,6 +220,41 @@ describe('Tax calculate (e2e)', () => {
       .expect(422);
   });
 
+  it('rejects a transaction whose withholding drives settlement <= 0 (422)', async () => {
+    // Two PPH_PAYABLE codes at 99% each → withholding 1,980,000 on a 1,000,000 base.
+    const taxCodes = app.get(TaxCodesService);
+    const utangPph = acc['2-1200']; // CREDIT-normal, valid for PPH_PAYABLE
+    const hi1 = await taxCodes.create({
+      code: 'PPH-HI-1',
+      name: 'Hi 1',
+      kind: 'PPH_PAYABLE',
+      rate: '0.99',
+      taxAccountId: utangPph,
+    });
+    const hi2 = await taxCodes.create({
+      code: 'PPH-HI-2',
+      name: 'Hi 2',
+      kind: 'PPH_PAYABLE',
+      rate: '0.99',
+      taxAccountId: utangPph,
+    });
+    await request(app.getHttpServer() as App)
+      .post('/tax/calculate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        nature: 'PURCHASE',
+        settlementAccountId: acc['2-1000'],
+        lines: [
+          {
+            accountId: acc['5-2000'],
+            amount: '1000000',
+            taxCodeIds: [hi1.id, hi2.id],
+          },
+        ],
+      })
+      .expect(422);
+  });
+
   it('always balances for random valid purchase transactions (property test)', async () => {
     const tax = app.get(TaxService);
     for (let i = 0; i < 50; i++) {

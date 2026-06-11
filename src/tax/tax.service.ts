@@ -159,8 +159,20 @@ export class TaxService {
       }
     }
 
-    // Settlement = subtotal + PPN − PPh.
+    // Settlement = subtotal + PPN − PPh. Withholding that meets or exceeds the
+    // gross would yield a zero/negative settlement line — structurally invalid
+    // (the ledger's one-sided CHECK requires a positive amount). Reject at the
+    // preview boundary with a clean 422 rather than letting Phase 4 hit a 500.
     const settlement = subtotal.add(ppnTotal).subtract(pphTotal);
+    if (settlement.isZero() || settlement.isNegative()) {
+      throw new ValidationFailedError(
+        'Total withholding leaves a non-positive settlement amount',
+        {
+          subtotal: subtotal.toPersistence(),
+          totalWithheld: pphTotal.toPersistence(),
+        },
+      );
+    }
     journalLines.push(
       input.nature === 'SALE'
         ? {
