@@ -1,7 +1,12 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import { AsOfQueryDto, RangeQueryDto } from './dto/report-query.dto';
+import {
+  AsOfQueryDto,
+  RangeQueryDto,
+  LedgerQueryDto,
+} from './dto/report-query.dto';
 import { BalanceSheetService } from './balance-sheet.service';
 import { IncomeStatementService } from './income-statement.service';
+import { GeneralLedgerService } from './general-ledger.service';
 import { ValidationFailedError } from '../common/errors/domain-errors';
 
 @Controller('reports')
@@ -9,6 +14,7 @@ export class ReportsController {
   constructor(
     private readonly balanceSheetSvc: BalanceSheetService,
     private readonly incomeStatementSvc: IncomeStatementService,
+    private readonly generalLedgerSvc: GeneralLedgerService,
   ) {}
 
   private range(q: { from: string; to: string }): { from: Date; to: Date } {
@@ -34,5 +40,11 @@ export class ReportsController {
   incomeStatement(@Query() q: RangeQueryDto) {
     const { from, to } = this.range(q);
     return this.incomeStatementSvc.generate(from, to);
+  }
+
+  @Get('general-ledger')
+  generalLedger(@Query() q: LedgerQueryDto) {
+    const { from, to } = this.range(q);
+    return this.generalLedgerSvc.generate(q.accountId, from, to);
   }
 }

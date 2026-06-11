@@ -3,11 +3,16 @@ import { LedgerModule } from '../ledger/ledger.module';
 import { CompanyModule } from '../company/company.module';
 import { BalanceSheetService } from './balance-sheet.service';
 import { IncomeStatementService } from './income-statement.service';
+import { GeneralLedgerService } from './general-ledger.service';
 import { ReportsController } from './reports.controller';
 
 @Module({
   imports: [LedgerModule, CompanyModule],
-  providers: [BalanceSheetService, IncomeStatementService],
+  providers: [
+    BalanceSheetService,
+    IncomeStatementService,
+    GeneralLedgerService,
+  ],
   controllers: [ReportsController],
   exports: [],
 })
