@@ -187,6 +187,72 @@ export class PostingService {
     }
   }
 
+  async postDraft(draftId: string, postedBy: string): Promise<JournalEntry> {
+    const draft = await this.prisma.client.journalEntry.findUnique({
+      where: { id: draftId },
+      include: { lines: { orderBy: { lineNo: 'asc' } } },
+    });
+    if (!draft)
+      throw new NotFoundDomainError('Journal entry not found', { id: draftId });
+    if (draft.status !== 'DRAFT') {
+      throw new ValidationFailedError('Entry is not a draft', {
+        id: draftId,
+        status: draft.status,
+      });
+    }
+    const lines = draft.lines.map((l) => ({
+      accountId: l.accountId,
+      debit: l.debit.toString(),
+      credit: l.credit.toString(),
+    }));
+    this.assertBalanced(lines);
+
+    const settings = await this.company.get();
+    if (
+      settings.segregationOfDutiesEnabled &&
+      draft.sourceType === 'MANUAL' &&
+      postedBy === draft.createdBy
+    ) {
+      throw new SegregationOfDutiesError(
+        'The poster must differ from the entry creator',
+        {
+          createdBy: draft.createdBy,
+        },
+      );
+    }
+    const period = await this.periods.findOpenPeriodForDate(draft.date);
+    if (!period) {
+      throw new ClosedPeriodError(
+        'No open accounting period contains this date',
+        {
+          date: draft.date.toISOString().slice(0, 10),
+        },
+      );
+    }
+    await this.assertPostableAccounts(lines);
+    const fiscalYear = this.fiscalYearFor(
+      draft.date,
+      settings.fiscalYearStartMonth,
+    );
+
+    return this.prisma.client.$transaction(async (tx) => {
+      const entryNumber = await this.nextNumber(tx, fiscalYear);
+      const entryRef = this.buildEntryRef(fiscalYear, entryNumber);
+      return tx.journalEntry.update({
+        where: { id: draftId },
+        data: {
+          entryNumber,
+          entryRef,
+          fiscalYear,
+          periodId: period.id,
+          status: 'POSTED',
+          postedBy,
+          postedAt: new Date(),
+        },
+      });
+    });
+  }
+
   /** Human-readable posted-entry reference, e.g. JE/2026/000123. */
   private buildEntryRef(fiscalYear: number, entryNumber: number): string {
     return `JE/${fiscalYear}/${String(entryNumber).padStart(6, '0')}`;
