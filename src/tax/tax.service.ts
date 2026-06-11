@@ -57,6 +57,17 @@ export class TaxService {
       );
     }
 
+    // A code may appear at most once per line — a duplicate would double-count
+    // that line's DPP and silently inflate the tax (reject rather than swallow).
+    for (const line of input.lines) {
+      if (new Set(line.taxCodeIds).size !== line.taxCodeIds.length) {
+        throw new ValidationFailedError(
+          'A tax code may not be repeated within a single line',
+          { accountId: line.accountId },
+        );
+      }
+    }
+
     const ids = [...new Set(input.lines.flatMap((l) => l.taxCodeIds))];
     const codes = await this.prisma.client.taxCode.findMany({
       where: { id: { in: ids } },

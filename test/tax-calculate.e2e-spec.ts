@@ -147,6 +147,79 @@ describe('Tax calculate (e2e)', () => {
       .expect(422);
   });
 
+  it('rounds tax once per code across lines sharing it (per-aggregate rounding)', async () => {
+    // Two lines of 333,333 sharing PPN-IN-11: aggregate 666,666 × 11% = 73,332.96 → 73,333.
+    // Per-line rounding would give 36,667 + 36,667 = 73,334 — proving once-per-code.
+    const res = await request(app.getHttpServer() as App)
+      .post('/tax/calculate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        nature: 'PURCHASE',
+        settlementAccountId: acc['2-1000'],
+        lines: [
+          {
+            accountId: acc['5-2000'],
+            amount: '333333',
+            taxCodeIds: [code['PPN-IN-11']],
+          },
+          {
+            accountId: acc['5-2000'],
+            amount: '333333',
+            taxCodeIds: [code['PPN-IN-11']],
+          },
+        ],
+      })
+      .expect(200);
+    const body = res.body as {
+      journalLines: { accountId: string; debit?: string; credit?: string }[];
+    };
+    expect(findLine(body.journalLines, acc['1-1400']).debit).toBe('73333.0000');
+  });
+
+  it('handles a tax-free transaction (no codes) → settlement equals subtotal, balanced', async () => {
+    const res = await request(app.getHttpServer() as App)
+      .post('/tax/calculate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        nature: 'PURCHASE',
+        settlementAccountId: acc['2-1000'],
+        lines: [{ accountId: acc['5-2000'], amount: '750000', taxCodeIds: [] }],
+      })
+      .expect(200);
+    const body = res.body as {
+      subtotal: string;
+      settlementAmount: string;
+      taxes: unknown[];
+      journalLines: { accountId: string; debit?: string; credit?: string }[];
+    };
+    expect(body.taxes).toHaveLength(0);
+    expect(body.settlementAmount).toBe(body.subtotal);
+    expect(findLine(body.journalLines, acc['2-1000']).credit).toBe(
+      '750000.0000',
+    );
+    expect(findLine(body.journalLines, acc['5-2000']).debit).toBe(
+      '750000.0000',
+    );
+  });
+
+  it('rejects a tax code repeated within a single line (422)', async () => {
+    await request(app.getHttpServer() as App)
+      .post('/tax/calculate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        nature: 'PURCHASE',
+        settlementAccountId: acc['2-1000'],
+        lines: [
+          {
+            accountId: acc['5-2000'],
+            amount: '1000000',
+            taxCodeIds: [code['PPN-IN-11'], code['PPN-IN-11']],
+          },
+        ],
+      })
+      .expect(422);
+  });
+
   it('always balances for random valid purchase transactions (property test)', async () => {
     const tax = app.get(TaxService);
     for (let i = 0; i < 50; i++) {
