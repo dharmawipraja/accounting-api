@@ -72,6 +72,25 @@ services:
         limits:
           memory: 1536M
 
+  backup:
+    image: postgres:16
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: accounting
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGDATABASE: accounting
+      RETENTION_DAYS: '7'
+      BACKUP_INTERVAL: '86400'
+    entrypoint: ['/bin/sh', '/backup.sh']
+    volumes:
+      - ./scripts/backup.sh:/backup.sh:ro
+      - backups:/backups
+
 volumes:
   caddy_data:
   caddy_config:
+  backups:
