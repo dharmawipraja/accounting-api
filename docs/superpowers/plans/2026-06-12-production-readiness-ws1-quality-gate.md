@@ -10,6 +10,18 @@
 
 **Spec:** `docs/superpowers/specs/2026-06-12-production-readiness-ws1-quality-gate-design.md`
 
+> **Implementation note (2026-06-12) — coverage pivot.** Task 2 measured unit
+> coverage at only ~4% (the 24 unit tests cover Money/env/filter; essentially
+> all business logic is exercised by the 122 **e2e** tests). A unit-coverage
+> floor was therefore meaningless, so the floor was moved to the **e2e suite**
+> (`test/jest-e2e.json`, measured ~86% lines → floor 84/62/84/84). Consequently:
+> the e2e jest `rootDir` is now the project root (so `collectCoverageFrom` can
+> reach `src/`); a new script `test:e2e:cov` = `jest --config ./test/jest-e2e.json
+> --coverage` enforces the floor; and **`verify` = `typecheck && lint:ci && test
+> && test:e2e:cov`** (NOT `test:cov && test:e2e`). The CI `verify` job and the
+> README reflect this. Where the task text below still says `test:cov`/`test:e2e`,
+> the as-built scripts are `test`/`test:e2e:cov`.
+
 **Ground rules:** Work on `main` is NOT allowed — create branch `ws1-quality-gate` first. Docker running for the e2e steps. Prisma 7: `prisma generate` needs a dummy `DATABASE_URL`; never run `prisma format`. The repo has **no git remote** — the workflow/Dependabot files activate on the user's first push to GitHub (a one-time user action, §10 of the spec, NOT built here).
 
 ## File structure
