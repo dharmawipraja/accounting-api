@@ -1,4 +1,9 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
@@ -15,6 +20,7 @@ export class PrismaService
   /** We construct and own the pg pool (rather than letting PrismaPg create one)
    *  so /metrics can report live pool stats; this means we must end() it on destroy. */
   private readonly pool: Pool;
+  private readonly logger = new Logger(PrismaService.name);
 
   constructor(config: ConfigService) {
     const pool = new Pool({
@@ -24,17 +30,19 @@ export class PrismaService
       idleTimeoutMillis: 30000,
       statement_timeout: config.get<number>('DB_STATEMENT_TIMEOUT_MS') ?? 30000,
     });
+    const adapter = new PrismaPg(pool);
+    super({ adapter });
+    this.pool = pool;
     // An idle pooled client can emit 'error' out-of-band (e.g. the server
     // terminating the backend on shutdown — "terminating connection due to
     // administrator command"). Without a listener, pg re-throws it as an
     // unhandled error and crashes the process. We own the pool now, so we must
-    // handle it; the broken client is already removed from the pool by pg.
-    pool.on('error', () => {
-      /* idle-client error — connection already evicted from the pool */
+    // handle it (the broken client is already removed from the pool by pg); log
+    // rather than rethrow — a recurring one signals DB instability worth seeing.
+    // (Registered after super() so `this` is initialized.)
+    this.pool.on('error', (err) => {
+      this.logger.warn(`idle pool client error: ${err.message}`);
     });
-    const adapter = new PrismaPg(pool);
-    super({ adapter });
-    this.pool = pool;
     this.client = applySoftDelete(this);
   }
 
