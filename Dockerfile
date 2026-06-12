@@ -1,6 +1,9 @@
 # --- Build stage ---
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
+# openssl so Prisma's engines detect libssl cleanly (this stage also runs the
+# one-shot `prisma migrate deploy` migrate service — keeps its deploy logs clean).
+RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 COPY package*.json ./
 RUN npm ci
 COPY . .
