@@ -28,8 +28,14 @@ import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
       pinoHttp: {
         autoLogging: true,
         genReqId: (req, res) => {
+          // Reuse an inbound X-Request-Id only if it's a safe shape/length;
+          // otherwise generate one. Prevents an oversized/garbage upstream value
+          // from polluting logs (defense-in-depth — Node already rejects CR/LF).
+          const inbound = req.headers['x-request-id'];
           const id =
-            (req.headers['x-request-id'] as string | undefined) ?? randomUUID();
+            typeof inbound === 'string' && /^[\w.-]{1,128}$/.test(inbound)
+              ? inbound
+              : randomUUID();
           res.setHeader('X-Request-Id', id);
           return id;
         },

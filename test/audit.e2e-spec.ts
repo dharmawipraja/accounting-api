@@ -99,4 +99,15 @@ describe('Audit log (e2e)', () => {
     expect(Array.isArray(res.body)).toBe(true);
     expect((res.body as unknown[]).length).toBeGreaterThan(0);
   });
+
+  it('rejects a non-logged ?method filter with 400, accepts a logged verb', async () => {
+    await request(app.getHttpServer() as App)
+      .get('/audit?method=GET')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(400); // GET is never logged — not in the allowed set
+    await request(app.getHttpServer() as App)
+      .get('/audit?method=POST')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+  });
 });

@@ -52,6 +52,16 @@ describe('traceId correlation (e2e)', () => {
     expect(res.headers['x-request-id']).toBe('trace-abc-123');
   });
 
+  it('ignores an oversized/garbage inbound X-Request-Id and generates a UUID', async () => {
+    const res = await request(app.getHttpServer() as App)
+      .get('/health')
+      .set('X-Request-Id', 'x'.repeat(200))
+      .expect(200);
+    expect(res.headers['x-request-id']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+  });
+
   it('correlates: the error envelope traceId equals the X-Request-Id header (same id)', async () => {
     // an unauthenticated protected route -> 401 envelope; the traceId MUST be the
     // same id echoed in the response header (that correlation is the whole point).

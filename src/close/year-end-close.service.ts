@@ -196,6 +196,17 @@ export class YearEndCloseService {
         reversalDate,
       } = await this.posting.prepareReversal(rec.closingEntryId);
       await this.prisma.client.$transaction(async (tx) => {
+        // Serialize concurrent reopens of this fiscal year (mirror close's
+        // advisory lock), then re-check status under the lock so a double-reopen
+        // can't double-reverse the closing entry.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${fiscalYear})`;
+        const current = await tx.$queryRaw<{ status: string }[]>`
+          SELECT status FROM year_end_closings WHERE fiscal_year = ${fiscalYear}`;
+        if (current.length === 0 || current[0].status !== 'CLOSED') {
+          throw new ValidationFailedError('Fiscal year is not closed', {
+            fiscalYear,
+          });
+        }
         await this.posting.reverseInTx(
           tx,
           original,
