@@ -1,3 +1,5 @@
+jest.mock('@sentry/node', () => ({ captureException: jest.fn() }));
+import * as Sentry from '@sentry/node';
 import {
   ArgumentsHost,
   BadRequestException,
@@ -159,5 +161,21 @@ describe('AllExceptionsFilter', () => {
     filter.catch(err, m.host);
     expect(m.code()).toBe(500);
     expect((m.payload() as { code: string }).code).toBe('INTERNAL_ERROR');
+  });
+
+  it('reports a 500/unknown error to Sentry', () => {
+    (Sentry.captureException as jest.Mock).mockClear();
+    const m = mockHost();
+    filter.catch(new Error('boom'), m.host);
+    expect(m.code()).toBe(500);
+    expect(Sentry.captureException as jest.Mock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT report a mapped 4xx (DomainError) to Sentry', () => {
+    (Sentry.captureException as jest.Mock).mockClear();
+    const m = mockHost();
+    filter.catch(new ConflictDomainError('dup', {}), m.host);
+    expect(m.code()).toBe(409);
+    expect(Sentry.captureException as jest.Mock).not.toHaveBeenCalled();
   });
 });

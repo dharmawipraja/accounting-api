@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { Response } from 'express';
+import * as Sentry from '@sentry/node';
 import { DomainError } from '../errors/domain-errors';
 
 const PRISMA_STATUS: Record<
@@ -91,6 +92,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
           `Unmapped Prisma ${exception.code} on ${url}`,
           exception.stack,
         );
+        Sentry.captureException(exception, {
+          tags: { traceId: req.id },
+          extra: { path: url },
+        });
       }
     } else if (exception instanceof Prisma.PrismaClientValidationError) {
       status = 400;
@@ -101,6 +106,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
         `Unhandled exception on ${url}`,
         exception instanceof Error ? exception.stack : String(exception),
       );
+      Sentry.captureException(exception, {
+        tags: { traceId: req.id },
+        extra: { path: url },
+      });
     }
 
     if (req.id) envelope.traceId = req.id;

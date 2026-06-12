@@ -8,6 +8,16 @@ import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap(): Promise<void> {
+  if (process.env.SENTRY_DSN) {
+    const Sentry = await import('@sentry/node');
+    Sentry.init({
+      dsn: process.env.SENTRY_DSN,
+      environment: process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV,
+      release: process.env.SENTRY_RELEASE,
+      tracesSampleRate: 0,
+    });
+  }
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
   });

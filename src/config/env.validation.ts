@@ -63,6 +63,18 @@ export class EnvVars {
   @IsOptional()
   @IsString()
   METRICS_TOKEN?: string;
+
+  @IsOptional()
+  @IsString()
+  SENTRY_DSN?: string;
+
+  @IsOptional()
+  @IsString()
+  SENTRY_ENVIRONMENT?: string;
+
+  @IsOptional()
+  @IsString()
+  SENTRY_RELEASE?: string;
 }
 
 export function validate(config: Record<string, unknown>): EnvVars {
