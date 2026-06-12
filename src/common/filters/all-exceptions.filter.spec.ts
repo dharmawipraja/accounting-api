@@ -3,6 +3,7 @@ import {
   BadRequestException,
   HttpException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 import { ConflictDomainError } from '../errors/domain-errors';
 
@@ -81,5 +82,76 @@ describe('AllExceptionsFilter', () => {
       code: 'INTERNAL_ERROR',
       message: 'Internal server error',
     });
+  });
+
+  it('maps Prisma P2025 (not found) to 404 NOT_FOUND without leaking meta', () => {
+    const m = mockHost();
+    const err = new Prisma.PrismaClientKnownRequestError(
+      'Record to update not found.',
+      {
+        code: 'P2025',
+        clientVersion: Prisma.prismaVersion.client,
+        meta: { modelName: 'SalesInvoice', target: ['code'] },
+      },
+    );
+    filter.catch(err, m.host);
+    expect(m.code()).toBe(404);
+    const body = m.payload() as { code: string; message: string };
+    expect(body.code).toBe('NOT_FOUND');
+    expect(JSON.stringify(body)).not.toContain('SalesInvoice'); // no schema leak
+    expect(JSON.stringify(body)).not.toContain('target');
+  });
+
+  it('maps Prisma P2002 (unique) to 409 CONFLICT', () => {
+    const m = mockHost();
+    const err = new Prisma.PrismaClientKnownRequestError(
+      'Unique constraint failed',
+      {
+        code: 'P2002',
+        clientVersion: Prisma.prismaVersion.client,
+        meta: { target: ['code'] },
+      },
+    );
+    filter.catch(err, m.host);
+    expect(m.code()).toBe(409);
+    expect((m.payload() as { code: string }).code).toBe('CONFLICT');
+  });
+
+  it('maps Prisma P2023 (malformed UUID) to 400 INVALID_INPUT', () => {
+    const m = mockHost();
+    const err = new Prisma.PrismaClientKnownRequestError(
+      'Inconsistent column data',
+      {
+        code: 'P2023',
+        clientVersion: Prisma.prismaVersion.client,
+      },
+    );
+    filter.catch(err, m.host);
+    expect(m.code()).toBe(400);
+    expect((m.payload() as { code: string }).code).toBe('INVALID_INPUT');
+  });
+
+  it('maps a PrismaClientValidationError to 400 INVALID_INPUT', () => {
+    const m = mockHost();
+    const err = new Prisma.PrismaClientValidationError(
+      'Invalid `prisma.x` invocation',
+      {
+        clientVersion: Prisma.prismaVersion.client,
+      },
+    );
+    filter.catch(err, m.host);
+    expect(m.code()).toBe(400);
+    expect((m.payload() as { code: string }).code).toBe('INVALID_INPUT');
+  });
+
+  it('leaves an unmapped Prisma code as 500 INTERNAL_ERROR', () => {
+    const m = mockHost();
+    const err = new Prisma.PrismaClientKnownRequestError('boom', {
+      code: 'P2037',
+      clientVersion: Prisma.prismaVersion.client,
+    });
+    filter.catch(err, m.host);
+    expect(m.code()).toBe(500);
+    expect((m.payload() as { code: string }).code).toBe('INTERNAL_ERROR');
   });
 });

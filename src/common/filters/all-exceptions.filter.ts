@@ -5,8 +5,25 @@ import {
   HttpException,
   Logger,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type { Response } from 'express';
 import { DomainError } from '../errors/domain-errors';
+
+const PRISMA_STATUS: Record<
+  string,
+  { status: number; code: string; message: string }
+> = {
+  P2025: { status: 404, code: 'NOT_FOUND', message: 'Resource not found' },
+  P2002: { status: 409, code: 'CONFLICT', message: 'Resource already exists' },
+  P2003: {
+    status: 409,
+    code: 'CONFLICT',
+    message: 'Operation violates a reference constraint',
+  },
+  P2023: { status: 400, code: 'INVALID_INPUT', message: 'Invalid input' },
+  P2000: { status: 400, code: 'INVALID_INPUT', message: 'Invalid input' },
+  P2006: { status: 400, code: 'INVALID_INPUT', message: 'Invalid input' },
+};
 
 interface ErrorEnvelope {
   code: string;
@@ -21,6 +38,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
+    const req = ctx.getRequest<{ url?: string }>();
+    const url = req.url ?? 'unknown';
 
     let status = 500;
     let envelope: ErrorEnvelope = {
@@ -57,10 +76,28 @@ export class AllExceptionsFilter implements ExceptionFilter {
           };
         }
       }
+    } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
+      const mapped = PRISMA_STATUS[exception.code];
+      if (mapped) {
+        status = mapped.status;
+        envelope = { code: mapped.code, message: mapped.message };
+        this.logger.warn(
+          `Prisma ${exception.code} -> ${status} on ${url}: ${exception.message}`,
+        );
+      } else {
+        // Unknown Prisma code: stay 500 + INTERNAL_ERROR, but log loudly.
+        this.logger.error(
+          `Unmapped Prisma ${exception.code} on ${url}`,
+          exception.stack,
+        );
+      }
+    } else if (exception instanceof Prisma.PrismaClientValidationError) {
+      status = 400;
+      envelope = { code: 'INVALID_INPUT', message: 'Invalid input' };
+      this.logger.warn(`Prisma validation error -> 400 on ${url}`);
     } else {
-      const req = ctx.getRequest<{ url?: string }>();
       this.logger.error(
-        `Unhandled exception on ${req.url ?? 'unknown'}`,
+        `Unhandled exception on ${url}`,
         exception instanceof Error ? exception.stack : String(exception),
       );
     }
