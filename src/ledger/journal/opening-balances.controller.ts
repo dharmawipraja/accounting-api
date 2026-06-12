@@ -1,4 +1,5 @@
 import { Body, Controller, Headers, HttpCode, Post } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JournalEntry } from '@prisma/client';
 import { JournalService } from './journal.service';
 import { OpeningBalancesDto } from './dto/opening-balances.dto';
@@ -7,6 +8,8 @@ import { Role } from '../../auth/role.enum';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 
+@ApiTags('Journal')
+@ApiBearerAuth()
 @Controller('ledger/opening-balances')
 export class OpeningBalancesController {
   constructor(private readonly journal: JournalService) {}

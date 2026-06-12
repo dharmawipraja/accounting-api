@@ -7,6 +7,7 @@ import {
   ParseIntPipe,
   Post,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { YearEndClosing } from '@prisma/client';
 import { YearEndCloseService } from './year-end-close.service';
 import { CloseYearDto } from './dto/close.dto';
@@ -16,6 +17,8 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { NotFoundDomainError } from '../common/errors/domain-errors';
 
+@ApiTags('Close')
+@ApiBearerAuth()
 @Controller('close/year-end')
 export class ClosingController {
   constructor(private readonly close: YearEndCloseService) {}
