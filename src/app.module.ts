@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import { randomUUID } from 'crypto';
 import { HealthController } from './health/health.controller';
@@ -19,6 +19,7 @@ import { AuditModule } from './audit/audit.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
+import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
 
 @Module({
   imports: [
@@ -39,7 +40,9 @@ import { RolesGuard } from './auth/guards/roles.guard';
         ],
       },
     }),
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    ThrottlerModule.forRoot([
+      { ttl: 60_000, limit: Number(process.env.THROTTLE_LIMIT) || 300 },
+    ]),
     PrismaModule,
     UsersModule,
     AuthModule,
@@ -54,8 +57,8 @@ import { RolesGuard } from './auth/guards/roles.guard';
   ],
   controllers: [HealthController],
   providers: [
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: UserThrottlerGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
 })

@@ -75,6 +75,21 @@ export class EnvVars {
   @IsOptional()
   @IsString()
   SENTRY_RELEASE?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  THROTTLE_LIMIT?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  THROTTLE_LOGIN_LIMIT?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  THROTTLE_REFRESH_LIMIT?: number;
 }
 
 export function validate(config: Record<string, unknown>): EnvVars {

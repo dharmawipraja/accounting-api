@@ -6,7 +6,9 @@
 - A `.env` next to the compose files (gitignored) with:
   `POSTGRES_PASSWORD`, `JWT_ACCESS_SECRET` (>=32 chars), `JWT_REFRESH_SECRET` (>=32),
   `DOMAIN`. Optional: `DB_POOL_MAX`, `DB_STATEMENT_TIMEOUT_MS`, `RETENTION_DAYS`,
-  `BACKUP_INTERVAL`.
+  `BACKUP_INTERVAL`, `THROTTLE_LIMIT` (per-user requests/min, default 300),
+  `THROTTLE_LOGIN_LIMIT` (per-IP login attempts/min, default 10),
+  `THROTTLE_REFRESH_LIMIT` (per-IP refresh attempts/min, default 30).
 
 ## Deploy / upgrade
 ```bash
