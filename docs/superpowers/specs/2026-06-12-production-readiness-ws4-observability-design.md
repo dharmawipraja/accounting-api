@@ -29,7 +29,7 @@ A lean `MetricsModule` (`src/metrics/`) using **`prom-client`** directly (one de
 - **DB pool** — gauges `db_pool_total` / `db_pool_idle` / `db_pool_waiting`, collected from the `pg.Pool`. **`PrismaService` is refactored** to construct `new Pool(poolConfig)` explicitly (the fallback WS3 anticipated), keep a `readonly pool: Pool`, pass it to `new PrismaPg(this.pool)`, and expose `getPoolStats() = { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount }`. `MetricsService` registers a gauge `collect()` callback reading it.
 - **Domain** — one counter `ledger_entries_posted_total`, incremented in `PostingService.createPostedEntryInTx` (the single financial choke point every posted entry flows through). Minimal + easily extensible; `MetricsService` exposes `incLedgerEntriesPosted()` injected into `PostingService`.
 - **`MetricsController`** — `@Public()` + `@SkipThrottle()` `GET /metrics` returns `register.metrics()` as `text/plain; version=0.0.4`. An optional `MetricsTokenGuard` requires `Authorization: Bearer <METRICS_TOKEN>` when `METRICS_TOKEN` is set (no token configured → open, but still Caddy-blocked).
-- **Security:** `/metrics` is **not exposed publicly** — the `Caddyfile` returns `403` for `/metrics` (and `respond /metrics 403`); the optional monitoring stack scrapes `api:3000/metrics` over a shared Docker network. New optional env `METRICS_TOKEN`.
+- **Security:** `/metrics` is **not exposed publicly** — the `Caddyfile` returns `404` for `/metrics` from the internet (404, not 403, so the path's existence isn't confirmed); the optional monitoring stack scrapes `api:3000/metrics` over a shared Docker network. New optional env `METRICS_TOKEN`.
 
 ## 4. Piece 3 — Error tracking (Sentry, DSN-gated)
 
@@ -67,7 +67,7 @@ Integrate **`@sentry/node`**, gated on `SENTRY_DSN`:
 ## 8. Build sequence (for the plan)
 
 1. **traceId correlation** (Piece 1) — genReqId + response header + envelope `traceId`. App code, e2e. Foundational.
-2. **`/metrics`** (Piece 2) — `prom-client` MetricsModule + HTTP interceptor + `PrismaService` pool-ref refactor + db-pool gauges + `ledger_entries_posted_total` + Caddy `/metrics` 403. App code + Caddyfile, e2e.
+2. **`/metrics`** (Piece 2) — `prom-client` MetricsModule + HTTP interceptor + `PrismaService` pool-ref refactor + db-pool gauges + `ledger_entries_posted_total` + Caddy `/metrics` 404. App code + Caddyfile, e2e.
 3. **Sentry** (Piece 3) — `@sentry/node` DSN-gated init + filter capture-on-500 + env vars. App code, unit/integration.
 4. **Optional monitoring stack + backup alerting** (Piece 4) — `docker-compose.monitoring.yml` + `monitoring/*` config + `backup.sh` textfile metric + node-exporter. Validate + smoke.
 5. **k6 baseline** (Piece 5) — `perf/baseline.js` + `docs/runbooks/perf-baseline.md` + a smoke run. Script + runbook.
