@@ -18,6 +18,7 @@ import { Role } from '../../auth/role.enum';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { BalancesService } from '../balances/balances.service';
+import { AsOfQueryDto } from '../../common/dto/as-of-query.dto';
 
 @Controller('ledger/accounts')
 export class AccountsController {
@@ -32,8 +33,11 @@ export class AccountsController {
   }
 
   @Get(':id/balance')
-  balance(@Param('id') id: string, @Query('asOf') asOf?: string) {
-    return this.balances.accountBalance(id, asOf ? new Date(asOf) : new Date());
+  balance(@Param('id') id: string, @Query() q: AsOfQueryDto) {
+    return this.balances.accountBalance(
+      id,
+      q.asOf ? new Date(q.asOf) : new Date(),
+    );
   }
 
   @Get(':id')

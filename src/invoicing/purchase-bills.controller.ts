@@ -12,6 +12,7 @@ import {
 import { PurchaseBillsService } from './purchase-bills.service';
 import { CreatePurchaseBillDto } from './dto/create-purchase-bill.dto';
 import { UpdatePurchaseBillDto } from './dto/update-purchase-bill.dto';
+import { PurchaseBillListQueryDto } from './dto/list-purchase-bills.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../auth/role.enum';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -22,11 +23,8 @@ export class PurchaseBillsController {
   constructor(private readonly bills: PurchaseBillsService) {}
 
   @Get()
-  async list(
-    @Query('partnerId') partnerId?: string,
-    @Query('status') status?: string,
-  ) {
-    const rows = await this.bills.list({ partnerId, status });
+  async list(@Query() q: PurchaseBillListQueryDto) {
+    const rows = await this.bills.list(q);
     return rows.map((r) => this.bills.present(r));
   }
 

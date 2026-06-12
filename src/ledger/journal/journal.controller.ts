@@ -12,6 +12,7 @@ import {
 import { JournalEntry } from '@prisma/client';
 import { JournalService } from './journal.service';
 import { CreateJournalEntryDto } from './dto/create-journal-entry.dto';
+import { JournalPostQueryDto } from './dto/journal-post-query.dto';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { Role } from '../../auth/role.enum';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
@@ -31,7 +32,7 @@ export class JournalController {
   @Post()
   async createOrPost(
     @Body() dto: CreateJournalEntryDto,
-    @Query('post') post: string | undefined,
+    @Query() q: JournalPostQueryDto,
     @CurrentUser() user: AuthenticatedUser,
     @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<JournalEntry> {
@@ -41,7 +42,7 @@ export class JournalController {
       lines: dto.lines,
       createdBy: user.id,
     };
-    if (post === 'true') {
+    if (q.post === 'true') {
       // Posting authority is APPROVER+ (the route allows ACCOUNTANT only to
       // create drafts). Block an accountant from create-and-post directly.
       if (user.role === Role.ACCOUNTANT) {

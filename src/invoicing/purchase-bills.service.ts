@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, PurchaseBill } from '@prisma/client';
+import { DocumentStatus, Prisma, PurchaseBill } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { Money } from '../common/money/money';
 import { PostingService } from '../ledger/posting/posting.service';
@@ -190,10 +190,10 @@ export class PurchaseBillsService {
 
   async list(filter: {
     partnerId?: string;
-    status?: string;
+    status?: DocumentStatus;
   }): Promise<PurchaseBill[]> {
     return this.prisma.client.purchaseBill.findMany({
-      where: { partnerId: filter.partnerId, status: filter.status as never },
+      where: { partnerId: filter.partnerId, status: filter.status },
       orderBy: { createdAt: 'desc' },
     });
   }

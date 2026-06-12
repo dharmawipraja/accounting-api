@@ -12,6 +12,7 @@ import {
 import { SalesInvoicesService } from './sales-invoices.service';
 import { CreateSalesInvoiceDto } from './dto/create-sales-invoice.dto';
 import { UpdateSalesInvoiceDto } from './dto/update-sales-invoice.dto';
+import { SalesInvoiceListQueryDto } from './dto/list-sales-invoices.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../auth/role.enum';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -22,11 +23,8 @@ export class SalesInvoicesController {
   constructor(private readonly invoices: SalesInvoicesService) {}
 
   @Get()
-  async list(
-    @Query('partnerId') partnerId?: string,
-    @Query('status') status?: string,
-  ) {
-    const rows = await this.invoices.list({ partnerId, status });
+  async list(@Query() q: SalesInvoiceListQueryDto) {
+    const rows = await this.invoices.list(q);
     return rows.map((r) => this.invoices.present(r));
   }
 

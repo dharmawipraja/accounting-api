@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { PaymentListQueryDto } from './dto/list-payments.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../auth/role.enum';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -20,12 +21,8 @@ export class PaymentsController {
   constructor(private readonly payments: PaymentsService) {}
 
   @Get()
-  async list(
-    @Query('partnerId') partnerId?: string,
-    @Query('direction') direction?: string,
-    @Query('status') status?: string,
-  ) {
-    const rows = await this.payments.list({ partnerId, direction, status });
+  async list(@Query() q: PaymentListQueryDto) {
+    const rows = await this.payments.list(q);
     return rows.map((r) => this.payments.present(r));
   }
 
