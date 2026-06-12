@@ -71,3 +71,28 @@ docker compose exec db pg_dump -U accounting accounting > backup.sql
 ```
 
 Store backups off-host and test restores periodically.
+
+## Development & CI
+
+This repo standardizes on **Node 22 LTS** (`.nvmrc`). Match it locally:
+
+```bash
+nvm install 22 && nvm use   # reads .nvmrc
+npm ci
+```
+
+Before pushing, run the full gate locally:
+
+```bash
+npm run verify   # typecheck + lint:ci (no-fix, zero warnings) + unit + e2e (with coverage floor)
+```
+
+`npm run verify` is the gate. Note the coverage floor is enforced by the e2e
+run **only via `npm run verify` / `npm run test:e2e:cov`** — a plain
+`npm run test:e2e` skips the threshold (fast path). CI (GitHub Actions,
+`.github/workflows/ci.yml`) runs the same gate plus `npm audit` (high+) and a
+production `docker build` on every push/PR to `main`.
+
+Dependency updates arrive via Dependabot. **Minor/patch** PRs are auto-grouped
+and safe to merge once green; **major** bumps (Prisma, NestJS) are reviewed
+manually because they are breaking. See `SECURITY.md` for the audit policy.
