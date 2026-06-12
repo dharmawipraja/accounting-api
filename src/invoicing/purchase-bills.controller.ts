@@ -54,7 +54,10 @@ export class PurchaseBillsController {
 
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
   @Patch(':id')
-  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePurchaseBillDto) {
+  async update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePurchaseBillDto,
+  ) {
     const bill = await this.bills.update(id, {
       vendorInvoiceNo: dto.vendorInvoiceNo,
       date: dto.date ? new Date(dto.date) : undefined,
@@ -68,14 +71,20 @@ export class PurchaseBillsController {
   @Roles(Role.APPROVER, Role.ADMIN)
   @Post(':id/post')
   @HttpCode(200)
-  async post(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
+  async post(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.bills.present(await this.bills.post(id, user.id));
   }
 
   @Roles(Role.APPROVER, Role.ADMIN)
   @Post(':id/void')
   @HttpCode(200)
-  async void(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
+  async void(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.bills.present(await this.bills.void(id, user.id));
   }
 

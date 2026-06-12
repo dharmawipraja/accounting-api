@@ -53,7 +53,10 @@ export class SalesInvoicesController {
 
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
   @Patch(':id')
-  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateSalesInvoiceDto) {
+  async update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateSalesInvoiceDto,
+  ) {
     const inv = await this.invoices.update(id, {
       date: dto.date ? new Date(dto.date) : undefined,
       dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
@@ -66,14 +69,20 @@ export class SalesInvoicesController {
   @Roles(Role.APPROVER, Role.ADMIN)
   @Post(':id/post')
   @HttpCode(200)
-  async post(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
+  async post(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.invoices.present(await this.invoices.post(id, user.id));
   }
 
   @Roles(Role.APPROVER, Role.ADMIN)
   @Post(':id/void')
   @HttpCode(200)
-  async void(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
+  async void(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.invoices.present(await this.invoices.void(id, user.id));
   }
 

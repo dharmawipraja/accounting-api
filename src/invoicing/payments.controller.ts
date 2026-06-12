@@ -53,14 +53,20 @@ export class PaymentsController {
   @Roles(Role.APPROVER, Role.ADMIN)
   @Post(':id/post')
   @HttpCode(200)
-  async post(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
+  async post(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.payments.present(await this.payments.post(id, user.id));
   }
 
   @Roles(Role.APPROVER, Role.ADMIN)
   @Post(':id/void')
   @HttpCode(200)
-  async void(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
+  async void(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.payments.present(await this.payments.void(id, user.id));
   }
 

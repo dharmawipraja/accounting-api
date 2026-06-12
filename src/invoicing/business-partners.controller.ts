@@ -25,7 +25,9 @@ export class BusinessPartnersController {
   @Get() list(): Promise<BusinessPartner[]> {
     return this.partners.list();
   }
-  @Get(':id') get(@Param('id', ParseUUIDPipe) id: string): Promise<BusinessPartner> {
+  @Get(':id') get(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<BusinessPartner> {
     return this.partners.findById(id);
   }
 

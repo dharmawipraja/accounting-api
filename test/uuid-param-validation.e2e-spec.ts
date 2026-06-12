@@ -53,9 +53,8 @@ describe('UUID param validation (e2e)', () => {
       name: 'Viewer',
       role: 'VIEWER',
     });
-    token = (
-      await app.get(AuthService).login('viewer@uuid.test', 'secret123')
-    ).accessToken;
+    token = (await app.get(AuthService).login('viewer@uuid.test', 'secret123'))
+      .accessToken;
   }, 120_000);
 
   afterAll(async () => {
