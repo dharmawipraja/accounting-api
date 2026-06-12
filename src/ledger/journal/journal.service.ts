@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { JournalEntry, Prisma } from '@prisma/client';
+import {
+  JournalEntry,
+  JournalSourceType,
+  JournalStatus,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PostingService } from '../posting/posting.service';
 import { AccountsService } from '../accounts/accounts.service';
@@ -17,6 +22,30 @@ export interface DraftInput {
   description: string;
   lines: PostLineInput[];
   createdBy: string;
+}
+
+export interface JournalEntryListItem {
+  id: string;
+  entryRef: string | null;
+  entryNumber: number | null;
+  fiscalYear: number | null;
+  date: string;
+  description: string;
+  status: JournalStatus;
+  sourceType: JournalSourceType;
+  sourceId: string | null;
+  totalDebit: string;
+  lineCount: number;
+}
+
+export interface JournalListFilter {
+  status?: JournalStatus;
+  sourceType?: JournalSourceType;
+  fiscalYear?: number;
+  from?: Date;
+  to?: Date;
+  limit: number;
+  offset: number;
 }
 
 @Injectable()
@@ -170,6 +199,61 @@ export class JournalService {
         postedBy,
       );
     });
+  }
+
+  async list(filter: JournalListFilter): Promise<{
+    data: JournalEntryListItem[];
+    total: number;
+    limit: number;
+    offset: number;
+  }> {
+    const where: Prisma.JournalEntryWhereInput = {
+      status: filter.status,
+      sourceType: filter.sourceType,
+      fiscalYear: filter.fiscalYear,
+      date:
+        filter.from || filter.to
+          ? { gte: filter.from, lte: filter.to }
+          : undefined,
+    };
+    const [rows, total] = await Promise.all([
+      this.prisma.client.journalEntry.findMany({
+        where,
+        include: { lines: { select: { debit: true } } },
+        orderBy: [{ date: 'desc' }, { entryNumber: 'desc' }],
+        take: filter.limit,
+        skip: filter.offset,
+      }),
+      this.prisma.client.journalEntry.count({ where }),
+    ]);
+    return {
+      data: rows.map((r) => this.present(r)),
+      total,
+      limit: filter.limit,
+      offset: filter.offset,
+    };
+  }
+
+  private present(
+    e: JournalEntry & { lines: { debit: Prisma.Decimal }[] },
+  ): JournalEntryListItem {
+    const total = e.lines.reduce(
+      (s, l) => s.add(Money.of(l.debit)),
+      Money.zero(),
+    );
+    return {
+      id: e.id,
+      entryRef: e.entryRef,
+      entryNumber: e.entryNumber,
+      fiscalYear: e.fiscalYear,
+      date: e.date.toISOString().slice(0, 10),
+      description: e.description,
+      status: e.status,
+      sourceType: e.sourceType,
+      sourceId: e.sourceId,
+      totalDebit: total.toPersistence(),
+      lineCount: e.lines.length,
+    };
   }
 
   // ---- idempotency (reserve-first, so concurrent same-key requests cannot double-post) ----

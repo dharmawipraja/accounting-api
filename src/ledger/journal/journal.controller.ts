@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { JournalEntry } from '@prisma/client';
 import { JournalService } from './journal.service';
+import { JournalListQueryDto } from './dto/list-journal-entries.dto';
 import { CreateJournalEntryDto } from './dto/create-journal-entry.dto';
 import { JournalPostQueryDto } from './dto/journal-post-query.dto';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -23,6 +24,19 @@ import { ForbiddenDomainError } from '../../common/errors/domain-errors';
 @Controller('ledger/journal-entries')
 export class JournalController {
   constructor(private readonly journal: JournalService) {}
+
+  @Get()
+  list(@Query() q: JournalListQueryDto) {
+    return this.journal.list({
+      status: q.status,
+      sourceType: q.sourceType,
+      fiscalYear: q.fiscalYear,
+      from: q.from ? new Date(q.from) : undefined,
+      to: q.to ? new Date(q.to) : undefined,
+      limit: q.limit ?? 50,
+      offset: q.offset ?? 0,
+    });
+  }
 
   @Get(':id')
   get(@Param('id', ParseUUIDPipe) id: string): Promise<JournalEntry> {
