@@ -96,6 +96,14 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "coverageThreshold": {
+      "global": {
+        "statements": 2,
+        "branches": 0,
+        "functions": 4,
+        "lines": 2
+      }
+    }
   }
 }
