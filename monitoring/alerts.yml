@@ -1,0 +1,28 @@
+groups:
+  - name: accounting-api
+    rules:
+      - alert: ApiDown
+        expr: up{job="api"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations: { summary: 'API is down (no /metrics scrape for 2m)' }
+      - alert: HighErrorRate
+        expr: sum(rate(http_request_duration_seconds_count{status=~"5.."}[5m])) / sum(rate(http_request_duration_seconds_count[5m])) > 0.05
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: '5xx rate over 5% for 5m' }
+      - alert: HighLatencyP95
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 1
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: 'p95 latency over 1s for 10m' }
+      - alert: DbPoolSaturated
+        expr: db_pool_waiting > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: 'DB pool has waiting requests for 5m (raise DB_POOL_MAX?)' }
+      - alert: BackupStale
+        expr: time() - backup_last_success_timestamp_seconds > 93600
+        for: 10m
+        labels: { severity: critical }
+        annotations: { summary: 'No successful DB backup in >26h' }

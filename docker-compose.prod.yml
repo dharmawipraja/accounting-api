@@ -89,8 +89,10 @@ services:
     volumes:
       - ./scripts/backup.sh:/backup.sh:ro
       - backups:/backups
+      - backup_metrics:/backup-metrics
 
 volumes:
   caddy_data:
   caddy_config:
   backups:
+  backup_metrics:

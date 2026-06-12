@@ -1,0 +1,8 @@
+route:
+  receiver: default
+  group_by: ['alertname']
+receivers:
+  - name: default
+    # Fill in a real receiver, e.g. email_configs / slack_configs / webhook_configs.
+    # webhook_configs:
+    #   - url: 'https://example.com/alerts'
