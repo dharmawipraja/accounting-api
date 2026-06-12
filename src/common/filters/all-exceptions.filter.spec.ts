@@ -152,7 +152,8 @@ describe('AllExceptionsFilter', () => {
     expect((m.payload() as { code: string }).code).toBe('INVALID_INPUT');
   });
 
-  it('leaves an unmapped Prisma code as 500 INTERNAL_ERROR', () => {
+  it('leaves an unmapped Prisma code as 500 INTERNAL_ERROR and reports it to Sentry', () => {
+    (Sentry.captureException as jest.Mock).mockClear();
     const m = mockHost();
     const err = new Prisma.PrismaClientKnownRequestError('boom', {
       code: 'P2037',
@@ -161,14 +162,21 @@ describe('AllExceptionsFilter', () => {
     filter.catch(err, m.host);
     expect(m.code()).toBe(500);
     expect((m.payload() as { code: string }).code).toBe('INTERNAL_ERROR');
+    expect(Sentry.captureException as jest.Mock).toHaveBeenCalledTimes(1);
   });
 
-  it('reports a 500/unknown error to Sentry', () => {
+  it('reports a 500/unknown error to Sentry with the traceId tag and path', () => {
     (Sentry.captureException as jest.Mock).mockClear();
     const m = mockHost();
-    filter.catch(new Error('boom'), m.host);
+    const err = new Error('boom');
+    filter.catch(err, m.host);
     expect(m.code()).toBe(500);
     expect(Sentry.captureException as jest.Mock).toHaveBeenCalledTimes(1);
+    // the trace tag must be req.id (not the URL) so incidents are correlatable
+    expect(Sentry.captureException as jest.Mock).toHaveBeenCalledWith(err, {
+      tags: { traceId: 'req-1' },
+      extra: { path: '/test' },
+    });
   });
 
   it('does NOT report a mapped 4xx (DomainError) to Sentry', () => {
