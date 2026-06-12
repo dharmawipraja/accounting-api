@@ -17,7 +17,7 @@ async function main(): Promise<void> {
     .setDescription(
       'Conventions, roles, and lifecycles: see docs/api/frontend-guide.md',
     )
-    .setVersion('1.0')
+    .setVersion('1.0.0')
     .addBearerAuth()
     .addTag('Auth')
     .build();

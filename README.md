@@ -1,6 +1,16 @@
 # accounting-api
 
-A single-company Indonesian accounting API built on NestJS. Phase 1 establishes the foundation: JWT authentication with RBAC (four roles: ADMIN, ACCOUNTANT, APPROVER, VIEWER), Prisma 7 + PostgreSQL with a soft-delete extension, a Money value object for currency-safe arithmetic, hardened HTTP middleware (helmet, validation pipe, global exception filter), and readiness/health probes.
+A single-company Indonesian accounting API built on NestJS, conforming to SAK. **Version 1.0.0** — feature-complete and production-hardened (see [`CHANGELOG.md`](CHANGELOG.md)).
+
+It provides JWT authentication with RBAC (four roles: ADMIN, ACCOUNTANT, APPROVER, VIEWER) on a double-entry ledger, and covers the full accounting cycle:
+
+- **Ledger** — SAK chart of accounts, monthly periods, gapless double-entry posting (draft → post → reverse) with segregation-of-duties guards, opening balances, trial balance.
+- **Tax** — PPN/PPh engine with configurable tax codes and a balanced-journal preview.
+- **Invoicing & AR/AP** — sales invoices, purchase bills, and payments with per-partner subledgers reconciled to the AR/AP control accounts.
+- **Reporting** — Neraca, Laba Rugi, Buku Besar, AR/AP aging, Arus Kas, and the paginated journal register.
+- **Close & Audit** — reversible year-end close (with a year-lock) and an append-only audit log.
+
+It runs on Prisma 7 + PostgreSQL with a soft-delete extension, a `Money` value object for currency-safe arithmetic, hardened HTTP middleware (helmet, validation pipe, global exception filter), readiness/health probes, Prometheus `/metrics`, and request `traceId` correlation.
 
 ## Tech stack
 
@@ -60,7 +70,20 @@ npm run test:e2e
 
 ## API documentation
 
-OpenAPI is served at `/docs`. It is disabled in production by default; set `ENABLE_SWAGGER=true` in the environment to enable it.
+OpenAPI (Swagger UI) is served at `/docs`. It is disabled in production by default; set `ENABLE_SWAGGER=true` in the environment to enable it.
+
+A committed, machine-readable contract lives at [`docs/api/openapi.json`](docs/api/openapi.json) — regenerate it with `npm run openapi:export`. For integration semantics (auth, conventions, the role matrix, domain lifecycles, and a glossary), see [`docs/api/frontend-guide.md`](docs/api/frontend-guide.md); [`docs/api/frontend-agent-brief.md`](docs/api/frontend-agent-brief.md) is a copy-to-your-repo briefing for building a client.
+
+## Production deployment
+
+Deploy a tagged release on a single Docker host (Caddy auto-HTTPS, migrate-on-deploy gate, and a `pg_dump` backup sidecar):
+
+```bash
+git checkout v1.0.0
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+See [`docs/runbooks/deploy.md`](docs/runbooks/deploy.md) and [`docs/runbooks/backup-and-restore.md`](docs/runbooks/backup-and-restore.md) for the full procedure.
 
 ## Database backups
 
