@@ -16,6 +16,7 @@ import { InvoicingModule } from './invoicing/invoicing.module';
 import { ReportingModule } from './reporting/reporting.module';
 import { CloseModule } from './close/close.module';
 import { AuditModule } from './audit/audit.module';
+import { MetricsModule } from './metrics/metrics.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 
@@ -49,6 +50,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
     ReportingModule,
     CloseModule,
     AuditModule,
+    MetricsModule,
   ],
   controllers: [HealthController],
   providers: [

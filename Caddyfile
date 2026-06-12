@@ -1,4 +1,6 @@
 {$DOMAIN} {
+	@metrics path /metrics
+	respond @metrics "Not found" 404
 	reverse_proxy api:3000
 	request_body {
 		max_size 1MB

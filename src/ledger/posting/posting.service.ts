@@ -15,6 +15,7 @@ import {
 } from '../../common/errors/domain-errors';
 import { PostEntryInput, PostLineInput } from './posting.types';
 import { ExtendedPrismaClient } from '../../common/prisma/soft-delete.extension';
+import { MetricsService } from '../../metrics/metrics.service';
 
 /**
  * The subset of the interactive-tx client that {@link PostingService.nextNumber}
@@ -47,6 +48,7 @@ export class PostingService {
     private readonly prisma: PrismaService,
     private readonly company: CompanyService,
     private readonly periods: PeriodsService,
+    private readonly metrics: MetricsService,
   ) {}
 
   async post(input: PostEntryInput, postedBy: string): Promise<JournalEntry> {
@@ -115,7 +117,7 @@ export class PostingService {
   ): Promise<JournalEntry> {
     const entryNumber = await this.nextNumber(tx, fiscalYear);
     const entryRef = this.buildEntryRef(fiscalYear, entryNumber);
-    return tx.journalEntry.create({
+    const entry = await tx.journalEntry.create({
       data: {
         entryNumber,
         entryRef,
@@ -143,6 +145,11 @@ export class PostingService {
         },
       },
     });
+    // Central choke point for every posted entry (manual, invoice, bill, payment,
+    // close). A rare tx rollback after this point over-counts by 1 — acceptable
+    // for a throughput metric.
+    this.metrics.incLedgerEntriesPosted();
+    return entry;
   }
 
   async reverse(

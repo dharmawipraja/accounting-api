@@ -59,6 +59,10 @@ export class EnvVars {
   @IsInt()
   @Min(1000)
   DB_STATEMENT_TIMEOUT_MS?: number;
+
+  @IsOptional()
+  @IsString()
+  METRICS_TOKEN?: string;
 }
 
 export function validate(config: Record<string, unknown>): EnvVars {
