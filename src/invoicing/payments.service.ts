@@ -262,95 +262,109 @@ export class PaymentsService {
       postedBy,
     );
 
-    await this.prisma.client.$transaction(async (tx) => {
-      // Lock + re-check the payment is still a draft.
-      const lockedP = await tx.$queryRaw<{ status: string }[]>`
+    await this.prisma.client.$transaction(
+      async (tx) => {
+        // Lock + re-check the payment is still a draft.
+        const lockedP = await tx.$queryRaw<{ status: string }[]>`
         SELECT status FROM payments WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
-      if (lockedP.length === 0 || lockedP[0].status !== 'DRAFT')
-        throw new ValidationFailedError('Payment is no longer a draft', { id });
+        if (lockedP.length === 0 || lockedP[0].status !== 'DRAFT')
+          throw new ValidationFailedError('Payment is no longer a draft', {
+            id,
+          });
 
-      // Lock each target document FOR UPDATE and re-verify outstanding (the real over-allocation guard).
-      for (const a of allocations) {
-        const amt = Money.of(a.amount.toString());
-        if (isReceipt) {
-          const rows = await tx.$queryRaw<
-            { status: string; total: string; amount_paid: string }[]
-          >`
+        // Lock each target document FOR UPDATE and re-verify outstanding (the real over-allocation guard).
+        for (const a of allocations) {
+          const amt = Money.of(a.amount.toString());
+          if (isReceipt) {
+            const rows = await tx.$queryRaw<
+              { status: string; total: string; amount_paid: string }[]
+            >`
             SELECT status, total, amount_paid FROM sales_invoices WHERE id = ${a.salesInvoiceId} AND deleted_at IS NULL FOR UPDATE`;
-          if (rows.length === 0 || rows[0].status !== 'POSTED')
-            throw new ValidationFailedError('Allocated invoice is not posted', {
-              id: a.salesInvoiceId,
-            });
-          const outstanding = Money.of(rows[0].total).subtract(
-            Money.of(rows[0].amount_paid),
-          );
-          if (outstanding.subtract(amt).isNegative())
-            throw new ConflictDomainError(
-              'Allocation now exceeds outstanding',
-              {
-                id: a.salesInvoiceId,
-              },
+            if (rows.length === 0 || rows[0].status !== 'POSTED')
+              throw new ValidationFailedError(
+                'Allocated invoice is not posted',
+                {
+                  id: a.salesInvoiceId,
+                },
+              );
+            const outstanding = Money.of(rows[0].total).subtract(
+              Money.of(rows[0].amount_paid),
             );
-          await tx.salesInvoice.update({
-            where: { id: a.salesInvoiceId! },
-            data: { amountPaid: { increment: a.amount } },
-          });
-        } else {
-          const rows = await tx.$queryRaw<
-            { status: string; total: string; amount_paid: string }[]
-          >`
+            if (outstanding.subtract(amt).isNegative())
+              throw new ConflictDomainError(
+                'Allocation now exceeds outstanding',
+                {
+                  id: a.salesInvoiceId,
+                },
+              );
+            await tx.salesInvoice.update({
+              where: { id: a.salesInvoiceId! },
+              data: { amountPaid: { increment: a.amount } },
+            });
+          } else {
+            const rows = await tx.$queryRaw<
+              { status: string; total: string; amount_paid: string }[]
+            >`
             SELECT status, total, amount_paid FROM purchase_bills WHERE id = ${a.purchaseBillId} AND deleted_at IS NULL FOR UPDATE`;
-          if (rows.length === 0 || rows[0].status !== 'POSTED')
-            throw new ValidationFailedError('Allocated bill is not posted', {
-              id: a.purchaseBillId,
-            });
-          const outstanding = Money.of(rows[0].total).subtract(
-            Money.of(rows[0].amount_paid),
-          );
-          if (outstanding.subtract(amt).isNegative())
-            throw new ConflictDomainError(
-              'Allocation now exceeds outstanding',
-              {
+            if (rows.length === 0 || rows[0].status !== 'POSTED')
+              throw new ValidationFailedError('Allocated bill is not posted', {
                 id: a.purchaseBillId,
-              },
+              });
+            const outstanding = Money.of(rows[0].total).subtract(
+              Money.of(rows[0].amount_paid),
             );
-          await tx.purchaseBill.update({
-            where: { id: a.purchaseBillId! },
-            data: { amountPaid: { increment: a.amount } },
-          });
+            if (outstanding.subtract(amt).isNegative())
+              throw new ConflictDomainError(
+                'Allocation now exceeds outstanding',
+                {
+                  id: a.purchaseBillId,
+                },
+              );
+            await tx.purchaseBill.update({
+              where: { id: a.purchaseBillId! },
+              data: { amountPaid: { increment: a.amount } },
+            });
+          }
         }
-      }
 
-      const number = await this.docNumber.next(
-        tx,
-        isReceipt ? 'PAY-RCV' : 'PAY-DSB',
-        fiscalYear,
-      );
-      const ref = this.docNumber.buildRef(
-        isReceipt ? 'PAY-RCV' : 'PAY-DSB',
-        fiscalYear,
-        number,
-      );
-      const entry = await this.posting.createPostedEntryInTx(
-        tx,
-        journalInput,
-        postedBy,
-        periodId,
-        fiscalYear,
-      );
-      await tx.payment.update({
-        where: { id },
-        data: {
-          status: 'POSTED',
-          number,
-          ref,
+        const number = await this.docNumber.next(
+          tx,
+          isReceipt ? 'PAY-RCV' : 'PAY-DSB',
           fiscalYear,
-          journalEntryId: entry.id,
+        );
+        const ref = this.docNumber.buildRef(
+          isReceipt ? 'PAY-RCV' : 'PAY-DSB',
+          fiscalYear,
+          number,
+        );
+        const entry = await this.posting.createPostedEntryInTx(
+          tx,
+          journalInput,
           postedBy,
-          postedAt: new Date(),
-        },
-      });
-    });
+          periodId,
+          fiscalYear,
+        );
+        await tx.payment.update({
+          where: { id },
+          data: {
+            status: 'POSTED',
+            number,
+            ref,
+            fiscalYear,
+            journalEntryId: entry.id,
+            postedBy,
+            postedAt: new Date(),
+          },
+        });
+        // A concurrent post of the same invoice blocks here on the FOR UPDATE locks
+        // above. Give it room to wait out the winner and reach its clean 409 instead
+        // of hitting Prisma's 5s default and surfacing as a 500 under load.
+      },
+      {
+        maxWait: 5000,
+        timeout: 20000,
+      },
+    );
     return this.getById(id);
   }
 

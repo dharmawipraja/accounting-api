@@ -299,8 +299,16 @@ describe('Payments (e2e)', () => {
     const codes = results.map((r) =>
       r.status === 'fulfilled' ? r.value.status : 0,
     );
-    expect(codes.filter((c) => c === 200)).toHaveLength(1); // exactly one settled
-    expect(codes.some((c) => c === 409)).toBe(true); // the other rejected under the FOR UPDATE re-check
+    // Exactly one request settled (HTTP 200); the other was rejected with a 409
+    // conflict by the over-allocation FOR UPDATE re-check.
+    expect(codes.filter((c) => c === 200)).toHaveLength(1);
+    expect(codes.filter((c) => c === 409)).toHaveLength(1);
+    // Definitive no-double-settle invariant, independent of HTTP/lock-wait timing:
+    // exactly one of the two payments is POSTED in the ledger; the loser stayed DRAFT.
+    const postedCount = await prisma.client.payment.count({
+      where: { id: { in: [p1, p2] }, status: 'POSTED' },
+    });
+    expect(postedCount).toBe(1);
     // The invoice is paid exactly once — no double-settlement, no negative outstanding.
     const inv = await request(server())
       .get(`/sales-invoices/${invoiceId}`)
