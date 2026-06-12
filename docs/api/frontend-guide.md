@@ -162,12 +162,12 @@ Pagination is **not uniform** — check per endpoint:
   `limit` default **50**, **max 200**; `offset` default 0. Supports filters
   `?status=&sourceType=&fiscalYear=&from=&to=&limit=&offset=`.
 
-- **`GET /audit` is also enveloped** the same way (`{ data, total, limit, offset }`,
-  default limit 50; ADMIN only).
-
-- **All other list endpoints return a bare JSON array** (no envelope): `/sales-invoices`,
-  `/purchase-bills`, `/payments`, `/partners`, `/ledger/accounts`, `/tax/codes`,
-  `/ledger/periods`. Do not look for `.data` on these.
+- **Only `GET /ledger/journal-entries` returns the `{ data, total, limit, offset }`
+  envelope.** Every other list endpoint — including `GET /audit` — returns a **bare
+  JSON array** (no envelope): `/audit`, `/sales-invoices`, `/purchase-bills`,
+  `/payments`, `/partners`, `/ledger/accounts`, `/tax/codes`, `/ledger/periods`.
+  Do not look for `.data` on these. (`GET /audit` still accepts `limit`/`offset`
+  query params for paging, but the response itself is a bare array.)
 
 ### Dates
 
@@ -469,7 +469,7 @@ no auth.
 - `PATCH  /company/settings` · ADMIN · update company settings
 
 ### Audit
-- `GET    /audit` · ADMIN · **paginated** audit log `{ data, total, limit, offset }` (filters: `userId, method, from, to, limit, offset`)
+- `GET    /audit` · ADMIN · audit log — **bare array** (no envelope) (filters: `userId, method, from, to, limit, offset`; `limit` default 50, **max 500**; `method` ∈ POST/PATCH/PUT/DELETE)
 
 ---
 
@@ -492,7 +492,7 @@ Screens → the endpoints they consume:
 - **Periods & Year-end Close** — `/ledger/periods` (generate/close/reopen) and
   `/close/year-end` (ADMIN); show period open/closed state and the year-lock.
 - **Tax** — `/tax/codes` management + live `/tax/calculate` preview inside invoice/bill editors.
-- **Audit log** — `/audit` (ADMIN only; paginated, filterable).
+- **Audit log** — `/audit` (ADMIN only; bare-array response, filterable, `limit`/`offset` paging).
 - **Company settings** — `/company/settings` (read any, edit ADMIN).
 
 ### Cross-cutting work to build once
@@ -506,5 +506,5 @@ Screens → the endpoints they consume:
 - **Role-gated UI** — read the role from `/auth/me`, hide/disable actions a role
   cannot perform (per the role matrix), but **still handle 403/`SEGREGATION_OF_DUTIES`**
   defensively on every mutation.
-- **Pagination helpers** — one for the enveloped lists (`journal-entries`, `audit`),
-  and treat all other lists as bare arrays.
+- **Pagination helpers** — one for the single enveloped list (`journal-entries`),
+  and treat all other lists (including `/audit`) as bare arrays.

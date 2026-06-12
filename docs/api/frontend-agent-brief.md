@@ -44,9 +44,10 @@ lifecycles, money), follow the guide.
    mutation (the creator of a document may be barred from posting it themselves).
 5. **Dates are `YYYY-MM-DD`** (date-only). Reports use `?asOf=` (balance sheet, aging,
    trial balance) or `?from=&to=` (income statement, cash flow, general ledger).
-6. **Pagination is mixed:** `GET /ledger/journal-entries` and `GET /audit` return
-   `{ data, total, limit, offset }` (limit default 50, max 200). **Every other list
-   endpoint returns a bare array** — don't look for `.data`.
+6. **Pagination is mixed:** only `GET /ledger/journal-entries` returns the
+   `{ data, total, limit, offset }` envelope (limit default 50, max 200). **Every
+   other list endpoint — including `GET /audit` — returns a bare array** (don't look
+   for `.data`); `/audit` still takes `limit`/`offset` (limit default 50, max 500).
 7. **Soft-delete → 404.** Deleting/deactivating makes a resource 404 and removes it
    from lists; unique codes are reusable afterward. Don't treat that 404 as a crash.
 8. **Draft → post approval flow.** Documents (journals, invoices, bills, payments) are
@@ -66,8 +67,8 @@ lifecycles, money), follow the guide.
 - Don't `parseFloat` money. Don't do float math on amounts.
 - Don't assume `/docs` (Swagger UI) exists in production — it's gated behind
   `ENABLE_SWAGGER` there. Rely on the committed `openapi.json`.
-- Don't expect a logout endpoint, a pagination envelope on non-journal/non-audit
-  lists, or that a creator can self-approve.
+- Don't expect a logout endpoint, a pagination envelope on any non-journal list
+  (including `/audit`), or that a creator can self-approve.
 - Don't branch on `message` strings — branch on `code`.
 
 ## Regenerating `openapi.json`
