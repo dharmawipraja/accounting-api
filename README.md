@@ -43,12 +43,18 @@ It runs on Prisma 7 + PostgreSQL with a soft-delete extension, a `Money` value o
 # Start the database
 docker compose up -d db
 
-# Apply migrations
-npx prisma migrate dev
+# Apply migrations to the dev database (accounting_dev)
+npm run db:migrate
 
-# Start the API in watch mode
+# Start the API in watch mode (NODE_ENV=development -> .env.development)
 npm run start:dev
 ```
+
+The environment follows the script: `start:dev` loads `.env.development` (its own
+`accounting_dev` database) so local work never touches production data. `npm run
+db:migrate` / `db:reset` / `db:studio` target the same dev database via
+`.env.development`. Copy `.env.example` to `.env` (shared secrets) and create
+`.env.development` with a dev `DATABASE_URL` before first run.
 
 ## Running with Docker
 
