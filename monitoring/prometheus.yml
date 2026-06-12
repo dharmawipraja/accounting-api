@@ -9,6 +9,10 @@ alerting:
 scrape_configs:
   - job_name: api
     metrics_path: /metrics
+    # If you set METRICS_TOKEN on the api, the scrape needs the matching bearer
+    # token or it will 401 (and ApiDown would fire). Uncomment:
+    # authorization:
+    #   credentials: '<METRICS_TOKEN>'
     static_configs:
       - targets: ['api:3000']
   - job_name: node-exporter
