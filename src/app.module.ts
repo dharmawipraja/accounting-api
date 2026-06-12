@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
+import { randomUUID } from 'crypto';
 import { HealthController } from './health/health.controller';
 import { validate } from './config/env.validation';
 import { PrismaModule } from './common/prisma/prisma.module';
@@ -24,6 +25,12 @@ import { RolesGuard } from './auth/guards/roles.guard';
     LoggerModule.forRoot({
       pinoHttp: {
         autoLogging: true,
+        genReqId: (req, res) => {
+          const id =
+            (req.headers['x-request-id'] as string | undefined) ?? randomUUID();
+          res.setHeader('X-Request-Id', id);
+          return id;
+        },
         redact: [
           'req.headers.authorization',
           'req.headers.cookie',

@@ -29,6 +29,7 @@ interface ErrorEnvelope {
   code: string;
   message: string;
   details?: Record<string, unknown>;
+  traceId?: string;
 }
 
 @Catch()
@@ -38,7 +39,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
-    const req = ctx.getRequest<{ url?: string }>();
+    const req = ctx.getRequest<{ url?: string; id?: string }>();
     const url = req.url ?? 'unknown';
 
     let status = 500;
@@ -102,6 +103,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       );
     }
 
+    if (req.id) envelope.traceId = req.id;
     response.status(status).json(envelope);
   }
 }
