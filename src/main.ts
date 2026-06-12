@@ -27,6 +27,15 @@ async function bootstrap(): Promise<void> {
   app.useGlobalFilters(new AllExceptionsFilter());
   app.enableShutdownHooks();
 
+  // Harden HTTP server timeouts (the app sits behind Caddy in production).
+  const server = app.getHttpServer();
+  server.keepAliveTimeout = 65_000; // slightly above a typical proxy keep-alive
+  server.headersTimeout = 66_000; // must exceed keepAliveTimeout
+  server.requestTimeout = 30_000;
+  // Cap request bodies (financial payloads are small); matches Caddy's edge cap.
+  app.useBodyParser('json', { limit: '1mb' });
+  app.useBodyParser('urlencoded', { limit: '1mb', extended: true });
+
   // Serve OpenAPI docs everywhere except production, where exposing the full
   // route/DTO surface is opt-in. Set ENABLE_SWAGGER=true to force it on.
   if (

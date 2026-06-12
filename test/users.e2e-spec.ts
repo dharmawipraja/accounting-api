@@ -1,7 +1,7 @@
-import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { UsersService } from '../src/users/users.service';
 import { ConflictDomainError } from '../src/common/errors/domain-errors';
+import { makePrismaOverride } from './e2e-helpers';
 import { startTestDb, TestDb } from './testcontainers';
 
 describe('UsersService (e2e)', () => {
@@ -11,11 +11,7 @@ describe('UsersService (e2e)', () => {
 
   beforeAll(async () => {
     db = await startTestDb();
-    const config = {
-      get: () => db.url,
-      getOrThrow: () => db.url,
-    } as unknown as ConfigService;
-    prisma = new PrismaService(config);
+    prisma = makePrismaOverride(db.url);
     await prisma.$connect();
     users = new UsersService(prisma);
   }, 120_000);

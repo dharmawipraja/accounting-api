@@ -6,6 +6,7 @@ import {
   IsEnum,
   IsInt,
   IsNotEmpty,
+  IsOptional,
   IsString,
   Max,
   Min,
@@ -47,6 +48,17 @@ export class EnvVars {
   @IsString()
   @IsNotEmpty()
   JWT_REFRESH_TTL!: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  DB_POOL_MAX?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1000)
+  DB_STATEMENT_TIMEOUT_MS?: number;
 }
 
 export function validate(config: Record<string, unknown>): EnvVars {
