@@ -1,0 +1,8 @@
+{$DOMAIN} {
+	reverse_proxy api:3000
+	request_body {
+		max_size 1MB
+	}
+	encode gzip
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+}

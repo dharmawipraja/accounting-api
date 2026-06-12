@@ -29,7 +29,7 @@ services:
       JWT_ACCESS_TTL: 900s
       JWT_REFRESH_TTL: 7d
     ports:
-      - '3000:3000'
+      - '127.0.0.1:3000:3000'
 
 volumes:
   pgdata:

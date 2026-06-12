@@ -36,3 +36,42 @@ services:
           memory: 768M
         reservations:
           memory: 256M
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN is required (public hostname for auto-HTTPS)}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  db:
+    restart: unless-stopped
+    command:
+      - postgres
+      - '-c'
+      - 'shared_buffers=256MB'
+      - '-c'
+      - 'effective_cache_size=1GB'
+      - '-c'
+      - 'max_connections=50'
+      - '-c'
+      - 'work_mem=8MB'
+      - '-c'
+      - 'maintenance_work_mem=128MB'
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+
+volumes:
+  caddy_data:
+  caddy_config:
