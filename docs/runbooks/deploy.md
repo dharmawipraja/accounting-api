@@ -28,5 +28,9 @@ starts `api` (gated on `migrate` succeeding), `caddy`, and `backup`. `migrate` r
   Never edit an already-applied migration.
 
 ## Staging without a public domain
-Set `DOMAIN=localhost` and add `tls internal` to the `Caddyfile`, or smoke-test
-`db`+`migrate`+`api` only (skip `caddy`) and curl `http://127.0.0.1:3000/health`.
+Don't edit the committed `Caddyfile` (it would dirty the repo and risk shipping a
+non-prod TLS setting). Instead either:
+- **Skip Caddy:** smoke-test `db`+`migrate`+`api` only and curl `http://127.0.0.1:3000/health`
+  (`docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d db migrate api`); or
+- **Throwaway internal TLS:** copy the Caddyfile, append `tls internal`, and mount the copy
+  via a one-off override file — e.g. `cp Caddyfile /tmp/Caddyfile.staging && printf '\n\ttls internal\n' >> /tmp/Caddyfile.staging`, then a small `docker-compose.staging.yml` that remaps `caddy.volumes` to `/tmp/Caddyfile.staging:/etc/caddy/Caddyfile:ro`, and add `-f docker-compose.staging.yml` to the up command. `DOMAIN=localhost`, then `curl -k https://localhost/health`.
