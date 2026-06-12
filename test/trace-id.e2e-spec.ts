@@ -35,11 +35,13 @@ describe('traceId correlation (e2e)', () => {
     await db?.stop();
   });
 
-  it('echoes a generated X-Request-Id on a normal response', async () => {
+  it('echoes a generated UUID X-Request-Id on a normal response', async () => {
     const res = await request(app.getHttpServer() as App)
       .get('/health')
       .expect(200);
-    expect(res.headers['x-request-id']).toMatch(/[0-9a-f-]{36}/);
+    expect(res.headers['x-request-id']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
   });
 
   it('reuses an inbound X-Request-Id', async () => {
@@ -50,11 +52,14 @@ describe('traceId correlation (e2e)', () => {
     expect(res.headers['x-request-id']).toBe('trace-abc-123');
   });
 
-  it('includes traceId in an error envelope', async () => {
-    // an unauthenticated protected route -> 401 envelope; assert traceId present
+  it('correlates: the error envelope traceId equals the X-Request-Id header (same id)', async () => {
+    // an unauthenticated protected route -> 401 envelope; the traceId MUST be the
+    // same id echoed in the response header (that correlation is the whole point).
     const res = await request(app.getHttpServer() as App)
       .get('/reports/balance-sheet')
+      .set('X-Request-Id', 'trace-corr-xyz')
       .expect(401);
-    expect((res.body as { traceId?: string }).traceId).toBeTruthy();
+    expect(res.headers['x-request-id']).toBe('trace-corr-xyz');
+    expect((res.body as { traceId?: string }).traceId).toBe('trace-corr-xyz');
   });
 });

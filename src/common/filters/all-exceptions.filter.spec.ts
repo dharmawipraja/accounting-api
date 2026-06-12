@@ -50,6 +50,12 @@ describe('AllExceptionsFilter', () => {
     });
   });
 
+  it('stamps the request id (req.id) into the envelope as traceId', () => {
+    const m = mockHost(); // getRequest() returns { id: 'req-1' }
+    filter.catch(new ConflictDomainError('x', {}), m.host);
+    expect((m.payload() as { traceId?: string }).traceId).toBe('req-1');
+  });
+
   it('maps a NestJS HttpException', () => {
     const m = mockHost();
     filter.catch(new HttpException('nope', 400), m.host);
