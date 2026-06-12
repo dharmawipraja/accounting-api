@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { BusinessPartner } from '@prisma/client';
 import { BusinessPartnersService } from './business-partners.service';
 import { CreateBusinessPartnerDto } from './dto/create-business-partner.dto';
@@ -18,6 +19,8 @@ import { Role } from '../auth/role.enum';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 
+@ApiTags('Business Partners')
+@ApiBearerAuth()
 @Controller('partners')
 export class BusinessPartnersController {
   constructor(private readonly partners: BusinessPartnersService) {}

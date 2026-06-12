@@ -1,4 +1,10 @@
 import { Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiExtraModels,
+  ApiOkResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService, TokenPair } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -8,7 +14,14 @@ import { CurrentUser } from './decorators/current-user.decorator';
 import { AuthenticatedUser } from './strategies/jwt.strategy';
 import { Roles } from './decorators/roles.decorator';
 import { Role } from './role.enum';
+import {
+  ErrorEnvelopeDto,
+  TokenPairDto,
+} from '../common/openapi/openapi.models';
 
+@ApiTags('Auth')
+@ApiBearerAuth()
+@ApiExtraModels(ErrorEnvelopeDto)
 @Controller('auth')
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
@@ -22,6 +35,7 @@ export class AuthController {
   })
   @Post('login')
   @HttpCode(200)
+  @ApiOkResponse({ type: TokenPairDto })
   login(@Body() dto: LoginDto): Promise<TokenPair> {
     return this.auth.login(dto.email, dto.password);
   }
@@ -35,6 +49,7 @@ export class AuthController {
   })
   @Post('refresh')
   @HttpCode(200)
+  @ApiOkResponse({ type: TokenPairDto })
   refresh(@Body() dto: RefreshDto): Promise<TokenPair> {
     return this.auth.refresh(dto.refreshToken);
   }

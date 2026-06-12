@@ -10,6 +10,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { PurchaseBillsService } from './purchase-bills.service';
 import { CreatePurchaseBillDto } from './dto/create-purchase-bill.dto';
 import { UpdatePurchaseBillDto } from './dto/update-purchase-bill.dto';
@@ -19,6 +20,8 @@ import { Role } from '../auth/role.enum';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 
+@ApiTags('Purchase Bills')
+@ApiBearerAuth()
 @Controller('purchase-bills')
 export class PurchaseBillsController {
   constructor(private readonly bills: PurchaseBillsService) {}

@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { TaxCode } from '@prisma/client';
 import { TaxCodesService } from './tax-codes.service';
 import { CreateTaxCodeDto } from './dto/create-tax-code.dto';
@@ -18,6 +19,8 @@ import { Role } from '../auth/role.enum';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 
+@ApiTags('Tax')
+@ApiBearerAuth()
 @Controller('tax/codes')
 export class TaxCodesController {
   constructor(private readonly taxCodes: TaxCodesService) {}

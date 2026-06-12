@@ -9,6 +9,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AccountingPeriod } from '@prisma/client';
 import { PeriodsService } from './periods.service';
 import { GeneratePeriodsDto } from './dto/generate-periods.dto';
@@ -17,6 +18,8 @@ import { Role } from '../../auth/role.enum';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 
+@ApiTags('Periods')
+@ApiBearerAuth()
 @Controller('ledger/periods')
 export class PeriodsController {
   constructor(private readonly periods: PeriodsService) {}

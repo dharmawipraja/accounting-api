@@ -1,4 +1,5 @@
 import { Controller, Get, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import {
   AsOfQueryDto,
   RangeQueryDto,
@@ -11,6 +12,8 @@ import { AgingService } from './aging.service';
 import { CashFlowService } from './cash-flow.service';
 import { ValidationFailedError } from '../common/errors/domain-errors';
 
+@ApiTags('Reporting')
+@ApiBearerAuth()
 @Controller('reports')
 export class ReportsController {
   constructor(

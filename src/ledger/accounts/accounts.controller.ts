@@ -10,6 +10,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Account } from '@prisma/client';
 import { AccountsService } from './accounts.service';
 import { CreateAccountDto } from './dto/create-account.dto';
@@ -21,6 +22,8 @@ import { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { BalancesService } from '../balances/balances.service';
 import { AsOfQueryDto } from '../../common/dto/as-of-query.dto';
 
+@ApiTags('Accounts')
+@ApiBearerAuth()
 @Controller('ledger/accounts')
 export class AccountsController {
   constructor(

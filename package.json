@@ -12,6 +12,7 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
+    "openapi:export": "nest build && node dist/scripts/export-openapi.js",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "typecheck": "tsc --noEmit",
     "lint:ci": "eslint \"{src,apps,libs,test}/**/*.ts\" --max-warnings 0",
