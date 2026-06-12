@@ -13,11 +13,19 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+    "typecheck": "tsc --noEmit",
+    "lint:ci": "eslint \"{src,apps,libs,test}/**/*.ts\" --max-warnings 0",
+    "verify": "npm run typecheck && npm run lint:ci && npm run test:cov && npm run test:e2e",
+    "audit:ci": "npm audit --omit=dev --audit-level=high",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json"
+  },
+  "engines": {
+    "node": ">=22 <23",
+    "npm": ">=10"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
