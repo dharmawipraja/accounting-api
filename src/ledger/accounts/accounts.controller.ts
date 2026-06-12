@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -33,7 +34,7 @@ export class AccountsController {
   }
 
   @Get(':id/balance')
-  balance(@Param('id') id: string, @Query() q: AsOfQueryDto) {
+  balance(@Param('id', ParseUUIDPipe) id: string, @Query() q: AsOfQueryDto) {
     return this.balances.accountBalance(
       id,
       q.asOf ? new Date(q.asOf) : new Date(),
@@ -41,7 +42,7 @@ export class AccountsController {
   }
 
   @Get(':id')
-  get(@Param('id') id: string): Promise<Account> {
+  get(@Param('id', ParseUUIDPipe) id: string): Promise<Account> {
     return this.accounts.findById(id);
   }
 
@@ -54,7 +55,7 @@ export class AccountsController {
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
   @Patch(':id')
   update(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateAccountDto,
   ): Promise<Account> {
     return this.accounts.update(id, dto);
@@ -63,7 +64,7 @@ export class AccountsController {
   @Roles(Role.ADMIN)
   @Post(':id/deactivate')
   @HttpCode(200)
-  deactivate(@Param('id') id: string): Promise<Account> {
+  deactivate(@Param('id', ParseUUIDPipe) id: string): Promise<Account> {
     return this.accounts.deactivate(id);
   }
 
@@ -71,7 +72,7 @@ export class AccountsController {
   @Delete(':id')
   @HttpCode(204)
   async remove(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<void> {
     await this.accounts.softDelete(id, user.id);

@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -29,7 +30,7 @@ export class PurchaseBillsController {
   }
 
   @Get(':id')
-  async get(@Param('id') id: string) {
+  async get(@Param('id', ParseUUIDPipe) id: string) {
     return this.bills.present(await this.bills.getById(id));
   }
 
@@ -53,7 +54,7 @@ export class PurchaseBillsController {
 
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
   @Patch(':id')
-  async update(@Param('id') id: string, @Body() dto: UpdatePurchaseBillDto) {
+  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdatePurchaseBillDto) {
     const bill = await this.bills.update(id, {
       vendorInvoiceNo: dto.vendorInvoiceNo,
       date: dto.date ? new Date(dto.date) : undefined,
@@ -67,14 +68,14 @@ export class PurchaseBillsController {
   @Roles(Role.APPROVER, Role.ADMIN)
   @Post(':id/post')
   @HttpCode(200)
-  async post(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+  async post(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.bills.present(await this.bills.post(id, user.id));
   }
 
   @Roles(Role.APPROVER, Role.ADMIN)
   @Post(':id/void')
   @HttpCode(200)
-  async void(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+  async void(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.bills.present(await this.bills.void(id, user.id));
   }
 
@@ -82,7 +83,7 @@ export class PurchaseBillsController {
   @Delete(':id')
   @HttpCode(204)
   async remove(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<void> {
     await this.bills.deleteDraft(id, user.id);

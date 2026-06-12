@@ -6,6 +6,7 @@ import {
   Headers,
   HttpCode,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
 } from '@nestjs/common';
@@ -24,7 +25,7 @@ export class JournalController {
   constructor(private readonly journal: JournalService) {}
 
   @Get(':id')
-  get(@Param('id') id: string): Promise<JournalEntry> {
+  get(@Param('id', ParseUUIDPipe) id: string): Promise<JournalEntry> {
     return this.journal.getById(id);
   }
 
@@ -62,7 +63,7 @@ export class JournalController {
   @Post(':id/post')
   @HttpCode(200)
   post(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,
     @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<JournalEntry> {
@@ -73,7 +74,7 @@ export class JournalController {
   @Post(':id/reverse')
   @HttpCode(200)
   reverse(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,
     @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<JournalEntry> {
@@ -84,7 +85,7 @@ export class JournalController {
   @Delete(':id')
   @HttpCode(204)
   async remove(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<void> {
     await this.journal.deleteDraft(id, user.id);

@@ -5,6 +5,7 @@ import {
   HttpCode,
   Param,
   ParseIntPipe,
+  ParseUUIDPipe,
   Post,
   Query,
 } from '@nestjs/common';
@@ -37,7 +38,7 @@ export class PeriodsController {
   @Post(':id/close')
   @HttpCode(200)
   close(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<AccountingPeriod> {
     return this.periods.close(id, user.id);
@@ -46,7 +47,7 @@ export class PeriodsController {
   @Roles(Role.ADMIN)
   @Post(':id/reopen')
   @HttpCode(200)
-  reopen(@Param('id') id: string): Promise<AccountingPeriod> {
+  reopen(@Param('id', ParseUUIDPipe) id: string): Promise<AccountingPeriod> {
     return this.periods.reopen(id);
   }
 }

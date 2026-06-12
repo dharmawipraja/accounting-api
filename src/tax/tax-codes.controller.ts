@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
 } from '@nestjs/common';
@@ -27,7 +28,7 @@ export class TaxCodesController {
   }
 
   @Get(':id')
-  get(@Param('id') id: string): Promise<TaxCode> {
+  get(@Param('id', ParseUUIDPipe) id: string): Promise<TaxCode> {
     return this.taxCodes.findById(id);
   }
 
@@ -40,7 +41,7 @@ export class TaxCodesController {
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
   @Patch(':id')
   update(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateTaxCodeDto,
   ): Promise<TaxCode> {
     return this.taxCodes.update(id, dto);
@@ -49,7 +50,7 @@ export class TaxCodesController {
   @Roles(Role.ADMIN)
   @Post(':id/deactivate')
   @HttpCode(200)
-  deactivate(@Param('id') id: string): Promise<TaxCode> {
+  deactivate(@Param('id', ParseUUIDPipe) id: string): Promise<TaxCode> {
     return this.taxCodes.deactivate(id);
   }
 
@@ -57,7 +58,7 @@ export class TaxCodesController {
   @Delete(':id')
   @HttpCode(204)
   async remove(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<void> {
     await this.taxCodes.softDelete(id, user.id);

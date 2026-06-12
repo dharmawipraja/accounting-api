@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
 } from '@nestjs/common';
@@ -24,7 +25,7 @@ export class BusinessPartnersController {
   @Get() list(): Promise<BusinessPartner[]> {
     return this.partners.list();
   }
-  @Get(':id') get(@Param('id') id: string): Promise<BusinessPartner> {
+  @Get(':id') get(@Param('id', ParseUUIDPipe) id: string): Promise<BusinessPartner> {
     return this.partners.findById(id);
   }
 
@@ -37,7 +38,7 @@ export class BusinessPartnersController {
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
   @Patch(':id')
   update(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateBusinessPartnerDto,
   ): Promise<BusinessPartner> {
     return this.partners.update(id, dto);
@@ -46,7 +47,7 @@ export class BusinessPartnersController {
   @Roles(Role.ADMIN)
   @Post(':id/deactivate')
   @HttpCode(200)
-  deactivate(@Param('id') id: string): Promise<BusinessPartner> {
+  deactivate(@Param('id', ParseUUIDPipe) id: string): Promise<BusinessPartner> {
     return this.partners.deactivate(id);
   }
 
@@ -54,7 +55,7 @@ export class BusinessPartnersController {
   @Delete(':id')
   @HttpCode(204)
   async remove(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<void> {
     await this.partners.softDelete(id, user.id);

@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -29,7 +30,7 @@ export class SalesInvoicesController {
   }
 
   @Get(':id')
-  async get(@Param('id') id: string) {
+  async get(@Param('id', ParseUUIDPipe) id: string) {
     return this.invoices.present(await this.invoices.getById(id));
   }
 
@@ -52,7 +53,7 @@ export class SalesInvoicesController {
 
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
   @Patch(':id')
-  async update(@Param('id') id: string, @Body() dto: UpdateSalesInvoiceDto) {
+  async update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateSalesInvoiceDto) {
     const inv = await this.invoices.update(id, {
       date: dto.date ? new Date(dto.date) : undefined,
       dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
@@ -65,14 +66,14 @@ export class SalesInvoicesController {
   @Roles(Role.APPROVER, Role.ADMIN)
   @Post(':id/post')
   @HttpCode(200)
-  async post(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+  async post(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.invoices.present(await this.invoices.post(id, user.id));
   }
 
   @Roles(Role.APPROVER, Role.ADMIN)
   @Post(':id/void')
   @HttpCode(200)
-  async void(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+  async void(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.invoices.present(await this.invoices.void(id, user.id));
   }
 
@@ -80,7 +81,7 @@ export class SalesInvoicesController {
   @Delete(':id')
   @HttpCode(204)
   async remove(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<void> {
     await this.invoices.deleteDraft(id, user.id);
