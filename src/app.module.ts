@@ -6,6 +6,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { randomUUID } from 'crypto';
 import { HealthController } from './health/health.controller';
 import { validate } from './config/env.validation';
+import { resolveEnvFilePaths } from './config/env-file-paths';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
@@ -23,7 +24,11 @@ import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true, validate }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: resolveEnvFilePaths(process.env.NODE_ENV),
+      validate,
+    }),
     LoggerModule.forRoot({
       pinoHttp: {
         autoLogging: true,
