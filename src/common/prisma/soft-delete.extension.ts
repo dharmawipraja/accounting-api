@@ -4,13 +4,11 @@ import { Prisma, PrismaClient } from '@prisma/client';
  * Models subject to soft delete. Add new soft-deletable models here as later
  * phases introduce them (e.g. 'BusinessPartner', 'TaxCode').
  *
- * KNOWN GAP: update/updateMany/upsert/aggregate/groupBy are NOT filtered —
- * they can mutate/resurrect or count soft-deleted rows. This now affects User,
- * Account, AND JournalEntry. It is mitigated at the service layer (every write
- * path does a findFirst-based existence/status check before update), so a
- * soft-deleted row can't be resurrected through the services. Harden the
- * extension itself (inject `deletedAt: null` into update/updateMany) if a raw
- * update path is ever added.
+ * Guarded operations: find* / count / aggregate / groupBy inject `deletedAt: null`;
+ * update / updateMany inject `deletedAt: null` (a write to a tombstoned row matches
+ * 0 rows -> P2025 -> 404 via the exception filter); delete / deleteMany / upsert throw
+ * (hard delete and upsert are forbidden on soft-deletable models). The service
+ * layer still does its own findFirst existence checks; this is defense-in-depth.
  */
 export const SOFT_DELETE_MODELS = new Set<Prisma.ModelName>([
   'User',
@@ -141,6 +139,40 @@ export function applySoftDelete(base: PrismaClient) {
               // surfaces loudly rather than masquerading as a normal 4xx response.
               throw new Error(
                 `Hard delete forbidden on ${model}; soft-delete records individually via softDelete()`,
+              );
+            }
+            return query(args);
+          },
+          async update({ model, args, query }) {
+            if (isSoftDelete(model)) {
+              args.where = { ...args.where, deletedAt: null };
+            }
+            return query(args);
+          },
+          async updateMany({ model, args, query }) {
+            if (isSoftDelete(model)) {
+              args.where = { ...args.where, deletedAt: null };
+            }
+            return query(args);
+          },
+          async aggregate({ model, args, query }) {
+            if (isSoftDelete(model)) {
+              args.where = { ...args.where, deletedAt: null };
+            }
+            return query(args);
+          },
+          async groupBy({ model, args, query }) {
+            if (isSoftDelete(model)) {
+              args.where = { ...args.where, deletedAt: null };
+            }
+            return query(args);
+          },
+          async upsert({ model, args, query }) {
+            if (isSoftDelete(model)) {
+              // Programmer-error guard: upsert vs. soft-delete is ambiguous and no
+              // route uses it. A plain Error (-> 500) surfaces a stray upsert loudly.
+              throw new Error(
+                `upsert forbidden on ${model}; soft-deletable models must update/softDelete explicitly`,
               );
             }
             return query(args);
