@@ -1005,7 +1005,17 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaxCodeResponseDto"
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1032,7 +1042,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaxCodeResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1060,7 +1077,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaxCodeResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1096,7 +1120,14 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaxCodeResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1150,7 +1181,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaxCodeResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1183,7 +1221,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/TaxCalculationDto"
                 }
               }
             }
@@ -3419,6 +3457,64 @@
           "totalCredit"
         ]
       },
+      "TaxCodeResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string",
+            "example": "PPN-OUT"
+          },
+          "name": {
+            "type": "string",
+            "example": "PPN Keluaran 11%"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "PPN_OUTPUT",
+              "PPN_INPUT",
+              "PPH_PAYABLE",
+              "PPH_PREPAID"
+            ]
+          },
+          "rate": {
+            "type": "string",
+            "example": "0.110000",
+            "description": "Rate as a 6-dp decimal string (e.g. 0.110000 = 11%)."
+          },
+          "taxAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "isActive": {
+            "type": "boolean",
+            "example": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "kind",
+          "rate",
+          "taxAccountId",
+          "isActive",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
       "CreateTaxCodeDto": {
         "type": "object",
         "properties": {
@@ -3523,6 +3619,106 @@
           "nature",
           "settlementAccountId",
           "lines"
+        ]
+      },
+      "TaxBreakdownRowDto": {
+        "type": "object",
+        "properties": {
+          "taxCodeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string",
+            "example": "PPN-OUT"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "PPN_OUTPUT",
+              "PPN_INPUT",
+              "PPH_PAYABLE",
+              "PPH_PREPAID"
+            ]
+          },
+          "base": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Tax base (DPP), 4 dp string"
+          },
+          "amount": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Tax amount, rounded to rupiah"
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "taxCodeId",
+          "code",
+          "kind",
+          "base",
+          "amount",
+          "accountId"
+        ]
+      },
+      "CalculatedLineDto": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "debit": {
+            "type": "string",
+            "example": "1000.0000"
+          },
+          "credit": {
+            "type": "string",
+            "example": "1000.0000"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId"
+        ]
+      },
+      "TaxCalculationDto": {
+        "type": "object",
+        "properties": {
+          "subtotal": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Sum of tax-exclusive base line amounts"
+          },
+          "taxes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaxBreakdownRowDto"
+            }
+          },
+          "settlementAmount": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "journalLines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CalculatedLineDto"
+            }
+          }
+        },
+        "required": [
+          "subtotal",
+          "taxes",
+          "settlementAmount",
+          "journalLines"
         ]
       },
       "CreateBusinessPartnerDto": {

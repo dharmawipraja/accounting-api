@@ -9,8 +9,9 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiCreatedResponse, ApiNoContentResponse, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { TaxCode } from '@prisma/client';
+import { TaxCodeResponseDto } from './dto/tax-code-response.dto';
 import { TaxCodesService } from './tax-codes.service';
 import { CreateTaxCodeDto } from './dto/create-tax-code.dto';
 import { UpdateTaxCodeDto } from './dto/update-tax-code.dto';
@@ -25,22 +26,26 @@ import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 export class TaxCodesController {
   constructor(private readonly taxCodes: TaxCodesService) {}
 
+  @ApiOkResponse({ type: TaxCodeResponseDto, isArray: true })
   @Get()
   list(): Promise<TaxCode[]> {
     return this.taxCodes.list();
   }
 
+  @ApiOkResponse({ type: TaxCodeResponseDto })
   @Get(':id')
   get(@Param('id', ParseUUIDPipe) id: string): Promise<TaxCode> {
     return this.taxCodes.findById(id);
   }
 
+  @ApiCreatedResponse({ type: TaxCodeResponseDto })
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
   @Post()
   create(@Body() dto: CreateTaxCodeDto): Promise<TaxCode> {
     return this.taxCodes.create(dto);
   }
 
+  @ApiOkResponse({ type: TaxCodeResponseDto })
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
   @Patch(':id')
   update(
@@ -50,6 +55,7 @@ export class TaxCodesController {
     return this.taxCodes.update(id, dto);
   }
 
+  @ApiOkResponse({ type: TaxCodeResponseDto })
   @Roles(Role.ADMIN)
   @Post(':id/deactivate')
   @HttpCode(200)
@@ -57,6 +63,7 @@ export class TaxCodesController {
     return this.taxCodes.deactivate(id);
   }
 
+  @ApiNoContentResponse()
   @Roles(Role.ADMIN)
   @Delete(':id')
   @HttpCode(204)
