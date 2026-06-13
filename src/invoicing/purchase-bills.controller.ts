@@ -10,7 +10,14 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiNoContentResponse,
+  ApiOkResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { PurchaseBillResponseDto } from './dto/purchase-bill-response.dto';
 import { PurchaseBillsService } from './purchase-bills.service';
 import { CreatePurchaseBillDto } from './dto/create-purchase-bill.dto';
 import { UpdatePurchaseBillDto } from './dto/update-purchase-bill.dto';
@@ -26,18 +33,21 @@ import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 export class PurchaseBillsController {
   constructor(private readonly bills: PurchaseBillsService) {}
 
+  @ApiOkResponse({ type: PurchaseBillResponseDto, isArray: true })
   @Get()
   async list(@Query() q: PurchaseBillListQueryDto) {
     const rows = await this.bills.list(q);
     return rows.map((r) => this.bills.present(r));
   }
 
+  @ApiOkResponse({ type: PurchaseBillResponseDto })
   @Get(':id')
   async get(@Param('id', ParseUUIDPipe) id: string) {
     return this.bills.present(await this.bills.getById(id));
   }
 
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
+  @ApiCreatedResponse({ type: PurchaseBillResponseDto })
   @Post()
   async create(
     @Body() dto: CreatePurchaseBillDto,
@@ -56,6 +66,7 @@ export class PurchaseBillsController {
   }
 
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
+  @ApiOkResponse({ type: PurchaseBillResponseDto })
   @Patch(':id')
   async update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -72,6 +83,7 @@ export class PurchaseBillsController {
   }
 
   @Roles(Role.APPROVER, Role.ADMIN)
+  @ApiOkResponse({ type: PurchaseBillResponseDto })
   @Post(':id/post')
   @HttpCode(200)
   async post(
@@ -82,6 +94,7 @@ export class PurchaseBillsController {
   }
 
   @Roles(Role.APPROVER, Role.ADMIN)
+  @ApiOkResponse({ type: PurchaseBillResponseDto })
   @Post(':id/void')
   @HttpCode(200)
   async void(
@@ -92,6 +105,7 @@ export class PurchaseBillsController {
   }
 
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
+  @ApiNoContentResponse()
   @Delete(':id')
   @HttpCode(204)
   async remove(
