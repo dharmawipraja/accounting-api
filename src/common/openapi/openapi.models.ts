@@ -18,3 +18,27 @@ export class TokenPairDto {
   @ApiProperty() accessToken!: string;
   @ApiProperty() refreshToken!: string;
 }
+
+/** GET /health */
+export class HealthStatusDto {
+  @ApiProperty({ example: 'ok' }) status!: string;
+}
+
+/** GET /ready */
+export class ReadinessStatusDto {
+  @ApiProperty({ example: 'ok' }) status!: string;
+  @ApiProperty({ example: 'up' }) db!: string;
+}
+
+/** GET /auth/me — the authenticated principal derived from the JWT. */
+export class AuthenticatedUserDto {
+  @ApiProperty({ format: 'uuid' }) id!: string;
+  @ApiProperty({ example: 'admin@x.com' }) email!: string;
+  @ApiProperty({ enum: ['ADMIN', 'ACCOUNTANT', 'APPROVER', 'VIEWER'] })
+  role!: string;
+}
+
+/** GET /auth/admin-only — RBAC smoke surface. */
+export class OkFlagDto {
+  @ApiProperty({ example: true }) ok!: boolean;
+}
