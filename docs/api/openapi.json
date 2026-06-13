@@ -487,7 +487,17 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FiscalPeriodResponseDto"
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -516,7 +526,17 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FiscalPeriodResponseDto"
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -544,7 +564,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FiscalPeriodResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -572,7 +599,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FiscalPeriodResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2851,6 +2885,75 @@
             "type": "boolean"
           }
         }
+      },
+      "FiscalPeriodResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fiscalYear": {
+            "type": "number",
+            "example": 2026
+          },
+          "sequence": {
+            "type": "number",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "example": "2026-01"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-01-01"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-01-31"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "CLOSED"
+            ]
+          },
+          "closedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "closedBy": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "fiscalYear",
+          "sequence",
+          "name",
+          "startDate",
+          "endDate",
+          "status",
+          "closedAt",
+          "closedBy",
+          "createdAt",
+          "updatedAt"
+        ]
       },
       "GeneratePeriodsDto": {
         "type": "object",

@@ -9,7 +9,13 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { FiscalPeriodResponseDto } from './dto/period-response.dto';
 import { AccountingPeriod } from '@prisma/client';
 import { PeriodsService } from './periods.service';
 import { GeneratePeriodsDto } from './dto/generate-periods.dto';
@@ -25,6 +31,7 @@ export class PeriodsController {
   constructor(private readonly periods: PeriodsService) {}
 
   @Get()
+  @ApiOkResponse({ type: FiscalPeriodResponseDto, isArray: true })
   list(
     @Query('fiscalYear', ParseIntPipe) fiscalYear: number,
   ): Promise<AccountingPeriod[]> {
@@ -33,6 +40,7 @@ export class PeriodsController {
 
   @Roles(Role.APPROVER, Role.ADMIN)
   @Post('generate')
+  @ApiCreatedResponse({ type: FiscalPeriodResponseDto, isArray: true })
   generate(@Body() dto: GeneratePeriodsDto): Promise<AccountingPeriod[]> {
     return this.periods.generatePeriods(dto.fiscalYear);
   }
@@ -40,6 +48,7 @@ export class PeriodsController {
   @Roles(Role.APPROVER, Role.ADMIN)
   @Post(':id/close')
   @HttpCode(200)
+  @ApiOkResponse({ type: FiscalPeriodResponseDto })
   close(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,
@@ -50,6 +59,7 @@ export class PeriodsController {
   @Roles(Role.ADMIN)
   @Post(':id/reopen')
   @HttpCode(200)
+  @ApiOkResponse({ type: FiscalPeriodResponseDto })
   reopen(@Param('id', ParseUUIDPipe) id: string): Promise<AccountingPeriod> {
     return this.periods.reopen(id);
   }
