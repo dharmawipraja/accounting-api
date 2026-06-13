@@ -2203,7 +2203,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BalanceSheetDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2239,7 +2246,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncomeStatementDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2284,7 +2298,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeneralLedgerDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2312,7 +2333,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgingReportDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2340,7 +2368,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgingReportDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2376,7 +2411,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CashFlowDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4729,6 +4771,588 @@
           "date",
           "cashAccountId",
           "allocations"
+        ]
+      },
+      "ReportLineDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "4-1000"
+          },
+          "name": {
+            "type": "string",
+            "example": "Pendapatan"
+          },
+          "amount": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "amount"
+        ]
+      },
+      "ReportGroupDto": {
+        "type": "object",
+        "properties": {
+          "subtype": {
+            "type": "string",
+            "example": "CURRENT_ASSET"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportLineDto"
+            }
+          },
+          "subtotal": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          }
+        },
+        "required": [
+          "subtype",
+          "lines",
+          "subtotal"
+        ]
+      },
+      "ReportSectionDto": {
+        "type": "object",
+        "properties": {
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportGroupDto"
+            }
+          },
+          "total": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          }
+        },
+        "required": [
+          "groups",
+          "total"
+        ]
+      },
+      "BalanceSheetDto": {
+        "type": "object",
+        "properties": {
+          "asOf": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-01-31"
+          },
+          "assets": {
+            "$ref": "#/components/schemas/ReportSectionDto"
+          },
+          "liabilities": {
+            "$ref": "#/components/schemas/ReportSectionDto"
+          },
+          "equity": {
+            "$ref": "#/components/schemas/ReportSectionDto"
+          },
+          "totalAssets": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "totalLiabilities": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "totalEquity": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "currentYearEarnings": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "balanced": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "asOf",
+          "assets",
+          "liabilities",
+          "equity",
+          "totalAssets",
+          "totalLiabilities",
+          "totalEquity",
+          "currentYearEarnings",
+          "balanced"
+        ]
+      },
+      "IncomeStatementDto": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "revenue": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "revenueLines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportLineDto"
+            }
+          },
+          "cogs": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "cogsLines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportLineDto"
+            }
+          },
+          "grossProfit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "operatingExpense": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "operatingExpenseLines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportLineDto"
+            }
+          },
+          "operatingProfit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "otherIncome": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "otherExpense": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "profitBeforeTax": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "taxExpense": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "netIncome": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "revenue",
+          "revenueLines",
+          "cogs",
+          "cogsLines",
+          "grossProfit",
+          "operatingExpense",
+          "operatingExpenseLines",
+          "operatingProfit",
+          "otherIncome",
+          "otherExpense",
+          "profitBeforeTax",
+          "taxExpense",
+          "netIncome"
+        ]
+      },
+      "GeneralLedgerAccountDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string",
+            "example": "1-1000"
+          },
+          "name": {
+            "type": "string",
+            "example": "Kas"
+          },
+          "normalBalance": {
+            "type": "string",
+            "enum": [
+              "DEBIT",
+              "CREDIT"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "normalBalance"
+        ]
+      },
+      "GeneralLedgerLineDto": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "entryRef": {
+            "type": "string",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "debit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "credit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "runningBalance": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          }
+        },
+        "required": [
+          "date",
+          "entryRef",
+          "description",
+          "debit",
+          "credit",
+          "runningBalance"
+        ]
+      },
+      "GeneralLedgerDto": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/GeneralLedgerAccountDto"
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "openingBalance": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeneralLedgerLineDto"
+            }
+          },
+          "closingBalance": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          }
+        },
+        "required": [
+          "account",
+          "from",
+          "to",
+          "openingBalance",
+          "lines",
+          "closingBalance"
+        ]
+      },
+      "AgingDocumentDto": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "nullable": true
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "dueDate": {
+            "type": "string",
+            "nullable": true,
+            "format": "date"
+          },
+          "total": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "paidAsOf": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "outstanding": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "bucket": {
+            "type": "string",
+            "enum": [
+              "Current",
+              "1-30",
+              "31-60",
+              "61-90",
+              ">90"
+            ]
+          }
+        },
+        "required": [
+          "ref",
+          "date",
+          "dueDate",
+          "total",
+          "paidAsOf",
+          "outstanding",
+          "bucket"
+        ]
+      },
+      "AgingPartnerDto": {
+        "type": "object",
+        "properties": {
+          "partnerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "partnerName": {
+            "type": "string"
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgingDocumentDto"
+            }
+          },
+          "buckets": {
+            "type": "object",
+            "description": "Outstanding per bucket, keyed by bucket name (money strings).",
+            "example": {
+              "Current": "0.0000",
+              "1-30": "500.0000",
+              "31-60": "0.0000",
+              "61-90": "0.0000",
+              ">90": "0.0000"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "partnerId",
+          "partnerName",
+          "documents",
+          "buckets"
+        ]
+      },
+      "AgingReportDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "AR",
+              "AP"
+            ]
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date"
+          },
+          "partners": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgingPartnerDto"
+            }
+          },
+          "totalsByBucket": {
+            "type": "object",
+            "description": "Grand totals per bucket (money strings).",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "totalOutstanding": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          }
+        },
+        "required": [
+          "kind",
+          "asOf",
+          "partners",
+          "totalsByBucket",
+          "totalOutstanding"
+        ]
+      },
+      "CashFlowLineDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "1-2000"
+          },
+          "name": {
+            "type": "string",
+            "example": "Piutang Usaha"
+          },
+          "amount": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "amount"
+        ]
+      },
+      "CashFlowOperatingDto": {
+        "type": "object",
+        "properties": {
+          "adjustments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CashFlowLineDto"
+            }
+          },
+          "total": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          }
+        },
+        "required": [
+          "adjustments",
+          "total"
+        ]
+      },
+      "CashFlowSectionDto": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CashFlowLineDto"
+            }
+          },
+          "total": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          }
+        },
+        "required": [
+          "lines",
+          "total"
+        ]
+      },
+      "CashFlowDto": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "netIncome": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "operating": {
+            "$ref": "#/components/schemas/CashFlowOperatingDto"
+          },
+          "investing": {
+            "$ref": "#/components/schemas/CashFlowSectionDto"
+          },
+          "financing": {
+            "$ref": "#/components/schemas/CashFlowSectionDto"
+          },
+          "netChange": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "kasAwal": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "kasAkhir": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "reconciles": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "netIncome",
+          "operating",
+          "investing",
+          "financing",
+          "netChange",
+          "kasAwal",
+          "kasAkhir",
+          "reconciles"
         ]
       },
       "CloseYearDto": {
