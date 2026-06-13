@@ -2000,7 +2000,17 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PaymentResponseDto"
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2027,7 +2037,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2055,7 +2072,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2109,7 +2133,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2137,7 +2168,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4486,6 +4524,151 @@
             }
           }
         }
+      },
+      "PaymentAllocationResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "paymentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "salesInvoiceId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "purchaseBillId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "amount": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          }
+        },
+        "required": [
+          "id",
+          "paymentId",
+          "salesInvoiceId",
+          "purchaseBillId",
+          "amount"
+        ]
+      },
+      "PaymentResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "number": {
+            "type": "number",
+            "nullable": true
+          },
+          "ref": {
+            "type": "string",
+            "nullable": true
+          },
+          "fiscalYear": {
+            "type": "number",
+            "nullable": true
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "RECEIPT",
+              "DISBURSEMENT"
+            ]
+          },
+          "partnerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-01-15"
+          },
+          "cashAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amount": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "POSTED",
+              "VOID"
+            ]
+          },
+          "journalEntryId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "createdBy": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "postedBy": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "postedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "allocations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentAllocationResponseDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "ref",
+          "fiscalYear",
+          "direction",
+          "partnerId",
+          "date",
+          "cashAccountId",
+          "amount",
+          "description",
+          "status",
+          "journalEntryId",
+          "createdBy",
+          "postedBy",
+          "postedAt",
+          "createdAt",
+          "updatedAt"
+        ]
       },
       "AllocationDto": {
         "type": "object",

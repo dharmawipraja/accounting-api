@@ -9,7 +9,14 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiNoContentResponse,
+  ApiOkResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { PaymentResponseDto } from './dto/payment-response.dto';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { PaymentListQueryDto } from './dto/list-payments.dto';
@@ -24,18 +31,21 @@ import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 export class PaymentsController {
   constructor(private readonly payments: PaymentsService) {}
 
+  @ApiOkResponse({ type: PaymentResponseDto, isArray: true })
   @Get()
   async list(@Query() q: PaymentListQueryDto) {
     const rows = await this.payments.list(q);
     return rows.map((r) => this.payments.present(r));
   }
 
+  @ApiOkResponse({ type: PaymentResponseDto })
   @Get(':id')
   async get(@Param('id', ParseUUIDPipe) id: string) {
     return this.payments.present(await this.payments.getById(id));
   }
 
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
+  @ApiCreatedResponse({ type: PaymentResponseDto })
   @Post()
   async create(
     @Body() dto: CreatePaymentDto,
@@ -54,6 +64,7 @@ export class PaymentsController {
   }
 
   @Roles(Role.APPROVER, Role.ADMIN)
+  @ApiOkResponse({ type: PaymentResponseDto })
   @Post(':id/post')
   @HttpCode(200)
   async post(
@@ -64,6 +75,7 @@ export class PaymentsController {
   }
 
   @Roles(Role.APPROVER, Role.ADMIN)
+  @ApiOkResponse({ type: PaymentResponseDto })
   @Post(':id/void')
   @HttpCode(200)
   async void(
@@ -74,6 +86,7 @@ export class PaymentsController {
   }
 
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
+  @ApiNoContentResponse()
   @Delete(':id')
   @HttpCode(204)
   async remove(
