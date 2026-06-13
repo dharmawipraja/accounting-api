@@ -7,7 +7,14 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthStatusDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -21,7 +28,14 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessStatusDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -111,7 +125,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/AuthenticatedUserDto"
                 }
               }
             }
@@ -133,7 +147,14 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkFlagDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -152,7 +173,14 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanySettingsDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -179,7 +207,14 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompanySettingsDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2287,7 +2322,14 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Prometheus exposition format."
           }
         },
         "tags": [
@@ -2318,6 +2360,35 @@
       }
     },
     "schemas": {
+      "HealthStatusDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "ok"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "ReadinessStatusDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "ok"
+          },
+          "db": {
+            "type": "string",
+            "example": "up"
+          }
+        },
+        "required": [
+          "status",
+          "db"
+        ]
+      },
       "ErrorEnvelopeDto": {
         "type": "object",
         "properties": {
@@ -2384,6 +2455,108 @@
         },
         "required": [
           "refreshToken"
+        ]
+      },
+      "AuthenticatedUserDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string",
+            "example": "admin@x.com"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "ADMIN",
+              "ACCOUNTANT",
+              "APPROVER",
+              "VIEWER"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "role"
+        ]
+      },
+      "OkFlagDto": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "CompanySettingsDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "singleton": {
+            "type": "boolean",
+            "example": true
+          },
+          "legalName": {
+            "type": "string",
+            "example": "PT Contoh"
+          },
+          "npwp": {
+            "type": "string",
+            "nullable": true,
+            "example": "01.234.567.8-901.000"
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "fiscalYearStartMonth": {
+            "type": "number",
+            "example": 1
+          },
+          "baseCurrency": {
+            "type": "string",
+            "example": "IDR"
+          },
+          "segregationOfDutiesEnabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "isPkp": {
+            "type": "boolean",
+            "example": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "singleton",
+          "legalName",
+          "npwp",
+          "address",
+          "fiscalYearStartMonth",
+          "baseCurrency",
+          "segregationOfDutiesEnabled",
+          "isPkp",
+          "createdAt",
+          "updatedAt"
         ]
       },
       "UpdateCompanySettingsDto": {

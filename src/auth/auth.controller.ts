@@ -15,7 +15,9 @@ import { AuthenticatedUser } from './strategies/jwt.strategy';
 import { Roles } from './decorators/roles.decorator';
 import { Role } from './role.enum';
 import {
+  AuthenticatedUserDto,
   ErrorEnvelopeDto,
+  OkFlagDto,
   TokenPairDto,
 } from '../common/openapi/openapi.models';
 
@@ -55,6 +57,7 @@ export class AuthController {
   }
 
   @Get('me')
+  @ApiOkResponse({ type: AuthenticatedUserDto })
   me(@CurrentUser() user: AuthenticatedUser): AuthenticatedUser {
     return user;
   }
@@ -62,6 +65,7 @@ export class AuthController {
   // Phase 1 RBAC smoke surface — replace with a real admin endpoint later.
   @Roles(Role.ADMIN)
   @Get('admin-only')
+  @ApiOkResponse({ type: OkFlagDto })
   adminOnly(): { ok: boolean } {
     return { ok: true };
   }
