@@ -1243,7 +1243,17 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BusinessPartnerResponseDto"
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1270,7 +1280,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BusinessPartnerResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1298,7 +1315,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BusinessPartnerResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1334,7 +1358,14 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BusinessPartnerResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1388,7 +1419,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BusinessPartnerResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3719,6 +3757,74 @@
           "taxes",
           "settlementAmount",
           "journalLines"
+        ]
+      },
+      "BusinessPartnerResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string",
+            "example": "CUST-001"
+          },
+          "name": {
+            "type": "string",
+            "example": "PT Pelanggan"
+          },
+          "npwp": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "nullable": true,
+            "example": "a@b.com"
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "isCustomer": {
+            "type": "boolean",
+            "example": true
+          },
+          "isVendor": {
+            "type": "boolean",
+            "example": false
+          },
+          "isActive": {
+            "type": "boolean",
+            "example": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "npwp",
+          "email",
+          "phone",
+          "address",
+          "isCustomer",
+          "isVendor",
+          "isActive",
+          "createdAt",
+          "updatedAt"
         ]
       },
       "CreateBusinessPartnerDto": {

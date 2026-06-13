@@ -9,7 +9,14 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiNoContentResponse,
+  ApiOkResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { BusinessPartnerResponseDto } from './dto/business-partner-response.dto';
 import { BusinessPartner } from '@prisma/client';
 import { BusinessPartnersService } from './business-partners.service';
 import { CreateBusinessPartnerDto } from './dto/create-business-partner.dto';
@@ -25,22 +32,26 @@ import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 export class BusinessPartnersController {
   constructor(private readonly partners: BusinessPartnersService) {}
 
-  @Get() list(): Promise<BusinessPartner[]> {
+  @ApiOkResponse({ type: BusinessPartnerResponseDto, isArray: true })
+  @Get()
+  list(): Promise<BusinessPartner[]> {
     return this.partners.list();
   }
-  @Get(':id') get(
-    @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<BusinessPartner> {
+  @ApiOkResponse({ type: BusinessPartnerResponseDto })
+  @Get(':id')
+  get(@Param('id', ParseUUIDPipe) id: string): Promise<BusinessPartner> {
     return this.partners.findById(id);
   }
 
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
+  @ApiCreatedResponse({ type: BusinessPartnerResponseDto })
   @Post()
   create(@Body() dto: CreateBusinessPartnerDto): Promise<BusinessPartner> {
     return this.partners.create(dto);
   }
 
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
+  @ApiOkResponse({ type: BusinessPartnerResponseDto })
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -50,6 +61,7 @@ export class BusinessPartnersController {
   }
 
   @Roles(Role.ADMIN)
+  @ApiOkResponse({ type: BusinessPartnerResponseDto })
   @Post(':id/deactivate')
   @HttpCode(200)
   deactivate(@Param('id', ParseUUIDPipe) id: string): Promise<BusinessPartner> {
@@ -57,6 +69,7 @@ export class BusinessPartnersController {
   }
 
   @Roles(Role.ADMIN)
+  @ApiNoContentResponse()
   @Delete(':id')
   @HttpCode(204)
   async remove(
