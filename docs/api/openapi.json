@@ -1474,7 +1474,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object"
+                    "$ref": "#/components/schemas/SalesInvoiceResponseDto"
                   }
                 }
               }
@@ -1509,7 +1509,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/SalesInvoiceResponseDto"
                 }
               }
             }
@@ -1544,7 +1544,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/SalesInvoiceResponseDto"
                 }
               }
             }
@@ -1587,7 +1587,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/SalesInvoiceResponseDto"
                 }
               }
             }
@@ -1648,7 +1648,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/SalesInvoiceResponseDto"
                 }
               }
             }
@@ -1683,7 +1683,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/SalesInvoiceResponseDto"
                 }
               }
             }
@@ -3899,6 +3899,205 @@
             "type": "boolean"
           }
         }
+      },
+      "SalesInvoiceLineResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "salesInvoiceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lineNo": {
+            "type": "number",
+            "example": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Quantity, 4 dp string"
+          },
+          "unitPrice": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "amount": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "taxCodeIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "salesInvoiceId",
+          "lineNo",
+          "description",
+          "accountId",
+          "quantity",
+          "unitPrice",
+          "amount",
+          "taxCodeIds"
+        ]
+      },
+      "SalesInvoiceResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "invoiceNumber": {
+            "type": "number",
+            "nullable": true
+          },
+          "invoiceRef": {
+            "type": "string",
+            "nullable": true
+          },
+          "fiscalYear": {
+            "type": "number",
+            "nullable": true
+          },
+          "partnerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-01-15"
+          },
+          "dueDate": {
+            "type": "string",
+            "nullable": true,
+            "format": "date"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "POSTED",
+              "VOID"
+            ]
+          },
+          "subtotal": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "taxTotal": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "withholdingTotal": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "total": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "amountPaid": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "journalEntryId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "createdBy": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "postedBy": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "postedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "outstanding": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "total − amountPaid"
+          },
+          "paymentStatus": {
+            "type": "string",
+            "enum": [
+              "UNPAID",
+              "PARTIAL",
+              "PAID"
+            ]
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SalesInvoiceLineResponseDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "invoiceNumber",
+          "invoiceRef",
+          "fiscalYear",
+          "partnerId",
+          "date",
+          "dueDate",
+          "description",
+          "status",
+          "subtotal",
+          "taxTotal",
+          "withholdingTotal",
+          "total",
+          "amountPaid",
+          "journalEntryId",
+          "createdBy",
+          "postedBy",
+          "postedAt",
+          "createdAt",
+          "updatedAt",
+          "outstanding",
+          "paymentStatus"
+        ]
       },
       "SalesInvoiceLineDto": {
         "type": "object",

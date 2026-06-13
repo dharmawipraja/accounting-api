@@ -10,7 +10,14 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiNoContentResponse,
+  ApiOkResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { SalesInvoiceResponseDto } from './dto/sales-invoice-response.dto';
 import { SalesInvoicesService } from './sales-invoices.service';
 import { CreateSalesInvoiceDto } from './dto/create-sales-invoice.dto';
 import { UpdateSalesInvoiceDto } from './dto/update-sales-invoice.dto';
@@ -26,18 +33,21 @@ import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 export class SalesInvoicesController {
   constructor(private readonly invoices: SalesInvoicesService) {}
 
+  @ApiOkResponse({ type: SalesInvoiceResponseDto, isArray: true })
   @Get()
   async list(@Query() q: SalesInvoiceListQueryDto) {
     const rows = await this.invoices.list(q);
     return rows.map((r) => this.invoices.present(r));
   }
 
+  @ApiOkResponse({ type: SalesInvoiceResponseDto })
   @Get(':id')
   async get(@Param('id', ParseUUIDPipe) id: string) {
     return this.invoices.present(await this.invoices.getById(id));
   }
 
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
+  @ApiCreatedResponse({ type: SalesInvoiceResponseDto })
   @Post()
   async create(
     @Body() dto: CreateSalesInvoiceDto,
@@ -55,6 +65,7 @@ export class SalesInvoicesController {
   }
 
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
+  @ApiOkResponse({ type: SalesInvoiceResponseDto })
   @Patch(':id')
   async update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -70,6 +81,7 @@ export class SalesInvoicesController {
   }
 
   @Roles(Role.APPROVER, Role.ADMIN)
+  @ApiOkResponse({ type: SalesInvoiceResponseDto })
   @Post(':id/post')
   @HttpCode(200)
   async post(
@@ -80,6 +92,7 @@ export class SalesInvoicesController {
   }
 
   @Roles(Role.APPROVER, Role.ADMIN)
+  @ApiOkResponse({ type: SalesInvoiceResponseDto })
   @Post(':id/void')
   @HttpCode(200)
   async void(
@@ -90,6 +103,7 @@ export class SalesInvoicesController {
   }
 
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
+  @ApiNoContentResponse()
   @Delete(':id')
   @HttpCode(204)
   async remove(
