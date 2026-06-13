@@ -1,5 +1,5 @@
 // src/ledger/journal/dto/journal-response.dto.ts
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 import { ApiMoney } from '../../../common/openapi/api-money.decorator';
 
 const SOURCE_TYPES = [
