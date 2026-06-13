@@ -12,7 +12,7 @@
     "start:dev": "cross-env NODE_ENV=development nest start --watch",
     "start:debug": "cross-env NODE_ENV=development nest start --debug --watch",
     "start:prod": "cross-env NODE_ENV=production node dist/main",
-    "openapi:export": "nest build && node dist/scripts/export-openapi.js",
+    "openapi:export": "nest build && node dist/src/scripts/export-openapi.js",
     "db:migrate": "dotenv -e .env.development -- prisma migrate dev",
     "db:reset": "dotenv -e .env.development -- prisma migrate reset",
     "db:studio": "dotenv -e .env.development -- prisma studio",
