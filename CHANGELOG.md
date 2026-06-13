@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html) from this release onward.
 
+## [Unreleased]
+
+### Added
+
+- **Typed OpenAPI response schemas** — every endpoint's 2xx response body is now
+  fully described in `docs/api/openapi.json` (entity shapes as `*ResponseDto`,
+  computed/report shapes as `*Dto`), so a generated client yields response types,
+  not just request types. A contract guard test keeps coverage complete. The
+  frontend guide and agent brief document the conventions (money-as-string,
+  omitted soft-delete fields, the journal-list envelope, computed
+  `outstanding`/`paymentStatus`, detail-only nested `lines`/`allocations`).
+  Document-only — no API behavior change (additive `@Api*` annotations + response
+  DTO classes); all 152 e2e assertions pass unchanged.
+
+### Fixed
+
+- `npm run openapi:export` referenced `dist/scripts/export-openapi.js`, but
+  `nest build` emits to `dist/src/scripts/`; the path is corrected so the export
+  actually runs.
+
 ## [1.0.0] - 2026-06-12
 
 First stable release of the single-company Indonesian accounting API (NestJS 11 +

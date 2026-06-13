@@ -149,6 +149,29 @@ Pajak rounding).
 - For display, format to rupiah (e.g. `Rp 2.000.000`) — but keep the raw 4dp string
   as the source of truth for any math.
 
+### Response shapes
+
+**Every 2xx response body is fully typed** in `openapi.json` under
+`components.schemas`, so a generated client gives you response types, not just request
+types. The conventions the schemas encode (rely on these):
+
+- **Naming:** entity responses are `*ResponseDto` (e.g. `AccountResponseDto`,
+  `SalesInvoiceResponseDto`); computed / report shapes are `*Dto` (e.g.
+  `TrialBalanceDto`, `BalanceSheetDto`, `TaxCalculationDto`). A per-domain index is in
+  §6 ([Response schema quick-map](#response-schema-quick-map)).
+- **Money stays a string in responses too** (same 4dp rule as above) — including nested
+  line `quantity`, `unitPrice`, and `amount`. Never `Number()` them.
+- **Soft-delete bookkeeping is omitted.** `deletedAt` / `deletedBy` are intentionally
+  absent from every response schema (a row you can read is, by definition, live).
+- **Computed fields** appear on documents beyond their stored columns: sales invoices
+  and purchase bills carry `outstanding` (= `total − amountPaid`) and `paymentStatus`
+  (`UNPAID | PARTIAL | PAID`).
+- **Nested collections are detail-only.** Invoice/bill `lines` and payment
+  `allocations` are present on single-resource `GET`/`POST` responses but **omitted from
+  list responses** (optional in the schema) — don't depend on them when rendering lists.
+- **`DELETE` returns `204 No Content`** (empty body). The enveloped-vs-bare-array
+  distinction for lists is covered next.
+
 ### Pagination
 
 Pagination is **not uniform** — check per endpoint:
@@ -470,6 +493,30 @@ no auth.
 
 ### Audit
 - `GET    /audit` · ADMIN · audit log — **bare array** (no envelope) (filters: `userId, method, from, to, limit, offset`; `limit` default 50, **max 500**; `method` ∈ POST/PATCH/PUT/DELETE)
+
+### Response schema quick-map
+
+Each endpoint's 2xx body resolves to a named schema in `openapi.json` — look up the
+fields there; this is just the name to find. List endpoints return an **array of** the
+named schema (except journal-entries, which is the enveloped `JournalEntryListResponseDto`).
+
+| Domain | Response schema(s) |
+|---|---|
+| Auth | `TokenPairDto` (login/refresh) · `AuthenticatedUserDto` (`/auth/me`) · `OkFlagDto` (`/auth/admin-only`) |
+| Health / ops | `HealthStatusDto` · `ReadinessStatusDto` · `/metrics` → `text/plain` (not JSON) |
+| Accounts | `AccountResponseDto` · balance → `AccountBalanceDto` · trial balance → `TrialBalanceDto` |
+| Journal | `JournalEntryResponseDto` (incl. `JournalLineResponseDto[]`) · list → `JournalEntryListResponseDto` (items `JournalEntryListItemDto`) · opening-balances → `JournalEntryResponseDto` |
+| Periods | `FiscalPeriodResponseDto` |
+| Tax | `TaxCodeResponseDto` · calculate → `TaxCalculationDto` (`TaxBreakdownRowDto[]` + `CalculatedLineDto[]`) |
+| Partners | `BusinessPartnerResponseDto` |
+| Sales invoices | `SalesInvoiceResponseDto` (incl. optional `SalesInvoiceLineResponseDto[]`) |
+| Purchase bills | `PurchaseBillResponseDto` (incl. optional `PurchaseBillLineResponseDto[]`) |
+| Payments | `PaymentResponseDto` (incl. optional `PaymentAllocationResponseDto[]`) |
+| Reports | `BalanceSheetDto` · `IncomeStatementDto` · `GeneralLedgerDto` · `AgingReportDto` (AR & AP) · `CashFlowDto` |
+| Close | `YearEndClosingResponseDto` |
+| Company | `CompanySettingsDto` |
+| Audit | `AuditEntryDto` (bare array) |
+| Errors (4xx/5xx) | `ErrorEnvelopeDto` |
 
 ---
 

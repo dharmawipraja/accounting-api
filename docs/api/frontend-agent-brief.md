@@ -13,9 +13,12 @@ period / year-end close.
 ## Sources of truth (use these, don't guess)
 
 1. **`openapi.json`** (committed in the API repo at `docs/api/openapi.json`) — the
-   request/response **schemas**. **Generate a typed client from it** (e.g.
-   `openapi-typescript`, `orval`) and import those types everywhere. Don't hand-write
-   request/response shapes.
+   request **and response** **schemas**. **Every 2xx response body is now fully typed**
+   (entity shapes are `*ResponseDto`, computed/report shapes are `*Dto`), so generating
+   a typed client (e.g. `openapi-typescript`, `orval`) gives you **response** types too,
+   not just request types — import them everywhere; don't hand-write any shape. Two
+   schema conventions to know: money fields are **strings** even in responses (4dp), and
+   soft-delete columns (`deletedAt`/`deletedBy`) are **omitted** from response schemas.
 2. **`frontend-guide.md`** (same folder) — the **conventions, role matrix, lifecycles,
    and glossary**. Read it before writing client code; it explains the things OpenAPI
    can't (auth/refresh, money format, error envelope, soft-delete, draft→post flow).
@@ -69,6 +72,9 @@ lifecycles, money), follow the guide.
   `ENABLE_SWAGGER` there. Rely on the committed `openapi.json`.
 - Don't expect a logout endpoint, a pagination envelope on any non-journal list
   (including `/audit`), or that a creator can self-approve.
+- Don't rely on nested `lines` (invoices/bills) or `allocations` (payments) in **list**
+  responses — they're **detail-only** (present on single-resource GET/POST, omitted from
+  lists; optional in the schema).
 - Don't branch on `message` strings — branch on `code`.
 
 ## Regenerating `openapi.json`

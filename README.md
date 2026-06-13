@@ -78,7 +78,7 @@ npm run test:e2e
 
 OpenAPI (Swagger UI) is served at `/docs`. It is disabled in production by default; set `ENABLE_SWAGGER=true` in the environment to enable it.
 
-A committed, machine-readable contract lives at [`docs/api/openapi.json`](docs/api/openapi.json) — regenerate it with `npm run openapi:export`. For integration semantics (auth, conventions, the role matrix, domain lifecycles, and a glossary), see [`docs/api/frontend-guide.md`](docs/api/frontend-guide.md); [`docs/api/frontend-agent-brief.md`](docs/api/frontend-agent-brief.md) is a copy-to-your-repo briefing for building a client.
+A committed, machine-readable contract lives at [`docs/api/openapi.json`](docs/api/openapi.json) — both request **and response** bodies are fully typed (every 2xx response resolves to a named `components.schemas` entry), so a generated client yields response types too. Regenerate it with `npm run openapi:export`. For integration semantics (auth, conventions, the role matrix, domain lifecycles, and a glossary), see [`docs/api/frontend-guide.md`](docs/api/frontend-guide.md); [`docs/api/frontend-agent-brief.md`](docs/api/frontend-agent-brief.md) is a copy-to-your-repo briefing for building a client.
 
 ## Production deployment
 
