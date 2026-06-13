@@ -233,7 +233,17 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AccountResponseDto"
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -260,7 +270,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -296,7 +313,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountBalanceDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -324,7 +348,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -360,7 +391,14 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -414,7 +452,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -862,7 +907,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/TrialBalanceDto"
                 }
               }
             }
@@ -2584,6 +2629,138 @@
           }
         }
       },
+      "AccountResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string",
+            "example": "1-1000"
+          },
+          "name": {
+            "type": "string",
+            "example": "Kas"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "ASSET",
+              "LIABILITY",
+              "EQUITY",
+              "REVENUE",
+              "EXPENSE"
+            ]
+          },
+          "subtype": {
+            "type": "string",
+            "enum": [
+              "CURRENT_ASSET",
+              "NON_CURRENT_ASSET",
+              "FIXED_ASSET",
+              "ACCUMULATED_DEPRECIATION",
+              "CURRENT_LIABILITY",
+              "NON_CURRENT_LIABILITY",
+              "EQUITY",
+              "REVENUE",
+              "COGS",
+              "OPERATING_EXPENSE",
+              "OTHER_INCOME",
+              "OTHER_EXPENSE",
+              "TAX_PAYABLE",
+              "TAX_RECEIVABLE"
+            ]
+          },
+          "cashFlowCategory": {
+            "type": "string",
+            "enum": [
+              "OPERATING",
+              "INVESTING",
+              "FINANCING",
+              "NONE"
+            ]
+          },
+          "normalBalance": {
+            "type": "string",
+            "enum": [
+              "DEBIT",
+              "CREDIT"
+            ]
+          },
+          "parentId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "isPostable": {
+            "type": "boolean",
+            "example": true
+          },
+          "isActive": {
+            "type": "boolean",
+            "example": true
+          },
+          "currency": {
+            "type": "string",
+            "example": "IDR"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "type",
+          "subtype",
+          "cashFlowCategory",
+          "normalBalance",
+          "parentId",
+          "isPostable",
+          "isActive",
+          "currency",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "AccountBalanceDto": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "debit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "credit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "balance": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "normalBalance-signed net, 4 dp"
+          }
+        },
+        "required": [
+          "accountId",
+          "debit",
+          "credit",
+          "balance"
+        ]
+      },
       "CreateAccountDto": {
         "type": "object",
         "properties": {
@@ -2749,6 +2926,78 @@
         "required": [
           "date",
           "balances"
+        ]
+      },
+      "TrialBalanceRowDto": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string",
+            "example": "1-1000"
+          },
+          "name": {
+            "type": "string",
+            "example": "Kas"
+          },
+          "debit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "credit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "balance": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          }
+        },
+        "required": [
+          "accountId",
+          "code",
+          "name",
+          "debit",
+          "credit",
+          "balance"
+        ]
+      },
+      "TrialBalanceDto": {
+        "type": "object",
+        "properties": {
+          "asOf": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-01-31"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrialBalanceRowDto"
+            }
+          },
+          "totalDebit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "totalCredit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          }
+        },
+        "required": [
+          "asOf",
+          "rows",
+          "totalDebit",
+          "totalCredit"
         ]
       },
       "CreateTaxCodeDto": {

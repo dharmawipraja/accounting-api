@@ -10,7 +10,15 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiNoContentResponse,
+  ApiOkResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { AccountResponseDto } from './dto/account-response.dto';
+import { AccountBalanceDto } from '../balances/dto/balance-response.dto';
 import { Account } from '@prisma/client';
 import { AccountsService } from './accounts.service';
 import { CreateAccountDto } from './dto/create-account.dto';
@@ -32,11 +40,13 @@ export class AccountsController {
   ) {}
 
   @Get()
+  @ApiOkResponse({ type: AccountResponseDto, isArray: true })
   list(): Promise<Account[]> {
     return this.accounts.list();
   }
 
   @Get(':id/balance')
+  @ApiOkResponse({ type: AccountBalanceDto })
   balance(@Param('id', ParseUUIDPipe) id: string, @Query() q: AsOfQueryDto) {
     return this.balances.accountBalance(
       id,
@@ -45,18 +55,21 @@ export class AccountsController {
   }
 
   @Get(':id')
+  @ApiOkResponse({ type: AccountResponseDto })
   get(@Param('id', ParseUUIDPipe) id: string): Promise<Account> {
     return this.accounts.findById(id);
   }
 
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
   @Post()
+  @ApiCreatedResponse({ type: AccountResponseDto })
   create(@Body() dto: CreateAccountDto): Promise<Account> {
     return this.accounts.create(dto);
   }
 
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
   @Patch(':id')
+  @ApiOkResponse({ type: AccountResponseDto })
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateAccountDto,
@@ -67,6 +80,7 @@ export class AccountsController {
   @Roles(Role.ADMIN)
   @Post(':id/deactivate')
   @HttpCode(200)
+  @ApiOkResponse({ type: AccountResponseDto })
   deactivate(@Param('id', ParseUUIDPipe) id: string): Promise<Account> {
     return this.accounts.deactivate(id);
   }
@@ -74,6 +88,7 @@ export class AccountsController {
   @Roles(Role.ADMIN)
   @Delete(':id')
   @HttpCode(204)
+  @ApiNoContentResponse()
   async remove(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,
