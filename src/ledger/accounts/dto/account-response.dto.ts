@@ -8,10 +8,20 @@ export class AccountResponseDto {
   type!: string;
   @ApiProperty({
     enum: [
-      'CURRENT_ASSET', 'NON_CURRENT_ASSET', 'FIXED_ASSET',
-      'ACCUMULATED_DEPRECIATION', 'CURRENT_LIABILITY', 'NON_CURRENT_LIABILITY',
-      'EQUITY', 'REVENUE', 'COGS', 'OPERATING_EXPENSE', 'OTHER_INCOME',
-      'OTHER_EXPENSE', 'TAX_PAYABLE', 'TAX_RECEIVABLE',
+      'CURRENT_ASSET',
+      'NON_CURRENT_ASSET',
+      'FIXED_ASSET',
+      'ACCUMULATED_DEPRECIATION',
+      'CURRENT_LIABILITY',
+      'NON_CURRENT_LIABILITY',
+      'EQUITY',
+      'REVENUE',
+      'COGS',
+      'OPERATING_EXPENSE',
+      'OTHER_INCOME',
+      'OTHER_EXPENSE',
+      'TAX_PAYABLE',
+      'TAX_RECEIVABLE',
     ],
   })
   subtype!: string;

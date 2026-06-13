@@ -5,7 +5,9 @@ export class TaxCodeResponseDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
   @ApiProperty({ example: 'PPN-OUT' }) code!: string;
   @ApiProperty({ example: 'PPN Keluaran 11%' }) name!: string;
-  @ApiProperty({ enum: ['PPN_OUTPUT', 'PPN_INPUT', 'PPH_PAYABLE', 'PPH_PREPAID'] })
+  @ApiProperty({
+    enum: ['PPN_OUTPUT', 'PPN_INPUT', 'PPH_PAYABLE', 'PPH_PREPAID'],
+  })
   kind!: string;
   @ApiProperty({
     type: String,

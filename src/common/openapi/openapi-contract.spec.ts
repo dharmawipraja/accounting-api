@@ -7,7 +7,12 @@ interface OpenApiDoc {
     string,
     Record<
       string,
-      { responses?: Record<string, { content?: Record<string, { schema?: unknown }> }> }
+      {
+        responses?: Record<
+          string,
+          { content?: Record<string, { schema?: unknown }> }
+        >;
+      }
     >
   >;
 }

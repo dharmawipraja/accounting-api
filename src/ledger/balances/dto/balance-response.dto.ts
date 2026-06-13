@@ -18,7 +18,8 @@ export class TrialBalanceRowDto {
 }
 
 export class TrialBalanceDto {
-  @ApiProperty({ type: String, format: 'date', example: '2026-01-31' }) asOf!: string;
+  @ApiProperty({ type: String, format: 'date', example: '2026-01-31' })
+  asOf!: string;
   @ApiProperty({ type: [TrialBalanceRowDto] }) rows!: TrialBalanceRowDto[];
   @ApiMoney() totalDebit!: string;
   @ApiMoney() totalCredit!: string;

@@ -13,9 +13,7 @@ describe('ApiMoney', () => {
       'swagger/apiModelPropertiesArray',
       Sample.prototype,
     ) as string[];
-    expect(meta).toEqual(
-      expect.arrayContaining([':amount', ':rate']),
-    );
+    expect(meta).toEqual(expect.arrayContaining([':amount', ':rate']));
   });
 
   it('defaults the example to a 4-dp string', () => {

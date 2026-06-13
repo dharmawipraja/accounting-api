@@ -3,7 +3,10 @@ import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { Public } from '../auth/decorators/public.decorator';
-import { HealthStatusDto, ReadinessStatusDto } from '../common/openapi/openapi.models';
+import {
+  HealthStatusDto,
+  ReadinessStatusDto,
+} from '../common/openapi/openapi.models';
 
 // Probes must never be rate-limited — monitoring agents poll them frequently.
 @SkipThrottle()
