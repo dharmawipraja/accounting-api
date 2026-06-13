@@ -10,8 +10,12 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiCreatedResponse, ApiNoContentResponse, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { JournalEntry } from '@prisma/client';
+import {
+  JournalEntryResponseDto,
+  JournalEntryListResponseDto,
+} from './dto/journal-response.dto';
 import { JournalService } from './journal.service';
 import { JournalListQueryDto } from './dto/list-journal-entries.dto';
 import { CreateJournalEntryDto } from './dto/create-journal-entry.dto';
@@ -28,6 +32,7 @@ import { ForbiddenDomainError } from '../../common/errors/domain-errors';
 export class JournalController {
   constructor(private readonly journal: JournalService) {}
 
+  @ApiOkResponse({ type: JournalEntryListResponseDto })
   @Get()
   list(@Query() q: JournalListQueryDto) {
     return this.journal.list({
@@ -41,11 +46,13 @@ export class JournalController {
     });
   }
 
+  @ApiOkResponse({ type: JournalEntryResponseDto })
   @Get(':id')
   get(@Param('id', ParseUUIDPipe) id: string): Promise<JournalEntry> {
     return this.journal.getById(id);
   }
 
+  @ApiCreatedResponse({ type: JournalEntryResponseDto })
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
   @Post()
   async createOrPost(
@@ -76,6 +83,7 @@ export class JournalController {
     return this.journal.createDraft(input);
   }
 
+  @ApiOkResponse({ type: JournalEntryResponseDto })
   @Roles(Role.APPROVER, Role.ADMIN)
   @Post(':id/post')
   @HttpCode(200)
@@ -87,6 +95,7 @@ export class JournalController {
     return this.journal.postDraft(id, user.id, idempotencyKey);
   }
 
+  @ApiOkResponse({ type: JournalEntryResponseDto })
   @Roles(Role.APPROVER, Role.ADMIN)
   @Post(':id/reverse')
   @HttpCode(200)
@@ -98,6 +107,7 @@ export class JournalController {
     return this.journal.reverse(id, user.id, idempotencyKey);
   }
 
+  @ApiNoContentResponse()
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
   @Delete(':id')
   @HttpCode(204)

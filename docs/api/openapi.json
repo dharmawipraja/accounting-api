@@ -701,7 +701,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JournalEntryListResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -745,7 +752,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JournalEntryResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -773,7 +787,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JournalEntryResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -835,7 +856,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JournalEntryResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -871,7 +899,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JournalEntryResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -909,7 +944,14 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JournalEntryResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2966,6 +3008,280 @@
         },
         "required": [
           "fiscalYear"
+        ]
+      },
+      "JournalEntryListItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "entryRef": {
+            "type": "string",
+            "nullable": true
+          },
+          "entryNumber": {
+            "type": "number",
+            "nullable": true
+          },
+          "fiscalYear": {
+            "type": "number",
+            "nullable": true
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-01-15"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "POSTED",
+              "REVERSED"
+            ]
+          },
+          "sourceType": {
+            "type": "string",
+            "enum": [
+              "MANUAL",
+              "OPENING",
+              "REVERSAL",
+              "SALES_INVOICE",
+              "PURCHASE_BILL",
+              "PAYMENT",
+              "CLOSING"
+            ]
+          },
+          "sourceId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "totalDebit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "lineCount": {
+            "type": "number",
+            "example": 2
+          }
+        },
+        "required": [
+          "id",
+          "entryRef",
+          "entryNumber",
+          "fiscalYear",
+          "date",
+          "description",
+          "status",
+          "sourceType",
+          "sourceId",
+          "totalDebit",
+          "lineCount"
+        ]
+      },
+      "JournalEntryListResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JournalEntryListItemDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "example": 137
+          },
+          "limit": {
+            "type": "number",
+            "example": 50
+          },
+          "offset": {
+            "type": "number",
+            "example": 0
+          }
+        },
+        "required": [
+          "data",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "JournalLineResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "journalEntryId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lineNo": {
+            "type": "number",
+            "example": 1
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "debit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "credit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "journalEntryId",
+          "lineNo",
+          "accountId",
+          "debit",
+          "credit",
+          "description",
+          "createdAt"
+        ]
+      },
+      "JournalEntryResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "entryNumber": {
+            "type": "number",
+            "nullable": true,
+            "example": 42
+          },
+          "entryRef": {
+            "type": "string",
+            "nullable": true,
+            "example": "JE-2026-42"
+          },
+          "fiscalYear": {
+            "type": "number",
+            "nullable": true,
+            "example": 2026
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-01-15"
+          },
+          "periodId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "description": {
+            "type": "string"
+          },
+          "sourceType": {
+            "type": "string",
+            "enum": [
+              "MANUAL",
+              "OPENING",
+              "REVERSAL",
+              "SALES_INVOICE",
+              "PURCHASE_BILL",
+              "PAYMENT",
+              "CLOSING"
+            ]
+          },
+          "sourceId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "POSTED",
+              "REVERSED"
+            ]
+          },
+          "reversalOfId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "reversedById": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "createdBy": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "postedBy": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "postedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JournalLineResponseDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "entryNumber",
+          "entryRef",
+          "fiscalYear",
+          "date",
+          "periodId",
+          "description",
+          "sourceType",
+          "sourceId",
+          "status",
+          "reversalOfId",
+          "reversedById",
+          "createdBy",
+          "postedBy",
+          "postedAt",
+          "createdAt",
+          "updatedAt",
+          "lines"
         ]
       },
       "JournalLineDto": {

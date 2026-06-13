@@ -1,5 +1,6 @@
 import { Body, Controller, Headers, HttpCode, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { JournalEntryResponseDto } from '../journal/dto/journal-response.dto';
 import { JournalEntry } from '@prisma/client';
 import { JournalService } from './journal.service';
 import { OpeningBalancesDto } from './dto/opening-balances.dto';
@@ -14,6 +15,7 @@ import { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 export class OpeningBalancesController {
   constructor(private readonly journal: JournalService) {}
 
+  @ApiOkResponse({ type: JournalEntryResponseDto })
   @Roles(Role.ADMIN)
   @Post()
   @HttpCode(200)
