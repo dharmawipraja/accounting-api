@@ -2447,7 +2447,14 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/YearEndClosingResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2475,7 +2482,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/YearEndClosingResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2503,7 +2517,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/YearEndClosingResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2580,7 +2601,17 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditEntryDto"
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -5366,6 +5397,132 @@
         },
         "required": [
           "fiscalYear"
+        ]
+      },
+      "YearEndClosingResponseDto": {
+        "type": "object",
+        "properties": {
+          "fiscalYear": {
+            "type": "number",
+            "example": 2026
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "CLOSED"
+            ]
+          },
+          "closingEntryId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "netIncome": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "closedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "closedBy": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reopenedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "reopenedBy": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "fiscalYear",
+          "status",
+          "closingEntryId",
+          "netIncome",
+          "closedAt",
+          "closedBy",
+          "reopenedAt",
+          "reopenedBy",
+          "updatedAt"
+        ]
+      },
+      "AuditEntryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "userId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "userRole": {
+            "type": "string",
+            "nullable": true,
+            "example": "ADMIN"
+          },
+          "method": {
+            "type": "string",
+            "example": "POST"
+          },
+          "path": {
+            "type": "string",
+            "example": "/ledger/journal-entries"
+          },
+          "params": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true
+          },
+          "body": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true
+          },
+          "statusCode": {
+            "type": "number",
+            "example": 201
+          },
+          "durationMs": {
+            "type": "number",
+            "example": 42
+          },
+          "ip": {
+            "type": "string",
+            "nullable": true,
+            "example": "127.0.0.1"
+          }
+        },
+        "required": [
+          "id",
+          "timestamp",
+          "userId",
+          "userRole",
+          "method",
+          "path",
+          "params",
+          "body",
+          "statusCode",
+          "durationMs",
+          "ip"
         ]
       }
     }

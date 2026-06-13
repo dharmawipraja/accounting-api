@@ -1,5 +1,6 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { AuditEntryDto } from './dto/audit-entry-response.dto';
 import { AuditService } from './audit.service';
 import { AuditQueryDto } from './dto/audit-query.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -12,6 +13,7 @@ export class AuditController {
   constructor(private readonly audit: AuditService) {}
 
   @Roles(Role.ADMIN)
+  @ApiOkResponse({ type: AuditEntryDto, isArray: true })
   @Get()
   list(@Query() q: AuditQueryDto) {
     return this.audit.list({
