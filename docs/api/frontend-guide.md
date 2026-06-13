@@ -5,7 +5,7 @@ folder). The OpenAPI document carries the request/response **schemas**; this gui
 carries the **conventions, role rules, lifecycles, and glossary** you need to build
 a correct frontend. Everything here is derived from the API source code.
 
-- Schemas / types → `openapi.json` (generate a typed client from it).
+- Schemas / types → `openapi.json` (generate a typed client from it). Every 2xx response body is now fully typed under `components.schemas` as `*ResponseDto` / `*Dto` entries.
 - Conventions / roles / lifecycles / glossary → this file.
 
 ---
