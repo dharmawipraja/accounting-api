@@ -2,9 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship the best-practice polish — URI versioning (`/v1` hard cutover, version-neutral probes), a generic `Idempotency-Key` interceptor (required key + body-hash guard) across all create + money-moving endpoints, and offset pagination on the six unbounded lists — plus regenerated `openapi.json` and updated guides.
+**Goal:** Ship the best-practice polish — URI versioning (`/v1` hard cutover, version-neutral probes), a generic `Idempotency-Key` interceptor (required key + body-hash guard) on the money-moving endpoints plus invoice/bill/payment creates, and offset pagination on the four transactional lists — plus regenerated `openapi.json` and updated guides.
 
-**Architecture:** Versioning via NestJS `enableVersioning({ type: URI, defaultVersion: '1' })` with `@Version(VERSION_NEUTRAL)` on health/metrics. Idempotency via a global `IdempotencyInterceptor` + injectable `IdempotencyService` (reserve-first, JSON response snapshot) toggled by an `@Idempotent()` decorator; the journal-specific mechanism is deleted and journals move onto it. Pagination via a shared `PaginationQueryDto` and per-resource `*ListResponseDto` envelopes `{ data, total, limit, offset }`, exposed through a new `listPage()` service method (the existing unbounded `list()` is retained only where internal callers need a full fetch).
+**Architecture:** Versioning via NestJS `enableVersioning({ type: URI, defaultVersion: '1' })` with `@Version(VERSION_NEUTRAL)` on health/metrics. Idempotency via a global `IdempotencyInterceptor` + injectable `IdempotencyService` (reserve-first, JSON response snapshot) toggled by an `@Idempotent()` decorator; the journal-specific mechanism is deleted and journals move onto it. Pagination via a shared `PaginationQueryDto` and per-resource `*ListResponseDto` envelopes `{ data, total, limit, offset }`, exposed through a new `listPage()` service method on the four transactional lists. The two reference lists (accounts, tax-codes) stay full bare-array lists — bounded data, loaded wholesale.
+
+**Scope note (revised 2026-06-13 after code review):** Idempotency is intentionally NOT applied to accounts/tax-codes/partners creates (unique `code` already blocks duplicates) or `periods/generate` (`createMany skipDuplicates`). Pagination is intentionally NOT applied to accounts/tax-codes (bounded reference data). See the spec's decision table (D3, D7).
 
 **Tech Stack:** NestJS 11, Prisma 7 (`@prisma/adapter-pg`), PostgreSQL, Jest 30 + ts-jest, supertest, `@testcontainers/postgresql`, `@nestjs/swagger` 11.
 
@@ -34,14 +36,13 @@
 - `src/app.module.ts` — import `IdempotencyModule`.
 - `src/ledger/journal/journal.service.ts` — delete `runIdempotent`/`reserveIdempotent`, drop `idempotencyKey` params.
 - `src/ledger/journal/journal.controller.ts`, `src/ledger/journal/opening-balances.controller.ts` — `@Idempotent()`, drop `@Headers`.
-- `src/ledger/accounts/accounts.controller.ts` + `accounts.service.ts` (+ `dto/account-response.dto.ts`).
-- `src/tax/tax-codes.controller.ts` + `tax-codes.service.ts` (+ `dto/tax-code-response.dto.ts`).
-- `src/invoicing/business-partners.controller.ts` + `business-partners.service.ts` (+ `dto/business-partner-response.dto.ts`).
-- `src/invoicing/sales-invoices.controller.ts` + `sales-invoices.service.ts` (+ `dto/sales-invoice-response.dto.ts`, `dto/list-sales-invoices.dto.ts`).
-- `src/invoicing/purchase-bills.controller.ts` + `purchase-bills.service.ts` (+ `dto/purchase-bill-response.dto.ts`, `dto/list-purchase-bills.dto.ts`).
-- `src/invoicing/payments.controller.ts` + `payments.service.ts` (+ `dto/payment-response.dto.ts`, `dto/list-payments.dto.ts`).
-- `src/ledger/periods/periods.controller.ts` — `@Idempotent()` on `generate`.
+- `src/invoicing/business-partners.controller.ts` + `business-partners.service.ts` (+ `dto/business-partner-response.dto.ts`) — pagination only (no idempotency).
+- `src/invoicing/sales-invoices.controller.ts` + `sales-invoices.service.ts` (+ `dto/sales-invoice-response.dto.ts`, `dto/list-sales-invoices.dto.ts`) — `@Idempotent()` on create/post/void + pagination.
+- `src/invoicing/purchase-bills.controller.ts` + `purchase-bills.service.ts` (+ `dto/purchase-bill-response.dto.ts`, `dto/list-purchase-bills.dto.ts`) — `@Idempotent()` on create/post/void + pagination.
+- `src/invoicing/payments.controller.ts` + `payments.service.ts` (+ `dto/payment-response.dto.ts`, `dto/list-payments.dto.ts`) — `@Idempotent()` on create/post/void + pagination.
 - `src/close/closing.controller.ts` — `@Idempotent()` on year-end `run`.
+
+**Intentionally NOT modified:** `src/ledger/accounts/*`, `src/tax/tax-codes.*`, `src/ledger/periods/periods.controller.ts` (excluded from both idempotency and pagination — see Scope note above).
 - `src/ledger/journal/dto/list-journal-entries.dto.ts` — extend `PaginationQueryDto`.
 - `docs/api/openapi.json`, `docs/api/frontend-guide.md`, `docs/api/frontend-agent-brief.md`, `README.md`, `CHANGELOG.md`.
 - All `test/*.e2e-spec.ts` — `/v1` paths, required keys, envelope assertions.
@@ -886,39 +887,27 @@ git add -A
 git commit -m "feat(idempotency): global interceptor + module; journals refactored onto it"
 ```
 
-### Task 6: Apply `@Idempotent()` to the remaining included endpoints
+### Task 6: Apply `@Idempotent()` to the covered invoicing + close endpoints
 
 **Files:**
-- Modify: `src/ledger/accounts/accounts.controller.ts`
-- Modify: `src/tax/tax-codes.controller.ts`
-- Modify: `src/invoicing/business-partners.controller.ts`
 - Modify: `src/invoicing/sales-invoices.controller.ts`
 - Modify: `src/invoicing/purchase-bills.controller.ts`
 - Modify: `src/invoicing/payments.controller.ts`
-- Modify: `src/ledger/periods/periods.controller.ts`
 - Modify: `src/close/closing.controller.ts`
 
-For each controller below, add the import (path depth varies — `accounts` is two levels under `src/ledger/`, so `../../common/...`; the others under `src/<area>/` use `../common/...`) and put `@Idempotent()` directly above the listed `@Post` decorators. **Do not** add it to `@Patch`, `@Delete`, `@Post(':id/deactivate')`, period `close`/`reopen`, year-end `reopen`, `auth/*`, or `tax/calculate`.
+For each controller below, add the import and put `@Idempotent()` directly above the listed `@Post` decorators. **Do not** add it to `@Patch`, `@Delete`, `@Post(':id/deactivate')`, period `generate`/`close`/`reopen`, year-end `reopen`, `accounts`/`tax-codes`/`partners` create, `auth/*`, or `tax/calculate` (see the Scope note — those are already protected or out of scope).
 
-- [ ] **Step 1: accounts** — import `import { Idempotent } from '../../common/idempotency/idempotent.decorator';`; add `@Idempotent()` to the `create` handler only (`@Post()` at line ~64).
+- [ ] **Step 1: sales-invoices** — import `import { Idempotent } from '../common/idempotency/idempotent.decorator';`; add `@Idempotent()` to `create` (`@Post()`), `post` (`@Post(':id/post')`), and `void` (`@Post(':id/void')`).
 
-- [ ] **Step 2: tax-codes** — import `import { Idempotent } from '../common/idempotency/idempotent.decorator';`; add `@Idempotent()` to `create` only (`@Post()` at line ~49).
+- [ ] **Step 2: purchase-bills** — same import; add `@Idempotent()` to `create`, `post`, `void`.
 
-- [ ] **Step 3: business-partners** — import `import { Idempotent } from '../common/idempotency/idempotent.decorator';`; add `@Idempotent()` to `create` only (`@Post()` at line ~48).
+- [ ] **Step 3: payments** — same import; add `@Idempotent()` to `create`, `post`, `void`.
 
-- [ ] **Step 4: sales-invoices** — import `import { Idempotent } from '../common/idempotency/idempotent.decorator';`; add `@Idempotent()` to `create` (`@Post()`), `post` (`@Post(':id/post')`), and `void` (`@Post(':id/void')`).
+- [ ] **Step 4: closing** — `import { Idempotent } from '../common/idempotency/idempotent.decorator';`; add `@Idempotent()` to `run` (`@Post()`) only — not `reopen`.
 
-- [ ] **Step 5: purchase-bills** — same import; add `@Idempotent()` to `create`, `post`, `void`.
+- [ ] **Step 5: Document the header in OpenAPI**
 
-- [ ] **Step 6: payments** — same import; add `@Idempotent()` to `create`, `post`, `void`.
-
-- [ ] **Step 7: periods** — `import { Idempotent } from '../../common/idempotency/idempotent.decorator';`; add `@Idempotent()` to `generate` (`@Post('generate')`) only — not `close`/`reopen`.
-
-- [ ] **Step 8: closing** — `import { Idempotent } from '../common/idempotency/idempotent.decorator';`; add `@Idempotent()` to `run` (`@Post()`) only — not `reopen`.
-
-- [ ] **Step 9: Document the header in OpenAPI**
-
-So the regenerated `openapi.json` advertises the header, add `@ApiHeader` to each idempotent handler (alongside `@Idempotent()`). Add to the swagger import in each controller: `ApiHeader`. Then above each idempotent handler add:
+So the regenerated `openapi.json` advertises the header, add `@ApiHeader` to each idempotent handler (alongside `@Idempotent()`). Add `ApiHeader` to the `@nestjs/swagger` import in each of the four controllers (and the two journal controllers from Task 5, if not already). Then above each idempotent handler add:
 
 ```typescript
   @ApiHeader({
@@ -928,25 +917,27 @@ So the regenerated `openapi.json` advertises the header, add `@ApiHeader` to eac
   })
 ```
 
-- [ ] **Step 10: Typecheck + lint**
+- [ ] **Step 6: Typecheck + lint**
 
 Run: `npm run typecheck && npm run lint:ci`
 Expected: exit 0.
 
-- [ ] **Step 11: Make the rest of the e2e suite green again (run-and-fix)**
+- [ ] **Step 7: Make the rest of the e2e suite green again (run-and-fix)**
 
-Required keys now break every other e2e HTTP call to an included endpoint (creates/post/void for invoices, bills, payments, accounts, tax-codes, partners, periods generate, year-end). Run the suite and add `.set('Idempotency-Key', randomUUID())` (importing `randomUUID` from `crypto` per file) to each failing call:
+Required keys now break every e2e HTTP call to a covered endpoint: invoice/bill/payment `create`/`:id/post`/`:id/void`, year-end `close`, and the journal/opening-balances POSTs (Task 5). Run the suite and add `.set('Idempotency-Key', randomUUID())` (importing `randomUUID` from `crypto` per file) to each failing call:
 
 Run: `npm run test:e2e`
-For each failure reporting `422 / Idempotency-Key header is required`, locate the offending `.post(...)` and add the header. Known specs needing edits include: `test/sales-invoices.e2e-spec.ts`, `test/purchase-bills.e2e-spec.ts`, `test/payments.e2e-spec.ts`, `test/accounts.e2e-spec.ts`, `test/tax-codes.e2e-spec.ts`, `test/business-partners.e2e-spec.ts`, `test/close.e2e-spec.ts`, `test/periods.e2e-spec.ts`, and the reporting specs that build data via HTTP (`reporting-*.e2e-spec.ts`), plus shared helpers like `makePostedInvoice`. Re-run until green.
+For each failure reporting `422 / Idempotency-Key header is required`, locate the offending `.post(...)` and add the header. Known specs needing edits: `test/sales-invoices.e2e-spec.ts`, `test/purchase-bills.e2e-spec.ts`, `test/payments.e2e-spec.ts`, `test/close.e2e-spec.ts`, and the reporting specs that build invoices/payments via HTTP (`reporting-*.e2e-spec.ts`), plus shared helpers like `makePostedInvoice`. Re-run until green.
 
-> Note: requests created via service calls (`app.get(XService).create(...)`) bypass the interceptor and need no key — only HTTP `.post()` calls to included routes do.
+> Notes:
+> - `accounts`/`tax-codes`/`partners` creates are NOT covered, so e2e calls to them need NO key (and `partners` is still created via the service in most specs anyway).
+> - Requests made via service calls (`app.get(XService).create(...)`) bypass the interceptor — only HTTP `.post()` calls to covered routes need a key.
 
-- [ ] **Step 12: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add -A
-git commit -m "feat(idempotency): require Idempotency-Key on all create + money-moving endpoints"
+git commit -m "feat(idempotency): require Idempotency-Key on invoice/bill/payment + year-end writes"
 ```
 
 ### Task 7: End-to-end idempotency behaviour
@@ -954,9 +945,11 @@ git commit -m "feat(idempotency): require Idempotency-Key on all create + money-
 **Files:**
 - Create: `test/idempotency.e2e-spec.ts`
 
+> Subject = **sales-invoice create** (a covered endpoint with no natural unique key, so idempotency is what prevents duplicates). Setup mirrors `test/payments.e2e-spec.ts`. `accounts`/`tax-codes` `list()` still return arrays (unchanged), so the code→id maps work as before.
+
 - [ ] **Step 1: Write the e2e spec**
 
-Create `test/idempotency.e2e-spec.ts` (uses `partners` — minimal body, ACCOUNTANT role):
+Create `test/idempotency.e2e-spec.ts`:
 
 ```typescript
 import { Test } from '@nestjs/testing';
@@ -970,6 +963,10 @@ import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
+import { AccountsService } from '../src/ledger/accounts/accounts.service';
+import { TaxCodesService } from '../src/tax/tax-codes.service';
+import { PeriodsService } from '../src/ledger/periods/periods.service';
+import { BusinessPartnersService } from '../src/invoicing/business-partners.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
@@ -981,12 +978,30 @@ describe('Idempotency (e2e)', () => {
   let db: TestDb;
   let prisma: PrismaService;
   let acct: string;
+  let acc: Record<string, string>;
+  let code: Record<string, string>;
   const server = () => app.getHttpServer() as App;
 
-  const partnerBody = (code: string) => ({
-    code,
-    name: 'PT Idem',
-    isCustomer: true,
+  const newCustomer = async (codeStr: string): Promise<string> =>
+    (
+      await app
+        .get(BusinessPartnersService)
+        .create({ code: codeStr, name: 'PT Idem', isCustomer: true })
+    ).id;
+
+  const invoiceBody = (partnerId: string, unitPrice = '1000000') => ({
+    partnerId,
+    date: '2026-02-10',
+    description: 'Jasa',
+    lines: [
+      {
+        description: 'Jasa konsultasi',
+        accountId: acc['4-1000'],
+        quantity: '1',
+        unitPrice,
+        taxCodeIds: [code['PPN-OUT-11']],
+      },
+    ],
   });
 
   beforeAll(async () => {
@@ -1004,6 +1019,9 @@ describe('Idempotency (e2e)', () => {
     );
     app.useGlobalFilters(new AllExceptionsFilter());
     await app.init();
+    await app.get(AccountsService).seedIfEmpty();
+    await app.get(TaxCodesService).seedIfEmpty();
+    await app.get(PeriodsService).generatePeriods(2026);
     const users = app.get(UsersService);
     await users.create({
       email: 'acct@idem.test',
@@ -1013,6 +1031,12 @@ describe('Idempotency (e2e)', () => {
     });
     acct = (await app.get(AuthService).login('acct@idem.test', 'secret123'))
       .accessToken;
+    acc = Object.fromEntries(
+      (await app.get(AccountsService).list()).map((a) => [a.code, a.id]),
+    );
+    code = Object.fromEntries(
+      (await app.get(TaxCodesService).list()).map((c) => [c.code, c.id]),
+    );
   }, 120_000);
 
   afterAll(async () => {
@@ -1021,17 +1045,18 @@ describe('Idempotency (e2e)', () => {
     await db?.stop();
   });
 
-  it('replays the same key+body and creates exactly one row', async () => {
+  it('replays the same key+body and creates exactly one invoice', async () => {
+    const partnerId = await newCustomer('CUST-IDEM-1');
     const key = randomUUID();
-    const body = partnerBody('IDEM-1');
+    const body = invoiceBody(partnerId);
     const first = await request(server())
-      .post('/v1/partners')
+      .post('/v1/sales-invoices')
       .set('Authorization', `Bearer ${acct}`)
       .set('Idempotency-Key', key)
       .send(body)
       .expect(201);
     const second = await request(server())
-      .post('/v1/partners')
+      .post('/v1/sales-invoices')
       .set('Authorization', `Bearer ${acct}`)
       .set('Idempotency-Key', key)
       .send(body)
@@ -1039,42 +1064,45 @@ describe('Idempotency (e2e)', () => {
     expect((second.body as { id: string }).id).toBe(
       (first.body as { id: string }).id,
     );
-    const count = await prisma.client.businessPartner.count({
-      where: { code: 'IDEM-1' },
+    const count = await prisma.client.salesInvoice.count({
+      where: { partnerId },
     });
     expect(count).toBe(1);
   });
 
   it('rejects the same key with a different body (422)', async () => {
+    const partnerId = await newCustomer('CUST-IDEM-2');
     const key = randomUUID();
     await request(server())
-      .post('/v1/partners')
+      .post('/v1/sales-invoices')
       .set('Authorization', `Bearer ${acct}`)
       .set('Idempotency-Key', key)
-      .send(partnerBody('IDEM-2'))
+      .send(invoiceBody(partnerId, '1000000'))
       .expect(201);
     await request(server())
-      .post('/v1/partners')
+      .post('/v1/sales-invoices')
       .set('Authorization', `Bearer ${acct}`)
       .set('Idempotency-Key', key)
-      .send(partnerBody('IDEM-2-CHANGED'))
+      .send(invoiceBody(partnerId, '2000000'))
       .expect(422);
   });
 
   it('requires the header (422 when missing)', async () => {
+    const partnerId = await newCustomer('CUST-IDEM-3');
     await request(server())
-      .post('/v1/partners')
+      .post('/v1/sales-invoices')
       .set('Authorization', `Bearer ${acct}`)
-      .send(partnerBody('IDEM-3'))
+      .send(invoiceBody(partnerId))
       .expect(422);
   });
 
-  it('two concurrent identical requests create exactly one row', async () => {
+  it('two concurrent identical requests create exactly one invoice', async () => {
+    const partnerId = await newCustomer('CUST-IDEM-RACE');
     const key = randomUUID();
-    const body = partnerBody('IDEM-RACE');
+    const body = invoiceBody(partnerId);
     const send = () =>
       request(server())
-        .post('/v1/partners')
+        .post('/v1/sales-invoices')
         .set('Authorization', `Bearer ${acct}`)
         .set('Idempotency-Key', key)
         .send(body);
@@ -1085,8 +1113,8 @@ describe('Idempotency (e2e)', () => {
     // One succeeds (201). The other replays (201) or is rejected in-flight (409).
     expect(statuses.filter((s) => s === 201).length).toBeGreaterThanOrEqual(1);
     expect(statuses.every((s) => s === 201 || s === 409)).toBe(true);
-    const count = await prisma.client.businessPartner.count({
-      where: { code: 'IDEM-RACE' },
+    const count = await prisma.client.salesInvoice.count({
+      where: { partnerId },
     });
     expect(count).toBe(1);
   });
@@ -1169,8 +1197,6 @@ git commit -m "feat(pagination): shared PaginationQueryDto; journal list DTO ext
 ### Task 9: Envelope response DTOs + extend invoicing list query DTOs
 
 **Files:**
-- Modify: `src/ledger/accounts/dto/account-response.dto.ts`
-- Modify: `src/tax/dto/tax-code-response.dto.ts`
 - Modify: `src/invoicing/dto/business-partner-response.dto.ts`
 - Modify: `src/invoicing/dto/sales-invoice-response.dto.ts`
 - Modify: `src/invoicing/dto/payment-response.dto.ts`
@@ -1179,31 +1205,11 @@ git commit -m "feat(pagination): shared PaginationQueryDto; journal list DTO ext
 - Modify: `src/invoicing/dto/list-purchase-bills.dto.ts`
 - Modify: `src/invoicing/dto/list-payments.dto.ts`
 
-- [ ] **Step 1: Add envelope DTOs**
+> No envelopes for accounts/tax-codes — they stay full bare-array lists.
+
+- [ ] **Step 1: Add envelope DTOs (four transactional resources)**
 
 Append to each response DTO file an envelope class (mirrors `JournalEntryListResponseDto`). Ensure `ApiProperty` is imported (it already is in each file).
-
-`account-response.dto.ts` (append):
-
-```typescript
-export class AccountListResponseDto {
-  @ApiProperty({ type: [AccountResponseDto] }) data!: AccountResponseDto[];
-  @ApiProperty({ example: 137 }) total!: number;
-  @ApiProperty({ example: 50 }) limit!: number;
-  @ApiProperty({ example: 0 }) offset!: number;
-}
-```
-
-`tax-code-response.dto.ts` (append):
-
-```typescript
-export class TaxCodeListResponseDto {
-  @ApiProperty({ type: [TaxCodeResponseDto] }) data!: TaxCodeResponseDto[];
-  @ApiProperty({ example: 12 }) total!: number;
-  @ApiProperty({ example: 50 }) limit!: number;
-  @ApiProperty({ example: 0 }) offset!: number;
-}
-```
 
 `business-partner-response.dto.ts` (append):
 
@@ -1309,84 +1315,14 @@ git commit -m "feat(pagination): per-resource list envelope DTOs; list query DTO
 ### Task 10: Paginated `listPage()` services + controllers
 
 **Files:**
-- Modify: `src/ledger/accounts/accounts.service.ts` + `accounts.controller.ts`
-- Modify: `src/tax/tax-codes.service.ts` + `tax-codes.controller.ts`
 - Modify: `src/invoicing/business-partners.service.ts` + `business-partners.controller.ts`
 - Modify: `src/invoicing/sales-invoices.service.ts` + `sales-invoices.controller.ts`
 - Modify: `src/invoicing/purchase-bills.service.ts` + `purchase-bills.controller.ts`
 - Modify: `src/invoicing/payments.service.ts` + `payments.controller.ts`
 
-> Rule: **keep** `list()` on accounts & tax-codes (≈22 internal e2e callers rely on the full array — do not touch them). **Add** `listPage()` everywhere. **Delete** the old `list()` on partners/sales-invoices/purchase-bills/payments (no internal callers; the controller switches to `listPage()`).
+> Rule: **delete** the old bare-array `list()`/`list(filter)` on these four and **add** `listPage()` (no internal callers — the controller switches to `listPage()`). `accounts` and `tax-codes` are NOT touched (their `list()` stays a full array, relied on by ~22 internal e2e callers and the frontend).
 
-- [ ] **Step 1: accounts service** — add after the existing `list()` method:
-
-```typescript
-  async listPage(q: { limit?: number; offset?: number }): Promise<{
-    data: Account[];
-    total: number;
-    limit: number;
-    offset: number;
-  }> {
-    const limit = q.limit ?? 50;
-    const offset = q.offset ?? 0;
-    const [data, total] = await Promise.all([
-      this.prisma.client.account.findMany({
-        orderBy: { code: 'asc' },
-        take: limit,
-        skip: offset,
-      }),
-      this.prisma.client.account.count(),
-    ]);
-    return { data, total, limit, offset };
-  }
-```
-
-- [ ] **Step 2: accounts controller** — add imports `import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';` and `AccountListResponseDto` (from `./dto/account-response.dto`). Replace the `list()` handler:
-
-```typescript
-  @Get()
-  @ApiOkResponse({ type: AccountListResponseDto })
-  list(@Query() q: PaginationQueryDto) {
-    return this.accounts.listPage(q);
-  }
-```
-
-- [ ] **Step 3: tax-codes service** — add after the existing `list()`:
-
-```typescript
-  async listPage(q: { limit?: number; offset?: number }): Promise<{
-    data: TaxCode[];
-    total: number;
-    limit: number;
-    offset: number;
-  }> {
-    const limit = q.limit ?? 50;
-    const offset = q.offset ?? 0;
-    const where = { deletedAt: null };
-    const [data, total] = await Promise.all([
-      this.prisma.client.taxCode.findMany({
-        where,
-        orderBy: { code: 'asc' },
-        take: limit,
-        skip: offset,
-      }),
-      this.prisma.client.taxCode.count({ where }),
-    ]);
-    return { data, total, limit, offset };
-  }
-```
-
-- [ ] **Step 4: tax-codes controller** — add imports `PaginationQueryDto` (`../common/dto/pagination-query.dto`), `TaxCodeListResponseDto`, and `Query` (add `Query` to the `@nestjs/common` import). Replace the `list()` handler:
-
-```typescript
-  @ApiOkResponse({ type: TaxCodeListResponseDto })
-  @Get()
-  list(@Query() q: PaginationQueryDto) {
-    return this.taxCodes.listPage(q);
-  }
-```
-
-- [ ] **Step 5: business-partners service** — replace the existing `list()` with `listPage()`:
+- [ ] **Step 1: business-partners service** — replace the existing `list()` with `listPage()`:
 
 ```typescript
   async listPage(q: { limit?: number; offset?: number }): Promise<{
@@ -1409,7 +1345,7 @@ git commit -m "feat(pagination): per-resource list envelope DTOs; list query DTO
   }
 ```
 
-- [ ] **Step 6: business-partners controller** — add imports `PaginationQueryDto` (`../common/dto/pagination-query.dto`), `BusinessPartnerListResponseDto`, and `Query` (to `@nestjs/common`). Replace the `list()` handler:
+- [ ] **Step 2: business-partners controller** — add imports `PaginationQueryDto` (`../common/dto/pagination-query.dto`), `BusinessPartnerListResponseDto`, and `Query` (to `@nestjs/common`). Replace the `list()` handler:
 
 ```typescript
   @ApiOkResponse({ type: BusinessPartnerListResponseDto })
@@ -1419,7 +1355,7 @@ git commit -m "feat(pagination): per-resource list envelope DTOs; list query DTO
   }
 ```
 
-- [ ] **Step 7: sales-invoices service** — replace the existing `list(filter)` with `listPage()` (maps `present` over the page):
+- [ ] **Step 3: sales-invoices service** — replace the existing `list(filter)` with `listPage()` (maps `present` over the page):
 
 ```typescript
   async listPage(q: {
@@ -1449,7 +1385,7 @@ git commit -m "feat(pagination): per-resource list envelope DTOs; list query DTO
   }
 ```
 
-- [ ] **Step 8: sales-invoices controller** — add `SalesInvoiceListResponseDto` to the response-dto import. Replace the `list()` handler:
+- [ ] **Step 4: sales-invoices controller** — add `SalesInvoiceListResponseDto` to the response-dto import. Replace the `list()` handler:
 
 ```typescript
   @ApiOkResponse({ type: SalesInvoiceListResponseDto })
@@ -1459,7 +1395,7 @@ git commit -m "feat(pagination): per-resource list envelope DTOs; list query DTO
   }
 ```
 
-- [ ] **Step 9: purchase-bills service** — replace `list(filter)` with `listPage()`:
+- [ ] **Step 5: purchase-bills service** — replace `list(filter)` with `listPage()`:
 
 ```typescript
   async listPage(q: {
@@ -1489,7 +1425,7 @@ git commit -m "feat(pagination): per-resource list envelope DTOs; list query DTO
   }
 ```
 
-- [ ] **Step 10: purchase-bills controller** — add `PurchaseBillListResponseDto` to the import. Replace `list()`:
+- [ ] **Step 6: purchase-bills controller** — add `PurchaseBillListResponseDto` to the import. Replace `list()`:
 
 ```typescript
   @ApiOkResponse({ type: PurchaseBillListResponseDto })
@@ -1499,7 +1435,7 @@ git commit -m "feat(pagination): per-resource list envelope DTOs; list query DTO
   }
 ```
 
-- [ ] **Step 11: payments service** — replace `list(filter)` with `listPage()`:
+- [ ] **Step 7: payments service** — replace `list(filter)` with `listPage()`:
 
 ```typescript
   async listPage(q: {
@@ -1534,7 +1470,7 @@ git commit -m "feat(pagination): per-resource list envelope DTOs; list query DTO
   }
 ```
 
-- [ ] **Step 12: payments controller** — add `PaymentListResponseDto` to the import. Replace `list()`:
+- [ ] **Step 8: payments controller** — add `PaymentListResponseDto` to the import. Replace `list()`:
 
 ```typescript
   @ApiOkResponse({ type: PaymentListResponseDto })
@@ -1544,38 +1480,40 @@ git commit -m "feat(pagination): per-resource list envelope DTOs; list query DTO
   }
 ```
 
-- [ ] **Step 13: Typecheck + lint**
+- [ ] **Step 9: Typecheck + lint**
 
 Run: `npm run typecheck && npm run lint:ci`
 Expected: exit 0. (If lint flags an unused import where an old `list()` returned a type no longer referenced, remove it.)
 
-- [ ] **Step 14: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 git add -A
-git commit -m "feat(pagination): listPage() envelopes for the six unbounded lists"
+git commit -m "feat(pagination): listPage() envelopes for the four transactional lists"
 ```
 
 ### Task 11: Update list e2e assertions + add pagination e2e
 
 **Files:**
-- Modify: `test/accounts.e2e-spec.ts`, `test/tax-codes.e2e-spec.ts`, `test/business-partners.e2e-spec.ts`, `test/sales-invoices.e2e-spec.ts`, `test/purchase-bills.e2e-spec.ts`, `test/payments.e2e-spec.ts`, `test/list-filter-validation.e2e-spec.ts` (and any reporting spec that reads a list endpoint's HTTP body as an array)
+- Modify: `test/business-partners.e2e-spec.ts`, `test/sales-invoices.e2e-spec.ts`, `test/purchase-bills.e2e-spec.ts`, `test/payments.e2e-spec.ts`, `test/list-filter-validation.e2e-spec.ts` (and any reporting spec that reads one of these four list endpoints' HTTP body as an array)
 - Create: `test/pagination.e2e-spec.ts`
+
+> `test/accounts.e2e-spec.ts` and `test/tax-codes.e2e-spec.ts` are **unchanged** — those lists still return bare arrays.
 
 - [ ] **Step 1: Fix existing list-body assertions (run-and-fix)**
 
-Run: `npm run test:e2e -- accounts tax-codes business-partners sales-invoices purchase-bills payments list-filter-validation`
-For each failure where a GET-list response body was treated as an array, change it to read the envelope. Patterns:
+Run: `npm run test:e2e -- business-partners sales-invoices purchase-bills payments list-filter-validation`
+For each failure where a GET-list response body for partners/invoices/bills/payments was treated as an array, change it to read the envelope. Patterns:
 - `const body = res.body as XResponseDto[]` → `const { data: body } = res.body as { data: XResponseDto[] }`
 - `expect(res.body).toHaveLength(n)` → `expect(res.body.data).toHaveLength(n)`
 - `res.body.find(...)` / `res.body.map(...)` → `res.body.data.find(...)` / `.map(...)`
 - `expect(Array.isArray(res.body)).toBe(true)` → `expect(Array.isArray(res.body.data)).toBe(true)`
 
-Re-run until green. (The GET-by-id and mutating assertions are unchanged — only GET-list bodies move under `.data`.)
+Re-run until green. (GET-by-id and mutating assertions are unchanged — only the four transactional GET-list bodies move under `.data`. Leave accounts/tax-codes list assertions as bare arrays.)
 
 - [ ] **Step 2: Write the pagination e2e spec**
 
-Create `test/pagination.e2e-spec.ts`:
+Create `test/pagination.e2e-spec.ts` (uses `partners` — a now-paginated list; partners are seeded via the service, so no idempotency key is needed):
 
 ```typescript
 import { Test } from '@nestjs/testing';
@@ -1584,12 +1522,11 @@ import {
   ValidationPipe,
   VersioningType,
 } from '@nestjs/common';
-import { randomUUID } from 'crypto';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
-import { AccountsService } from '../src/ledger/accounts/accounts.service';
+import { BusinessPartnersService } from '../src/invoicing/business-partners.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
@@ -1618,7 +1555,6 @@ describe('Pagination (e2e)', () => {
     );
     app.useGlobalFilters(new AllExceptionsFilter());
     await app.init();
-    await app.get(AccountsService).seedIfEmpty();
     const users = app.get(UsersService);
     await users.create({
       email: 'acct@page.test',
@@ -1628,6 +1564,15 @@ describe('Pagination (e2e)', () => {
     });
     acct = (await app.get(AuthService).login('acct@page.test', 'secret123'))
       .accessToken;
+    // Seed 5 partners directly via the service (no HTTP, no idempotency key).
+    const partners = app.get(BusinessPartnersService);
+    for (const n of [1, 2, 3, 4, 5]) {
+      await partners.create({
+        code: `PG-${n}`,
+        name: `PT Page ${n}`,
+        isCustomer: true,
+      });
+    }
   }, 120_000);
 
   afterAll(async () => {
@@ -1638,7 +1583,7 @@ describe('Pagination (e2e)', () => {
 
   it('returns the { data, total, limit, offset } envelope and honors limit', async () => {
     const res = await request(server())
-      .get('/v1/ledger/accounts?limit=3&offset=0')
+      .get('/v1/partners?limit=3&offset=0')
       .set('Authorization', `Bearer ${acct}`)
       .expect(200);
     const body = res.body as {
@@ -1649,51 +1594,32 @@ describe('Pagination (e2e)', () => {
     };
     expect(body.limit).toBe(3);
     expect(body.offset).toBe(0);
-    expect(body.data.length).toBeLessThanOrEqual(3);
-    expect(body.total).toBeGreaterThanOrEqual(body.data.length);
+    expect(body.data.length).toBe(3);
+    expect(body.total).toBeGreaterThanOrEqual(5);
   });
 
   it('offset advances the page without overlap', async () => {
     const page1 = (
       await request(server())
-        .get('/v1/ledger/accounts?limit=2&offset=0')
-        .set('Authorization', `Bearer ${acct}`)
-        .expect(200)
-    ).body as { data: { id: string }[]; total: number };
-    const page2 = (
-      await request(server())
-        .get('/v1/ledger/accounts?limit=2&offset=2')
+        .get('/v1/partners?limit=2&offset=0')
         .set('Authorization', `Bearer ${acct}`)
         .expect(200)
     ).body as { data: { id: string }[] };
-    const ids = new Set(page1.data.map((a) => a.id));
-    for (const a of page2.data) expect(ids.has(a.id)).toBe(false);
-  });
-
-  it('paginates partners with a correct total', async () => {
-    for (const code of ['PG-1', 'PG-2', 'PG-3']) {
+    const page2 = (
       await request(server())
-        .post('/v1/partners')
+        .get('/v1/partners?limit=2&offset=2')
         .set('Authorization', `Bearer ${acct}`)
-        .set('Idempotency-Key', randomUUID())
-        .send({ code, name: 'PT Page', isCustomer: true })
-        .expect(201);
-    }
-    const res = await request(server())
-      .get('/v1/partners?limit=2&offset=0')
-      .set('Authorization', `Bearer ${acct}`)
-      .expect(200);
-    const body = res.body as { data: unknown[]; total: number; limit: number };
-    expect(body.limit).toBe(2);
-    expect(body.data.length).toBe(2);
-    expect(body.total).toBeGreaterThanOrEqual(3);
+        .expect(200)
+    ).body as { data: { id: string }[] };
+    const ids = new Set(page1.data.map((p) => p.id));
+    for (const p of page2.data) expect(ids.has(p.id)).toBe(false);
   });
 
-  it('rejects an over-max limit (422)', async () => {
+  it('rejects an over-max limit (400 from the ValidationPipe)', async () => {
     await request(server())
-      .get('/v1/ledger/accounts?limit=500')
+      .get('/v1/partners?limit=500')
       .set('Authorization', `Bearer ${acct}`)
-      .expect(422);
+      .expect(400);
   });
 });
 ```
@@ -1701,7 +1627,7 @@ describe('Pagination (e2e)', () => {
 - [ ] **Step 3: Run pagination e2e**
 
 Run: `npm run test:e2e -- pagination`
-Expected: PASS (4 tests).
+Expected: PASS (3 tests).
 
 - [ ] **Step 4: Full e2e sweep**
 
@@ -1727,7 +1653,7 @@ git commit -m "test(pagination): envelope assertions + pagination e2e"
 - [ ] **Step 1: Regenerate the spec**
 
 Run: `npm run openapi:export`
-Expected: prints `Wrote docs/api/openapi.json`. Paths are now under `/v1` (except `/health`, `/ready`, `/metrics`); included write endpoints show the `Idempotency-Key` header; the six lists reference their `*ListResponseDto` envelopes.
+Expected: prints `Wrote docs/api/openapi.json`. Paths are now under `/v1` (except `/health`, `/ready`, `/metrics`); covered write endpoints show the `Idempotency-Key` header; the four transactional lists reference their `*ListResponseDto` envelopes (accounts/tax-codes stay arrays).
 
 - [ ] **Step 2: Run the contract guard + the api-money/openapi unit specs**
 
@@ -1756,10 +1682,10 @@ git commit -m "docs(openapi): regenerate with /v1 paths, Idempotency-Key, list e
 
 - [ ] **Step 1: frontend-guide.md**
 
-- In **§2 Conventions → Pagination**: state that all list endpoints return the envelope `{ data, total, limit, offset }` with `?limit` (max 200, default 50) and `?offset`; remove/replace any "journal-list is the only enveloped list" wording in **§2 → Response shapes** and the **§6 Response schema quick-map**.
+- In **§2 Conventions → Pagination**: state that the four transactional list endpoints (partners, sales-invoices, purchase-bills, payments) return the envelope `{ data, total, limit, offset }` with `?limit` (max 200, default 50) and `?offset`; **accounts and tax-codes remain full bare-array lists** (bounded reference data). Remove/replace any "journal-list is the only enveloped list" wording in **§2 → Response shapes** and the **§6 Response schema quick-map**.
 - In **§1 Overview**: note the base path is now `/v1` (operational probes `/health`, `/ready`, `/metrics` stay unprefixed).
-- In **§2 Conventions**: add an **Idempotency** subsection — included write endpoints (all creates + `:id/post`/`:id/void` + year-end + journals/opening-balances) require an `Idempotency-Key` header; replays return the original response; reusing a key with a different body or endpoint is `422`; an in-flight key is `409`.
-- In **§6 endpoint catalog / quick-map**: add the six new `*ListResponseDto` schema names.
+- In **§2 Conventions**: add an **Idempotency** subsection — covered write endpoints (invoice/bill/payment `create` + `:id/post`/`:id/void`, year-end close, and journals/opening-balances) require an `Idempotency-Key` header; replays return the original response; reusing a key with a different body or endpoint is `422`; an in-flight key is `409`. (Accounts/tax-codes/partners creates are NOT covered — they're protected by their unique `code`.)
+- In **§6 endpoint catalog / quick-map**: add the four new `*ListResponseDto` schema names (partner, sales-invoice, purchase-bill, payment).
 
 - [ ] **Step 2: frontend-agent-brief.md**
 
@@ -1780,19 +1706,22 @@ Under `## [Unreleased]` add an `### Added` / `### Changed` block:
   (`enableVersioning`, URI strategy). Operational probes (`/health`, `/ready`,
   `/metrics`) remain version-neutral.
 - **Generalized idempotency** — a reusable `@Idempotent()` interceptor stores a
-  JSON response snapshot keyed by `Idempotency-Key`. Required on all creates and
-  money-moving transitions (`:id/post`, `:id/void`, year-end close) plus the
-  journal/opening-balances endpoints. Replays return the original response;
-  key reuse with a different body/endpoint → 422; in-flight → 409.
-- **List pagination** — accounts, tax codes, partners, sales invoices, purchase
-  bills, and payments now return `{ data, total, limit, offset }` (`?limit` max
-  200, default 50; `?offset`).
+  JSON response snapshot keyed by `Idempotency-Key`. Required on invoice/bill/
+  payment creates, the money-moving transitions (`:id/post`, `:id/void`, year-end
+  close), and the journal/opening-balances endpoints. Replays return the original
+  response; key reuse with a different body/endpoint → 422; in-flight → 409.
+  (Reference-data creates are not covered — their unique `code` already prevents
+  duplicates.)
+- **List pagination** — partners, sales invoices, purchase bills, and payments
+  now return `{ data, total, limit, offset }` (`?limit` max 200, default 50;
+  `?offset`). Accounts and tax codes remain full lists (bounded reference data).
 
 ### Changed
 
-- **Breaking:** business route paths are now `/v1/...`; the six lists above
-  return an envelope instead of a bare array. The journal/opening-balances
-  endpoints now require an `Idempotency-Key`. See `docs/api/openapi.json`.
+- **Breaking:** business route paths are now `/v1/...`; the four transactional
+  lists above return an envelope instead of a bare array. The journal/
+  opening-balances endpoints now require an `Idempotency-Key`. See
+  `docs/api/openapi.json`.
 ```
 
 - [ ] **Step 5: Commit**
@@ -1824,7 +1753,7 @@ git commit -m "test: cover idempotency interceptor branches to hold coverage gat
 
 ## Self-Review Notes (for the implementer)
 
-- **Spec coverage:** D1 versioning → Task 1; D2 neutral probes → Task 1 Steps 4 + the versioning e2e; D3 idempotency scope → Task 6 (matrix) + Task 5 (journals); D4 mechanism → Tasks 3–5; D5 required key → interceptor missing-key 422 + Task 6 Step 11; D6 body-hash → `IdempotencyService.reserve` + unit/e2e; D7 pagination scope → Task 10 (six lists); D8 shape → Tasks 8–10. Docs/openapi → Tasks 12–13. Tests → Tasks 7, 11, 14.
+- **Spec coverage:** D1 versioning → Task 1; D2 neutral probes → Task 1 Step 4 + the versioning e2e; D3 idempotency scope (money-movers + invoice/bill/payment creates; reference creates & periods/generate excluded) → Task 6 + Task 5 (journals); D4 mechanism → Tasks 3–5; D5 required key → interceptor missing-key 422 + Task 6 Step 7; D6 body-hash → `IdempotencyService.reserve` + unit/e2e; D7 pagination scope (four transactional lists; accounts/tax-codes stay full) → Task 10; D8 shape → Tasks 8–10. Docs/openapi → Tasks 12–13. Tests → Tasks 7, 11, 14.
 - **Order rationale:** versioning first (all later tests use `/v1`); idempotency before pagination per the spec build sequence; docs/openapi after behaviour is final.
-- **Naming consistency:** the paginated method is `listPage(q)` in all six services; `list()` is retained ONLY on accounts & tax-codes for internal full-fetch callers; envelope DTOs are `<Resource>ListResponseDto` everywhere (matching `JournalEntryListResponseDto`).
-- **Known broad edits** (run-and-fix loops, bounded by the test run, not guesswork): `/v1` path prefixing (Task 1), required-key header additions (Task 5 Step 8, Task 6 Step 11), and list-body `.data` assertions (Task 11 Step 1).
+- **Naming consistency:** the paginated method is `listPage(q)` in the four transactional services; `accounts` and `tax-codes` are untouched (full-array `list()`); envelope DTOs are `<Resource>ListResponseDto` (matching `JournalEntryListResponseDto`).
+- **Known broad edits** (run-and-fix loops, bounded by the test run, not guesswork): `/v1` path prefixing (Task 1), required-key header additions (Task 5 Step 8, Task 6 Step 7), and list-body `.data` assertions for the four transactional lists (Task 11 Step 1).

@@ -32,8 +32,10 @@ churn happens exactly once.
 - Introduce URI versioning with `/v1` as the canonical, only-supported version.
 - Replace the journal-specific idempotency with one generic, entity-agnostic
   mechanism covering all create + money-moving endpoints.
-- Add offset pagination (matching the existing journal envelope) to all six
-  unbounded lists.
+- Add offset pagination (matching the existing journal envelope) to the four
+  transactional lists (partners, sales-invoices, purchase-bills, payments). The
+  two reference lists (accounts, tax codes) stay full lists — they are bounded in
+  single-company use and the frontend loads them wholesale.
 - Regenerate `openapi.json` and update the API guides to match.
 
 **Non-Goals**
@@ -51,11 +53,11 @@ churn happens exactly once.
 |---|----------|--------|-----|
 | D1 | Versioning style | **URI, hard cutover to `/v1`** (`defaultVersion: '1'`); unprefixed business paths → 404 | Cleanest surface; one break, done under a single version bump |
 | D2 | Probe routes | **Version-neutral** `/health`, `/ready`, `/metrics` | Keeps the Docker healthcheck (`/health`) and Prometheus scrape (`/metrics`) working without editing infra config |
-| D3 | Idempotency scope | **All creates + money-moving transitions** (`:id/post`, `:id/void`, `year-end`) + existing journals/opening-balances | A key only earns its place when a retry could duplicate a row or double a financial effect |
+| D3 | Idempotency scope | **Money-moving transitions** (`:id/post`, `:id/void`, `year-end`, journals, opening-balances) **+ invoice/bill/payment creates** | A key earns its place only where a retry could duplicate a row or double a financial effect *with no other protection*. Reference-data creates (unique `code`) and `periods/generate` (`createMany skipDuplicates`) are already protected, so they're excluded. |
 | D4 | Idempotency mechanism | **Generic `@Idempotent()` interceptor + JSON response snapshot**; refactor journals onto it | One uniform, entity-agnostic mechanism; replay returns the original response verbatim (correct idempotency semantics) |
-| D5 | Key requirement | **Required** on included endpoints (`422` if missing) | Strongest guarantee; uniform contract; acceptable because it ships under the `/v1` break |
+| D5 | Key requirement | **Required** on covered endpoints (`422` if missing) | Strongest guarantee; uniform contract; acceptable because it ships under the `/v1` break |
 | D6 | Body-hash guard | **Included** — same key + different body → `422` | Catches client bugs where a key is accidentally reused for a different request (Stripe-style) |
-| D7 | Pagination scope | **All six unbounded lists** (2 reference + 4 transactional) | Closes the real growth exposure, not just the flagged symptom |
+| D7 | Pagination scope | **The four transactional lists** (partners, sales-invoices, purchase-bills, payments) | These grow unbounded. The reference lists (accounts, tax codes) are bounded in single-company use and are loaded wholesale by the frontend and ~22 internal callers, so they stay full lists. |
 | D8 | Pagination shape | **Match journal envelope** `{ data, total, limit, offset }`, `?limit` (default 50, max 200) + `?offset` | Reuses the one convention already in the codebase |
 
 ## 4. Detailed Design
@@ -150,15 +152,19 @@ strings) and stored as JSON; replay re-emits it with the recorded status code so
   `limit?` (`@IsInt @Min(1) @Max(200)`, default 50) and `offset?`
   (`@IsInt @Min(0)`, default 0). Extracted from the inline journal DTO and
   reused (journal DTO refactored to extend it).
-- **Services** (`accounts`, `tax-codes`, `business-partners`, `sales-invoices`,
-  `purchase-bills`, `payments`): each `list()` adds `take`/`skip` + a parallel
-  `count()` and returns `{ data, total, limit, offset }`. Existing filters
-  (`partnerId` / `status` on documents) and ordering (`code asc` for reference,
-  `createdAt desc` for transactional) are preserved.
-- **Response DTOs:** one `*ListResponseDto` envelope per resource (the OpenAPI
-  contract guard requires named schemas), each `{ data: ItemDto[], total, limit,
-  offset }`.
-- **Breaking change:** these six lists change from bare arrays to envelopes.
+- **Services** (`business-partners`, `sales-invoices`, `purchase-bills`,
+  `payments`): a new `listPage()` adds `take`/`skip` + a parallel `count()` and
+  returns `{ data, total, limit, offset }`. Existing filters (`partnerId` /
+  `status` / `direction`) and `createdAt desc` ordering are preserved. The old
+  bare-array `list()` on these four is removed (the controllers switch to
+  `listPage()`; nothing else calls them).
+- **Reference lists unchanged:** `accounts` and `tax-codes` keep their existing
+  full-array `list()` and controller handlers — bounded data, loaded wholesale by
+  the frontend and by ~22 internal e2e callers.
+- **Response DTOs:** one `*ListResponseDto` envelope per paginated resource (the
+  OpenAPI contract guard requires named schemas), each `{ data: ItemDto[], total,
+  limit, offset }`.
+- **Breaking change:** these four lists change from bare arrays to envelopes.
   Intentional and bundled under `/v1`.
 
 ## 5. Endpoint Matrix
@@ -169,13 +175,9 @@ All paths shown with the `/v1` prefix.
 
 | Endpoint | Kind |
 |----------|------|
-| `POST /v1/ledger/accounts` | create |
-| `POST /v1/tax/codes` | create |
-| `POST /v1/partners` | create |
-| `POST /v1/sales-invoices` | create |
-| `POST /v1/purchase-bills` | create |
-| `POST /v1/payments` | create |
-| `POST /v1/ledger/periods/generate` | create (rows) |
+| `POST /v1/sales-invoices` | create (no natural unique key) |
+| `POST /v1/purchase-bills` | create (no natural unique key) |
+| `POST /v1/payments` | create (no natural unique key) |
 | `POST /v1/sales-invoices/:id/post` · `:id/void` | money-moving |
 | `POST /v1/purchase-bills/:id/post` · `:id/void` | money-moving |
 | `POST /v1/payments/:id/post` · `:id/void` | money-moving |
@@ -183,10 +185,12 @@ All paths shown with the `/v1` prefix.
 | `POST /v1/ledger/journal-entries` · `:id/post` · `:id/reverse` | refactor (existing) |
 | `POST /v1/ledger/opening-balances` | refactor (existing) |
 
-### Idempotency — EXCLUDE (no key; already idempotent or semantically wrong)
+### Idempotency — EXCLUDE (no key; already protected or semantically wrong)
 
 | Endpoint(s) | Reason |
 |-------------|--------|
+| `POST /v1/ledger/accounts`, `POST /v1/tax/codes`, `POST /v1/partners` | Unique `code` already blocks duplicates; a retry 409s on the constraint |
+| `POST /v1/ledger/periods/generate` | Already idempotent (`createMany skipDuplicates`) |
 | All `PATCH` (`accounts/:id`, `tax/codes/:id`, `partners/:id`, `sales-invoices/:id`, `purchase-bills/:id`, `company/settings`) | Same body → same state |
 | All `DELETE :id` (journals, accounts, tax/codes, partners, invoices, bills, payments) | Idempotent by HTTP semantics |
 | All `:id/deactivate` (accounts, tax/codes, partners) | Boolean flip |
@@ -196,9 +200,11 @@ All paths shown with the `/v1` prefix.
 
 ### Pagination — envelope `{ data, total, limit, offset }`
 
-`GET /v1/ledger/accounts`, `GET /v1/tax/codes`, `GET /v1/partners`,
-`GET /v1/sales-invoices`, `GET /v1/purchase-bills`, `GET /v1/payments`.
-(`journal-entries`, `periods`, `audit` already paginate — unchanged.)
+`GET /v1/partners`, `GET /v1/sales-invoices`, `GET /v1/purchase-bills`,
+`GET /v1/payments`.
+Unchanged full-array lists: `GET /v1/ledger/accounts`, `GET /v1/tax/codes`
+(bounded reference data). (`journal-entries`, `periods`, `audit` already
+paginate — unchanged.)
 
 ## 6. Testing
 
@@ -212,7 +218,7 @@ All paths shown with the `/v1` prefix.
   - Idempotent replay on each included endpoint (same key+body returns the same
     resource; no duplicate row created).
   - Pagination envelope shape + `total`/`limit`/`offset` honored on each of the
-    six lists; filters still work.
+    four transactional lists; filters still work.
   - Journal/opening-balances suites updated for the now-required key.
 - Existing **38 unit + 147 e2e** updated accordingly; the OpenAPI contract guard
   must pass against the regenerated spec.
@@ -234,7 +240,7 @@ All paths shown with the `/v1` prefix.
 1. **Versioning** — `enableVersioning` + neutral probes; update e2e paths.
 2. **Idempotency** — schema + migration → `IdempotencyService`/interceptor →
    wire included endpoints → refactor journals off the old mechanism.
-3. **Pagination** — shared query DTO → six services → six envelope DTOs.
+3. **Pagination** — shared query DTO → four `listPage()` services → four envelope DTOs.
 4. **Docs** — regenerate `openapi.json` + guides; run contract guard.
 5. **Full test pass** — unit + e2e green.
 
@@ -247,5 +253,6 @@ All paths shown with the `/v1` prefix.
   preserves 201 vs 200.
 - **Dropping `result_entry_id`** loses replay for any in-flight pre-migration
   keys — acceptable (transient data, demo volume).
-- **Envelope is a breaking response change** for six lists — intentional, under
-  `/v1`, reflected in the regenerated `openapi.json`.
+- **Envelope is a breaking response change** for the four transactional lists —
+  intentional, under `/v1`, reflected in the regenerated `openapi.json`. Accounts
+  and tax-codes lists keep their bare-array shape.
