@@ -13,6 +13,7 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiHeader,
   ApiNoContentResponse,
   ApiOkResponse,
   ApiTags,
@@ -26,6 +27,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../auth/role.enum';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { Idempotent } from '../common/idempotency/idempotent.decorator';
 
 @ApiTags('Purchase Bills')
 @ApiBearerAuth()
@@ -48,6 +50,12 @@ export class PurchaseBillsController {
 
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
   @ApiCreatedResponse({ type: PurchaseBillResponseDto })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description: 'Unique key to make this write safely retryable.',
+  })
+  @Idempotent()
   @Post()
   async create(
     @Body() dto: CreatePurchaseBillDto,
@@ -84,6 +92,12 @@ export class PurchaseBillsController {
 
   @Roles(Role.APPROVER, Role.ADMIN)
   @ApiOkResponse({ type: PurchaseBillResponseDto })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description: 'Unique key to make this write safely retryable.',
+  })
+  @Idempotent()
   @Post(':id/post')
   @HttpCode(200)
   async post(
@@ -95,6 +109,12 @@ export class PurchaseBillsController {
 
   @Roles(Role.APPROVER, Role.ADMIN)
   @ApiOkResponse({ type: PurchaseBillResponseDto })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description: 'Unique key to make this write safely retryable.',
+  })
+  @Idempotent()
   @Post(':id/void')
   @HttpCode(200)
   async void(

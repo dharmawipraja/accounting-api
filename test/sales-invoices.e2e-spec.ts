@@ -4,6 +4,7 @@ import {
   ValidationPipe,
   VersioningType,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -99,6 +100,7 @@ describe('SalesInvoices (e2e)', () => {
     const res = await request(app.getHttpServer() as App)
       .post('/v1/sales-invoices')
       .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
       .send(draftBody())
       .expect(201);
     const body = res.body as {
@@ -123,12 +125,14 @@ describe('SalesInvoices (e2e)', () => {
     const draft = await request(app.getHttpServer() as App)
       .post('/v1/sales-invoices')
       .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
       .send(draftBody())
       .expect(201);
     const id = (draft.body as { id: string }).id;
     const posted = await request(app.getHttpServer() as App)
       .post(`/v1/sales-invoices/${id}/post`)
       .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
       .expect(200);
     const body = posted.body as {
       status: string;
@@ -158,12 +162,14 @@ describe('SalesInvoices (e2e)', () => {
     const draft = await request(app.getHttpServer() as App)
       .post('/v1/sales-invoices')
       .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
       .send(draftBody())
       .expect(201);
     const id = (draft.body as { id: string }).id;
     await request(app.getHttpServer() as App)
       .post(`/v1/sales-invoices/${id}/post`)
       .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
       .expect(403);
   });
 
@@ -171,16 +177,19 @@ describe('SalesInvoices (e2e)', () => {
     const draft = await request(app.getHttpServer() as App)
       .post('/v1/sales-invoices')
       .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
       .send(draftBody())
       .expect(201);
     const id = (draft.body as { id: string }).id;
     await request(app.getHttpServer() as App)
       .post(`/v1/sales-invoices/${id}/post`)
       .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
       .expect(200);
     const voided = await request(app.getHttpServer() as App)
       .post(`/v1/sales-invoices/${id}/void`)
       .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
       .expect(200);
     expect((voided.body as { status: string }).status).toBe('VOID');
   });
@@ -192,6 +201,7 @@ describe('SalesInvoices (e2e)', () => {
     await request(app.getHttpServer() as App)
       .post('/v1/sales-invoices')
       .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
       .send({ ...draftBody(), partnerId: vendor.id })
       .expect(422);
   });

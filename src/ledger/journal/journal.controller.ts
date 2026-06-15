@@ -12,6 +12,7 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiHeader,
   ApiNoContentResponse,
   ApiOkResponse,
   ApiTags,
@@ -60,6 +61,11 @@ export class JournalController {
 
   @ApiCreatedResponse({ type: JournalEntryResponseDto })
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description: 'Unique key to make this write safely retryable.',
+  })
   @Idempotent()
   @Post()
   async createOrPost(
@@ -91,6 +97,11 @@ export class JournalController {
 
   @ApiOkResponse({ type: JournalEntryResponseDto })
   @Roles(Role.APPROVER, Role.ADMIN)
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description: 'Unique key to make this write safely retryable.',
+  })
   @Idempotent()
   @Post(':id/post')
   @HttpCode(200)
@@ -103,6 +114,11 @@ export class JournalController {
 
   @ApiOkResponse({ type: JournalEntryResponseDto })
   @Roles(Role.APPROVER, Role.ADMIN)
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description: 'Unique key to make this write safely retryable.',
+  })
   @Idempotent()
   @Post(':id/reverse')
   @HttpCode(200)

@@ -4,6 +4,7 @@ import {
   ValidationPipe,
   VersioningType,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -35,6 +36,7 @@ describe('Payments (e2e)', () => {
     const draft = await request(server())
       .post('/v1/sales-invoices')
       .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
       .send({
         partnerId,
         date: '2026-02-10',
@@ -54,6 +56,7 @@ describe('Payments (e2e)', () => {
     await request(server())
       .post(`/v1/sales-invoices/${id}/post`)
       .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
       .expect(200);
     return id;
   };
@@ -120,6 +123,7 @@ describe('Payments (e2e)', () => {
     const r1 = await request(server())
       .post('/v1/payments')
       .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
       .send({
         direction: 'RECEIPT',
         partnerId: customerId,
@@ -133,6 +137,7 @@ describe('Payments (e2e)', () => {
     const posted1 = await request(server())
       .post(`/v1/payments/${p1.id}/post`)
       .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
       .expect(200);
     const posted1Body = posted1.body as {
       status: string;
@@ -168,6 +173,7 @@ describe('Payments (e2e)', () => {
     const r2 = await request(server())
       .post('/v1/payments')
       .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
       .send({
         direction: 'RECEIPT',
         partnerId: customerId,
@@ -180,6 +186,7 @@ describe('Payments (e2e)', () => {
     await request(server())
       .post(`/v1/payments/${p2.id}/post`)
       .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
       .expect(200);
 
     inv = await request(server())
@@ -196,6 +203,7 @@ describe('Payments (e2e)', () => {
     await request(server())
       .post('/v1/payments')
       .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
       .send({
         direction: 'RECEIPT',
         partnerId: customerId,
@@ -212,6 +220,7 @@ describe('Payments (e2e)', () => {
     await request(server())
       .post('/v1/payments')
       .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
       .send({
         direction: 'RECEIPT',
         partnerId: customerId,
@@ -230,6 +239,7 @@ describe('Payments (e2e)', () => {
     const r = await request(server())
       .post('/v1/payments')
       .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
       .send({
         direction: 'RECEIPT',
         partnerId: customerId,
@@ -242,6 +252,7 @@ describe('Payments (e2e)', () => {
     await request(server())
       .post(`/v1/payments/${paymentId}/post`)
       .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
       .expect(200);
 
     let inv = await request(server())
@@ -254,6 +265,7 @@ describe('Payments (e2e)', () => {
     await request(server())
       .post(`/v1/payments/${paymentId}/void`)
       .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
       .expect(200);
 
     inv = await request(server())
@@ -271,6 +283,7 @@ describe('Payments (e2e)', () => {
     await request(server())
       .post(`/v1/sales-invoices/${invoiceId}/void`)
       .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
       .expect(200);
   });
 
@@ -281,6 +294,7 @@ describe('Payments (e2e)', () => {
       const res = await request(server())
         .post('/v1/payments')
         .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
         .send({
           direction: 'RECEIPT',
           partnerId: customerId,
@@ -296,10 +310,12 @@ describe('Payments (e2e)', () => {
     const results = await Promise.allSettled([
       request(server())
         .post(`/v1/payments/${p1}/post`)
-        .set('Authorization', `Bearer ${appr}`),
+        .set('Authorization', `Bearer ${appr}`)
+        .set('Idempotency-Key', randomUUID()),
       request(server())
         .post(`/v1/payments/${p2}/post`)
-        .set('Authorization', `Bearer ${appr}`),
+        .set('Authorization', `Bearer ${appr}`)
+        .set('Idempotency-Key', randomUUID()),
     ]);
     const codes = results.map((r) =>
       r.status === 'fulfilled' ? r.value.status : 0,
@@ -332,6 +348,7 @@ describe('Payments (e2e)', () => {
     const r = await request(server())
       .post('/v1/payments')
       .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
       .send({
         direction: 'RECEIPT',
         partnerId: customerId,
@@ -344,6 +361,7 @@ describe('Payments (e2e)', () => {
     await request(server())
       .post(`/v1/payments/${paymentId}/post`)
       .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
       .expect(200);
 
     // This dedicated customer's invoice outstanding is exactly 710,000.

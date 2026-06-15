@@ -1,5 +1,10 @@
 import { Body, Controller, HttpCode, Post } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiHeader,
+  ApiOkResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { JournalEntryResponseDto } from '../journal/dto/journal-response.dto';
 import { JournalEntry } from '@prisma/client';
 import { JournalService } from './journal.service';
@@ -18,6 +23,11 @@ export class OpeningBalancesController {
 
   @ApiOkResponse({ type: JournalEntryResponseDto })
   @Roles(Role.ADMIN)
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description: 'Unique key to make this write safely retryable.',
+  })
   @Idempotent()
   @Post()
   @HttpCode(200)
