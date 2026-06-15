@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -33,6 +37,7 @@ describe('SalesInvoices (e2e)', () => {
       .useValue(prisma)
       .compile();
     app = moduleRef.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -92,7 +97,7 @@ describe('SalesInvoices (e2e)', () => {
 
   it('creates a DRAFT invoice with computed totals (201)', async () => {
     const res = await request(app.getHttpServer() as App)
-      .post('/sales-invoices')
+      .post('/v1/sales-invoices')
       .set('Authorization', `Bearer ${acct}`)
       .send(draftBody())
       .expect(201);
@@ -116,13 +121,13 @@ describe('SalesInvoices (e2e)', () => {
 
   it('posts a DRAFT invoice → POSTED, gapless number, balanced GL entry hitting AR (1-1200)', async () => {
     const draft = await request(app.getHttpServer() as App)
-      .post('/sales-invoices')
+      .post('/v1/sales-invoices')
       .set('Authorization', `Bearer ${acct}`)
       .send(draftBody())
       .expect(201);
     const id = (draft.body as { id: string }).id;
     const posted = await request(app.getHttpServer() as App)
-      .post(`/sales-invoices/${id}/post`)
+      .post(`/v1/sales-invoices/${id}/post`)
       .set('Authorization', `Bearer ${appr}`)
       .expect(200);
     const body = posted.body as {
@@ -151,30 +156,30 @@ describe('SalesInvoices (e2e)', () => {
 
   it('rejects an ACCOUNTANT trying to post (403)', async () => {
     const draft = await request(app.getHttpServer() as App)
-      .post('/sales-invoices')
+      .post('/v1/sales-invoices')
       .set('Authorization', `Bearer ${acct}`)
       .send(draftBody())
       .expect(201);
     const id = (draft.body as { id: string }).id;
     await request(app.getHttpServer() as App)
-      .post(`/sales-invoices/${id}/post`)
+      .post(`/v1/sales-invoices/${id}/post`)
       .set('Authorization', `Bearer ${acct}`)
       .expect(403);
   });
 
   it('voids a POSTED unpaid invoice (200) → VOID and reverses the GL entry', async () => {
     const draft = await request(app.getHttpServer() as App)
-      .post('/sales-invoices')
+      .post('/v1/sales-invoices')
       .set('Authorization', `Bearer ${acct}`)
       .send(draftBody())
       .expect(201);
     const id = (draft.body as { id: string }).id;
     await request(app.getHttpServer() as App)
-      .post(`/sales-invoices/${id}/post`)
+      .post(`/v1/sales-invoices/${id}/post`)
       .set('Authorization', `Bearer ${appr}`)
       .expect(200);
     const voided = await request(app.getHttpServer() as App)
-      .post(`/sales-invoices/${id}/void`)
+      .post(`/v1/sales-invoices/${id}/void`)
       .set('Authorization', `Bearer ${appr}`)
       .expect(200);
     expect((voided.body as { status: string }).status).toBe('VOID');
@@ -185,7 +190,7 @@ describe('SalesInvoices (e2e)', () => {
       .get(BusinessPartnersService)
       .create({ code: 'VEND-ONLY', name: 'V', isVendor: true });
     await request(app.getHttpServer() as App)
-      .post('/sales-invoices')
+      .post('/v1/sales-invoices')
       .set('Authorization', `Bearer ${acct}`)
       .send({ ...draftBody(), partnerId: vendor.id })
       .expect(422);

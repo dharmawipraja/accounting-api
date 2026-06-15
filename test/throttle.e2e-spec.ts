@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -25,6 +29,7 @@ describe('Throttle policy (e2e)', () => {
       .useValue(prisma)
       .compile();
     app = mod.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -51,7 +56,7 @@ describe('Throttle policy (e2e)', () => {
     const statuses: number[] = [];
     for (let i = 0; i < 11; i++) {
       const res = await request(app.getHttpServer() as App)
-        .post('/auth/login')
+        .post('/v1/auth/login')
         .send({ email: 'thr@test.io', password: 'wrong-password' });
       statuses.push(res.status);
     }
@@ -61,7 +66,7 @@ describe('Throttle policy (e2e)', () => {
 
   it('a normal low-volume authenticated request is not throttled', async () => {
     const res = await request(app.getHttpServer() as App)
-      .get('/auth/me')
+      .get('/v1/auth/me')
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
   });

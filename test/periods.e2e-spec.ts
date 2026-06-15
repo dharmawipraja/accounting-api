@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -28,6 +32,7 @@ describe('Periods (e2e)', () => {
       .useValue(prismaOverride)
       .compile();
     app = moduleRef.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -56,7 +61,7 @@ describe('Periods (e2e)', () => {
 
   it('generates 12 periods for fiscal year 2026', async () => {
     await request(app.getHttpServer() as App)
-      .post('/ledger/periods/generate')
+      .post('/v1/ledger/periods/generate')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ fiscalYear: 2026 })
       .expect(201);
@@ -95,7 +100,7 @@ describe('Periods (e2e)', () => {
     const march = periods.find((p) => p.name === '2026-03')!;
 
     await request(app.getHttpServer() as App)
-      .post(`/ledger/periods/${march.id}/close`)
+      .post(`/v1/ledger/periods/${march.id}/close`)
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
 
@@ -110,7 +115,7 @@ describe('Periods (e2e)', () => {
     const march = periods.find((p) => p.name === '2026-03')!;
 
     await request(app.getHttpServer() as App)
-      .post(`/ledger/periods/${march.id}/reopen`)
+      .post(`/v1/ledger/periods/${march.id}/reopen`)
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
 
@@ -123,7 +128,7 @@ describe('Periods (e2e)', () => {
 
   it('generatePeriods is idempotent (still 12 periods after second call)', async () => {
     await request(app.getHttpServer() as App)
-      .post('/ledger/periods/generate')
+      .post('/v1/ledger/periods/generate')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ fiscalYear: 2026 })
       .expect(201);

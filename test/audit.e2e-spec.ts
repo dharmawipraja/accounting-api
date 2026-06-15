@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -26,6 +30,7 @@ describe('Audit log (e2e)', () => {
       .useValue(prisma)
       .compile();
     app = moduleRef.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -62,7 +67,7 @@ describe('Audit log (e2e)', () => {
     const before = await prisma.client.auditLog.count();
     // A mutating POST that goes through the interceptor (create a partner via the admin).
     await request(app.getHttpServer() as App)
-      .post('/partners')
+      .post('/v1/partners')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ code: 'AUD-1', name: 'Audited', isCustomer: true })
       .expect(201);
@@ -81,7 +86,7 @@ describe('Audit log (e2e)', () => {
   it('does not record GET reads', async () => {
     const before = await prisma.client.auditLog.count();
     await request(app.getHttpServer() as App)
-      .get('/partners')
+      .get('/v1/partners')
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
     expect(await prisma.client.auditLog.count()).toBe(before);
@@ -89,11 +94,11 @@ describe('Audit log (e2e)', () => {
 
   it('GET /audit is ADMIN-only and returns entries', async () => {
     await request(app.getHttpServer() as App)
-      .get('/audit')
+      .get('/v1/audit')
       .set('Authorization', `Bearer ${viewerToken}`)
       .expect(403);
     const res = await request(app.getHttpServer() as App)
-      .get('/audit')
+      .get('/v1/audit')
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
     expect(Array.isArray(res.body)).toBe(true);
@@ -102,11 +107,11 @@ describe('Audit log (e2e)', () => {
 
   it('rejects a non-logged ?method filter with 400, accepts a logged verb', async () => {
     await request(app.getHttpServer() as App)
-      .get('/audit?method=GET')
+      .get('/v1/audit?method=GET')
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(400); // GET is never logged — not in the allowed set
     await request(app.getHttpServer() as App)
-      .get('/audit?method=POST')
+      .get('/v1/audit?method=POST')
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
   });

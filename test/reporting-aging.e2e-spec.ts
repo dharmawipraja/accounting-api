@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -40,6 +44,7 @@ describe('Reporting AR/AP aging (e2e)', () => {
       .useValue(prisma)
       .compile();
     app = moduleRef.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -154,7 +159,7 @@ describe('Reporting AR/AP aging (e2e)', () => {
       .set('Authorization', `Bearer ${viewerToken}`);
 
   it('AR aging: first invoice outstanding 610,000 in the 31-60 bucket; second (future-dated) absent; ties to the AR control', async () => {
-    const res = await get('/reports/ar-aging?asOf=2026-03-15').expect(200);
+    const res = await get('/v1/reports/ar-aging?asOf=2026-03-15').expect(200);
     const body = res.body as {
       partners: {
         documents: {
@@ -223,7 +228,7 @@ describe('Reporting AR/AP aging (e2e)', () => {
     });
     await payments.post(draftPay.id, apprUserId);
 
-    const res = await get('/reports/ap-aging?asOf=2026-03-15').expect(200);
+    const res = await get('/v1/reports/ap-aging?asOf=2026-03-15').expect(200);
     const body = res.body as {
       partners: {
         documents: {

@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -22,6 +26,7 @@ describe('traceId correlation (e2e)', () => {
       .useValue(prisma)
       .compile();
     app = mod.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -66,7 +71,7 @@ describe('traceId correlation (e2e)', () => {
     // an unauthenticated protected route -> 401 envelope; the traceId MUST be the
     // same id echoed in the response header (that correlation is the whole point).
     const res = await request(app.getHttpServer() as App)
-      .get('/reports/balance-sheet')
+      .get('/v1/reports/balance-sheet')
       .set('X-Request-Id', 'trace-corr-xyz')
       .expect(401);
     expect(res.headers['x-request-id']).toBe('trace-corr-xyz');

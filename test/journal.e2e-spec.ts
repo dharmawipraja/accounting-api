@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -35,6 +39,7 @@ describe('JournalEntries (e2e)', () => {
       .compile();
 
     app = moduleRef.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -100,7 +105,7 @@ describe('JournalEntries (e2e)', () => {
 
   it('ACCOUNTANT creates a DRAFT journal entry (201, status=DRAFT, entryNumber=null)', async () => {
     const res = await request(app.getHttpServer() as App)
-      .post('/ledger/journal-entries')
+      .post('/v1/ledger/journal-entries')
       .set('Authorization', `Bearer ${accountantToken}`)
       .send(balancedBody())
       .expect(201);
@@ -120,7 +125,7 @@ describe('JournalEntries (e2e)', () => {
   it('APPROVER posts a DRAFT in-place (200, same id, status=POSTED, entryNumber>0)', async () => {
     // ACCOUNTANT creates draft
     const draftRes = await request(app.getHttpServer() as App)
-      .post('/ledger/journal-entries')
+      .post('/v1/ledger/journal-entries')
       .set('Authorization', `Bearer ${accountantToken}`)
       .send(balancedBody())
       .expect(201);
@@ -128,7 +133,7 @@ describe('JournalEntries (e2e)', () => {
 
     // APPROVER posts it
     const postRes = await request(app.getHttpServer() as App)
-      .post(`/ledger/journal-entries/${draftId}/post`)
+      .post(`/v1/ledger/journal-entries/${draftId}/post`)
       .set('Authorization', `Bearer ${approverToken}`)
       .expect(200);
 
@@ -147,7 +152,7 @@ describe('JournalEntries (e2e)', () => {
   it('ACCOUNTANT POST /:id/post is rejected with 403 (role guard)', async () => {
     // ACCOUNTANT creates draft
     const draftRes = await request(app.getHttpServer() as App)
-      .post('/ledger/journal-entries')
+      .post('/v1/ledger/journal-entries')
       .set('Authorization', `Bearer ${accountantToken}`)
       .send(balancedBody())
       .expect(201);
@@ -155,7 +160,7 @@ describe('JournalEntries (e2e)', () => {
 
     // ACCOUNTANT tries to post — should be 403
     await request(app.getHttpServer() as App)
-      .post(`/ledger/journal-entries/${draftId}/post`)
+      .post(`/v1/ledger/journal-entries/${draftId}/post`)
       .set('Authorization', `Bearer ${accountantToken}`)
       .expect(403);
   });
@@ -163,7 +168,7 @@ describe('JournalEntries (e2e)', () => {
   it('ACCOUNTANT soft-deletes a DRAFT (204) then GET returns 404', async () => {
     // ACCOUNTANT creates draft
     const draftRes = await request(app.getHttpServer() as App)
-      .post('/ledger/journal-entries')
+      .post('/v1/ledger/journal-entries')
       .set('Authorization', `Bearer ${accountantToken}`)
       .send(balancedBody())
       .expect(201);
@@ -171,20 +176,20 @@ describe('JournalEntries (e2e)', () => {
 
     // Delete it
     await request(app.getHttpServer() as App)
-      .delete(`/ledger/journal-entries/${draftId}`)
+      .delete(`/v1/ledger/journal-entries/${draftId}`)
       .set('Authorization', `Bearer ${accountantToken}`)
       .expect(204);
 
     // GET should 404
     await request(app.getHttpServer() as App)
-      .get(`/ledger/journal-entries/${draftId}`)
+      .get(`/v1/ledger/journal-entries/${draftId}`)
       .set('Authorization', `Bearer ${accountantToken}`)
       .expect(404);
   });
 
   it('double-posting the same draft posts once with no number gap', async () => {
     const draftRes = await request(app.getHttpServer() as App)
-      .post('/ledger/journal-entries')
+      .post('/v1/ledger/journal-entries')
       .set('Authorization', `Bearer ${accountantToken}`)
       .send(balancedBody())
       .expect(201);
@@ -195,10 +200,10 @@ describe('JournalEntries (e2e)', () => {
     });
     const both = await Promise.allSettled([
       request(app.getHttpServer() as App)
-        .post(`/ledger/journal-entries/${draftId}/post`)
+        .post(`/v1/ledger/journal-entries/${draftId}/post`)
         .set('Authorization', `Bearer ${approverToken}`),
       request(app.getHttpServer() as App)
-        .post(`/ledger/journal-entries/${draftId}/post`)
+        .post(`/v1/ledger/journal-entries/${draftId}/post`)
         .set('Authorization', `Bearer ${approverToken}`),
     ]);
     const codes = both.map((r) =>
@@ -217,7 +222,7 @@ describe('JournalEntries (e2e)', () => {
     await app.get(CompanyService).update({ segregationOfDutiesEnabled: false });
 
     const res = await request(app.getHttpServer() as App)
-      .post('/ledger/journal-entries?post=true')
+      .post('/v1/ledger/journal-entries?post=true')
       .set('Authorization', `Bearer ${approverToken}`)
       .send(balancedBody())
       .expect(201);
@@ -235,7 +240,7 @@ describe('JournalEntries (e2e)', () => {
   it('blocks an ACCOUNTANT from create-and-post (?post=true) with 403', async () => {
     await app.get(CompanyService).update({ segregationOfDutiesEnabled: false });
     await request(app.getHttpServer() as App)
-      .post('/ledger/journal-entries?post=true')
+      .post('/v1/ledger/journal-entries?post=true')
       .set('Authorization', `Bearer ${accountantToken}`)
       .send(balancedBody())
       .expect(403);
@@ -246,13 +251,13 @@ describe('JournalEntries (e2e)', () => {
     const key = `idem-${Date.now()}`;
 
     const first = await request(app.getHttpServer() as App)
-      .post('/ledger/journal-entries?post=true')
+      .post('/v1/ledger/journal-entries?post=true')
       .set('Authorization', `Bearer ${approverToken}`)
       .set('Idempotency-Key', key)
       .send(balancedBody())
       .expect(201);
     const second = await request(app.getHttpServer() as App)
-      .post('/ledger/journal-entries?post=true')
+      .post('/v1/ledger/journal-entries?post=true')
       .set('Authorization', `Bearer ${approverToken}`)
       .set('Idempotency-Key', key)
       .send(balancedBody())
@@ -273,12 +278,12 @@ describe('JournalEntries (e2e)', () => {
     });
     const both = await Promise.allSettled([
       request(app.getHttpServer() as App)
-        .post('/ledger/journal-entries?post=true')
+        .post('/v1/ledger/journal-entries?post=true')
         .set('Authorization', `Bearer ${approverToken}`)
         .set('Idempotency-Key', key)
         .send(payload),
       request(app.getHttpServer() as App)
-        .post('/ledger/journal-entries?post=true')
+        .post('/v1/ledger/journal-entries?post=true')
         .set('Authorization', `Bearer ${approverToken}`)
         .set('Idempotency-Key', key)
         .send(payload),
@@ -296,7 +301,7 @@ describe('JournalEntries (e2e)', () => {
 
   it('opening balances auto-plug credits Saldo Awal (3-9000) (200, sourceType=OPENING)', async () => {
     const res = await request(app.getHttpServer() as App)
-      .post('/ledger/opening-balances')
+      .post('/v1/ledger/opening-balances')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         date: '2026-01-01',

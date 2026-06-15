@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -33,6 +37,7 @@ describe('UUID param validation (e2e)', () => {
       .useValue(prisma)
       .compile();
     app = moduleRef.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
@@ -65,18 +70,18 @@ describe('UUID param validation (e2e)', () => {
 
   // --- sales-invoices ---
   it('rejects a malformed :id with 400', () =>
-    get('/sales-invoices/not-a-uuid').expect(400));
+    get('/v1/sales-invoices/not-a-uuid').expect(400));
 
   it('returns 404 for a well-formed but missing id', () =>
-    get('/sales-invoices/00000000-0000-0000-0000-000000000000').expect(404));
+    get('/v1/sales-invoices/00000000-0000-0000-0000-000000000000').expect(404));
 
   // --- spot-check one per controller family ---
   it('accounts: malformed id -> 400', () =>
-    get('/ledger/accounts/not-a-uuid').expect(400));
+    get('/v1/ledger/accounts/not-a-uuid').expect(400));
 
   it('tax-codes: malformed id -> 400', () =>
-    get('/tax/codes/not-a-uuid').expect(400));
+    get('/v1/tax/codes/not-a-uuid').expect(400));
 
   it('payments: malformed id -> 400', () =>
-    get('/payments/not-a-uuid').expect(400));
+    get('/v1/payments/not-a-uuid').expect(400));
 });

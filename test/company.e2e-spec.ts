@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -26,6 +30,7 @@ describe('Company settings (e2e)', () => {
       .useValue(prismaOverride)
       .compile();
     app = moduleRef.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -52,7 +57,7 @@ describe('Company settings (e2e)', () => {
 
   it('returns the seeded singleton with SoD enabled by default', async () => {
     const res = await request(app.getHttpServer() as App)
-      .get('/company/settings')
+      .get('/v1/company/settings')
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
     const body = res.body as {
@@ -67,7 +72,7 @@ describe('Company settings (e2e)', () => {
 
   it('lets an admin toggle segregation of duties', async () => {
     await request(app.getHttpServer() as App)
-      .patch('/company/settings')
+      .patch('/v1/company/settings')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ segregationOfDutiesEnabled: false })
       .expect(200)

@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -27,6 +31,7 @@ describe('RBAC (e2e)', () => {
       .useValue(prismaOverride)
       .compile();
     app = moduleRef.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -59,14 +64,14 @@ describe('RBAC (e2e)', () => {
 
   it('allows an ADMIN to access an admin-only route', () => {
     return request(app.getHttpServer() as App)
-      .get('/auth/admin-only')
+      .get('/v1/auth/admin-only')
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
   });
 
   it('forbids a VIEWER from an admin-only route (403)', () => {
     return request(app.getHttpServer() as App)
-      .get('/auth/admin-only')
+      .get('/v1/auth/admin-only')
       .set('Authorization', `Bearer ${viewerToken}`)
       .expect(403)
       .expect((r) => {
@@ -77,7 +82,7 @@ describe('RBAC (e2e)', () => {
 
   it('returns 401 (not 403) when no token is sent to an admin-only route', () => {
     return request(app.getHttpServer() as App)
-      .get('/auth/admin-only')
+      .get('/v1/auth/admin-only')
       .expect(401);
   });
 });

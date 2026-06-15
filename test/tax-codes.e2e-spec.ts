@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -29,6 +33,7 @@ describe('TaxCodes (e2e)', () => {
       .useValue(prisma)
       .compile();
     app = moduleRef.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -58,7 +63,7 @@ describe('TaxCodes (e2e)', () => {
   it('seeds the 6 standard tax codes on boot (idempotent)', async () => {
     await app.get(TaxCodesService).seedIfEmpty();
     const res = await request(app.getHttpServer() as App)
-      .get('/tax/codes')
+      .get('/v1/tax/codes')
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
     const codes = res.body as { code: string }[];
@@ -75,7 +80,7 @@ describe('TaxCodes (e2e)', () => {
 
   it('creates a tax code with a matching-normal-balance account (201)', async () => {
     const res = await request(app.getHttpServer() as App)
-      .post('/tax/codes')
+      .post('/v1/tax/codes')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         code: 'PPN-OUT-12',
@@ -90,7 +95,7 @@ describe('TaxCodes (e2e)', () => {
 
   it('rejects a PPN_OUTPUT code pointed at a DEBIT-normal account (422)', async () => {
     await request(app.getHttpServer() as App)
-      .post('/tax/codes')
+      .post('/v1/tax/codes')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         code: 'BAD-SIDE',
@@ -104,7 +109,7 @@ describe('TaxCodes (e2e)', () => {
 
   it('rejects a rate outside (0,1) (422)', async () => {
     await request(app.getHttpServer() as App)
-      .post('/tax/codes')
+      .post('/v1/tax/codes')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         code: 'BAD-RATE',
@@ -125,12 +130,12 @@ describe('TaxCodes (e2e)', () => {
       taxAccountId: ppnKeluaranId,
     };
     await request(app.getHttpServer() as App)
-      .post('/tax/codes')
+      .post('/v1/tax/codes')
       .set('Authorization', `Bearer ${adminToken}`)
       .send(body)
       .expect(201);
     await request(app.getHttpServer() as App)
-      .post('/tax/codes')
+      .post('/v1/tax/codes')
       .set('Authorization', `Bearer ${adminToken}`)
       .send(body)
       .expect(409);
@@ -138,7 +143,7 @@ describe('TaxCodes (e2e)', () => {
 
   it('soft-deletes a tax code (204) then it disappears from the list', async () => {
     const created = await request(app.getHttpServer() as App)
-      .post('/tax/codes')
+      .post('/v1/tax/codes')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         code: 'TEMP-DEL',
@@ -150,11 +155,11 @@ describe('TaxCodes (e2e)', () => {
       .expect(201);
     const id = (created.body as { id: string }).id;
     await request(app.getHttpServer() as App)
-      .delete(`/tax/codes/${id}`)
+      .delete(`/v1/tax/codes/${id}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(204);
     const list = await request(app.getHttpServer() as App)
-      .get('/tax/codes')
+      .get('/v1/tax/codes')
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
     expect((list.body as { id: string }[]).some((c) => c.id === id)).toBe(

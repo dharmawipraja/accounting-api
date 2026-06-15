@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
@@ -36,6 +36,9 @@ async function bootstrap(): Promise<void> {
   );
   app.useGlobalFilters(new AllExceptionsFilter());
   app.enableShutdownHooks();
+  // URI versioning — every business route is served under /v1 (hard cutover).
+  // Operational probes (/health, /ready, /metrics) opt out via @Version(VERSION_NEUTRAL).
+  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 
   // Harden HTTP server timeouts (the app sits behind Caddy in production).
   const server = app.getHttpServer();

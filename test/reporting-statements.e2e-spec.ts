@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -30,6 +34,7 @@ describe('Reporting statements (e2e)', () => {
       .useValue(prisma)
       .compile();
     app = moduleRef.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -107,7 +112,9 @@ describe('Reporting statements (e2e)', () => {
       .set('Authorization', `Bearer ${token}`);
 
   it('balance sheet balances (Assets = Liabilities + Equity) and includes current earnings', async () => {
-    const res = await get('/reports/balance-sheet?asOf=2026-12-31').expect(200);
+    const res = await get('/v1/reports/balance-sheet?asOf=2026-12-31').expect(
+      200,
+    );
     const body = res.body as {
       totalAssets: string;
       totalLiabilities: string;
@@ -124,7 +131,7 @@ describe('Reporting statements (e2e)', () => {
 
   it('income statement nets to 1,500,000 and ties to the balance sheet earnings', async () => {
     const res = await get(
-      '/reports/income-statement?from=2026-01-01&to=2026-12-31',
+      '/v1/reports/income-statement?from=2026-01-01&to=2026-12-31',
     ).expect(200);
     const body = res.body as { revenue: string; netIncome: string };
     expect(body.revenue).toBe('2000000.0000');
@@ -132,8 +139,8 @@ describe('Reporting statements (e2e)', () => {
   });
 
   it('rejects from > to (422) and is reachable by a VIEWER', async () => {
-    await get('/reports/income-statement?from=2026-12-31&to=2026-01-01').expect(
-      422,
-    );
+    await get(
+      '/v1/reports/income-statement?from=2026-12-31&to=2026-01-01',
+    ).expect(422);
   });
 });

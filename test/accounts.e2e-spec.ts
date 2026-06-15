@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -26,6 +30,7 @@ describe('Accounts (e2e)', () => {
       .useValue(prismaOverride)
       .compile();
     app = moduleRef.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -52,7 +57,7 @@ describe('Accounts (e2e)', () => {
 
   it('seeds the SAK chart with parent links resolved', async () => {
     const res = await request(app.getHttpServer() as App)
-      .get('/ledger/accounts')
+      .get('/v1/ledger/accounts')
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
     const codes = (res.body as { code: string }[]).map((a) => a.code);
@@ -72,7 +77,7 @@ describe('Accounts (e2e)', () => {
 
   it('creates a postable account', async () => {
     await request(app.getHttpServer() as App)
-      .post('/ledger/accounts')
+      .post('/v1/ledger/accounts')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         code: '1-1600',
@@ -87,7 +92,7 @@ describe('Accounts (e2e)', () => {
 
   it('rejects a duplicate active code (409)', async () => {
     await request(app.getHttpServer() as App)
-      .post('/ledger/accounts')
+      .post('/v1/ledger/accounts')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         code: '1-1000',
@@ -101,7 +106,7 @@ describe('Accounts (e2e)', () => {
 
   it('rejects posting-account parent (422)', async () => {
     await request(app.getHttpServer() as App)
-      .post('/ledger/accounts')
+      .post('/v1/ledger/accounts')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         code: '1-1700',
@@ -116,7 +121,7 @@ describe('Accounts (e2e)', () => {
 
   it('rejects incoherent type/subtype pair (422)', async () => {
     await request(app.getHttpServer() as App)
-      .post('/ledger/accounts')
+      .post('/v1/ledger/accounts')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         code: '1-9999',
@@ -130,7 +135,7 @@ describe('Accounts (e2e)', () => {
 
   it('deactivates an account (200, isActive false)', async () => {
     const created = await request(app.getHttpServer() as App)
-      .post('/ledger/accounts')
+      .post('/v1/ledger/accounts')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         code: '1-1610',
@@ -143,7 +148,7 @@ describe('Accounts (e2e)', () => {
       .expect(201);
     const id = (created.body as { id: string }).id;
     await request(app.getHttpServer() as App)
-      .post(`/ledger/accounts/${id}/deactivate`)
+      .post(`/v1/ledger/accounts/${id}/deactivate`)
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200)
       .expect((r) =>
@@ -153,7 +158,7 @@ describe('Accounts (e2e)', () => {
 
   it('soft-deletes an account (204) then hides it (404)', async () => {
     const created = await request(app.getHttpServer() as App)
-      .post('/ledger/accounts')
+      .post('/v1/ledger/accounts')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
         code: '1-1620',
@@ -166,11 +171,11 @@ describe('Accounts (e2e)', () => {
       .expect(201);
     const id = (created.body as { id: string }).id;
     await request(app.getHttpServer() as App)
-      .delete(`/ledger/accounts/${id}`)
+      .delete(`/v1/ledger/accounts/${id}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(204);
     await request(app.getHttpServer() as App)
-      .get(`/ledger/accounts/${id}`)
+      .get(`/v1/ledger/accounts/${id}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(404);
   });

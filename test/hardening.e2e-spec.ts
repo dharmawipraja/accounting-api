@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import helmet from 'helmet';
@@ -23,6 +27,7 @@ describe('Hardening (e2e)', () => {
       .useValue(prismaOverride)
       .compile();
     app = moduleRef.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.use(helmet());
     app.useGlobalPipes(
       new ValidationPipe({
@@ -72,7 +77,7 @@ describe('Hardening (e2e)', () => {
 
   it('rejects unknown body properties (400)', () => {
     return request(app.getHttpServer() as App)
-      .post('/auth/login')
+      .post('/v1/auth/login')
       .send({ email: 'a@b.com', password: 'secret123', injected: 'x' })
       .expect(400);
   });

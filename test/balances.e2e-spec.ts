@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -32,6 +36,7 @@ describe('Balances (e2e)', () => {
       .useValue(prisma)
       .compile();
     app = moduleRef.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -78,7 +83,7 @@ describe('Balances (e2e)', () => {
 
   it('trial balance always nets to zero', async () => {
     const res = await request(app.getHttpServer() as App)
-      .get('/ledger/trial-balance?asOf=2026-12-31')
+      .get('/v1/ledger/trial-balance?asOf=2026-12-31')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     const body = res.body as { totalDebit: string; totalCredit: string };
@@ -89,7 +94,7 @@ describe('Balances (e2e)', () => {
 
   it('reports a single account balance', async () => {
     const res = await request(app.getHttpServer() as App)
-      .get(`/ledger/accounts/${kasId}/balance?asOf=2026-12-31`)
+      .get(`/v1/ledger/accounts/${kasId}/balance?asOf=2026-12-31`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     const body = res.body as { balance: string };
@@ -100,7 +105,7 @@ describe('Balances (e2e)', () => {
     const posting = app.get(PostingService);
     const kasBalance = async (): Promise<string> => {
       const r = await request(app.getHttpServer() as App)
-        .get(`/ledger/accounts/${kasId}/balance?asOf=2026-12-31`)
+        .get(`/v1/ledger/accounts/${kasId}/balance?asOf=2026-12-31`)
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
       return (r.body as { balance: string }).balance;
@@ -127,7 +132,7 @@ describe('Balances (e2e)', () => {
 
     // Trial balance still nets to zero.
     const tb = await request(app.getHttpServer() as App)
-      .get('/ledger/trial-balance?asOf=2026-12-31')
+      .get('/v1/ledger/trial-balance?asOf=2026-12-31')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     const body = tb.body as { totalDebit: string; totalCredit: string };

@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -31,6 +35,7 @@ describe('Reporting general ledger (e2e)', () => {
       .useValue(prisma)
       .compile();
     app = moduleRef.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -110,7 +115,7 @@ describe('Reporting general ledger (e2e)', () => {
 
   it('returns opening balance, 3 lines with running balances, and correct closing balance for Kas', async () => {
     const res = await get(
-      `/reports/general-ledger?accountId=${kasId}&from=2026-01-01&to=2026-12-31`,
+      `/v1/reports/general-ledger?accountId=${kasId}&from=2026-01-01&to=2026-12-31`,
     ).expect(200);
     const body = res.body as {
       openingBalance: string;
@@ -156,13 +161,13 @@ describe('Reporting general ledger (e2e)', () => {
 
   it('rejects from > to with 422', async () => {
     await get(
-      `/reports/general-ledger?accountId=${kasId}&from=2026-12-31&to=2026-01-01`,
+      `/v1/reports/general-ledger?accountId=${kasId}&from=2026-12-31&to=2026-01-01`,
     ).expect(422);
   });
 
   it('returns 404 for an unknown accountId', async () => {
     await get(
-      '/reports/general-ledger?accountId=00000000-0000-0000-0000-000000000000&from=2026-01-01&to=2026-12-31',
+      '/v1/reports/general-ledger?accountId=00000000-0000-0000-0000-000000000000&from=2026-01-01&to=2026-12-31',
     ).expect(404);
   });
 });

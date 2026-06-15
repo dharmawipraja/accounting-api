@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -29,7 +33,7 @@ describe('Payments (e2e)', () => {
   /** Create + post a sales invoice (total 1,110,000) for a partner; returns its id. */
   const makePostedInvoice = async (partnerId: string): Promise<string> => {
     const draft = await request(server())
-      .post('/sales-invoices')
+      .post('/v1/sales-invoices')
       .set('Authorization', `Bearer ${acct}`)
       .send({
         partnerId,
@@ -48,7 +52,7 @@ describe('Payments (e2e)', () => {
       .expect(201);
     const id = (draft.body as { id: string }).id;
     await request(server())
-      .post(`/sales-invoices/${id}/post`)
+      .post(`/v1/sales-invoices/${id}/post`)
       .set('Authorization', `Bearer ${appr}`)
       .expect(200);
     return id;
@@ -70,6 +74,7 @@ describe('Payments (e2e)', () => {
       .useValue(prisma)
       .compile();
     app = moduleRef.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -113,7 +118,7 @@ describe('Payments (e2e)', () => {
 
     // First receipt: allocate 600000.
     const r1 = await request(server())
-      .post('/payments')
+      .post('/v1/payments')
       .set('Authorization', `Bearer ${acct}`)
       .send({
         direction: 'RECEIPT',
@@ -126,7 +131,7 @@ describe('Payments (e2e)', () => {
     const p1 = r1.body as { id: string; amount: string };
     expect(p1.amount).toBe('600000.0000');
     const posted1 = await request(server())
-      .post(`/payments/${p1.id}/post`)
+      .post(`/v1/payments/${p1.id}/post`)
       .set('Authorization', `Bearer ${appr}`)
       .expect(200);
     const posted1Body = posted1.body as {
@@ -137,7 +142,7 @@ describe('Payments (e2e)', () => {
     expect(posted1Body.status).toBe('POSTED');
 
     let inv = await request(server())
-      .get(`/sales-invoices/${invoiceId}`)
+      .get(`/v1/sales-invoices/${invoiceId}`)
       .set('Authorization', `Bearer ${acct}`)
       .expect(200);
     expect((inv.body as { paymentStatus: string }).paymentStatus).toBe(
@@ -161,7 +166,7 @@ describe('Payments (e2e)', () => {
 
     // Second receipt: allocate the remaining 510000 → PAID.
     const r2 = await request(server())
-      .post('/payments')
+      .post('/v1/payments')
       .set('Authorization', `Bearer ${acct}`)
       .send({
         direction: 'RECEIPT',
@@ -173,12 +178,12 @@ describe('Payments (e2e)', () => {
       .expect(201);
     const p2 = r2.body as { id: string };
     await request(server())
-      .post(`/payments/${p2.id}/post`)
+      .post(`/v1/payments/${p2.id}/post`)
       .set('Authorization', `Bearer ${appr}`)
       .expect(200);
 
     inv = await request(server())
-      .get(`/sales-invoices/${invoiceId}`)
+      .get(`/v1/sales-invoices/${invoiceId}`)
       .set('Authorization', `Bearer ${acct}`)
       .expect(200);
     expect((inv.body as { paymentStatus: string }).paymentStatus).toBe('PAID');
@@ -189,7 +194,7 @@ describe('Payments (e2e)', () => {
     const customerId = await newCustomer('CUST-PAY-ZERO');
     const invoiceId = await makePostedInvoice(customerId);
     await request(server())
-      .post('/payments')
+      .post('/v1/payments')
       .set('Authorization', `Bearer ${acct}`)
       .send({
         direction: 'RECEIPT',
@@ -205,7 +210,7 @@ describe('Payments (e2e)', () => {
     const customerId = await newCustomer('CUST-PAY-OVER');
     const invoiceId = await makePostedInvoice(customerId);
     await request(server())
-      .post('/payments')
+      .post('/v1/payments')
       .set('Authorization', `Bearer ${acct}`)
       .send({
         direction: 'RECEIPT',
@@ -223,7 +228,7 @@ describe('Payments (e2e)', () => {
 
     // Fully pay the invoice.
     const r = await request(server())
-      .post('/payments')
+      .post('/v1/payments')
       .set('Authorization', `Bearer ${acct}`)
       .send({
         direction: 'RECEIPT',
@@ -235,24 +240,24 @@ describe('Payments (e2e)', () => {
       .expect(201);
     const paymentId = (r.body as { id: string }).id;
     await request(server())
-      .post(`/payments/${paymentId}/post`)
+      .post(`/v1/payments/${paymentId}/post`)
       .set('Authorization', `Bearer ${appr}`)
       .expect(200);
 
     let inv = await request(server())
-      .get(`/sales-invoices/${invoiceId}`)
+      .get(`/v1/sales-invoices/${invoiceId}`)
       .set('Authorization', `Bearer ${acct}`)
       .expect(200);
     expect((inv.body as { paymentStatus: string }).paymentStatus).toBe('PAID');
 
     // Void the payment → invoice restored to UNPAID, outstanding == total.
     await request(server())
-      .post(`/payments/${paymentId}/void`)
+      .post(`/v1/payments/${paymentId}/void`)
       .set('Authorization', `Bearer ${appr}`)
       .expect(200);
 
     inv = await request(server())
-      .get(`/sales-invoices/${invoiceId}`)
+      .get(`/v1/sales-invoices/${invoiceId}`)
       .set('Authorization', `Bearer ${acct}`)
       .expect(200);
     expect((inv.body as { paymentStatus: string }).paymentStatus).toBe(
@@ -264,7 +269,7 @@ describe('Payments (e2e)', () => {
 
     // The now-unpaid invoice can be voided.
     await request(server())
-      .post(`/sales-invoices/${invoiceId}/void`)
+      .post(`/v1/sales-invoices/${invoiceId}/void`)
       .set('Authorization', `Bearer ${appr}`)
       .expect(200);
   });
@@ -274,7 +279,7 @@ describe('Payments (e2e)', () => {
     const invoiceId = await makePostedInvoice(customerId); // total 1,110,000
     const draft = async (): Promise<string> => {
       const res = await request(server())
-        .post('/payments')
+        .post('/v1/payments')
         .set('Authorization', `Bearer ${acct}`)
         .send({
           direction: 'RECEIPT',
@@ -290,10 +295,10 @@ describe('Payments (e2e)', () => {
     const p2 = await draft();
     const results = await Promise.allSettled([
       request(server())
-        .post(`/payments/${p1}/post`)
+        .post(`/v1/payments/${p1}/post`)
         .set('Authorization', `Bearer ${appr}`),
       request(server())
-        .post(`/payments/${p2}/post`)
+        .post(`/v1/payments/${p2}/post`)
         .set('Authorization', `Bearer ${appr}`),
     ]);
     const codes = results.map((r) =>
@@ -311,7 +316,7 @@ describe('Payments (e2e)', () => {
     expect(postedCount).toBe(1);
     // The invoice is paid exactly once — no double-settlement, no negative outstanding.
     const inv = await request(server())
-      .get(`/sales-invoices/${invoiceId}`)
+      .get(`/v1/sales-invoices/${invoiceId}`)
       .set('Authorization', `Bearer ${appr}`)
       .expect(200);
     const body = inv.body as { paymentStatus: string; outstanding: string };
@@ -325,7 +330,7 @@ describe('Payments (e2e)', () => {
 
     // Partial receipt of 400000 → this invoice outstanding 710000.
     const r = await request(server())
-      .post('/payments')
+      .post('/v1/payments')
       .set('Authorization', `Bearer ${acct}`)
       .send({
         direction: 'RECEIPT',
@@ -337,7 +342,7 @@ describe('Payments (e2e)', () => {
       .expect(201);
     const paymentId = (r.body as { id: string }).id;
     await request(server())
-      .post(`/payments/${paymentId}/post`)
+      .post(`/v1/payments/${paymentId}/post`)
       .set('Authorization', `Bearer ${appr}`)
       .expect(200);
 

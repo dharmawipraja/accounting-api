@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -33,6 +37,7 @@ describe('List-filter validation (e2e)', () => {
       .useValue(prisma)
       .compile();
     app = moduleRef.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
@@ -65,13 +70,13 @@ describe('List-filter validation (e2e)', () => {
   });
 
   it('rejects a bad status filter with 400', () =>
-    get('/sales-invoices?status=GARBAGE').expect(400));
+    get('/v1/sales-invoices?status=GARBAGE').expect(400));
   it('accepts a valid status filter', () =>
-    get('/sales-invoices?status=POSTED').expect(200));
+    get('/v1/sales-invoices?status=POSTED').expect(200));
   it('rejects a non-uuid partnerId with 400', () =>
-    get('/sales-invoices?partnerId=not-a-uuid').expect(400));
+    get('/v1/sales-invoices?partnerId=not-a-uuid').expect(400));
   it('rejects a bad payment direction with 400', () =>
-    get('/payments?direction=GARBAGE').expect(400));
+    get('/v1/payments?direction=GARBAGE').expect(400));
   it('rejects a bad asOf on trial-balance with 400', () =>
-    get('/ledger/trial-balance?asOf=notadate').expect(400));
+    get('/v1/ledger/trial-balance?asOf=notadate').expect(400));
 });

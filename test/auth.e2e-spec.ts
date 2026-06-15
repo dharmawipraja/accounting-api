@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -30,6 +34,7 @@ describe('Auth (e2e)', () => {
       .compile();
 
     app = moduleRef.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -53,14 +58,14 @@ describe('Auth (e2e)', () => {
 
   it('rejects login with wrong password (401)', () => {
     return request(app.getHttpServer() as App)
-      .post('/auth/login')
+      .post('/v1/auth/login')
       .send({ email: 'login@example.com', password: 'wrongpass' })
       .expect(401);
   });
 
   it('logs in and accesses a protected route', async () => {
     const res = await request(app.getHttpServer() as App)
-      .post('/auth/login')
+      .post('/v1/auth/login')
       .send({ email: 'login@example.com', password: 'secret123' })
       .expect(200);
     const tokens = res.body as TokenPair;
@@ -68,7 +73,7 @@ describe('Auth (e2e)', () => {
     expect(tokens.refreshToken).toBeDefined();
 
     await request(app.getHttpServer() as App)
-      .get('/auth/me')
+      .get('/v1/auth/me')
       .set('Authorization', `Bearer ${tokens.accessToken}`)
       .expect(200)
       .expect((r) => {
@@ -80,26 +85,26 @@ describe('Auth (e2e)', () => {
 
   it('blocks a protected route without a token (401)', () => {
     return request(app.getHttpServer() as App)
-      .get('/auth/me')
+      .get('/v1/auth/me')
       .expect(401);
   });
 
   it('rejects login for an unknown email (401)', () => {
     return request(app.getHttpServer() as App)
-      .post('/auth/login')
+      .post('/v1/auth/login')
       .send({ email: 'nobody@example.com', password: 'secret123' })
       .expect(401);
   });
 
   it('refreshes tokens with a valid refresh token (200)', async () => {
     const login = await request(app.getHttpServer() as App)
-      .post('/auth/login')
+      .post('/v1/auth/login')
       .send({ email: 'login@example.com', password: 'secret123' })
       .expect(200);
     const { refreshToken } = login.body as TokenPair;
 
     const res = await request(app.getHttpServer() as App)
-      .post('/auth/refresh')
+      .post('/v1/auth/refresh')
       .send({ refreshToken })
       .expect(200);
     const tokens = res.body as TokenPair;
@@ -107,14 +112,14 @@ describe('Auth (e2e)', () => {
     expect(tokens.refreshToken).toBeDefined();
 
     await request(app.getHttpServer() as App)
-      .get('/auth/me')
+      .get('/v1/auth/me')
       .set('Authorization', `Bearer ${tokens.accessToken}`)
       .expect(200);
   });
 
   it('rejects an invalid refresh token (401)', () => {
     return request(app.getHttpServer() as App)
-      .post('/auth/refresh')
+      .post('/v1/auth/refresh')
       .send({ refreshToken: 'not-a-valid-token' })
       .expect(401);
   });

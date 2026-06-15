@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, VersioningType } from '@nestjs/common';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { AccountsService } from '../src/ledger/accounts/accounts.service';
@@ -33,6 +33,7 @@ describe('Year-end close (e2e)', () => {
       .useValue(prisma)
       .compile();
     app = moduleRef.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     await app.init();
     await app.get(CompanyService).seedIfEmpty();
     await app.get(AccountsService).seedIfEmpty();

@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -30,6 +34,7 @@ describe('Tax calculate (e2e)', () => {
       .useValue(prisma)
       .compile();
     app = moduleRef.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -64,7 +69,7 @@ describe('Tax calculate (e2e)', () => {
 
   it('purchase: DPP 1,000,000 + PPN Masukan 11% + PPh 23 payable 2% → balanced', async () => {
     const res = await request(app.getHttpServer() as App)
-      .post('/tax/calculate')
+      .post('/v1/tax/calculate')
       .set('Authorization', `Bearer ${token}`)
       .send({
         nature: 'PURCHASE',
@@ -101,7 +106,7 @@ describe('Tax calculate (e2e)', () => {
 
   it('sale: DPP 1,000,000 + PPN Keluaran 11% + customer withholds PPh 23 2% → balanced', async () => {
     const res = await request(app.getHttpServer() as App)
-      .post('/tax/calculate')
+      .post('/v1/tax/calculate')
       .set('Authorization', `Bearer ${token}`)
       .send({
         nature: 'SALE',
@@ -131,7 +136,7 @@ describe('Tax calculate (e2e)', () => {
 
   it('rejects a PPN_INPUT code on a SALE (422 kind-vs-nature)', async () => {
     await request(app.getHttpServer() as App)
-      .post('/tax/calculate')
+      .post('/v1/tax/calculate')
       .set('Authorization', `Bearer ${token}`)
       .send({
         nature: 'SALE',
@@ -151,7 +156,7 @@ describe('Tax calculate (e2e)', () => {
     // Two lines of 333,333 sharing PPN-IN-11: aggregate 666,666 × 11% = 73,332.96 → 73,333.
     // Per-line rounding would give 36,667 + 36,667 = 73,334 — proving once-per-code.
     const res = await request(app.getHttpServer() as App)
-      .post('/tax/calculate')
+      .post('/v1/tax/calculate')
       .set('Authorization', `Bearer ${token}`)
       .send({
         nature: 'PURCHASE',
@@ -178,7 +183,7 @@ describe('Tax calculate (e2e)', () => {
 
   it('handles a tax-free transaction (no codes) → settlement equals subtotal, balanced', async () => {
     const res = await request(app.getHttpServer() as App)
-      .post('/tax/calculate')
+      .post('/v1/tax/calculate')
       .set('Authorization', `Bearer ${token}`)
       .send({
         nature: 'PURCHASE',
@@ -204,7 +209,7 @@ describe('Tax calculate (e2e)', () => {
 
   it('rejects a tax code repeated within a single line (422)', async () => {
     await request(app.getHttpServer() as App)
-      .post('/tax/calculate')
+      .post('/v1/tax/calculate')
       .set('Authorization', `Bearer ${token}`)
       .send({
         nature: 'PURCHASE',
@@ -239,7 +244,7 @@ describe('Tax calculate (e2e)', () => {
       taxAccountId: utangPph,
     });
     await request(app.getHttpServer() as App)
-      .post('/tax/calculate')
+      .post('/v1/tax/calculate')
       .set('Authorization', `Bearer ${token}`)
       .send({
         nature: 'PURCHASE',

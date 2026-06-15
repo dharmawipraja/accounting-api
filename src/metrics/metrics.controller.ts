@@ -1,4 +1,10 @@
-import { Controller, Get, Res, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Res,
+  UseGuards,
+  VERSION_NEUTRAL,
+} from '@nestjs/common';
 import { ApiOkResponse, ApiProduces, ApiTags } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { Response } from 'express';
@@ -8,7 +14,7 @@ import { MetricsTokenGuard } from './metrics-token.guard';
 
 @SkipThrottle()
 @ApiTags('Metrics')
-@Controller('metrics')
+@Controller({ path: 'metrics', version: VERSION_NEUTRAL })
 export class MetricsController {
   constructor(private readonly metrics: MetricsService) {}
 

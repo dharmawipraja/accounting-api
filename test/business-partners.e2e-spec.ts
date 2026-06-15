@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -25,6 +29,7 @@ describe('BusinessPartners (e2e)', () => {
       .useValue(prisma)
       .compile();
     app = moduleRef.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -48,7 +53,7 @@ describe('BusinessPartners (e2e)', () => {
 
   it('creates a customer partner (201)', async () => {
     const res = await request(app.getHttpServer() as App)
-      .post('/partners')
+      .post('/v1/partners')
       .set('Authorization', `Bearer ${token}`)
       .send({
         code: 'CUST-1',
@@ -62,7 +67,7 @@ describe('BusinessPartners (e2e)', () => {
 
   it('rejects a partner that is neither customer nor vendor (422)', async () => {
     await request(app.getHttpServer() as App)
-      .post('/partners')
+      .post('/v1/partners')
       .set('Authorization', `Bearer ${token}`)
       .send({ code: 'NEITHER', name: 'X', isCustomer: false, isVendor: false })
       .expect(422);
@@ -71,12 +76,12 @@ describe('BusinessPartners (e2e)', () => {
   it('rejects a duplicate code (409)', async () => {
     const body = { code: 'DUP', name: 'Y', isVendor: true };
     await request(app.getHttpServer() as App)
-      .post('/partners')
+      .post('/v1/partners')
       .set('Authorization', `Bearer ${token}`)
       .send(body)
       .expect(201);
     await request(app.getHttpServer() as App)
-      .post('/partners')
+      .post('/v1/partners')
       .set('Authorization', `Bearer ${token}`)
       .send(body)
       .expect(409);
@@ -84,17 +89,17 @@ describe('BusinessPartners (e2e)', () => {
 
   it('soft-deletes a partner (204) then it is gone from the list', async () => {
     const created = await request(app.getHttpServer() as App)
-      .post('/partners')
+      .post('/v1/partners')
       .set('Authorization', `Bearer ${token}`)
       .send({ code: 'DEL-1', name: 'Z', isCustomer: true })
       .expect(201);
     const id = (created.body as { id: string }).id;
     await request(app.getHttpServer() as App)
-      .delete(`/partners/${id}`)
+      .delete(`/v1/partners/${id}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(204);
     const list = await request(app.getHttpServer() as App)
-      .get('/partners')
+      .get('/v1/partners')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect((list.body as { id: string }[]).some((p) => p.id === id)).toBe(

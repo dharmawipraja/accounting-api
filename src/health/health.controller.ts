@@ -1,4 +1,10 @@
-import { Controller, Get, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  HttpException,
+  HttpStatus,
+  VERSION_NEUTRAL,
+} from '@nestjs/common';
 import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { PrismaService } from '../common/prisma/prisma.service';
@@ -11,7 +17,7 @@ import {
 // Probes must never be rate-limited — monitoring agents poll them frequently.
 @SkipThrottle()
 @ApiTags('Health')
-@Controller()
+@Controller({ version: VERSION_NEUTRAL })
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
 

@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -36,6 +40,7 @@ describe('Journal-entry list (e2e)', () => {
       .useValue(prisma)
       .compile();
     app = mod.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
@@ -93,7 +98,7 @@ describe('Journal-entry list (e2e)', () => {
   });
 
   it('lists entries newest-first with header + totalDebit (4dp) + lineCount, no lines[]', async () => {
-    const res = await get('/ledger/journal-entries').expect(200);
+    const res = await get('/v1/ledger/journal-entries').expect(200);
     const body = res.body as {
       data: { date: string; totalDebit: string; lineCount: number }[];
       total: number;
@@ -111,7 +116,9 @@ describe('Journal-entry list (e2e)', () => {
   });
 
   it('filters by status=DRAFT (the approver "find pending drafts" case)', async () => {
-    const res = await get('/ledger/journal-entries?status=DRAFT').expect(200);
+    const res = await get('/v1/ledger/journal-entries?status=DRAFT').expect(
+      200,
+    );
     const body = res.body as {
       data: { status: string; description: string }[];
       total: number;
@@ -124,27 +131,27 @@ describe('Journal-entry list (e2e)', () => {
   it('filters by sourceType, date range, and fiscalYear', async () => {
     expect(
       (
-        (await get('/ledger/journal-entries?sourceType=MANUAL').expect(200))
+        (await get('/v1/ledger/journal-entries?sourceType=MANUAL').expect(200))
           .body as { total: number }
       ).total,
     ).toBe(3);
     const march = (
-      await get('/ledger/journal-entries?from=2026-03-01&to=2026-03-31').expect(
-        200,
-      )
+      await get(
+        '/v1/ledger/journal-entries?from=2026-03-01&to=2026-03-31',
+      ).expect(200)
     ).body as { data: { date: string }[]; total: number };
     expect(march.total).toBe(1);
     expect(march.data[0].date).toBe('2026-03-15');
     expect(
       (
-        (await get('/ledger/journal-entries?fiscalYear=2026').expect(200))
+        (await get('/v1/ledger/journal-entries?fiscalYear=2026').expect(200))
           .body as { total: number }
       ).total,
     ).toBe(2); // only POSTED entries carry fiscalYear; drafts have null
   });
 
   it('paginates with limit/offset (total reflects the full set)', async () => {
-    const res = await get('/ledger/journal-entries?limit=1').expect(200);
+    const res = await get('/v1/ledger/journal-entries?limit=1').expect(200);
     const body = res.body as { data: unknown[]; total: number; limit: number };
     expect(body.data).toHaveLength(1);
     expect(body.total).toBe(3);
@@ -152,7 +159,7 @@ describe('Journal-entry list (e2e)', () => {
   });
 
   it('rejects bad filter values with 400', async () => {
-    await get('/ledger/journal-entries?status=GARBAGE').expect(400);
-    await get('/ledger/journal-entries?fiscalYear=abc').expect(400);
+    await get('/v1/ledger/journal-entries?status=GARBAGE').expect(400);
+    await get('/v1/ledger/journal-entries?fiscalYear=abc').expect(400);
   });
 });

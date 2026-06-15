@@ -1,5 +1,9 @@
 import { Test } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -30,6 +34,7 @@ describe('Reporting cash flow (e2e)', () => {
       .useValue(prisma)
       .compile();
     app = moduleRef.createNestApplication();
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );
@@ -108,7 +113,7 @@ describe('Reporting cash flow (e2e)', () => {
 
   it('cash flow reconciles: kasAwal + netChange === kasAkhir', async () => {
     const res = await get(
-      '/reports/cash-flow?from=2026-01-01&to=2026-12-31',
+      '/v1/reports/cash-flow?from=2026-01-01&to=2026-12-31',
     ).expect(200);
     const body = res.body as {
       reconciles: boolean;
@@ -146,6 +151,8 @@ describe('Reporting cash flow (e2e)', () => {
   });
 
   it('rejects from > to with 422', async () => {
-    await get('/reports/cash-flow?from=2026-12-31&to=2026-01-01').expect(422);
+    await get('/v1/reports/cash-flow?from=2026-12-31&to=2026-01-01').expect(
+      422,
+    );
   });
 });
