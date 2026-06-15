@@ -213,10 +213,14 @@ model JournalLine {
 }
 
 model IdempotencyKey {
-  key           String   @id
-  endpoint      String
-  resultEntryId String?  @map("result_entry_id")
-  createdAt     DateTime @default(now()) @map("created_at")
+  key         String    @id
+  method      String
+  path        String
+  requestHash String    @map("request_hash")
+  response    Json?
+  httpStatus  Int?      @map("http_status")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  completedAt DateTime? @map("completed_at")
 
   @@map("idempotency_keys")
 }
