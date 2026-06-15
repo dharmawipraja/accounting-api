@@ -18,6 +18,7 @@ import { ReportingModule } from './reporting/reporting.module';
 import { CloseModule } from './close/close.module';
 import { AuditModule } from './audit/audit.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { IdempotencyModule } from './common/idempotency/idempotency.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
@@ -65,6 +66,7 @@ import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
     CloseModule,
     AuditModule,
     MetricsModule,
+    IdempotencyModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -4,6 +4,7 @@ import {
   ValidationPipe,
   VersioningType,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
@@ -107,6 +108,7 @@ describe('JournalEntries (e2e)', () => {
     const res = await request(app.getHttpServer() as App)
       .post('/v1/ledger/journal-entries')
       .set('Authorization', `Bearer ${accountantToken}`)
+      .set('Idempotency-Key', randomUUID())
       .send(balancedBody())
       .expect(201);
 
@@ -127,6 +129,7 @@ describe('JournalEntries (e2e)', () => {
     const draftRes = await request(app.getHttpServer() as App)
       .post('/v1/ledger/journal-entries')
       .set('Authorization', `Bearer ${accountantToken}`)
+      .set('Idempotency-Key', randomUUID())
       .send(balancedBody())
       .expect(201);
     const draftId = (draftRes.body as { id: string }).id;
@@ -135,6 +138,7 @@ describe('JournalEntries (e2e)', () => {
     const postRes = await request(app.getHttpServer() as App)
       .post(`/v1/ledger/journal-entries/${draftId}/post`)
       .set('Authorization', `Bearer ${approverToken}`)
+      .set('Idempotency-Key', randomUUID())
       .expect(200);
 
     const posted = postRes.body as {
@@ -154,6 +158,7 @@ describe('JournalEntries (e2e)', () => {
     const draftRes = await request(app.getHttpServer() as App)
       .post('/v1/ledger/journal-entries')
       .set('Authorization', `Bearer ${accountantToken}`)
+      .set('Idempotency-Key', randomUUID())
       .send(balancedBody())
       .expect(201);
     const draftId = (draftRes.body as { id: string }).id;
@@ -162,6 +167,7 @@ describe('JournalEntries (e2e)', () => {
     await request(app.getHttpServer() as App)
       .post(`/v1/ledger/journal-entries/${draftId}/post`)
       .set('Authorization', `Bearer ${accountantToken}`)
+      .set('Idempotency-Key', randomUUID())
       .expect(403);
   });
 
@@ -170,6 +176,7 @@ describe('JournalEntries (e2e)', () => {
     const draftRes = await request(app.getHttpServer() as App)
       .post('/v1/ledger/journal-entries')
       .set('Authorization', `Bearer ${accountantToken}`)
+      .set('Idempotency-Key', randomUUID())
       .send(balancedBody())
       .expect(201);
     const draftId = (draftRes.body as { id: string }).id;
@@ -191,6 +198,7 @@ describe('JournalEntries (e2e)', () => {
     const draftRes = await request(app.getHttpServer() as App)
       .post('/v1/ledger/journal-entries')
       .set('Authorization', `Bearer ${accountantToken}`)
+      .set('Idempotency-Key', randomUUID())
       .send(balancedBody())
       .expect(201);
     const draftId = (draftRes.body as { id: string }).id;
@@ -198,13 +206,17 @@ describe('JournalEntries (e2e)', () => {
     const seqBefore = await prismaOverride.client.journalSequence.findUnique({
       where: { fiscalYear: 2026 },
     });
+    // Distinct keys so the idempotency layer passes both through to the posting
+    // layer, which must arbitrate exactly one winner (no double-post, no gap).
     const both = await Promise.allSettled([
       request(app.getHttpServer() as App)
         .post(`/v1/ledger/journal-entries/${draftId}/post`)
-        .set('Authorization', `Bearer ${approverToken}`),
+        .set('Authorization', `Bearer ${approverToken}`)
+        .set('Idempotency-Key', randomUUID()),
       request(app.getHttpServer() as App)
         .post(`/v1/ledger/journal-entries/${draftId}/post`)
-        .set('Authorization', `Bearer ${approverToken}`),
+        .set('Authorization', `Bearer ${approverToken}`)
+        .set('Idempotency-Key', randomUUID()),
     ]);
     const codes = both.map((r) =>
       r.status === 'fulfilled' ? r.value.status : 0,
@@ -224,6 +236,7 @@ describe('JournalEntries (e2e)', () => {
     const res = await request(app.getHttpServer() as App)
       .post('/v1/ledger/journal-entries?post=true')
       .set('Authorization', `Bearer ${approverToken}`)
+      .set('Idempotency-Key', randomUUID())
       .send(balancedBody())
       .expect(201);
 
@@ -242,6 +255,7 @@ describe('JournalEntries (e2e)', () => {
     await request(app.getHttpServer() as App)
       .post('/v1/ledger/journal-entries?post=true')
       .set('Authorization', `Bearer ${accountantToken}`)
+      .set('Idempotency-Key', randomUUID())
       .send(balancedBody())
       .expect(403);
   });
@@ -303,6 +317,7 @@ describe('JournalEntries (e2e)', () => {
     const res = await request(app.getHttpServer() as App)
       .post('/v1/ledger/opening-balances')
       .set('Authorization', `Bearer ${adminToken}`)
+      .set('Idempotency-Key', randomUUID())
       .send({
         date: '2026-01-01',
         balances: [{ accountId: kasId, debit: '5000000' }],

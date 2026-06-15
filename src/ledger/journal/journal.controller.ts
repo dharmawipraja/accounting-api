@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Headers,
   HttpCode,
   Param,
   ParseUUIDPipe,
@@ -31,6 +30,7 @@ import { Role } from '../../auth/role.enum';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { ForbiddenDomainError } from '../../common/errors/domain-errors';
+import { Idempotent } from '../../common/idempotency/idempotent.decorator';
 
 @ApiTags('Journal')
 @ApiBearerAuth()
@@ -60,12 +60,12 @@ export class JournalController {
 
   @ApiCreatedResponse({ type: JournalEntryResponseDto })
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
+  @Idempotent()
   @Post()
   async createOrPost(
     @Body() dto: CreateJournalEntryDto,
     @Query() q: JournalPostQueryDto,
     @CurrentUser() user: AuthenticatedUser,
-    @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<JournalEntry> {
     const input = {
       date: new Date(dto.date),
@@ -84,33 +84,33 @@ export class JournalController {
           },
         );
       }
-      return this.journal.createAndPost(input, user.id, idempotencyKey);
+      return this.journal.createAndPost(input, user.id);
     }
     return this.journal.createDraft(input);
   }
 
   @ApiOkResponse({ type: JournalEntryResponseDto })
   @Roles(Role.APPROVER, Role.ADMIN)
+  @Idempotent()
   @Post(':id/post')
   @HttpCode(200)
   post(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,
-    @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<JournalEntry> {
-    return this.journal.postDraft(id, user.id, idempotencyKey);
+    return this.journal.postDraft(id, user.id);
   }
 
   @ApiOkResponse({ type: JournalEntryResponseDto })
   @Roles(Role.APPROVER, Role.ADMIN)
+  @Idempotent()
   @Post(':id/reverse')
   @HttpCode(200)
   reverse(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,
-    @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<JournalEntry> {
-    return this.journal.reverse(id, user.id, idempotencyKey);
+    return this.journal.reverse(id, user.id);
   }
 
   @ApiNoContentResponse()
