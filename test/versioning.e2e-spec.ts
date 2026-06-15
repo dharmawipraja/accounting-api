@@ -29,7 +29,11 @@ describe('API versioning (e2e)', () => {
     app = moduleRef.createNestApplication();
     app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
     );
     app.useGlobalFilters(new AllExceptionsFilter());
     await app.init();
@@ -50,5 +54,7 @@ describe('API versioning (e2e)', () => {
     await request(server()).get('/health').expect(200);
     await request(server()).get('/ready').expect(200);
     await request(server()).get('/v1/health').expect(404);
+    // /metrics stays unprefixed; the versioned path must not exist.
+    await request(server()).get('/v1/metrics').expect(404);
   });
 });
