@@ -102,8 +102,8 @@ describe('BusinessPartners (e2e)', () => {
       .get('/v1/partners')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    expect((list.body as { id: string }[]).some((p) => p.id === id)).toBe(
-      false,
-    );
+    expect(
+      (list.body as { data: { id: string }[] }).data.some((p) => p.id === id),
+    ).toBe(false);
   });
 });
