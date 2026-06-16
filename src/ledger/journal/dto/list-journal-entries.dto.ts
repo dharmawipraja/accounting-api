@@ -8,8 +8,9 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { JournalStatus, JournalSourceType } from '@prisma/client';
+import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
 
-export class JournalListQueryDto {
+export class JournalListQueryDto extends PaginationQueryDto {
   @IsOptional() @IsEnum(JournalStatus) status?: JournalStatus;
   @IsOptional() @IsEnum(JournalSourceType) sourceType?: JournalSourceType;
   @IsOptional()
@@ -20,6 +21,4 @@ export class JournalListQueryDto {
   fiscalYear?: number;
   @IsOptional() @IsDateString() from?: string;
   @IsOptional() @IsDateString() to?: string;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(200) limit?: number;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(0) offset?: number;
 }
