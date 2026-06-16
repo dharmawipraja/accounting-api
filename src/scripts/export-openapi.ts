@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { VersioningType } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from '../app.module';
@@ -12,6 +13,9 @@ async function main(): Promise<void> {
     preview: true,
     logger: false,
   });
+  // Must match main.ts — URI versioning puts business routes under /v1;
+  // version-neutral probes (/health, /ready, /metrics) stay unprefixed.
+  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   const config = new DocumentBuilder()
     .setTitle('Indonesian Accounting API')
     .setDescription(

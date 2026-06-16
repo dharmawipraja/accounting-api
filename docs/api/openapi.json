@@ -43,9 +43,9 @@
         ]
       }
     },
-    "/auth/login": {
+    "/v1/auth/login": {
       "post": {
-        "operationId": "AuthController_login",
+        "operationId": "AuthController_login_v1",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -79,9 +79,9 @@
         ]
       }
     },
-    "/auth/refresh": {
+    "/v1/auth/refresh": {
       "post": {
-        "operationId": "AuthController_refresh",
+        "operationId": "AuthController_refresh_v1",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -115,9 +115,9 @@
         ]
       }
     },
-    "/auth/me": {
+    "/v1/auth/me": {
       "get": {
-        "operationId": "AuthController_me",
+        "operationId": "AuthController_me_v1",
         "parameters": [],
         "responses": {
           "200": {
@@ -141,9 +141,9 @@
         ]
       }
     },
-    "/auth/admin-only": {
+    "/v1/auth/admin-only": {
       "get": {
-        "operationId": "AuthController_adminOnly",
+        "operationId": "AuthController_adminOnly_v1",
         "parameters": [],
         "responses": {
           "200": {
@@ -167,9 +167,9 @@
         ]
       }
     },
-    "/company/settings": {
+    "/v1/company/settings": {
       "get": {
-        "operationId": "CompanyController_get",
+        "operationId": "CompanyController_get_v1",
         "parameters": [],
         "responses": {
           "200": {
@@ -193,7 +193,7 @@
         ]
       },
       "patch": {
-        "operationId": "CompanyController_update",
+        "operationId": "CompanyController_update_v1",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -227,9 +227,9 @@
         ]
       }
     },
-    "/ledger/accounts": {
+    "/v1/ledger/accounts": {
       "get": {
-        "operationId": "AccountsController_list",
+        "operationId": "AccountsController_list_v1",
         "parameters": [],
         "responses": {
           "200": {
@@ -256,7 +256,7 @@
         ]
       },
       "post": {
-        "operationId": "AccountsController_create",
+        "operationId": "AccountsController_create_v1",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -290,9 +290,9 @@
         ]
       }
     },
-    "/ledger/accounts/{id}/balance": {
+    "/v1/ledger/accounts/{id}/balance": {
       "get": {
-        "operationId": "AccountsController_balance",
+        "operationId": "AccountsController_balance_v1",
         "parameters": [
           {
             "name": "id",
@@ -333,9 +333,9 @@
         ]
       }
     },
-    "/ledger/accounts/{id}": {
+    "/v1/ledger/accounts/{id}": {
       "get": {
-        "operationId": "AccountsController_get",
+        "operationId": "AccountsController_get_v1",
         "parameters": [
           {
             "name": "id",
@@ -368,7 +368,7 @@
         ]
       },
       "patch": {
-        "operationId": "AccountsController_update",
+        "operationId": "AccountsController_update_v1",
         "parameters": [
           {
             "name": "id",
@@ -411,7 +411,7 @@
         ]
       },
       "delete": {
-        "operationId": "AccountsController_remove",
+        "operationId": "AccountsController_remove_v1",
         "parameters": [
           {
             "name": "id",
@@ -437,9 +437,9 @@
         ]
       }
     },
-    "/ledger/accounts/{id}/deactivate": {
+    "/v1/ledger/accounts/{id}/deactivate": {
       "post": {
-        "operationId": "AccountsController_deactivate",
+        "operationId": "AccountsController_deactivate_v1",
         "parameters": [
           {
             "name": "id",
@@ -472,9 +472,9 @@
         ]
       }
     },
-    "/ledger/periods": {
+    "/v1/ledger/periods": {
       "get": {
-        "operationId": "PeriodsController_list",
+        "operationId": "PeriodsController_list_v1",
         "parameters": [
           {
             "name": "fiscalYear",
@@ -510,9 +510,9 @@
         ]
       }
     },
-    "/ledger/periods/generate": {
+    "/v1/ledger/periods/generate": {
       "post": {
-        "operationId": "PeriodsController_generate",
+        "operationId": "PeriodsController_generate_v1",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -549,9 +549,9 @@
         ]
       }
     },
-    "/ledger/periods/{id}/close": {
+    "/v1/ledger/periods/{id}/close": {
       "post": {
-        "operationId": "PeriodsController_close",
+        "operationId": "PeriodsController_close_v1",
         "parameters": [
           {
             "name": "id",
@@ -584,9 +584,9 @@
         ]
       }
     },
-    "/ledger/periods/{id}/reopen": {
+    "/v1/ledger/periods/{id}/reopen": {
       "post": {
-        "operationId": "PeriodsController_reopen",
+        "operationId": "PeriodsController_reopen_v1",
         "parameters": [
           {
             "name": "id",
@@ -619,9 +619,9 @@
         ]
       }
     },
-    "/ledger/journal-entries": {
+    "/v1/ledger/journal-entries": {
       "get": {
-        "operationId": "JournalController_list",
+        "operationId": "JournalController_list_v1",
         "parameters": [
           {
             "name": "status",
@@ -721,7 +721,7 @@
         ]
       },
       "post": {
-        "operationId": "JournalController_createOrPost",
+        "operationId": "JournalController_createOrPost_v1",
         "parameters": [
           {
             "name": "post",
@@ -732,9 +732,10 @@
             }
           },
           {
-            "name": "idempotency-key",
-            "required": true,
+            "name": "Idempotency-Key",
             "in": "header",
+            "description": "Unique key to make this write safely retryable.",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -772,9 +773,9 @@
         ]
       }
     },
-    "/ledger/journal-entries/{id}": {
+    "/v1/ledger/journal-entries/{id}": {
       "get": {
-        "operationId": "JournalController_get",
+        "operationId": "JournalController_get_v1",
         "parameters": [
           {
             "name": "id",
@@ -807,7 +808,7 @@
         ]
       },
       "delete": {
-        "operationId": "JournalController_remove",
+        "operationId": "JournalController_remove_v1",
         "parameters": [
           {
             "name": "id",
@@ -833,9 +834,9 @@
         ]
       }
     },
-    "/ledger/journal-entries/{id}/post": {
+    "/v1/ledger/journal-entries/{id}/post": {
       "post": {
-        "operationId": "JournalController_post",
+        "operationId": "JournalController_post_v1",
         "parameters": [
           {
             "name": "id",
@@ -846,9 +847,10 @@
             }
           },
           {
-            "name": "idempotency-key",
-            "required": true,
+            "name": "Idempotency-Key",
             "in": "header",
+            "description": "Unique key to make this write safely retryable.",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -876,9 +878,9 @@
         ]
       }
     },
-    "/ledger/journal-entries/{id}/reverse": {
+    "/v1/ledger/journal-entries/{id}/reverse": {
       "post": {
-        "operationId": "JournalController_reverse",
+        "operationId": "JournalController_reverse_v1",
         "parameters": [
           {
             "name": "id",
@@ -889,9 +891,10 @@
             }
           },
           {
-            "name": "idempotency-key",
-            "required": true,
+            "name": "Idempotency-Key",
             "in": "header",
+            "description": "Unique key to make this write safely retryable.",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -919,14 +922,15 @@
         ]
       }
     },
-    "/ledger/opening-balances": {
+    "/v1/ledger/opening-balances": {
       "post": {
-        "operationId": "OpeningBalancesController_post",
+        "operationId": "OpeningBalancesController_post_v1",
         "parameters": [
           {
-            "name": "idempotency-key",
-            "required": true,
+            "name": "Idempotency-Key",
             "in": "header",
+            "description": "Unique key to make this write safely retryable.",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -964,9 +968,9 @@
         ]
       }
     },
-    "/ledger/trial-balance": {
+    "/v1/ledger/trial-balance": {
       "get": {
-        "operationId": "BalancesController_trialBalance",
+        "operationId": "BalancesController_trialBalance_v1",
         "parameters": [
           {
             "name": "asOf",
@@ -999,9 +1003,9 @@
         ]
       }
     },
-    "/tax/codes": {
+    "/v1/tax/codes": {
       "get": {
-        "operationId": "TaxCodesController_list",
+        "operationId": "TaxCodesController_list_v1",
         "parameters": [],
         "responses": {
           "200": {
@@ -1028,7 +1032,7 @@
         ]
       },
       "post": {
-        "operationId": "TaxCodesController_create",
+        "operationId": "TaxCodesController_create_v1",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -1062,9 +1066,9 @@
         ]
       }
     },
-    "/tax/codes/{id}": {
+    "/v1/tax/codes/{id}": {
       "get": {
-        "operationId": "TaxCodesController_get",
+        "operationId": "TaxCodesController_get_v1",
         "parameters": [
           {
             "name": "id",
@@ -1097,7 +1101,7 @@
         ]
       },
       "patch": {
-        "operationId": "TaxCodesController_update",
+        "operationId": "TaxCodesController_update_v1",
         "parameters": [
           {
             "name": "id",
@@ -1140,7 +1144,7 @@
         ]
       },
       "delete": {
-        "operationId": "TaxCodesController_remove",
+        "operationId": "TaxCodesController_remove_v1",
         "parameters": [
           {
             "name": "id",
@@ -1166,9 +1170,9 @@
         ]
       }
     },
-    "/tax/codes/{id}/deactivate": {
+    "/v1/tax/codes/{id}/deactivate": {
       "post": {
-        "operationId": "TaxCodesController_deactivate",
+        "operationId": "TaxCodesController_deactivate_v1",
         "parameters": [
           {
             "name": "id",
@@ -1201,9 +1205,9 @@
         ]
       }
     },
-    "/tax/calculate": {
+    "/v1/tax/calculate": {
       "post": {
-        "operationId": "TaxController_calculate",
+        "operationId": "TaxController_calculate_v1",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -1237,20 +1241,37 @@
         ]
       }
     },
-    "/partners": {
+    "/v1/partners": {
       "get": {
-        "operationId": "BusinessPartnersController_list",
-        "parameters": [],
+        "operationId": "BusinessPartnersController_list_v1",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "type": "number"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/BusinessPartnerResponseDto"
-                  }
+                  "$ref": "#/components/schemas/BusinessPartnerListResponseDto"
                 }
               }
             }
@@ -1266,7 +1287,7 @@
         ]
       },
       "post": {
-        "operationId": "BusinessPartnersController_create",
+        "operationId": "BusinessPartnersController_create_v1",
         "parameters": [],
         "requestBody": {
           "required": true,
@@ -1300,9 +1321,9 @@
         ]
       }
     },
-    "/partners/{id}": {
+    "/v1/partners/{id}": {
       "get": {
-        "operationId": "BusinessPartnersController_get",
+        "operationId": "BusinessPartnersController_get_v1",
         "parameters": [
           {
             "name": "id",
@@ -1335,7 +1356,7 @@
         ]
       },
       "patch": {
-        "operationId": "BusinessPartnersController_update",
+        "operationId": "BusinessPartnersController_update_v1",
         "parameters": [
           {
             "name": "id",
@@ -1378,7 +1399,7 @@
         ]
       },
       "delete": {
-        "operationId": "BusinessPartnersController_remove",
+        "operationId": "BusinessPartnersController_remove_v1",
         "parameters": [
           {
             "name": "id",
@@ -1404,9 +1425,9 @@
         ]
       }
     },
-    "/partners/{id}/deactivate": {
+    "/v1/partners/{id}/deactivate": {
       "post": {
-        "operationId": "BusinessPartnersController_deactivate",
+        "operationId": "BusinessPartnersController_deactivate_v1",
         "parameters": [
           {
             "name": "id",
@@ -1439,10 +1460,29 @@
         ]
       }
     },
-    "/sales-invoices": {
+    "/v1/sales-invoices": {
       "get": {
-        "operationId": "SalesInvoicesController_list",
+        "operationId": "SalesInvoicesController_list_v1",
         "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "type": "number"
+            }
+          },
           {
             "name": "partnerId",
             "required": false,
@@ -1472,10 +1512,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/SalesInvoiceResponseDto"
-                  }
+                  "$ref": "#/components/schemas/SalesInvoiceListResponseDto"
                 }
               }
             }
@@ -1491,8 +1528,18 @@
         ]
       },
       "post": {
-        "operationId": "SalesInvoicesController_create",
-        "parameters": [],
+        "operationId": "SalesInvoicesController_create_v1",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -1525,9 +1572,9 @@
         ]
       }
     },
-    "/sales-invoices/{id}": {
+    "/v1/sales-invoices/{id}": {
       "get": {
-        "operationId": "SalesInvoicesController_get",
+        "operationId": "SalesInvoicesController_get_v1",
         "parameters": [
           {
             "name": "id",
@@ -1560,7 +1607,7 @@
         ]
       },
       "patch": {
-        "operationId": "SalesInvoicesController_update",
+        "operationId": "SalesInvoicesController_update_v1",
         "parameters": [
           {
             "name": "id",
@@ -1603,7 +1650,7 @@
         ]
       },
       "delete": {
-        "operationId": "SalesInvoicesController_remove",
+        "operationId": "SalesInvoicesController_remove_v1",
         "parameters": [
           {
             "name": "id",
@@ -1629,14 +1676,23 @@
         ]
       }
     },
-    "/sales-invoices/{id}/post": {
+    "/v1/sales-invoices/{id}/post": {
       "post": {
-        "operationId": "SalesInvoicesController_post",
+        "operationId": "SalesInvoicesController_post_v1",
         "parameters": [
           {
             "name": "id",
             "required": true,
             "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable.",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -1664,14 +1720,23 @@
         ]
       }
     },
-    "/sales-invoices/{id}/void": {
+    "/v1/sales-invoices/{id}/void": {
       "post": {
-        "operationId": "SalesInvoicesController_void",
+        "operationId": "SalesInvoicesController_void_v1",
         "parameters": [
           {
             "name": "id",
             "required": true,
             "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable.",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -1699,10 +1764,29 @@
         ]
       }
     },
-    "/purchase-bills": {
+    "/v1/purchase-bills": {
       "get": {
-        "operationId": "PurchaseBillsController_list",
+        "operationId": "PurchaseBillsController_list_v1",
         "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "type": "number"
+            }
+          },
           {
             "name": "partnerId",
             "required": false,
@@ -1732,10 +1816,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/PurchaseBillResponseDto"
-                  }
+                  "$ref": "#/components/schemas/PurchaseBillListResponseDto"
                 }
               }
             }
@@ -1751,8 +1832,18 @@
         ]
       },
       "post": {
-        "operationId": "PurchaseBillsController_create",
-        "parameters": [],
+        "operationId": "PurchaseBillsController_create_v1",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -1785,9 +1876,9 @@
         ]
       }
     },
-    "/purchase-bills/{id}": {
+    "/v1/purchase-bills/{id}": {
       "get": {
-        "operationId": "PurchaseBillsController_get",
+        "operationId": "PurchaseBillsController_get_v1",
         "parameters": [
           {
             "name": "id",
@@ -1820,7 +1911,7 @@
         ]
       },
       "patch": {
-        "operationId": "PurchaseBillsController_update",
+        "operationId": "PurchaseBillsController_update_v1",
         "parameters": [
           {
             "name": "id",
@@ -1863,7 +1954,7 @@
         ]
       },
       "delete": {
-        "operationId": "PurchaseBillsController_remove",
+        "operationId": "PurchaseBillsController_remove_v1",
         "parameters": [
           {
             "name": "id",
@@ -1889,14 +1980,23 @@
         ]
       }
     },
-    "/purchase-bills/{id}/post": {
+    "/v1/purchase-bills/{id}/post": {
       "post": {
-        "operationId": "PurchaseBillsController_post",
+        "operationId": "PurchaseBillsController_post_v1",
         "parameters": [
           {
             "name": "id",
             "required": true,
             "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable.",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -1924,14 +2024,23 @@
         ]
       }
     },
-    "/purchase-bills/{id}/void": {
+    "/v1/purchase-bills/{id}/void": {
       "post": {
-        "operationId": "PurchaseBillsController_void",
+        "operationId": "PurchaseBillsController_void_v1",
         "parameters": [
           {
             "name": "id",
             "required": true,
             "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable.",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -1959,10 +2068,29 @@
         ]
       }
     },
-    "/payments": {
+    "/v1/payments": {
       "get": {
-        "operationId": "PaymentsController_list",
+        "operationId": "PaymentsController_list_v1",
         "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "type": "number"
+            }
+          },
           {
             "name": "partnerId",
             "required": false,
@@ -2004,10 +2132,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/PaymentResponseDto"
-                  }
+                  "$ref": "#/components/schemas/PaymentListResponseDto"
                 }
               }
             }
@@ -2023,8 +2148,18 @@
         ]
       },
       "post": {
-        "operationId": "PaymentsController_create",
-        "parameters": [],
+        "operationId": "PaymentsController_create_v1",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -2057,9 +2192,9 @@
         ]
       }
     },
-    "/payments/{id}": {
+    "/v1/payments/{id}": {
       "get": {
-        "operationId": "PaymentsController_get",
+        "operationId": "PaymentsController_get_v1",
         "parameters": [
           {
             "name": "id",
@@ -2092,7 +2227,7 @@
         ]
       },
       "delete": {
-        "operationId": "PaymentsController_remove",
+        "operationId": "PaymentsController_remove_v1",
         "parameters": [
           {
             "name": "id",
@@ -2118,14 +2253,23 @@
         ]
       }
     },
-    "/payments/{id}/post": {
+    "/v1/payments/{id}/post": {
       "post": {
-        "operationId": "PaymentsController_post",
+        "operationId": "PaymentsController_post_v1",
         "parameters": [
           {
             "name": "id",
             "required": true,
             "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable.",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -2153,14 +2297,23 @@
         ]
       }
     },
-    "/payments/{id}/void": {
+    "/v1/payments/{id}/void": {
       "post": {
-        "operationId": "PaymentsController_void",
+        "operationId": "PaymentsController_void_v1",
         "parameters": [
           {
             "name": "id",
             "required": true,
             "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable.",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -2188,9 +2341,9 @@
         ]
       }
     },
-    "/reports/balance-sheet": {
+    "/v1/reports/balance-sheet": {
       "get": {
-        "operationId": "ReportsController_balanceSheet",
+        "operationId": "ReportsController_balanceSheet_v1",
         "parameters": [
           {
             "name": "asOf",
@@ -2223,9 +2376,9 @@
         ]
       }
     },
-    "/reports/income-statement": {
+    "/v1/reports/income-statement": {
       "get": {
-        "operationId": "ReportsController_incomeStatement",
+        "operationId": "ReportsController_incomeStatement_v1",
         "parameters": [
           {
             "name": "from",
@@ -2266,9 +2419,9 @@
         ]
       }
     },
-    "/reports/general-ledger": {
+    "/v1/reports/general-ledger": {
       "get": {
-        "operationId": "ReportsController_generalLedger",
+        "operationId": "ReportsController_generalLedger_v1",
         "parameters": [
           {
             "name": "accountId",
@@ -2318,9 +2471,9 @@
         ]
       }
     },
-    "/reports/ar-aging": {
+    "/v1/reports/ar-aging": {
       "get": {
-        "operationId": "ReportsController_arAging",
+        "operationId": "ReportsController_arAging_v1",
         "parameters": [
           {
             "name": "asOf",
@@ -2353,9 +2506,9 @@
         ]
       }
     },
-    "/reports/ap-aging": {
+    "/v1/reports/ap-aging": {
       "get": {
-        "operationId": "ReportsController_apAging",
+        "operationId": "ReportsController_apAging_v1",
         "parameters": [
           {
             "name": "asOf",
@@ -2388,9 +2541,9 @@
         ]
       }
     },
-    "/reports/cash-flow": {
+    "/v1/reports/cash-flow": {
       "get": {
-        "operationId": "ReportsController_cashFlowReport",
+        "operationId": "ReportsController_cashFlowReport_v1",
         "parameters": [
           {
             "name": "from",
@@ -2431,10 +2584,20 @@
         ]
       }
     },
-    "/close/year-end": {
+    "/v1/close/year-end": {
       "post": {
-        "operationId": "ClosingController_run",
-        "parameters": [],
+        "operationId": "ClosingController_run_v1",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -2467,9 +2630,9 @@
         ]
       }
     },
-    "/close/year-end/{fiscalYear}/reopen": {
+    "/v1/close/year-end/{fiscalYear}/reopen": {
       "post": {
-        "operationId": "ClosingController_reopen",
+        "operationId": "ClosingController_reopen_v1",
         "parameters": [
           {
             "name": "fiscalYear",
@@ -2502,9 +2665,9 @@
         ]
       }
     },
-    "/close/year-end/{fiscalYear}": {
+    "/v1/close/year-end/{fiscalYear}": {
       "get": {
-        "operationId": "ClosingController_status",
+        "operationId": "ClosingController_status_v1",
         "parameters": [
           {
             "name": "fiscalYear",
@@ -2537,9 +2700,9 @@
         ]
       }
     },
-    "/audit": {
+    "/v1/audit": {
       "get": {
-        "operationId": "AuditController_list",
+        "operationId": "AuditController_list_v1",
         "parameters": [
           {
             "name": "userId",
@@ -3938,6 +4101,35 @@
           "updatedAt"
         ]
       },
+      "BusinessPartnerListResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BusinessPartnerResponseDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "example": 87
+          },
+          "limit": {
+            "type": "number",
+            "example": 50
+          },
+          "offset": {
+            "type": "number",
+            "example": 0
+          }
+        },
+        "required": [
+          "data",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
       "CreateBusinessPartnerDto": {
         "type": "object",
         "properties": {
@@ -4208,6 +4400,35 @@
           "updatedAt",
           "outstanding",
           "paymentStatus"
+        ]
+      },
+      "SalesInvoiceListResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SalesInvoiceResponseDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "example": 240
+          },
+          "limit": {
+            "type": "number",
+            "example": 50
+          },
+          "offset": {
+            "type": "number",
+            "example": 0
+          }
+        },
+        "required": [
+          "data",
+          "total",
+          "limit",
+          "offset"
         ]
       },
       "SalesInvoiceLineDto": {
@@ -4502,6 +4723,35 @@
           "paymentStatus"
         ]
       },
+      "PurchaseBillListResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PurchaseBillResponseDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "example": 240
+          },
+          "limit": {
+            "type": "number",
+            "example": 50
+          },
+          "offset": {
+            "type": "number",
+            "example": 0
+          }
+        },
+        "required": [
+          "data",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
       "PurchaseBillLineDto": {
         "type": "object",
         "properties": {
@@ -4741,6 +4991,35 @@
           "postedAt",
           "createdAt",
           "updatedAt"
+        ]
+      },
+      "PaymentListResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentResponseDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "example": 310
+          },
+          "limit": {
+            "type": "number",
+            "example": 50
+          },
+          "offset": {
+            "type": "number",
+            "example": 0
+          }
+        },
+        "required": [
+          "data",
+          "total",
+          "limit",
+          "offset"
         ]
       },
       "AllocationDto": {
