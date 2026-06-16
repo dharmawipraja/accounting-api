@@ -18,7 +18,10 @@ import {
   ApiOkResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { PurchaseBillResponseDto } from './dto/purchase-bill-response.dto';
+import {
+  PurchaseBillListResponseDto,
+  PurchaseBillResponseDto,
+} from './dto/purchase-bill-response.dto';
 import { PurchaseBillsService } from './purchase-bills.service';
 import { CreatePurchaseBillDto } from './dto/create-purchase-bill.dto';
 import { UpdatePurchaseBillDto } from './dto/update-purchase-bill.dto';
@@ -35,11 +38,10 @@ import { Idempotent } from '../common/idempotency/idempotent.decorator';
 export class PurchaseBillsController {
   constructor(private readonly bills: PurchaseBillsService) {}
 
-  @ApiOkResponse({ type: PurchaseBillResponseDto, isArray: true })
+  @ApiOkResponse({ type: PurchaseBillListResponseDto })
   @Get()
-  async list(@Query() q: PurchaseBillListQueryDto) {
-    const rows = await this.bills.list(q);
-    return rows.map((r) => this.bills.present(r));
+  list(@Query() q: PurchaseBillListQueryDto) {
+    return this.bills.listPage(q);
   }
 
   @ApiOkResponse({ type: PurchaseBillResponseDto })

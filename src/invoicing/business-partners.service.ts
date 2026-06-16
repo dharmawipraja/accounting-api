@@ -67,10 +67,23 @@ export class BusinessPartnersService {
     }
   }
 
-  async list(): Promise<BusinessPartner[]> {
-    return this.prisma.client.businessPartner.findMany({
-      orderBy: { code: 'asc' },
-    });
+  async listPage(q: { limit?: number; offset?: number }): Promise<{
+    data: BusinessPartner[];
+    total: number;
+    limit: number;
+    offset: number;
+  }> {
+    const limit = q.limit ?? 50;
+    const offset = q.offset ?? 0;
+    const [data, total] = await Promise.all([
+      this.prisma.client.businessPartner.findMany({
+        orderBy: { code: 'asc' },
+        take: limit,
+        skip: offset,
+      }),
+      this.prisma.client.businessPartner.count(),
+    ]);
+    return { data, total, limit, offset };
   }
 
   async findById(id: string): Promise<BusinessPartner> {

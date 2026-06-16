@@ -188,14 +188,30 @@ export class PurchaseBillsService {
     return bill;
   }
 
-  async list(filter: {
+  async listPage(q: {
     partnerId?: string;
     status?: DocumentStatus;
-  }): Promise<PurchaseBill[]> {
-    return this.prisma.client.purchaseBill.findMany({
-      where: { partnerId: filter.partnerId, status: filter.status },
-      orderBy: { createdAt: 'desc' },
-    });
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    data: ReturnType<PurchaseBillsService['present']>[];
+    total: number;
+    limit: number;
+    offset: number;
+  }> {
+    const limit = q.limit ?? 50;
+    const offset = q.offset ?? 0;
+    const where = { partnerId: q.partnerId, status: q.status };
+    const [rows, total] = await Promise.all([
+      this.prisma.client.purchaseBill.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+      }),
+      this.prisma.client.purchaseBill.count({ where }),
+    ]);
+    return { data: rows.map((r) => this.present(r)), total, limit, offset };
   }
 
   async deleteDraft(id: string, deletedBy: string): Promise<void> {

@@ -18,7 +18,10 @@ import {
   ApiOkResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { SalesInvoiceResponseDto } from './dto/sales-invoice-response.dto';
+import {
+  SalesInvoiceListResponseDto,
+  SalesInvoiceResponseDto,
+} from './dto/sales-invoice-response.dto';
 import { SalesInvoicesService } from './sales-invoices.service';
 import { CreateSalesInvoiceDto } from './dto/create-sales-invoice.dto';
 import { UpdateSalesInvoiceDto } from './dto/update-sales-invoice.dto';
@@ -35,11 +38,10 @@ import { Idempotent } from '../common/idempotency/idempotent.decorator';
 export class SalesInvoicesController {
   constructor(private readonly invoices: SalesInvoicesService) {}
 
-  @ApiOkResponse({ type: SalesInvoiceResponseDto, isArray: true })
+  @ApiOkResponse({ type: SalesInvoiceListResponseDto })
   @Get()
-  async list(@Query() q: SalesInvoiceListQueryDto) {
-    const rows = await this.invoices.list(q);
-    return rows.map((r) => this.invoices.present(r));
+  list(@Query() q: SalesInvoiceListQueryDto) {
+    return this.invoices.listPage(q);
   }
 
   @ApiOkResponse({ type: SalesInvoiceResponseDto })

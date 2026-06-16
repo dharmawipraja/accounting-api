@@ -17,7 +17,10 @@ import {
   ApiOkResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { PaymentResponseDto } from './dto/payment-response.dto';
+import {
+  PaymentListResponseDto,
+  PaymentResponseDto,
+} from './dto/payment-response.dto';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { PaymentListQueryDto } from './dto/list-payments.dto';
@@ -33,11 +36,10 @@ import { Idempotent } from '../common/idempotency/idempotent.decorator';
 export class PaymentsController {
   constructor(private readonly payments: PaymentsService) {}
 
-  @ApiOkResponse({ type: PaymentResponseDto, isArray: true })
+  @ApiOkResponse({ type: PaymentListResponseDto })
   @Get()
-  async list(@Query() q: PaymentListQueryDto) {
-    const rows = await this.payments.list(q);
-    return rows.map((r) => this.payments.present(r));
+  list(@Query() q: PaymentListQueryDto) {
+    return this.payments.listPage(q);
   }
 
   @ApiOkResponse({ type: PaymentResponseDto })

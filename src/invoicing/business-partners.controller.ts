@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -16,8 +17,12 @@ import {
   ApiOkResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { BusinessPartnerResponseDto } from './dto/business-partner-response.dto';
+import {
+  BusinessPartnerListResponseDto,
+  BusinessPartnerResponseDto,
+} from './dto/business-partner-response.dto';
 import { BusinessPartner } from '@prisma/client';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { BusinessPartnersService } from './business-partners.service';
 import { CreateBusinessPartnerDto } from './dto/create-business-partner.dto';
 import { UpdateBusinessPartnerDto } from './dto/update-business-partner.dto';
@@ -32,10 +37,10 @@ import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 export class BusinessPartnersController {
   constructor(private readonly partners: BusinessPartnersService) {}
 
-  @ApiOkResponse({ type: BusinessPartnerResponseDto, isArray: true })
+  @ApiOkResponse({ type: BusinessPartnerListResponseDto })
   @Get()
-  list(): Promise<BusinessPartner[]> {
-    return this.partners.list();
+  list(@Query() q: PaginationQueryDto) {
+    return this.partners.listPage(q);
   }
   @ApiOkResponse({ type: BusinessPartnerResponseDto })
   @Get(':id')

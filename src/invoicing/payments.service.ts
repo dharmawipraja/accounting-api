@@ -188,19 +188,35 @@ export class PaymentsService {
     return p;
   }
 
-  async list(filter: {
+  async listPage(q: {
     partnerId?: string;
     direction?: PaymentDirection;
     status?: DocumentStatus;
-  }): Promise<Payment[]> {
-    return this.prisma.client.payment.findMany({
-      where: {
-        partnerId: filter.partnerId,
-        direction: filter.direction,
-        status: filter.status,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    data: ReturnType<PaymentsService['present']>[];
+    total: number;
+    limit: number;
+    offset: number;
+  }> {
+    const limit = q.limit ?? 50;
+    const offset = q.offset ?? 0;
+    const where = {
+      partnerId: q.partnerId,
+      direction: q.direction,
+      status: q.status,
+    };
+    const [rows, total] = await Promise.all([
+      this.prisma.client.payment.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        skip: offset,
+      }),
+      this.prisma.client.payment.count({ where }),
+    ]);
+    return { data: rows.map((r) => this.present(r)), total, limit, offset };
   }
 
   async deleteDraft(id: string, deletedBy: string): Promise<void> {
