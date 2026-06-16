@@ -6,6 +6,10 @@ import {
   NotFoundDomainError,
   ValidationFailedError,
 } from '../common/errors/domain-errors';
+import {
+  trigramSearch,
+  MIN_QUERY_LENGTH,
+} from '../common/search/trigram-search';
 
 export interface CreatePartnerInput {
   code: string;
@@ -67,7 +71,7 @@ export class BusinessPartnersService {
     }
   }
 
-  async listPage(q: { limit?: number; offset?: number }): Promise<{
+  async listPage(q: { q?: string; limit?: number; offset?: number }): Promise<{
     data: BusinessPartner[];
     total: number;
     limit: number;
@@ -75,6 +79,26 @@ export class BusinessPartnersService {
   }> {
     const limit = q.limit ?? 50;
     const offset = q.offset ?? 0;
+    const term = q.q?.trim() ?? '';
+    if (term.length >= MIN_QUERY_LENGTH) {
+      const { ids, total } = await trigramSearch(this.prisma, {
+        table: 'business_partners',
+        alias: 't',
+        ownColumns: ['name', 'code', 'npwp', 'email'],
+        filters: [],
+        q: term,
+        limit,
+        offset,
+      });
+      const rows = ids.length
+        ? await this.prisma.client.businessPartner.findMany({
+            where: { id: { in: ids } },
+          })
+        : [];
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      const data = ids.map((id) => byId.get(id)!).filter(Boolean);
+      return { data, total, limit, offset };
+    }
     const [data, total] = await Promise.all([
       this.prisma.client.businessPartner.findMany({
         orderBy: { code: 'asc' },

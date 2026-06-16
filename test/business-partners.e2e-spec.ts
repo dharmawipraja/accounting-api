@@ -13,6 +13,7 @@ import { UsersService } from '../src/users/users.service';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
 import { makePrismaOverride } from './e2e-helpers';
 import { startTestDb, TestDb } from './testcontainers';
+import { BusinessPartnersService } from '../src/invoicing/business-partners.service';
 
 describe('BusinessPartners (e2e)', () => {
   let app: INestApplication;
@@ -105,5 +106,39 @@ describe('BusinessPartners (e2e)', () => {
     expect(
       (list.body as { data: { id: string }[] }).data.some((p) => p.id === id),
     ).toBe(false);
+  });
+
+  describe('search (?q=)', () => {
+    it('fuzzy-matches a typo, ranks the closer name first, and excludes non-matches', async () => {
+      const partners = app.get(BusinessPartnersService);
+      await partners.create({
+        code: 'SR-BUDI',
+        name: 'PT Budi Jaya',
+        isCustomer: true,
+      });
+      await partners.create({
+        code: 'SR-SINAR',
+        name: 'CV Sinar Abadi',
+        isCustomer: true,
+      });
+      const res = await request(app.getHttpServer() as App)
+        .get('/v1/partners?q=budih') // typo for "Budi"
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const body = res.body as { data: { name: string }[]; total: number };
+      expect(body.data.length).toBeGreaterThanOrEqual(1);
+      expect(body.data[0].name).toBe('PT Budi Jaya');
+      expect(body.data.every((p) => p.name !== 'CV Sinar Abadi')).toBe(true);
+    });
+
+    it('ignores a sub-min-length q (returns the normal list)', async () => {
+      const res = await request(app.getHttpServer() as App)
+        .get('/v1/partners?q=a&limit=5')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const body = res.body as { data: unknown[]; limit: number };
+      expect(body.limit).toBe(5);
+      expect(Array.isArray(body.data)).toBe(true);
+    });
   });
 });
