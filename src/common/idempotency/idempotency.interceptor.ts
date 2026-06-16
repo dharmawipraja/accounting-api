@@ -43,6 +43,10 @@ export class IdempotencyInterceptor implements NestInterceptor {
       throw new ValidationFailedError('Idempotency-Key header is required');
     }
     const method = req.method;
+    // Includes the query string intentionally: it scopes the key to the exact
+    // request target, so e.g. a draft create and `?post=true` create-and-post
+    // are treated as different endpoints (cross-endpoint 422) rather than one
+    // silently replaying the other's response. Don't "normalize" this away.
     const path = req.originalUrl ?? req.url;
     const requestHash = createHash('sha256')
       .update(JSON.stringify(req.body ?? null))
