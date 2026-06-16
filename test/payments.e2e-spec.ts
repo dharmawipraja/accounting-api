@@ -340,6 +340,35 @@ describe('Payments (e2e)', () => {
     expect(body.outstanding).toBe('0.0000');
   });
 
+  describe('search (?q=)', () => {
+    it('matches a payment by description and by partner name, composing with direction', async () => {
+      const customerId = await newCustomer('PAY-SEARCH');
+      const invoiceId = await makePostedInvoice(customerId);
+      await request(server())
+        .post('/v1/payments')
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          direction: 'RECEIPT',
+          partnerId: customerId,
+          date: '2026-02-15',
+          cashAccountId: acc['1-1000'],
+          description: 'Pelunasan termin satu',
+          allocations: [{ salesInvoiceId: invoiceId, amount: '600000' }],
+        })
+        .expect(201);
+      const res = await request(server())
+        .get('/v1/payments?q=termin&direction=RECEIPT')
+        .set('Authorization', `Bearer ${acct}`)
+        .expect(200);
+      expect(
+        (res.body as { data: { description: string }[] }).data.some((p) =>
+          p.description?.includes('termin'),
+        ),
+      ).toBe(true);
+    });
+  });
+
   it('reconciliation invariant: AR control GL balance == Σ all posted invoice outstanding', async () => {
     const customerId = await newCustomer('CUST-RECON');
     const invoiceId = await makePostedInvoice(customerId);
