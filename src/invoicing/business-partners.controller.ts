@@ -22,7 +22,7 @@ import {
   BusinessPartnerResponseDto,
 } from './dto/business-partner-response.dto';
 import { BusinessPartner } from '@prisma/client';
-import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { SearchQueryDto } from '../common/dto/search-query.dto';
 import { BusinessPartnersService } from './business-partners.service';
 import { CreateBusinessPartnerDto } from './dto/create-business-partner.dto';
 import { UpdateBusinessPartnerDto } from './dto/update-business-partner.dto';
@@ -39,7 +39,7 @@ export class BusinessPartnersController {
 
   @ApiOkResponse({ type: BusinessPartnerListResponseDto })
   @Get()
-  list(@Query() q: PaginationQueryDto) {
+  list(@Query() q: SearchQueryDto) {
     return this.partners.listPage(q);
   }
   @ApiOkResponse({ type: BusinessPartnerResponseDto })

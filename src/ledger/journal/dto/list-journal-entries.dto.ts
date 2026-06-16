@@ -8,9 +8,9 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { JournalStatus, JournalSourceType } from '@prisma/client';
-import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
+import { SearchQueryDto } from '../../../common/dto/search-query.dto';
 
-export class JournalListQueryDto extends PaginationQueryDto {
+export class JournalListQueryDto extends SearchQueryDto {
   @IsOptional() @IsEnum(JournalStatus) status?: JournalStatus;
   @IsOptional() @IsEnum(JournalSourceType) sourceType?: JournalSourceType;
   @IsOptional()

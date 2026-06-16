@@ -1,8 +1,8 @@
 import { IsEnum, IsOptional, IsUUID } from 'class-validator';
 import { DocumentStatus, PaymentDirection } from '@prisma/client';
-import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
+import { SearchQueryDto } from '../../common/dto/search-query.dto';
 
-export class PaymentListQueryDto extends PaginationQueryDto {
+export class PaymentListQueryDto extends SearchQueryDto {
   @IsOptional() @IsUUID() partnerId?: string;
   @IsOptional() @IsEnum(PaymentDirection) direction?: PaymentDirection;
   @IsOptional() @IsEnum(DocumentStatus) status?: DocumentStatus;
