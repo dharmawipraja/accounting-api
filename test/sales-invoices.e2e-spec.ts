@@ -205,4 +205,94 @@ describe('SalesInvoices (e2e)', () => {
       .send({ ...draftBody(), partnerId: vendor.id })
       .expect(422);
   });
+
+  describe('search (?q=)', () => {
+    let searchPartnerId: string;
+
+    beforeAll(async () => {
+      // Create a distinct partner whose name can be matched by partner-name search
+      searchPartnerId = (
+        await app.get(BusinessPartnersService).create({
+          code: 'CUST-SRCH',
+          name: 'PT Budi Jaya',
+          isCustomer: true,
+        })
+      ).id;
+
+      // Create two invoices with distinct descriptions for this partner
+      const lineBase = {
+        accountId: acc['4-1000'],
+        quantity: '1',
+        unitPrice: '500000',
+        taxCodeIds: [code['PPN-OUT-11']],
+      };
+
+      await request(app.getHttpServer() as App)
+        .post('/v1/sales-invoices')
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          partnerId: searchPartnerId,
+          date: '2026-03-01',
+          description: 'Jasa konsultasi pajak',
+          lines: [{ ...lineBase, description: 'Konsultasi pajak' }],
+        })
+        .expect(201);
+
+      await request(app.getHttpServer() as App)
+        .post('/v1/sales-invoices')
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          partnerId: searchPartnerId,
+          date: '2026-03-02',
+          description: 'Penjualan barang elektronik',
+          lines: [{ ...lineBase, description: 'Barang elektronik' }],
+        })
+        .expect(201);
+    });
+
+    it('matches by description substring', async () => {
+      const res = await request(app.getHttpServer() as App)
+        .get('/v1/sales-invoices?q=konsultasi')
+        .set('Authorization', `Bearer ${acct}`)
+        .expect(200);
+      const body = res.body as {
+        data: { description: string }[];
+        total: number;
+      };
+      expect(body.data.some((i) => i.description?.includes('konsultasi'))).toBe(
+        true,
+      );
+    });
+
+    it('matches by partner name, returning both invoices for that partner', async () => {
+      const res = await request(app.getHttpServer() as App)
+        .get('/v1/sales-invoices?q=budi')
+        .set('Authorization', `Bearer ${acct}`)
+        .expect(200);
+      const body = res.body as { total: number };
+      expect(body.total).toBeGreaterThanOrEqual(2);
+    });
+
+    it('composes ?q= with ?status= filter', async () => {
+      // DRAFT invoices are searchable — composing with status=DRAFT should still find them
+      const res = await request(app.getHttpServer() as App)
+        .get('/v1/sales-invoices?q=budi&status=DRAFT')
+        .set('Authorization', `Bearer ${acct}`)
+        .expect(200);
+      const body = res.body as { data: { status: string }[] };
+      expect(body.data.every((i) => i.status === 'DRAFT')).toBe(true);
+    });
+
+    it('ignores a sub-min-length q (returns normal list)', async () => {
+      const res = await request(app.getHttpServer() as App)
+        .get('/v1/sales-invoices?q=a&limit=5')
+        .set('Authorization', `Bearer ${acct}`)
+        .expect(200);
+      const body = res.body as { data: unknown[]; limit: number };
+      expect(body.limit).toBe(5);
+      expect(Array.isArray(body.data)).toBe(true);
+    });
+  });
 });
