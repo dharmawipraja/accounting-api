@@ -294,5 +294,58 @@ describe('SalesInvoices (e2e)', () => {
       expect(body.limit).toBe(5);
       expect(Array.isArray(body.data)).toBe(true);
     });
+
+    it('excludes a soft-deleted invoice from search results', async () => {
+      const lineBase = {
+        accountId: acc['4-1000'],
+        quantity: '1',
+        unitPrice: '250000',
+        taxCodeIds: [code['PPN-OUT-11']],
+      };
+
+      // Create a DRAFT invoice with a highly distinctive description
+      const created = await request(app.getHttpServer() as App)
+        .post('/v1/sales-invoices')
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          partnerId: searchPartnerId,
+          date: '2026-04-01',
+          description: 'Zarthronex deleted invoice test',
+          lines: [{ ...lineBase, description: 'Zarthronex line' }],
+        })
+        .expect(201);
+      const id = (created.body as { id: string }).id;
+
+      // Confirm it appears in search before deletion
+      const before = await request(app.getHttpServer() as App)
+        .get('/v1/sales-invoices?q=Zarthronex')
+        .set('Authorization', `Bearer ${acct}`)
+        .expect(200);
+      const bodyBefore = before.body as {
+        data: { id: string }[];
+        total: number;
+      };
+      expect(bodyBefore.data.some((i) => i.id === id)).toBe(true);
+      expect(bodyBefore.total).toBeGreaterThanOrEqual(1);
+
+      // Soft-delete via the DELETE endpoint (deleteDraft path — only works on DRAFT)
+      await request(app.getHttpServer() as App)
+        .delete(`/v1/sales-invoices/${id}`)
+        .set('Authorization', `Bearer ${acct}`)
+        .expect(204);
+
+      // Confirm it no longer appears in search results after deletion
+      const after = await request(app.getHttpServer() as App)
+        .get('/v1/sales-invoices?q=Zarthronex')
+        .set('Authorization', `Bearer ${acct}`)
+        .expect(200);
+      const bodyAfter = after.body as {
+        data: { id: string }[];
+        total: number;
+      };
+      expect(bodyAfter.data.some((i) => i.id === id)).toBe(false);
+      expect(bodyAfter.total).toBe(0);
+    });
   });
 });

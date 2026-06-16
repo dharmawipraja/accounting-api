@@ -140,5 +140,46 @@ describe('BusinessPartners (e2e)', () => {
       expect(body.limit).toBe(5);
       expect(Array.isArray(body.data)).toBe(true);
     });
+
+    it('excludes a soft-deleted partner from search results', async () => {
+      const partners = app.get(BusinessPartnersService);
+      // Create a partner with a highly distinctive name to isolate this test
+      const created = await partners.create({
+        code: 'SRCH-DEL-BP',
+        name: 'PT Zarthronex Deleted',
+        isCustomer: true,
+      });
+      const id = created.id;
+
+      // Confirm it appears in search before deletion
+      const before = await request(app.getHttpServer() as App)
+        .get('/v1/partners?q=Zarthronex')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const bodyBefore = before.body as {
+        data: { id: string }[];
+        total: number;
+      };
+      expect(bodyBefore.data.some((p) => p.id === id)).toBe(true);
+      expect(bodyBefore.total).toBeGreaterThanOrEqual(1);
+
+      // Soft-delete via the DELETE endpoint (same path as existing soft-delete test)
+      await request(app.getHttpServer() as App)
+        .delete(`/v1/partners/${id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(204);
+
+      // Confirm it no longer appears in search results after deletion
+      const after = await request(app.getHttpServer() as App)
+        .get('/v1/partners?q=Zarthronex')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const bodyAfter = after.body as {
+        data: { id: string }[];
+        total: number;
+      };
+      expect(bodyAfter.data.some((p) => p.id === id)).toBe(false);
+      expect(bodyAfter.total).toBe(0);
+    });
   });
 });
