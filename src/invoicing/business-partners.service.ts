@@ -96,7 +96,12 @@ export class BusinessPartnersService {
           })
         : [];
       const byId = new Map(rows.map((r) => [r.id, r]));
-      const data = ids.map((id) => byId.get(id)!).filter(Boolean);
+      // Re-order to the relevance rank; drop any id concurrently soft-deleted
+      // between the ranked-id query and hydration (the typed filter narrows away
+      // the undefined without a non-null assertion).
+      const data = ids
+        .map((id) => byId.get(id))
+        .filter((r): r is BusinessPartner => r !== undefined);
       return { data, total, limit, offset };
     }
     const [data, total] = await Promise.all([
