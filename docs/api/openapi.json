@@ -680,6 +680,15 @@
             }
           },
           {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
+          {
             "name": "limit",
             "required": false,
             "in": "query",
@@ -1246,6 +1255,15 @@
         "operationId": "BusinessPartnersController_list_v1",
         "parameters": [
           {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
+          {
             "name": "limit",
             "required": false,
             "in": "query",
@@ -1464,6 +1482,15 @@
       "get": {
         "operationId": "SalesInvoicesController_list_v1",
         "parameters": [
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
           {
             "name": "limit",
             "required": false,
@@ -1769,6 +1796,15 @@
         "operationId": "PurchaseBillsController_list_v1",
         "parameters": [
           {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
+          {
             "name": "limit",
             "required": false,
             "in": "query",
@@ -2072,6 +2108,15 @@
       "get": {
         "operationId": "PaymentsController_list_v1",
         "parameters": [
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
           {
             "name": "limit",
             "required": false,
