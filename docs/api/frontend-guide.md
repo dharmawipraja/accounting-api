@@ -18,6 +18,12 @@ year, PPN (VAT) and PPh (withholding) tax handling, and the standard financial
 statements (Neraca / balance sheet, Laba Rugi / income statement, Buku Besar /
 general ledger, Arus Kas / cash flow).
 
+### Base path
+
+All business endpoints are served under **`/v1`** (e.g. `POST /v1/sales-invoices`,
+`GET /v1/ledger/accounts`). Operational probes (`/health`, `/ready`, `/metrics`) stay
+**unprefixed** — they are version-neutral.
+
 ### Interactive docs
 
 - An OpenAPI document is committed at `docs/api/openapi.json`.
@@ -172,25 +178,66 @@ types. The conventions the schemas encode (rely on these):
 - **`DELETE` returns `204 No Content`** (empty body). The enveloped-vs-bare-array
   distinction for lists is covered next.
 
+### Idempotency
+
+Several write endpoints require an **`Idempotency-Key`** request header to make
+retries safe. The key must be a unique string per logical request (a UUID is
+recommended). The covered endpoints are:
+
+- **Invoice/bill/payment:** `POST /v1/sales-invoices`, `POST /v1/sales-invoices/:id/post`,
+  `POST /v1/sales-invoices/:id/void`, `POST /v1/purchase-bills`,
+  `POST /v1/purchase-bills/:id/post`, `POST /v1/purchase-bills/:id/void`,
+  `POST /v1/payments`, `POST /v1/payments/:id/post`, `POST /v1/payments/:id/void`.
+- **Journals & opening balances:** `POST /v1/ledger/journal-entries`,
+  `POST /v1/ledger/journal-entries/:id/post`,
+  `POST /v1/ledger/journal-entries/:id/reverse`,
+  `POST /v1/ledger/opening-balances`.
+- **Year-end close:** `POST /v1/close/year-end`.
+
+Behavior:
+- **Replay** — a repeated call with the same key and identical body returns the
+  original response (201/200) without re-executing the write. Safe to retry.
+- **Body/endpoint mismatch** — same key with a different request body or a different
+  endpoint → **`422 VALIDATION_FAILED`**.
+- **In-flight** — same key while the first request is still being processed →
+  **`409 CONFLICT`**.
+- **Missing header** — omitting `Idempotency-Key` on a covered endpoint →
+  **`422 VALIDATION_FAILED`**.
+
+> **Not covered:** `POST /v1/partners`, `POST /v1/ledger/accounts`,
+> `POST /v1/tax/codes` — these are already idempotent by virtue of their unique
+> `code` constraint (duplicate → `409 CONFLICT`). `POST /v1/ledger/periods/generate`
+> and non-create mutations (`PATCH`, `DELETE`, `*/deactivate`, `*/reopen`) are also
+> not covered.
+
 ### Pagination
 
 Pagination is **not uniform** — check per endpoint:
 
-- **`GET /ledger/journal-entries` is enveloped:**
+- **`GET /v1/ledger/journal-entries` and the four transactional lists are enveloped:**
 
   ```json
   { "data": [ ... ], "total": 123, "limit": 50, "offset": 0 }
   ```
 
-  `limit` default **50**, **max 200**; `offset` default 0. Supports filters
-  `?status=&sourceType=&fiscalYear=&from=&to=&limit=&offset=`.
+  `limit` default **50**, **max 200**; `offset` default 0.
 
-- **Only `GET /ledger/journal-entries` returns the `{ data, total, limit, offset }`
-  envelope.** Every other list endpoint — including `GET /audit` — returns a **bare
-  JSON array** (no envelope): `/audit`, `/sales-invoices`, `/purchase-bills`,
-  `/payments`, `/partners`, `/ledger/accounts`, `/tax/codes`, `/ledger/periods`.
-  Do not look for `.data` on these. (`GET /audit` still accepts `limit`/`offset`
-  query params for paging, but the response itself is a bare array.)
+  The **enveloped** endpoints are:
+  - `GET /v1/ledger/journal-entries` (filters: `status, sourceType, fiscalYear, from, to, limit, offset`)
+  - `GET /v1/partners` (filters: `limit, offset`)
+  - `GET /v1/sales-invoices` (filters: `partnerId, status, limit, offset`)
+  - `GET /v1/purchase-bills` (filters: `partnerId, status, limit, offset`)
+  - `GET /v1/payments` (filters: `partnerId, direction, status, limit, offset`)
+
+  Read items from the `.data` array on these responses.
+
+- **`GET /v1/ledger/accounts` and `GET /v1/tax/codes` return bare arrays** (bounded
+  reference data — no pagination needed; load them wholesale).
+
+- **All other list endpoints** — including `GET /v1/audit`, `GET /v1/ledger/periods`
+  — return a **bare JSON array** (no envelope). `GET /v1/audit` still accepts
+  `limit`/`offset` query params (limit default 50, max 500), but its response body
+  is a bare array.
 
 ### Dates
 
@@ -225,9 +272,11 @@ operators can correlate the client error with server logs.
 Four roles exist: **VIEWER, ACCOUNTANT, APPROVER, ADMIN**.
 
 **All read (`GET`) endpoints are available to any authenticated user**, including
-VIEWER — reads carry no `@Roles` restriction. `POST /tax/calculate` is a pure preview
-and is likewise available to any authenticated user. The table below therefore lists
-only the **mutating / privileged** endpoints, where the role actually gates access.
+VIEWER — reads carry no `@Roles` restriction. `POST /v1/tax/calculate` is a pure
+preview and is likewise available to any authenticated user. The table below therefore
+lists only the **mutating / privileged** endpoints, where the role actually gates
+access. All paths below are under `/v1` (e.g. `POST /partners` means
+`POST /v1/partners`).
 
 A "✓" means that role is allowed. `403 FORBIDDEN` is returned otherwise.
 
@@ -289,10 +338,12 @@ DELETE /ledger/journal-entries/:id      delete a DRAFT          (ACCOUNTANT+)
 ```
 
 - Debits must equal credits or you get `422 UNBALANCED_ENTRY`.
-- **Discover drafts awaiting approval** via `GET /ledger/journal-entries?status=DRAFT`
+- **Discover drafts awaiting approval** via `GET /v1/ledger/journal-entries?status=DRAFT`
   — this is your approval queue.
-- Posting/reversing/create-and-post accept an optional `Idempotency-Key` request
-  header; reuse the same key on retry to avoid double-posting.
+- `POST /v1/ledger/journal-entries`, `/:id/post`, `/:id/reverse`, and
+  `POST /v1/ledger/opening-balances` all **require an `Idempotency-Key` header** —
+  pass a unique UUID on each new request; retries with the same key replay the original
+  response safely (see [§2 Idempotency](#idempotency)).
 
 ### Sales invoice / Purchase bill
 
@@ -401,117 +452,118 @@ no auth.
 - `GET    /auth/me` · any · current user `{ id, email, role }`
 - `GET    /auth/admin-only` · ADMIN · RBAC smoke endpoint
 
-### Health / ops (public, unauthenticated)
+### Health / ops (public, unauthenticated, version-neutral — no `/v1` prefix)
 - `GET    /health` · public · liveness
 - `GET    /ready` · public · readiness (503 if DB down)
 - `GET    /metrics` · public · Prometheus metrics (may be token-gated by ops)
 
 ### Ledger — accounts
-- `GET    /ledger/accounts` · any · list chart of accounts (bare array)
-- `GET    /ledger/accounts/:id` · any · get one account
-- `GET    /ledger/accounts/:id/balance` · any · account balance (`?asOf=`)
-- `POST   /ledger/accounts` · ACCOUNTANT+ · create account
-- `PATCH  /ledger/accounts/:id` · ACCOUNTANT+ · update account
-- `POST   /ledger/accounts/:id/deactivate` · ADMIN · soft-deactivate account
-- `DELETE /ledger/accounts/:id` · ADMIN · soft-delete account
+- `GET    /v1/ledger/accounts` · any · list chart of accounts (**bare array** — bounded reference data)
+- `GET    /v1/ledger/accounts/:id` · any · get one account
+- `GET    /v1/ledger/accounts/:id/balance` · any · account balance (`?asOf=`)
+- `POST   /v1/ledger/accounts` · ACCOUNTANT+ · create account
+- `PATCH  /v1/ledger/accounts/:id` · ACCOUNTANT+ · update account
+- `POST   /v1/ledger/accounts/:id/deactivate` · ADMIN · soft-deactivate account
+- `DELETE /v1/ledger/accounts/:id` · ADMIN · soft-delete account
 
 ### Ledger — journal
-- `GET    /ledger/journal-entries` · any · **paginated** list `{ data, total, limit, offset }` (filters: `status, sourceType, fiscalYear, from, to, limit, offset`)
-- `GET    /ledger/journal-entries/:id` · any · get one entry
-- `POST   /ledger/journal-entries` · ACCOUNTANT+ · create draft (`?post=true` = create+post, APPROVER/ADMIN only)
-- `POST   /ledger/journal-entries/:id/post` · APPROVER/ADMIN · post draft
-- `POST   /ledger/journal-entries/:id/reverse` · APPROVER/ADMIN · reverse posted entry
-- `DELETE /ledger/journal-entries/:id` · ACCOUNTANT+ · delete draft
-- `POST   /ledger/opening-balances` · ADMIN · post opening balances
+- `GET    /v1/ledger/journal-entries` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `status, sourceType, fiscalYear, from, to, limit, offset`)
+- `GET    /v1/ledger/journal-entries/:id` · any · get one entry
+- `POST   /v1/ledger/journal-entries` · ACCOUNTANT+ · create draft (`?post=true` = create+post, APPROVER/ADMIN only) · **requires `Idempotency-Key`**
+- `POST   /v1/ledger/journal-entries/:id/post` · APPROVER/ADMIN · post draft · **requires `Idempotency-Key`**
+- `POST   /v1/ledger/journal-entries/:id/reverse` · APPROVER/ADMIN · reverse posted entry · **requires `Idempotency-Key`**
+- `DELETE /v1/ledger/journal-entries/:id` · ACCOUNTANT+ · delete draft
+- `POST   /v1/ledger/opening-balances` · ADMIN · post opening balances · **requires `Idempotency-Key`**
 
 ### Ledger — periods & trial balance
-- `GET    /ledger/periods?fiscalYear=` · any · list monthly periods (bare array)
-- `POST   /ledger/periods/generate` · APPROVER/ADMIN · generate a year's periods
-- `POST   /ledger/periods/:id/close` · APPROVER/ADMIN · close a period
-- `POST   /ledger/periods/:id/reopen` · ADMIN · reopen a period
-- `GET    /ledger/trial-balance?asOf=` · any · trial balance
+- `GET    /v1/ledger/periods?fiscalYear=` · any · list monthly periods (bare array)
+- `POST   /v1/ledger/periods/generate` · APPROVER/ADMIN · generate a year's periods
+- `POST   /v1/ledger/periods/:id/close` · APPROVER/ADMIN · close a period
+- `POST   /v1/ledger/periods/:id/reopen` · ADMIN · reopen a period
+- `GET    /v1/ledger/trial-balance?asOf=` · any · trial balance
 
 ### Reports (all read, any auth)
-- `GET    /reports/balance-sheet?asOf=` · any · Neraca
-- `GET    /reports/income-statement?from=&to=` · any · Laba Rugi
-- `GET    /reports/general-ledger?accountId=&from=&to=` · any · Buku Besar
-- `GET    /reports/ar-aging?asOf=` · any · AR aging
-- `GET    /reports/ap-aging?asOf=` · any · AP aging
-- `GET    /reports/cash-flow?from=&to=` · any · Arus Kas
+- `GET    /v1/reports/balance-sheet?asOf=` · any · Neraca
+- `GET    /v1/reports/income-statement?from=&to=` · any · Laba Rugi
+- `GET    /v1/reports/general-ledger?accountId=&from=&to=` · any · Buku Besar
+- `GET    /v1/reports/ar-aging?asOf=` · any · AR aging
+- `GET    /v1/reports/ap-aging?asOf=` · any · AP aging
+- `GET    /v1/reports/cash-flow?from=&to=` · any · Arus Kas
 
 ### Sales invoices
-- `GET    /sales-invoices` · any · list (bare array)
-- `GET    /sales-invoices/:id` · any · get one
-- `POST   /sales-invoices` · ACCOUNTANT+ · create draft
-- `PATCH  /sales-invoices/:id` · ACCOUNTANT+ · update draft
-- `POST   /sales-invoices/:id/post` · APPROVER/ADMIN · post
-- `POST   /sales-invoices/:id/void` · APPROVER/ADMIN · void
-- `DELETE /sales-invoices/:id` · ACCOUNTANT+ · delete draft
+- `GET    /v1/sales-invoices` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `partnerId, status, limit, offset`)
+- `GET    /v1/sales-invoices/:id` · any · get one
+- `POST   /v1/sales-invoices` · ACCOUNTANT+ · create draft · **requires `Idempotency-Key`**
+- `PATCH  /v1/sales-invoices/:id` · ACCOUNTANT+ · update draft
+- `POST   /v1/sales-invoices/:id/post` · APPROVER/ADMIN · post · **requires `Idempotency-Key`**
+- `POST   /v1/sales-invoices/:id/void` · APPROVER/ADMIN · void · **requires `Idempotency-Key`**
+- `DELETE /v1/sales-invoices/:id` · ACCOUNTANT+ · delete draft
 
 ### Purchase bills
-- `GET    /purchase-bills` · any · list (bare array)
-- `GET    /purchase-bills/:id` · any · get one
-- `POST   /purchase-bills` · ACCOUNTANT+ · create draft
-- `PATCH  /purchase-bills/:id` · ACCOUNTANT+ · update draft
-- `POST   /purchase-bills/:id/post` · APPROVER/ADMIN · post
-- `POST   /purchase-bills/:id/void` · APPROVER/ADMIN · void
-- `DELETE /purchase-bills/:id` · ACCOUNTANT+ · delete draft
+- `GET    /v1/purchase-bills` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `partnerId, status, limit, offset`)
+- `GET    /v1/purchase-bills/:id` · any · get one
+- `POST   /v1/purchase-bills` · ACCOUNTANT+ · create draft · **requires `Idempotency-Key`**
+- `PATCH  /v1/purchase-bills/:id` · ACCOUNTANT+ · update draft
+- `POST   /v1/purchase-bills/:id/post` · APPROVER/ADMIN · post · **requires `Idempotency-Key`**
+- `POST   /v1/purchase-bills/:id/void` · APPROVER/ADMIN · void · **requires `Idempotency-Key`**
+- `DELETE /v1/purchase-bills/:id` · ACCOUNTANT+ · delete draft
 
 ### Payments
-- `GET    /payments` · any · list (bare array)
-- `GET    /payments/:id` · any · get one
-- `POST   /payments` · ACCOUNTANT+ · create draft (RECEIPT/DISBURSEMENT + allocations)
-- `POST   /payments/:id/post` · APPROVER/ADMIN · post
-- `POST   /payments/:id/void` · APPROVER/ADMIN · void
-- `DELETE /payments/:id` · ACCOUNTANT+ · delete draft
+- `GET    /v1/payments` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `partnerId, direction, status, limit, offset`)
+- `GET    /v1/payments/:id` · any · get one
+- `POST   /v1/payments` · ACCOUNTANT+ · create draft (RECEIPT/DISBURSEMENT + allocations) · **requires `Idempotency-Key`**
+- `POST   /v1/payments/:id/post` · APPROVER/ADMIN · post · **requires `Idempotency-Key`**
+- `POST   /v1/payments/:id/void` · APPROVER/ADMIN · void · **requires `Idempotency-Key`**
+- `DELETE /v1/payments/:id` · ACCOUNTANT+ · delete draft
 
 ### Business partners
-- `GET    /partners` · any · list (bare array)
-- `GET    /partners/:id` · any · get one
-- `POST   /partners` · ACCOUNTANT+ · create
-- `PATCH  /partners/:id` · ACCOUNTANT+ · update
-- `POST   /partners/:id/deactivate` · ADMIN · deactivate
-- `DELETE /partners/:id` · ADMIN · delete
+- `GET    /v1/partners` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `limit, offset`)
+- `GET    /v1/partners/:id` · any · get one
+- `POST   /v1/partners` · ACCOUNTANT+ · create
+- `PATCH  /v1/partners/:id` · ACCOUNTANT+ · update
+- `POST   /v1/partners/:id/deactivate` · ADMIN · deactivate
+- `DELETE /v1/partners/:id` · ADMIN · delete
 
 ### Tax
-- `GET    /tax/codes` · any · list tax codes (bare array)
-- `GET    /tax/codes/:id` · any · get one
-- `POST   /tax/codes` · ACCOUNTANT+ · create
-- `PATCH  /tax/codes/:id` · ACCOUNTANT+ · update
-- `POST   /tax/codes/:id/deactivate` · ADMIN · deactivate
-- `DELETE /tax/codes/:id` · ADMIN · delete
-- `POST   /tax/calculate` · any · PPN/PPh preview (posts nothing)
+- `GET    /v1/tax/codes` · any · list tax codes (**bare array** — bounded reference data)
+- `GET    /v1/tax/codes/:id` · any · get one
+- `POST   /v1/tax/codes` · ACCOUNTANT+ · create
+- `PATCH  /v1/tax/codes/:id` · ACCOUNTANT+ · update
+- `POST   /v1/tax/codes/:id/deactivate` · ADMIN · deactivate
+- `DELETE /v1/tax/codes/:id` · ADMIN · delete
+- `POST   /v1/tax/calculate` · any · PPN/PPh preview (posts nothing)
 
 ### Close
-- `POST   /close/year-end` · ADMIN · run year-end close (`{ fiscalYear }`)
-- `POST   /close/year-end/:fy/reopen` · ADMIN · reopen a closed year
-- `GET    /close/year-end/:fy` · any · close status (404 if none)
+- `POST   /v1/close/year-end` · ADMIN · run year-end close (`{ fiscalYear }`) · **requires `Idempotency-Key`**
+- `POST   /v1/close/year-end/:fy/reopen` · ADMIN · reopen a closed year
+- `GET    /v1/close/year-end/:fy` · any · close status (404 if none)
 
 ### Company
-- `GET    /company/settings` · any · company settings
-- `PATCH  /company/settings` · ADMIN · update company settings
+- `GET    /v1/company/settings` · any · company settings
+- `PATCH  /v1/company/settings` · ADMIN · update company settings
 
 ### Audit
-- `GET    /audit` · ADMIN · audit log — **bare array** (no envelope) (filters: `userId, method, from, to, limit, offset`; `limit` default 50, **max 500**; `method` ∈ POST/PATCH/PUT/DELETE)
+- `GET    /v1/audit` · ADMIN · audit log — **bare array** (no envelope) (filters: `userId, method, from, to, limit, offset`; `limit` default 50, **max 500**; `method` ∈ POST/PATCH/PUT/DELETE)
 
 ### Response schema quick-map
 
 Each endpoint's 2xx body resolves to a named schema in `openapi.json` — look up the
-fields there; this is just the name to find. List endpoints return an **array of** the
-named schema (except journal-entries, which is the enveloped `JournalEntryListResponseDto`).
+fields there; this is just the name to find. The five enveloped list endpoints wrap
+their items in `{ data, total, limit, offset }`; bare-array endpoints return the item
+schema directly in an array. Accounts and tax codes return bare arrays.
 
 | Domain | Response schema(s) |
 |---|---|
 | Auth | `TokenPairDto` (login/refresh) · `AuthenticatedUserDto` (`/auth/me`) · `OkFlagDto` (`/auth/admin-only`) |
 | Health / ops | `HealthStatusDto` · `ReadinessStatusDto` · `/metrics` → `text/plain` (not JSON) |
-| Accounts | `AccountResponseDto` · balance → `AccountBalanceDto` · trial balance → `TrialBalanceDto` |
-| Journal | `JournalEntryResponseDto` (incl. `JournalLineResponseDto[]`) · list → `JournalEntryListResponseDto` (items `JournalEntryListItemDto`) · opening-balances → `JournalEntryResponseDto` |
-| Periods | `FiscalPeriodResponseDto` |
-| Tax | `TaxCodeResponseDto` · calculate → `TaxCalculationDto` (`TaxBreakdownRowDto[]` + `CalculatedLineDto[]`) |
-| Partners | `BusinessPartnerResponseDto` |
-| Sales invoices | `SalesInvoiceResponseDto` (incl. optional `SalesInvoiceLineResponseDto[]`) |
-| Purchase bills | `PurchaseBillResponseDto` (incl. optional `PurchaseBillLineResponseDto[]`) |
-| Payments | `PaymentResponseDto` (incl. optional `PaymentAllocationResponseDto[]`) |
+| Accounts | `AccountResponseDto` (bare array on list) · balance → `AccountBalanceDto` · trial balance → `TrialBalanceDto` |
+| Journal | `JournalEntryResponseDto` (incl. `JournalLineResponseDto[]`) · list → `JournalEntryListResponseDto` (envelope; items `JournalEntryListItemDto`) · opening-balances → `JournalEntryResponseDto` |
+| Periods | `FiscalPeriodResponseDto` (bare array on list) |
+| Tax | `TaxCodeResponseDto` (bare array on list) · calculate → `TaxCalculationDto` (`TaxBreakdownRowDto[]` + `CalculatedLineDto[]`) |
+| Partners | `BusinessPartnerResponseDto` (single) · list → `BusinessPartnerListResponseDto` (envelope) |
+| Sales invoices | `SalesInvoiceResponseDto` (single; incl. optional `SalesInvoiceLineResponseDto[]`) · list → `SalesInvoiceListResponseDto` (envelope) |
+| Purchase bills | `PurchaseBillResponseDto` (single; incl. optional `PurchaseBillLineResponseDto[]`) · list → `PurchaseBillListResponseDto` (envelope) |
+| Payments | `PaymentResponseDto` (single; incl. optional `PaymentAllocationResponseDto[]`) · list → `PaymentListResponseDto` (envelope) |
 | Reports | `BalanceSheetDto` · `IncomeStatementDto` · `GeneralLedgerDto` · `AgingReportDto` (AR & AP) · `CashFlowDto` |
 | Close | `YearEndClosingResponseDto` |
 | Company | `CompanySettingsDto` |
@@ -525,22 +577,25 @@ named schema (except journal-entries, which is the enveloped `JournalEntryListRe
 Screens → the endpoints they consume:
 
 - **Login** — `/auth/login`, `/auth/refresh`, `/auth/me`.
-- **Dashboard** — summary cards from `/reports/balance-sheet`,
-  `/reports/income-statement`, `/reports/cash-flow`, plus open-drafts count from
-  `/ledger/journal-entries?status=DRAFT`.
-- **Chart of Accounts** — `/ledger/accounts` (+ `:id/balance`); create/update for
+- **Dashboard** — summary cards from `/v1/reports/balance-sheet`,
+  `/v1/reports/income-statement`, `/v1/reports/cash-flow`, plus open-drafts count from
+  `/v1/ledger/journal-entries?status=DRAFT`.
+- **Chart of Accounts** — `/v1/ledger/accounts` (+ `:id/balance`); create/update for
   ACCOUNTANT+, deactivate/delete for ADMIN.
-- **Journal register** — `/ledger/journal-entries` (paginated list + filters) with
-  create/post/reverse, and a **DRAFT approval queue** (`?status=DRAFT`) for APPROVER/ADMIN.
-- **Sales Invoices / Purchase Bills / Payments** — list + draft editor + post/void;
-  payments need an allocation UI against open documents.
-- **Reports** — `/reports/*` plus `/ledger/trial-balance`; respect the `asOf` vs
+- **Journal register** — `/v1/ledger/journal-entries` (enveloped list + filters) with
+  create/post/reverse (all requiring `Idempotency-Key`), and a **DRAFT approval queue**
+  (`?status=DRAFT`) for APPROVER/ADMIN.
+- **Sales Invoices / Purchase Bills / Payments** — enveloped list + draft editor +
+  post/void (all writes requiring `Idempotency-Key`); payments need an allocation UI
+  against open documents.
+- **Reports** — `/v1/reports/*` plus `/v1/ledger/trial-balance`; respect the `asOf` vs
   `from/to` parameter split per report.
-- **Periods & Year-end Close** — `/ledger/periods` (generate/close/reopen) and
-  `/close/year-end` (ADMIN); show period open/closed state and the year-lock.
-- **Tax** — `/tax/codes` management + live `/tax/calculate` preview inside invoice/bill editors.
-- **Audit log** — `/audit` (ADMIN only; bare-array response, filterable, `limit`/`offset` paging).
-- **Company settings** — `/company/settings` (read any, edit ADMIN).
+- **Periods & Year-end Close** — `/v1/ledger/periods` (generate/close/reopen) and
+  `/v1/close/year-end` (ADMIN; requires `Idempotency-Key`); show period open/closed
+  state and the year-lock.
+- **Tax** — `/v1/tax/codes` management + live `/v1/tax/calculate` preview inside invoice/bill editors.
+- **Audit log** — `/v1/audit` (ADMIN only; bare-array response, filterable, `limit`/`offset` paging).
+- **Company settings** — `/v1/company/settings` (read any, edit ADMIN).
 
 ### Cross-cutting work to build once
 
@@ -553,5 +608,11 @@ Screens → the endpoints they consume:
 - **Role-gated UI** — read the role from `/auth/me`, hide/disable actions a role
   cannot perform (per the role matrix), but **still handle 403/`SEGREGATION_OF_DUTIES`**
   defensively on every mutation.
-- **Pagination helpers** — one for the single enveloped list (`journal-entries`),
-  and treat all other lists (including `/audit`) as bare arrays.
+- **Idempotency helper** — generate and attach a unique `Idempotency-Key` UUID on
+  every call to a covered write endpoint (invoice/bill/payment create/post/void,
+  year-end close, journal/opening-balances). Store the key before the call so you
+  can replay it on retry without changing the body.
+- **Pagination helpers** — build one reusable envelope reader for the five enveloped
+  lists (`journal-entries`, `partners`, `sales-invoices`, `purchase-bills`,
+  `payments`); treat all other lists (`accounts`, `tax-codes`, `periods`, `audit`)
+  as bare arrays.

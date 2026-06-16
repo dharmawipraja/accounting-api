@@ -8,6 +8,19 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **API versioning** — all business routes are served under `/v1`
+  (`enableVersioning`, URI strategy). Operational probes (`/health`, `/ready`,
+  `/metrics`) remain version-neutral.
+- **Generalized idempotency** — a reusable `@Idempotent()` interceptor stores a
+  JSON response snapshot keyed by `Idempotency-Key`. Required on invoice/bill/
+  payment creates, the money-moving transitions (`:id/post`, `:id/void`, year-end
+  close), and the journal/opening-balances endpoints. Replays return the original
+  response; key reuse with a different body/endpoint → 422; in-flight → 409.
+  (Reference-data creates are not covered — their unique `code` already prevents
+  duplicates.)
+- **List pagination** — partners, sales invoices, purchase bills, and payments
+  now return `{ data, total, limit, offset }` (`?limit` max 200, default 50;
+  `?offset`). Accounts and tax codes remain full lists (bounded reference data).
 - **Typed OpenAPI response schemas** — every endpoint's 2xx response body is now
   fully described in `docs/api/openapi.json` (entity shapes as `*ResponseDto`,
   computed/report shapes as `*Dto`), so a generated client yields response types,
@@ -17,6 +30,13 @@ All notable changes to this project are documented here. The format is based on
   `outstanding`/`paymentStatus`, detail-only nested `lines`/`allocations`).
   Document-only — no API behavior change (additive `@Api*` annotations + response
   DTO classes); all 152 e2e assertions pass unchanged.
+
+### Changed
+
+- **Breaking:** business route paths are now `/v1/...`; the four transactional
+  lists above return an envelope instead of a bare array. The journal/
+  opening-balances endpoints now require an `Idempotency-Key`. See
+  `docs/api/openapi.json`.
 
 ### Fixed
 

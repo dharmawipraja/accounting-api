@@ -80,6 +80,12 @@ OpenAPI (Swagger UI) is served at `/docs`. It is disabled in production by defau
 
 A committed, machine-readable contract lives at [`docs/api/openapi.json`](docs/api/openapi.json) — both request **and response** bodies are fully typed (every 2xx response resolves to a named `components.schemas` entry), so a generated client yields response types too. Regenerate it with `npm run openapi:export`. For integration semantics (auth, conventions, the role matrix, domain lifecycles, and a glossary), see [`docs/api/frontend-guide.md`](docs/api/frontend-guide.md); [`docs/api/frontend-agent-brief.md`](docs/api/frontend-agent-brief.md) is a copy-to-your-repo briefing for building a client.
 
+Key conventions for client builders:
+
+- **`/v1` versioning** — all business routes are served under `/v1` (e.g. `GET /v1/ledger/accounts`). The operational probes (`/health`, `/ready`, `/metrics`) are version-neutral and remain unprefixed.
+- **Idempotency** — write endpoints that create or transition financial documents (invoice/bill/payment create, post, and void; journal create, post, and reverse; opening-balances; year-end close) require an `Idempotency-Key` request header. Pass a unique UUID per logical write; retries with the same key replay the original response without re-executing the write. Missing key → `422`; key reuse with different body/endpoint → `422`; in-flight duplicate → `409`.
+- **Enveloped pagination** — five list endpoints return `{ data, total, limit, offset }` (`?limit` max 200, default 50; `?offset`): `GET /v1/partners`, `GET /v1/sales-invoices`, `GET /v1/purchase-bills`, `GET /v1/payments`, and `GET /v1/ledger/journal-entries`. Accounts and tax codes return full bare arrays (bounded reference data).
+
 ## Production deployment
 
 Deploy a tagged release on a single Docker host (Caddy auto-HTTPS, migrate-on-deploy gate, and a `pg_dump` backup sidecar):
