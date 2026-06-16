@@ -22,8 +22,8 @@ export interface TrigramSearchInput {
   table: string;
   /** Base table alias (constant), e.g. 't'. */
   alias: string;
-  /** Base-table searchable columns (constants). */
-  ownColumns: string[];
+  /** Base-table searchable columns (constants); at least one (non-empty). */
+  ownColumns: [string, ...string[]];
   /** Optional partner join. */
   join?: TrigramJoin;
   /** Extra WHERE predicates, alias-qualified + parameterized (built by the caller). */
@@ -49,6 +49,10 @@ function columnRefs(input: TrigramSearchInput): Prisma.Sql[] {
  * inlined via Prisma.raw; every VALUE (q, threshold, filters, limit, offset) is
  * bound. Predicate per column: substring (ILIKE, index-accelerated) OR fuzzy
  * (similarity > threshold). Ranked by best similarity, stable tiebreaker.
+ *
+ * PERF: the GIN trigram index accelerates the ILIKE arm; the `similarity() >`
+ * arm is a recheck (the `%` operator + `SET LOCAL pg_trgm.similarity_threshold`
+ * would be index-aware, but needs a tx — not worth it at single-company scale).
  */
 export function buildTrigramIdQuery(input: TrigramSearchInput): Prisma.Sql {
   const refs = columnRefs(input);
