@@ -162,4 +162,41 @@ describe('Journal-entry list (e2e)', () => {
     await get('/v1/ledger/journal-entries?status=GARBAGE').expect(400);
     await get('/v1/ledger/journal-entries?fiscalYear=abc').expect(400);
   });
+
+  describe('search (?q=)', () => {
+    it('matches journal entries by description', async () => {
+      // Create a draft entry with a distinctive description via JournalService
+      await app.get(JournalService).createDraft({
+        date: new Date('2026-04-01'),
+        description: 'Penyesuaian akhir bulan',
+        createdBy: 'a',
+        lines: [
+          { accountId: acc['1-1000'], debit: '750000' },
+          { accountId: acc['3-1000'], credit: '750000' },
+        ],
+      });
+      const res = await get('/v1/ledger/journal-entries?q=penyesuaian').expect(
+        200,
+      );
+      const body = res.body as {
+        data: { description: string }[];
+        total: number;
+      };
+      expect(body.total).toBeGreaterThanOrEqual(1);
+      expect(
+        body.data.some((e) =>
+          e.description?.toLowerCase().includes('penyesuaian'),
+        ),
+      ).toBe(true);
+    });
+
+    it('ignores a sub-min-length q (returns the normal list)', async () => {
+      const res = await get('/v1/ledger/journal-entries?q=a&limit=5').expect(
+        200,
+      );
+      const body = res.body as { data: unknown[]; limit: number };
+      expect(body.limit).toBe(5);
+      expect(Array.isArray(body.data)).toBe(true);
+    });
+  });
 });

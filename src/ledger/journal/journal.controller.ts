@@ -43,6 +43,7 @@ export class JournalController {
   @Get()
   list(@Query() q: JournalListQueryDto) {
     return this.journal.list({
+      q: q.q,
       status: q.status,
       sourceType: q.sourceType,
       fiscalYear: q.fiscalYear,

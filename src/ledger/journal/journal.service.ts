@@ -6,6 +6,10 @@ import {
   Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import {
+  trigramSearch,
+  MIN_QUERY_LENGTH,
+} from '../../common/search/trigram-search';
 import { PostingService } from '../posting/posting.service';
 import { AccountsService } from '../accounts/accounts.service';
 import { PostLineInput } from '../posting/posting.types';
@@ -38,6 +42,7 @@ export interface JournalEntryListItem {
 }
 
 export interface JournalListFilter {
+  q?: string;
   status?: JournalStatus;
   sourceType?: JournalSourceType;
   fiscalYear?: number;
@@ -188,6 +193,42 @@ export class JournalService {
     limit: number;
     offset: number;
   }> {
+    const term = filter.q?.trim() ?? '';
+    if (term.length >= MIN_QUERY_LENGTH) {
+      const filters: Prisma.Sql[] = [];
+      if (filter.status)
+        filters.push(Prisma.sql`t.status::text = ${filter.status}`);
+      if (filter.sourceType)
+        filters.push(Prisma.sql`t.source_type::text = ${filter.sourceType}`);
+      if (filter.fiscalYear)
+        filters.push(Prisma.sql`t.fiscal_year = ${filter.fiscalYear}`);
+      if (filter.from) filters.push(Prisma.sql`t.date >= ${filter.from}`);
+      if (filter.to) filters.push(Prisma.sql`t.date <= ${filter.to}`);
+      const { ids, total } = await trigramSearch(this.prisma, {
+        table: 'journal_entries',
+        alias: 't',
+        ownColumns: ['entry_ref', 'description'],
+        filters,
+        q: term,
+        limit: filter.limit,
+        offset: filter.offset,
+      });
+      const rows = ids.length
+        ? await this.prisma.client.journalEntry.findMany({
+            where: { id: { in: ids } },
+            include: { lines: { select: { debit: true } } },
+          })
+        : [];
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      const data = ids
+        .map((id) => byId.get(id))
+        .filter(
+          (r): r is NonNullable<ReturnType<(typeof byId)['get']>> =>
+            r !== undefined,
+        )
+        .map((r) => this.present(r));
+      return { data, total, limit: filter.limit, offset: filter.offset };
+    }
     const where: Prisma.JournalEntryWhereInput = {
       status: filter.status,
       sourceType: filter.sourceType,
