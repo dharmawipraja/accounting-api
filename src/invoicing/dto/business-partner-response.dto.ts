@@ -15,3 +15,11 @@ export class BusinessPartnerResponseDto {
   @ApiProperty({ format: 'date-time' }) createdAt!: string;
   @ApiProperty({ format: 'date-time' }) updatedAt!: string;
 }
+
+export class BusinessPartnerListResponseDto {
+  @ApiProperty({ type: [BusinessPartnerResponseDto] })
+  data!: BusinessPartnerResponseDto[];
+  @ApiProperty({ example: 87 }) total!: number;
+  @ApiProperty({ example: 50 }) limit!: number;
+  @ApiProperty({ example: 0 }) offset!: number;
+}

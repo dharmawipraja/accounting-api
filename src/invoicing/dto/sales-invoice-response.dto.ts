@@ -46,3 +46,11 @@ export class SalesInvoiceResponseDto {
   @ApiPropertyOptional({ type: [SalesInvoiceLineResponseDto] })
   lines?: SalesInvoiceLineResponseDto[];
 }
+
+export class SalesInvoiceListResponseDto {
+  @ApiProperty({ type: [SalesInvoiceResponseDto] })
+  data!: SalesInvoiceResponseDto[];
+  @ApiProperty({ example: 240 }) total!: number;
+  @ApiProperty({ example: 50 }) limit!: number;
+  @ApiProperty({ example: 0 }) offset!: number;
+}

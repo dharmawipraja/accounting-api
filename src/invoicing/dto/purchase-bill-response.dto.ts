@@ -47,3 +47,11 @@ export class PurchaseBillResponseDto {
   @ApiPropertyOptional({ type: [PurchaseBillLineResponseDto] })
   lines?: PurchaseBillLineResponseDto[];
 }
+
+export class PurchaseBillListResponseDto {
+  @ApiProperty({ type: [PurchaseBillResponseDto] })
+  data!: PurchaseBillResponseDto[];
+  @ApiProperty({ example: 240 }) total!: number;
+  @ApiProperty({ example: 50 }) limit!: number;
+  @ApiProperty({ example: 0 }) offset!: number;
+}

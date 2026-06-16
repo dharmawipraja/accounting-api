@@ -40,3 +40,10 @@ export class PaymentResponseDto {
   @ApiPropertyOptional({ type: [PaymentAllocationResponseDto] })
   allocations?: PaymentAllocationResponseDto[];
 }
+
+export class PaymentListResponseDto {
+  @ApiProperty({ type: [PaymentResponseDto] }) data!: PaymentResponseDto[];
+  @ApiProperty({ example: 310 }) total!: number;
+  @ApiProperty({ example: 50 }) limit!: number;
+  @ApiProperty({ example: 0 }) offset!: number;
+}
