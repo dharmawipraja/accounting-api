@@ -205,4 +205,106 @@ describe('PurchaseBills (e2e)', () => {
       .send({ ...draftBody(), partnerId: customer.id })
       .expect(422);
   });
+
+  describe('search (?q=)', () => {
+    let searchVendorId: string;
+
+    beforeAll(async () => {
+      // Create a distinct vendor whose name can be matched by partner-name search
+      searchVendorId = (
+        await app.get(BusinessPartnersService).create({
+          code: 'VEND-SRCH',
+          name: 'PT Sumber Makmur',
+          isVendor: true,
+        })
+      ).id;
+
+      const lineBase = {
+        accountId: acc['5-2000'],
+        quantity: '1',
+        unitPrice: '800000',
+        taxCodeIds: [code['PPN-IN-11']],
+      };
+
+      // Bill with a distinctive vendorInvoiceNo
+      await request(app.getHttpServer() as App)
+        .post('/v1/purchase-bills')
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          partnerId: searchVendorId,
+          date: '2026-03-01',
+          description: 'Pembelian ATK kantor',
+          vendorInvoiceNo: 'INV-AX-991',
+          lines: [{ ...lineBase, description: 'ATK kantor' }],
+        })
+        .expect(201);
+
+      // Bill with a distinctive description
+      await request(app.getHttpServer() as App)
+        .post('/v1/purchase-bills')
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          partnerId: searchVendorId,
+          date: '2026-03-02',
+          description: 'Pembelian peralatan gudang',
+          lines: [{ ...lineBase, description: 'Peralatan gudang' }],
+        })
+        .expect(201);
+    });
+
+    it('matches by vendor_invoice_no substring', async () => {
+      const res = await request(app.getHttpServer() as App)
+        .get('/v1/purchase-bills?q=AX-991')
+        .set('Authorization', `Bearer ${acct}`)
+        .expect(200);
+      const body = res.body as { total: number };
+      expect(body.total).toBeGreaterThanOrEqual(1);
+    });
+
+    it('matches by description substring', async () => {
+      const res = await request(app.getHttpServer() as App)
+        .get('/v1/purchase-bills?q=peralatan')
+        .set('Authorization', `Bearer ${acct}`)
+        .expect(200);
+      const body = res.body as {
+        data: { description: string }[];
+        total: number;
+      };
+      expect(
+        body.data.some((b) =>
+          b.description?.toLowerCase().includes('peralatan'),
+        ),
+      ).toBe(true);
+    });
+
+    it('matches by partner name, returning both bills for that vendor', async () => {
+      const res = await request(app.getHttpServer() as App)
+        .get('/v1/purchase-bills?q=sumber')
+        .set('Authorization', `Bearer ${acct}`)
+        .expect(200);
+      const body = res.body as { total: number };
+      expect(body.total).toBeGreaterThanOrEqual(2);
+    });
+
+    it('composes ?q= with ?status= filter', async () => {
+      const res = await request(app.getHttpServer() as App)
+        .get('/v1/purchase-bills?q=sumber&status=DRAFT')
+        .set('Authorization', `Bearer ${acct}`)
+        .expect(200);
+      const body = res.body as { data: { status: string }[] };
+      expect(body.data.every((b) => b.status === 'DRAFT')).toBe(true);
+    });
+
+    it('ignores a sub-min-length q (returns normal list)', async () => {
+      const res = await request(app.getHttpServer() as App)
+        .get('/v1/purchase-bills?q=a&limit=5')
+        .set('Authorization', `Bearer ${acct}`)
+        .expect(200);
+      const body = res.body as { data: unknown[]; limit: number };
+      expect(body.limit).toBe(5);
+      expect(Array.isArray(body.data)).toBe(true);
+    });
+  });
 });

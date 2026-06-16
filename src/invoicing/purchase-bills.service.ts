@@ -10,6 +10,10 @@ import {
 } from '../common/errors/domain-errors';
 import { BusinessPartnersService } from './business-partners.service';
 import { DocumentPostingService } from './document-posting.service';
+import {
+  trigramSearch,
+  MIN_QUERY_LENGTH,
+} from '../common/search/trigram-search';
 
 const AP_CONTROL_CODE = '2-1000';
 
@@ -189,6 +193,7 @@ export class PurchaseBillsService {
   }
 
   async listPage(q: {
+    q?: string;
     partnerId?: string;
     status?: DocumentStatus;
     limit?: number;
@@ -201,6 +206,38 @@ export class PurchaseBillsService {
   }> {
     const limit = q.limit ?? 50;
     const offset = q.offset ?? 0;
+    const term = q.q?.trim() ?? '';
+    if (term.length >= MIN_QUERY_LENGTH) {
+      const filters: Prisma.Sql[] = [];
+      if (q.partnerId) filters.push(Prisma.sql`t.partner_id = ${q.partnerId}`);
+      if (q.status) filters.push(Prisma.sql`t.status::text = ${q.status}`);
+      const { ids, total } = await trigramSearch(this.prisma, {
+        table: 'purchase_bills',
+        alias: 't',
+        ownColumns: ['bill_ref', 'vendor_invoice_no', 'description'],
+        join: {
+          table: 'business_partners',
+          alias: 'p',
+          onColumn: 'partner_id',
+          columns: ['name'],
+        },
+        filters,
+        q: term,
+        limit,
+        offset,
+      });
+      const rows = ids.length
+        ? await this.prisma.client.purchaseBill.findMany({
+            where: { id: { in: ids } },
+          })
+        : [];
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      const data = ids
+        .map((id) => byId.get(id))
+        .filter((r): r is PurchaseBill => r !== undefined)
+        .map((r) => this.present(r));
+      return { data, total, limit, offset };
+    }
     const where = { partnerId: q.partnerId, status: q.status };
     const [rows, total] = await Promise.all([
       this.prisma.client.purchaseBill.findMany({
