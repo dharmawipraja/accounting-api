@@ -48,4 +48,19 @@ describe('env validation', () => {
     expect(() => validate({ ...validEnv, JWT_ACCESS_TTL: '' })).toThrow();
     expect(() => validate({ ...validEnv, JWT_REFRESH_TTL: '' })).toThrow();
   });
+
+  it('requires REDIS_URL when NODE_ENV is not test', () => {
+    expect(() => validate({ ...validEnv, NODE_ENV: 'production' })).toThrow(); // no REDIS_URL → invalid in prod
+    expect(() =>
+      validate({
+        ...validEnv,
+        NODE_ENV: 'production',
+        REDIS_URL: 'redis://localhost:6379',
+      }),
+    ).not.toThrow();
+  });
+
+  it('does NOT require REDIS_URL when NODE_ENV is test', () => {
+    expect(() => validate(validEnv)).not.toThrow(); // test env, no REDIS_URL
+  });
 });

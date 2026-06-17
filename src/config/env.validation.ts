@@ -11,6 +11,7 @@ import {
   Max,
   Min,
   MinLength,
+  ValidateIf,
   validateSync,
 } from 'class-validator';
 
@@ -90,6 +91,11 @@ export class EnvVars {
   @IsInt()
   @Min(1)
   THROTTLE_REFRESH_LIMIT?: number;
+
+  @ValidateIf((o: EnvVars) => o.NODE_ENV !== NodeEnv.Test)
+  @IsString()
+  @IsNotEmpty()
+  REDIS_URL?: string;
 }
 
 export function validate(config: Record<string, unknown>): EnvVars {
