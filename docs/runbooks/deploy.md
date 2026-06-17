@@ -23,6 +23,30 @@ starts `api` (gated on `migrate` succeeding), `caddy`, and `backup`. `migrate` r
 - `SIGTERM` (e.g. `docker compose ... stop api`) triggers a graceful Nest shutdown
   (in-flight requests finish within `stop_grace_period` = 30s; Prisma disconnects).
 
+## X-Forwarded-For / client IP trust (SEC-3)
+Caddy (the TLS edge) **ignores any client-supplied `X-Forwarded-For` by default**
+to prevent spoofing — it sets `X-Forwarded-For` to the real connecting client
+before proxying to `api`. The app's `trust proxy: 1` therefore sees the true
+client IP, so the per-IP login throttle cannot be bypassed with a forged header.
+No Caddy directive is required; this is the default behavior of `reverse_proxy`.
+(The app-side per-account login throttle — keyed by the submitted email — is the
+complementary defense already in place.)
+
+**Only if a CDN or L4 load balancer is ever placed in front of Caddy**, Caddy
+must be told to trust it so it accepts the upstream's `X-Forwarded-For`:
+```caddyfile
+reverse_proxy api:3000 {
+	trusted_proxies static private_ranges
+}
+```
+Add the global option `trusted_proxies_strict` for right-to-left XFF parsing when
+the upstream appends to the right (CloudFlare, AWS ALB, HAProxy) — this prevents
+leftmost-IP spoofing.
+
+**Deploy-time verification:** against a deployed instance, hammer the login limit
+from one source while rotating a forged `X-Forwarded-For`; it should still 429
+(the forged header is ignored), confirming the real client IP is used.
+
 ## Rollback caveats
 - App rollback: redeploy the previous image tag/commit.
 - **Migrations are forward-only.** A bad migration is NOT undone by rolling back the
