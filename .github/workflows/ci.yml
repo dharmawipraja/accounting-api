@@ -31,7 +31,7 @@ jobs:
       - run: npm run lint:ci
       - run: npm run test
       - run: npm run test:e2e:cov
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage
