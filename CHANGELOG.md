@@ -33,6 +33,12 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 
+- **Rate limiting is now Redis-backed** (`@nestjs/throttler` + `ioredis`) in dev and
+  production, so limits are shared across instances and survive restarts; tests/CI keep
+  the in-memory store. Keying (per-user, per-IP for anonymous) and limits are unchanged.
+  Fail-closed: a real limit hit returns 429; if Redis is unreachable, requests get 503
+  (the limiter never silently turns off). `/ready` now also checks Redis. Requires
+  `REDIS_URL` outside the test environment.
 - **Breaking:** business route paths are now `/v1/...`; the four transactional
   lists above return an envelope instead of a bare array. The journal/
   opening-balances endpoints now require an `Idempotency-Key`. See

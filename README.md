@@ -36,6 +36,7 @@ It runs on Prisma 7 + PostgreSQL with a soft-delete extension, a `Money` value o
    - `DATABASE_URL` — PostgreSQL connection string
    - `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` — must each be at least 32 characters
    - `POSTGRES_PASSWORD` — used by Docker Compose
+   - `REDIS_URL` — Redis connection string (e.g. `redis://localhost:6379`). Required in dev and prod; tests and CI use an in-memory store and do not need it.
 
 ## Local development
 
@@ -55,6 +56,14 @@ The environment follows the script: `start:dev` loads `.env.development` (its ow
 db:migrate` / `db:reset` / `db:studio` target the same dev database via
 `.env.development`. Copy `.env.example` to `.env` (shared secrets) and create
 `.env.development` with a dev `DATABASE_URL` before first run.
+
+**Rate limiting** is Redis-backed in dev and prod (`@nestjs/throttler` +
+`ioredis`). Add `REDIS_URL=redis://localhost:6379` to `.env.development` before
+running `start:dev` (`docker compose up -d redis` exposes Redis on
+`127.0.0.1:6379`). Tests and CI use an in-memory store — no Redis required.
+Behaviour: a real limit hit returns **429**; if Redis is unreachable the
+limiter fails-closed and returns **503** (the limiter never silently turns off).
+`/ready` also pings Redis when it is configured.
 
 ## Running with Docker
 
