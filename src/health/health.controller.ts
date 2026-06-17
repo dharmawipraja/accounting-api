@@ -1,9 +1,8 @@
 import {
   Controller,
   Get,
-  HttpException,
-  HttpStatus,
   Inject,
+  ServiceUnavailableException,
   VERSION_NEUTRAL,
 } from '@nestjs/common';
 import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
@@ -42,19 +41,14 @@ export class HealthController {
       await this.prisma.$queryRaw`SELECT 1`;
     } catch {
       // Dependency down → 503 (not 200, not 500): the app is up but not ready.
-      throw new HttpException(
-        { status: 'error', db: 'down' },
-        HttpStatus.SERVICE_UNAVAILABLE,
-      );
+      // The message names the failed dependency (it survives AllExceptionsFilter).
+      throw new ServiceUnavailableException('Database unavailable');
     }
     if (this.redis) {
       try {
         await this.redis.ping();
       } catch {
-        throw new HttpException(
-          { status: 'error', redis: 'down' },
-          HttpStatus.SERVICE_UNAVAILABLE,
-        );
+        throw new ServiceUnavailableException('Redis unavailable');
       }
     }
     return { status: 'ok', db: 'up' };
