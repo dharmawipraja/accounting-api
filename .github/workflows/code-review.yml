@@ -1,0 +1,85 @@
+name: Claude PR Review
+
+# Automated, comment-only PR review. On every PR to main, Claude posts:
+#   1) what the PR does, 2) bugs / breaking changes / security / performance
+#   findings, and 3) a clear safe-to-merge / request-changes / needs-discussion
+#   verdict. It never blocks merge (comment-only).
+#
+# Setup required (operator, one-time):
+#   - Install the Claude GitHub App: https://github.com/apps/claude
+#     (or run `claude /install-github-app`).
+#   - Add an ANTHROPIC_API_KEY repo secret:
+#     Settings -> Secrets and variables -> Actions -> New repository secret.
+# Optional tuning: see https://github.com/anthropics/claude-code-action for
+# extra inputs (e.g. use_sticky_comment, classify_inline_comments). Bump the
+# model to claude-opus-4-8 in claude_args for deeper (pricier) reviews.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so Claude can see context beyond the diff
+
+      - name: Claude review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          track_progress: true
+          claude_args: '--model claude-sonnet-4-6'
+          prompt: |
+            You are reviewing a pull request for a production Indonesian
+            double-entry accounting API (NestJS 11 + Prisma 7 + Postgres). Money
+            always flows through the `Money`/Decimal value object — never JS
+            floats. Read `docs/production-readiness-audit-2026-06-17.md` for the
+            project's known risk areas and the bugs already fixed; do not
+            re-flag anything that doc marks ✅ FIXED.
+
+            Review the diff and post ONE structured comment with these sections:
+
+            ## What this PR does
+            A 2–4 sentence plain-language summary of the change and its intent.
+
+            ## Findings
+            Group by severity. For each: `file:line` — what's wrong — why it
+            matters — how to fix. Look specifically for:
+            - **Correctness / financial integrity:** broken posting atomicity,
+              control-account vs subledger drift, reversals into a closed year,
+              out-of-order year-end close, double-post, over-allocation, float
+              money math, rounding errors.
+            - **Breaking changes:** changed API response shapes / DTOs, changed
+              request params or status codes, `/v1` route changes, and any
+              Prisma migration that is not backward-compatible or lacks a safe
+              forward path.
+            - **Security:** missing input validation, broken authz / role gates,
+              tenant/ownership checks, secrets in code or logs, audit-log
+              mutation, idempotency-key handling.
+            - **Concurrency:** missing `FOR UPDATE`/locking on read-modify-write,
+              transaction scope (throwing inside `$transaction` rolls back
+              intended writes), race conditions.
+            - **Performance:** N+1 queries, missing indexes, unbounded loops.
+            - **Tests:** new behavior without a test; tests that assert nothing
+              or only exercise mocks (a wrong Prisma `where` predicate passes a
+              mocked test — DB-backed e2e is needed to validate predicates).
+
+            ## Verdict
+            One of: **✅ Safe to merge** / **🟡 Request changes** /
+            **🔴 Needs discussion** — with a one-line justification. Be specific
+            and cite lines; do not invent issues. If the PR is clean, say so
+            plainly rather than manufacturing nitpicks.
