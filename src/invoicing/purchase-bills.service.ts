@@ -317,12 +317,7 @@ export class PurchaseBillsService {
           });
         }
       },
-      async ({ tx, number, ref, entry, fiscalYear }) => {
-        const totals = await this.docPosting.computeTotals(
-          'PURCHASE',
-          settlementId,
-          this.taxableLines(lines),
-        );
+      async ({ tx, number, ref, entry, fiscalYear, totals }) => {
         await tx.purchaseBill.update({
           where: { id },
           data: {

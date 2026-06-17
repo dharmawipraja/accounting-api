@@ -313,12 +313,7 @@ export class SalesInvoicesService {
           });
         }
       },
-      async ({ tx, number, ref, entry, fiscalYear }) => {
-        const totals = await this.docPosting.computeTotals(
-          'SALE',
-          settlementId,
-          this.taxableLines(lines),
-        );
+      async ({ tx, number, ref, entry, fiscalYear, totals }) => {
         await tx.salesInvoice.update({
           where: { id },
           data: {

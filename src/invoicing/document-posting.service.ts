@@ -3,7 +3,11 @@ import { JournalEntry } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { Money } from '../common/money/money';
 import { PostingService, LedgerTx } from '../ledger/posting/posting.service';
-import { TaxService, TaxableLineInput } from '../tax/tax.service';
+import {
+  TaxService,
+  TaxableLineInput,
+  TaxCalculation,
+} from '../tax/tax.service';
 import { DocumentNumberService } from './document-number.service';
 
 export interface PostTaxedDocParams {
@@ -25,6 +29,12 @@ export interface PostedDocContext {
   ref: string;
   entry: JournalEntry;
   fiscalYear: number;
+  totals: {
+    subtotal: string;
+    taxTotal: string;
+    withholdingTotal: string;
+    total: string;
+  };
 }
 
 @Injectable()
@@ -35,6 +45,28 @@ export class DocumentPostingService {
     private readonly tax: TaxService,
     private readonly docNumber: DocumentNumberService,
   ) {}
+
+  /** Split a tax calculation into the stored document totals. */
+  private summarize(calc: TaxCalculation): {
+    subtotal: string;
+    taxTotal: string;
+    withholdingTotal: string;
+    total: string;
+  } {
+    let taxTotal = Money.zero();
+    let withholdingTotal = Money.zero();
+    for (const t of calc.taxes) {
+      if (t.kind === 'PPN_OUTPUT' || t.kind === 'PPN_INPUT')
+        taxTotal = taxTotal.add(Money.of(t.amount));
+      else withholdingTotal = withholdingTotal.add(Money.of(t.amount));
+    }
+    return {
+      subtotal: calc.subtotal,
+      taxTotal: taxTotal.toPersistence(),
+      withholdingTotal: withholdingTotal.toPersistence(),
+      total: calc.settlementAmount,
+    };
+  }
 
   /** Compute the tax breakdown for a draft (no posting). */
   async computeTotals(
@@ -52,19 +84,7 @@ export class DocumentPostingService {
       settlementAccountId,
       lines,
     });
-    let taxTotal = Money.zero();
-    let withholdingTotal = Money.zero();
-    for (const t of calc.taxes) {
-      if (t.kind === 'PPN_OUTPUT' || t.kind === 'PPN_INPUT')
-        taxTotal = taxTotal.add(Money.of(t.amount));
-      else withholdingTotal = withholdingTotal.add(Money.of(t.amount));
-    }
-    return {
-      subtotal: calc.subtotal,
-      taxTotal: taxTotal.toPersistence(),
-      withholdingTotal: withholdingTotal.toPersistence(),
-      total: calc.settlementAmount,
-    };
+    return this.summarize(calc);
   }
 
   /** Post a taxed document atomically. `lockDraft` must lock + re-check the row is
@@ -111,7 +131,14 @@ export class DocumentPostingService {
         periodId,
         fiscalYear,
       );
-      await finalize({ tx, number, ref, entry, fiscalYear });
+      await finalize({
+        tx,
+        number,
+        ref,
+        entry,
+        fiscalYear,
+        totals: this.summarize(calc),
+      });
     });
   }
 }
