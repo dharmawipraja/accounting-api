@@ -22,6 +22,11 @@ export class YearEndCloseService {
     private readonly company: CompanyService,
   ) {}
 
+  /** First UTC day of the fiscal year, given the company's start month. */
+  private fiscalYearStart(fiscalYear: number, startMonth: number): Date {
+    return new Date(Date.UTC(fiscalYear, startMonth - 1, 1));
+  }
+
   /** Last UTC day of the fiscal year, given the company's start month. */
   private fiscalYearEnd(fiscalYear: number, startMonth: number): Date {
     const endYear = startMonth === 1 ? fiscalYear : fiscalYear + 1;
@@ -47,10 +52,19 @@ export class YearEndCloseService {
       fiscalYear,
       settings.fiscalYearStartMonth,
     );
-
-    const rows = (await this.balances.balancesAsOf(yearEnd)).filter(
-      (r) => r.type === 'REVENUE' || r.type === 'EXPENSE',
+    const fyStart = this.fiscalYearStart(
+      fiscalYear,
+      settings.fiscalYearStartMonth,
     );
+
+    // Net income from THIS year's P&L movement only — not the cumulative
+    // balance. Using movementsBetween makes close order-independent: closing a
+    // later year before an earlier one no longer sweeps the earlier year's
+    // earnings twice into Laba Ditahan. (For in-order closes the two are equal,
+    // since each prior close already zeroed that year's P&L.)
+    const rows = (
+      await this.balances.movementsBetween(fyStart, yearEnd)
+    ).filter((r) => r.type === 'REVENUE' || r.type === 'EXPENSE');
     const lines: PostLineInput[] = [];
     let netIncome = Money.zero(); // Σ(credit − debit)
     for (const r of rows) {
