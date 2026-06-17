@@ -167,6 +167,76 @@ describe('Idempotency (e2e)', () => {
     expect(count).toBe(1);
   });
 
+  it('SEC-2: rejects an over-long Idempotency-Key with 422', async () => {
+    // Reuse the same idempotent endpoint, auth token, and body the existing
+    // HTTP idempotency test in this file uses. Only the key is malformed.
+    const tooLong = 'a'.repeat(129);
+    const partnerId = await newCustomer('CUST-IDEM-SEC2');
+    await request(app.getHttpServer() as App)
+      .post('/v1/sales-invoices')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', tooLong)
+      .send(invoiceBody(partnerId))
+      .expect(422);
+  });
+
+  it('SEC-2: purgeCompleted deletes only completed keys older than the retention', async () => {
+    const idem = app.get(IdempotencyService);
+    const old = new Date('2000-01-01');
+    // Old completed key — must be purged.
+    await prisma.client.idempotencyKey.create({
+      data: {
+        key: 'purge-old',
+        method: 'POST',
+        path: '/v1/x',
+        requestHash: 'h',
+        response: { ok: true },
+        httpStatus: 201,
+        createdAt: old,
+        completedAt: old,
+      },
+    });
+    // Fresh completed key — must survive.
+    await prisma.client.idempotencyKey.create({
+      data: {
+        key: 'purge-fresh',
+        method: 'POST',
+        path: '/v1/y',
+        requestHash: 'h',
+        response: { ok: true },
+        httpStatus: 201,
+        completedAt: new Date(),
+      },
+    });
+    // In-flight key (completedAt null) — must survive (the FIN-L2 lazy-expiry owns these).
+    await prisma.client.idempotencyKey.create({
+      data: {
+        key: 'purge-inflight',
+        method: 'POST',
+        path: '/v1/z',
+        requestHash: 'h',
+      },
+    });
+
+    const deleted = await idem.purgeCompleted(86_400_000); // 24h retention
+    expect(deleted).toBe(1);
+    expect(
+      await prisma.client.idempotencyKey.findUnique({
+        where: { key: 'purge-old' },
+      }),
+    ).toBeNull();
+    expect(
+      await prisma.client.idempotencyKey.findUnique({
+        where: { key: 'purge-fresh' },
+      }),
+    ).not.toBeNull();
+    expect(
+      await prisma.client.idempotencyKey.findUnique({
+        where: { key: 'purge-inflight' },
+      }),
+    ).not.toBeNull();
+  });
+
   // Real-Postgres tests that verify the DbNull predicate in deleteMany actually
   // matches SQL-NULL response rows (which is the true in-flight state). These
   // tests bypass the HTTP interceptor and call IdempotencyService directly so

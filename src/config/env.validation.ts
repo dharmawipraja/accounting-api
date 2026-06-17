@@ -67,6 +67,11 @@ export class EnvVars {
   IDEMPOTENCY_INFLIGHT_TTL_MS?: number;
 
   @IsOptional()
+  @IsInt()
+  @Min(60000)
+  IDEMPOTENCY_COMPLETED_TTL_MS?: number;
+
+  @IsOptional()
   @IsString()
   METRICS_TOKEN?: string;
 

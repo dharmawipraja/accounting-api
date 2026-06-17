@@ -23,6 +23,7 @@ import { CloseModule } from './close/close.module';
 import { AuditModule } from './audit/audit.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { IdempotencyModule } from './common/idempotency/idempotency.module';
+import { ScheduleModule } from '@nestjs/schedule';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
@@ -34,6 +35,7 @@ import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
       envFilePath: resolveEnvFilePaths(process.env.NODE_ENV),
       validate,
     }),
+    ScheduleModule.forRoot(),
     LoggerModule.forRoot({
       pinoHttp: {
         autoLogging: true,

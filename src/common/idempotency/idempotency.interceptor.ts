@@ -10,6 +10,10 @@ import { Observable, from, of } from 'rxjs';
 import { catchError, switchMap } from 'rxjs/operators';
 import { createHash } from 'crypto';
 import { IDEMPOTENT_KEY } from './idempotent.decorator';
+
+// Bounds the stored PK (`IdempotencyKey.key String @id`) and rejects garbage.
+// UUIDs (the frontend default) and other compact tokens pass.
+const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9._:-]{1,128}$/;
 import { IdempotencyService } from './idempotency.service';
 import { ValidationFailedError } from '../errors/domain-errors';
 
@@ -41,6 +45,11 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const key = Array.isArray(header) ? header[0] : header;
     if (!key) {
       throw new ValidationFailedError('Idempotency-Key header is required');
+    }
+    if (!IDEMPOTENCY_KEY_RE.test(key)) {
+      throw new ValidationFailedError(
+        'Idempotency-Key must be 1–128 characters of [A-Za-z0-9._:-]',
+      );
     }
     const method = req.method;
     // Includes the query string intentionally: it scopes the key to the exact

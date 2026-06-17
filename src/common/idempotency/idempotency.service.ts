@@ -29,6 +29,12 @@ export class IdempotencyService {
     return this.config.get<number>('IDEMPOTENCY_INFLIGHT_TTL_MS') ?? 120_000;
   }
 
+  private get completedTtlMs(): number {
+    return (
+      this.config.get<number>('IDEMPOTENCY_COMPLETED_TTL_MS') ?? 86_400_000
+    );
+  }
+
   async reserve(
     key: string,
     method: string,
@@ -158,5 +164,21 @@ export class IdempotencyService {
     await this.prisma.client.idempotencyKey
       .delete({ where: { key } })
       .catch(() => undefined);
+  }
+
+  /**
+   * Delete completed idempotency keys older than the retention window. In-flight
+   * rows (completedAt null) are excluded — the `completedAt: { lt }` predicate
+   * never matches NULL — so the FIN-L2 lazy-expiry remains the sole owner of those.
+   * Returns the number of rows deleted.
+   */
+  async purgeCompleted(
+    olderThanMs: number = this.completedTtlMs,
+  ): Promise<number> {
+    const threshold = new Date(Date.now() - olderThanMs);
+    const { count } = await this.prisma.client.idempotencyKey.deleteMany({
+      where: { completedAt: { lt: threshold } },
+    });
+    return count;
   }
 }
