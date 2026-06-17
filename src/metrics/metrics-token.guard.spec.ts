@@ -2,7 +2,7 @@ import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { MetricsTokenGuard } from './metrics-token.guard';
 
-function ctx(authorization?: string): ExecutionContext {
+function makeCtx(authorization?: string): ExecutionContext {
   return {
     switchToHttp: () => ({
       getRequest: () => ({ headers: { authorization } }),
@@ -10,24 +10,47 @@ function ctx(authorization?: string): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
-const guard = (token?: string): MetricsTokenGuard =>
-  new MetricsTokenGuard({ get: () => token } as unknown as ConfigService);
+function makeGuard(
+  values: Record<string, string | undefined>,
+): MetricsTokenGuard {
+  const config = { get: (k: string) => values[k] } as unknown as ConfigService;
+  return new MetricsTokenGuard(config);
+}
 
 describe('MetricsTokenGuard', () => {
-  it('allows the scrape when no METRICS_TOKEN is configured (network isolation)', () => {
-    expect(guard(undefined).canActivate(ctx())).toBe(true);
+  it('denies in production when METRICS_TOKEN is unset (fail-closed)', () => {
+    const guard = makeGuard({ NODE_ENV: 'production' });
+    expect(() => guard.canActivate(makeCtx())).toThrow(UnauthorizedException);
   });
 
-  it('allows a correct bearer when METRICS_TOKEN is set', () => {
-    expect(guard('s3cret').canActivate(ctx('Bearer s3cret'))).toBe(true);
+  it('allows in development when METRICS_TOKEN is unset', () => {
+    const guard = makeGuard({ NODE_ENV: 'development' });
+    expect(guard.canActivate(makeCtx())).toBe(true);
   });
 
-  it('rejects a missing or wrong bearer when METRICS_TOKEN is set', () => {
-    expect(() => guard('s3cret').canActivate(ctx())).toThrow(
+  it('allows a correct bearer token', () => {
+    const guard = makeGuard({
+      NODE_ENV: 'production',
+      METRICS_TOKEN: 'secret-token',
+    });
+    expect(guard.canActivate(makeCtx('Bearer secret-token'))).toBe(true);
+  });
+
+  it('denies a wrong bearer token', () => {
+    const guard = makeGuard({
+      NODE_ENV: 'production',
+      METRICS_TOKEN: 'secret-token',
+    });
+    expect(() => guard.canActivate(makeCtx('Bearer nope'))).toThrow(
       UnauthorizedException,
     );
-    expect(() => guard('s3cret').canActivate(ctx('Bearer nope'))).toThrow(
-      UnauthorizedException,
-    );
+  });
+
+  it('denies a missing Authorization header when token is configured', () => {
+    const guard = makeGuard({
+      NODE_ENV: 'production',
+      METRICS_TOKEN: 'secret-token',
+    });
+    expect(() => guard.canActivate(makeCtx())).toThrow(UnauthorizedException);
   });
 });
