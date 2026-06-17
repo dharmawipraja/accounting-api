@@ -131,6 +131,7 @@ export class PaymentsService {
       });
 
     let total = Money.zero();
+    const allocatedByDoc = new Map<string, Money>();
     for (const alloc of input.allocations) {
       const amt = Money.of(alloc.amount);
       if (amt.isZero() || amt.isNegative())
@@ -149,9 +150,12 @@ export class PaymentsService {
           'Can only allocate to a POSTED document',
           { documentId: target.id, status: target.status },
         );
-      const outstanding = Money.of(target.total.toString()).subtract(
-        Money.of(target.amountPaid.toString()),
-      );
+      // Outstanding net of what THIS payment already allocated to the same
+      // document, so two allocations to one invoice can't each pass in isolation.
+      const alreadyAllocated = allocatedByDoc.get(target.id) ?? Money.zero();
+      const outstanding = Money.of(target.total.toString())
+        .subtract(Money.of(target.amountPaid.toString()))
+        .subtract(alreadyAllocated);
       // amt > outstanding  ⟺  (outstanding − amt) < 0
       if (outstanding.subtract(amt).isNegative()) {
         throw new ValidationFailedError(
@@ -159,6 +163,7 @@ export class PaymentsService {
           { documentId: target.id },
         );
       }
+      allocatedByDoc.set(target.id, alreadyAllocated.add(amt));
       total = total.add(amt);
     }
 

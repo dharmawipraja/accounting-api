@@ -231,6 +231,26 @@ describe('Payments (e2e)', () => {
       .expect(422);
   });
 
+  it('FIN-M1: rejects two allocations to the same invoice exceeding outstanding (422 at draft)', async () => {
+    const customerId = await newCustomer('CUST-PAY-CUMUL');
+    const invoiceId = await makePostedInvoice(customerId); // total 1,110,000
+    await request(server())
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        direction: 'RECEIPT',
+        partnerId: customerId,
+        date: '2026-02-15',
+        cashAccountId: acc['1-1000'],
+        allocations: [
+          { salesInvoiceId: invoiceId, amount: '600000' },
+          { salesInvoiceId: invoiceId, amount: '600000' }, // 1,200,000 > 1,110,000
+        ],
+      })
+      .expect(422);
+  });
+
   it('voiding a receipt restores invoice outstanding; the invoice can then be voided', async () => {
     const customerId = await newCustomer('CUST-PAY-VOID');
     const invoiceId = await makePostedInvoice(customerId);
