@@ -76,7 +76,7 @@ export class BalancesService {
       FROM accounts a
       JOIN journal_lines jl ON jl.account_id = a.id
       JOIN journal_entries je ON je.id = jl.journal_entry_id
-      WHERE je.posted_at IS NOT NULL AND a.deleted_at IS NULL AND ${dateFilter}
+      WHERE je.posted_at IS NOT NULL AND je.deleted_at IS NULL AND a.deleted_at IS NULL AND ${dateFilter}
       GROUP BY a.id, a.code, a.name, a.type, a.subtype, a.normal_balance, a.cash_flow_category, a.parent_id
       ORDER BY a.code ASC`);
   }
@@ -166,7 +166,7 @@ export class BalancesService {
       SELECT COALESCE(SUM(jl.debit), 0) AS debit, COALESCE(SUM(jl.credit), 0) AS credit
       FROM journal_lines jl
       JOIN journal_entries je ON je.id = jl.journal_entry_id
-      WHERE jl.account_id = ${accountId} AND je.posted_at IS NOT NULL AND je.date <= ${day}`;
+      WHERE jl.account_id = ${accountId} AND je.posted_at IS NOT NULL AND je.deleted_at IS NULL AND je.date <= ${day}`;
     const debit = rows[0].debit;
     const credit = rows[0].credit;
     const net =
