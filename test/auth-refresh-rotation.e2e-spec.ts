@@ -119,4 +119,23 @@ describe('Auth Refresh Rotation (e2e)', () => {
     // sees CONSUMED → reuse detected → 401 (and the family is revoked).
     expect([r1.status, r2.status].sort()).toEqual([200, 401]);
   });
+
+  it('logout revokes the session: the token can no longer refresh', async () => {
+    const login = await request(server())
+      .post('/v1/auth/login')
+      .send({ email: 'rot@test.io', password: 'secret123' })
+      .expect(200);
+    const token = (login.body as { refreshToken: string }).refreshToken;
+
+    await request(server())
+      .post('/v1/auth/logout')
+      .send({ refreshToken: token })
+      .expect(201)
+      .expect((r) => expect((r.body as { ok: boolean }).ok).toBe(true));
+
+    await request(server())
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: token })
+      .expect(401);
+  });
 });

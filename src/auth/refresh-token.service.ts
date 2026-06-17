@@ -94,4 +94,16 @@ export class RefreshTokenService {
     }
     return { jti: result.jti, familyId: result.familyId };
   }
+
+  /** Revoke the entire family of the given token (logout one device). No-op if unknown. */
+  async revokeFamilyByJti(jti: string): Promise<void> {
+    const row = await this.prisma.client.refreshToken.findUnique({
+      where: { id: jti },
+    });
+    if (!row) return;
+    await this.prisma.client.refreshToken.updateMany({
+      where: { familyId: row.familyId },
+      data: { status: 'REVOKED' },
+    });
+  }
 }

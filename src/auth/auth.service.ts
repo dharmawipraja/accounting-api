@@ -59,6 +59,19 @@ export class AuthService {
     );
   }
 
+  async logout(refreshToken: string): Promise<{ ok: true }> {
+    try {
+      const payload = await this.jwt.verifyAsync<RefreshJwtPayload>(
+        refreshToken,
+        { secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET') },
+      );
+      await this.refreshTokens.revokeFamilyByJti(payload.jti);
+    } catch {
+      // Idempotent: an invalid/expired/unknown token has nothing to revoke.
+    }
+    return { ok: true };
+  }
+
   private async issueTokens(
     user: AuthenticatedUser,
     jti: string,

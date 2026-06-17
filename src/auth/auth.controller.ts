@@ -9,6 +9,7 @@ import { Throttle } from '@nestjs/throttler';
 import { AuthService, TokenPair } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
+import { LogoutDto } from './dto/logout.dto';
 import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { AuthenticatedUser } from './strategies/jwt.strategy';
@@ -54,6 +55,19 @@ export class AuthController {
   @ApiOkResponse({ type: TokenPairDto })
   refresh(@Body() dto: RefreshDto): Promise<TokenPair> {
     return this.auth.refresh(dto.refreshToken);
+  }
+
+  @Public()
+  @Throttle({
+    default: {
+      ttl: 60_000,
+      limit: Number(process.env.THROTTLE_REFRESH_LIMIT) || 30,
+    },
+  })
+  @Post('logout')
+  @ApiOkResponse({ type: OkFlagDto })
+  logout(@Body() dto: LogoutDto): Promise<{ ok: true }> {
+    return this.auth.logout(dto.refreshToken);
   }
 
   @Get('me')
