@@ -2,6 +2,10 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
+import Redis from 'ioredis';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
+import { RedisModule } from './common/redis/redis.module';
+import { REDIS_CLIENT } from './common/redis/redis.constants';
 import { LoggerModule } from 'nestjs-pino';
 import { randomUUID } from 'crypto';
 import { HealthController } from './health/health.controller';
@@ -52,9 +56,19 @@ import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
         ],
       },
     }),
-    ThrottlerModule.forRoot([
-      { ttl: 60_000, limit: Number(process.env.THROTTLE_LIMIT) || 300 },
-    ]),
+    RedisModule,
+    ThrottlerModule.forRootAsync({
+      inject: [REDIS_CLIENT],
+      useFactory: (redis: Redis | null) => {
+        const throttlers = [
+          { ttl: 60_000, limit: Number(process.env.THROTTLE_LIMIT) || 300 },
+        ];
+        // null (test) → default in-memory store; otherwise share the one Redis client.
+        return redis
+          ? { throttlers, storage: new ThrottlerStorageRedisService(redis) }
+          : { throttlers };
+      },
+    }),
     PrismaModule,
     UsersModule,
     AuthModule,
