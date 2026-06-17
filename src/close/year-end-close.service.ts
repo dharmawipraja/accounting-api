@@ -194,7 +194,9 @@ export class YearEndCloseService {
         periodId,
         fiscalYear: fy,
         reversalDate,
-      } = await this.posting.prepareReversal(rec.closingEntryId);
+      } = await this.posting.prepareReversal(rec.closingEntryId, undefined, {
+        allowClosedYear: true,
+      });
       await this.prisma.client.$transaction(async (tx) => {
         // Serialize concurrent reopens of this fiscal year (mirror close's
         // advisory lock), then re-check status under the lock so a double-reopen

@@ -192,6 +192,7 @@ export class PostingService {
   async prepareReversal(
     entryId: string,
     date?: Date,
+    opts: { allowClosedYear?: boolean } = {},
   ): Promise<{
     original: JournalEntry & {
       lines: {
@@ -230,6 +231,21 @@ export class PostingService {
       reversalDate,
       settings.fiscalYearStartMonth,
     );
+    // Same year-lock as preparePosting/postDraft: a reversal (or document void)
+    // must not write a POSTED entry into a year that has been closed. reopen()
+    // legitimately reverses the closing entry while the year is still CLOSED, so
+    // it passes allowClosedYear to bypass this guard.
+    if (!opts.allowClosedYear) {
+      const closedYear = await this.prisma.client.yearEndClosing.findFirst({
+        where: { fiscalYear, status: 'CLOSED' },
+      });
+      if (closedYear) {
+        throw new ClosedYearError(
+          'Fiscal year is closed; reopen it before reversing',
+          { fiscalYear },
+        );
+      }
+    }
     return { original, periodId: period.id, fiscalYear, reversalDate };
   }
 
