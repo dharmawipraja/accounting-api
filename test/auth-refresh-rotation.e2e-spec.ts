@@ -138,4 +138,60 @@ describe('Auth Refresh Rotation (e2e)', () => {
       .send({ refreshToken: token })
       .expect(401);
   });
+
+  it('logout-all revokes every session for the user', async () => {
+    const a = await request(server())
+      .post('/v1/auth/login')
+      .send({ email: 'rot@test.io', password: 'secret123' })
+      .expect(200);
+    const b = await request(server())
+      .post('/v1/auth/login')
+      .send({ email: 'rot@test.io', password: 'secret123' })
+      .expect(200);
+    const tA = (a.body as { refreshToken: string }).refreshToken;
+    const tB = (b.body as { refreshToken: string }).refreshToken;
+    const access = (a.body as { accessToken: string }).accessToken;
+
+    await request(server())
+      .post('/v1/auth/logout-all')
+      .set('Authorization', `Bearer ${access}`)
+      .expect(201)
+      .expect((r) => expect((r.body as { ok: boolean }).ok).toBe(true));
+
+    await request(server())
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: tA })
+      .expect(401);
+    await request(server())
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: tB })
+      .expect(401);
+  });
+
+  it('logout of one session leaves other sessions working', async () => {
+    const a = await request(server())
+      .post('/v1/auth/login')
+      .send({ email: 'rot@test.io', password: 'secret123' })
+      .expect(200);
+    const b = await request(server())
+      .post('/v1/auth/login')
+      .send({ email: 'rot@test.io', password: 'secret123' })
+      .expect(200);
+    const tA = (a.body as { refreshToken: string }).refreshToken;
+    const tB = (b.body as { refreshToken: string }).refreshToken;
+
+    await request(server())
+      .post('/v1/auth/logout')
+      .send({ refreshToken: tA })
+      .expect(201);
+
+    await request(server())
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: tA })
+      .expect(401);
+    await request(server())
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: tB })
+      .expect(200);
+  });
 });

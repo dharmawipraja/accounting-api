@@ -70,6 +70,12 @@ export class AuthController {
     return this.auth.logout(dto.refreshToken);
   }
 
+  @Post('logout-all')
+  @ApiOkResponse({ type: OkFlagDto })
+  logoutAll(@CurrentUser() user: AuthenticatedUser): Promise<{ ok: true }> {
+    return this.auth.logoutAll(user.id);
+  }
+
   @Get('me')
   @ApiOkResponse({ type: AuthenticatedUserDto })
   me(@CurrentUser() user: AuthenticatedUser): AuthenticatedUser {

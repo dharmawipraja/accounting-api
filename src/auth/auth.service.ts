@@ -72,6 +72,11 @@ export class AuthService {
     return { ok: true };
   }
 
+  async logoutAll(userId: string): Promise<{ ok: true }> {
+    await this.refreshTokens.revokeAllForUser(userId);
+    return { ok: true };
+  }
+
   private async issueTokens(
     user: AuthenticatedUser,
     jti: string,

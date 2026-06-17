@@ -106,4 +106,12 @@ export class RefreshTokenService {
       data: { status: 'REVOKED' },
     });
   }
+
+  /** Revoke every session for a user (logout all devices). */
+  async revokeAllForUser(userId: string): Promise<void> {
+    await this.prisma.client.refreshToken.updateMany({
+      where: { userId },
+      data: { status: 'REVOKED' },
+    });
+  }
 }
