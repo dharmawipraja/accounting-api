@@ -91,6 +91,13 @@ services:
       - backups:/backups
       - backup_metrics:/backup-metrics
 
+  redis:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
 volumes:
   caddy_data:
   caddy_config:
