@@ -97,6 +97,8 @@ No Critical findings: no public registration (user creation is CLI-only via `scr
 - **Problem:** Refresh tokens are plain stateless JWTs validated only by signature + `isActive` + expiry (`JWT_REFRESH_TTL=7d`). No rotation, no `jti`, no denylist. A leaked refresh token is valid for the full 7 days and can't be revoked; `refresh()` doesn't rotate (old token stays valid). Deactivating a user stops it, partially mitigating.
 - **Fix:** persist refresh tokens (or a hashed `jti`) in a table; rotate-on-use + reuse detection; provide a revoke/logout path. Minimum: a `tokenVersion` column on `User` embedded in the JWT and checked on refresh.
 
+> **Status: ✅ FIXED (branch fix/refresh-token-revocation)** — stateful `RefreshToken` table with `jti`; rotation-on-use (consumed token replaced by new one); reuse detection (replaying a consumed token revokes the entire family); `POST /v1/auth/logout` revokes the current family; `POST /v1/auth/logout-all` revokes every session; hourly cron purges expired rows. Access tokens remain short-lived and stateless by design.
+
 ### 🟡 Medium
 
 - **SEC-2 — Idempotency-Key header unvalidated/unbounded** — `idempotency.interceptor.ts:40–44`, stored verbatim as PK (`IdempotencyKey.key String @id`, no length cap), no TTL/cleanup. Authenticated abuse → table/storage growth. **Fix:** validate (UUID or ≤128 chars, else 400) before `reserve()`; add a scheduled purge of completed keys. ✅ FIXED (branch fix/security-hardening)
