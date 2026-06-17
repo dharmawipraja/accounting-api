@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import * as argon2 from 'argon2';
+import { randomBytes } from 'crypto';
 import { Prisma, Role, User } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import {
@@ -80,6 +81,29 @@ export class UsersService {
 
   async verifyPassword(user: User, password: string): Promise<boolean> {
     return argon2.verify(user.passwordHash, password);
+  }
+
+  private decoyHashPromise?: Promise<string>;
+
+  /** A cached argon2 hash of random bytes — never matches any real password. */
+  private decoyHash(): Promise<string> {
+    return (this.decoyHashPromise ??= argon2.hash(
+      randomBytes(32).toString('hex'),
+    ));
+  }
+
+  /**
+   * Verify a password against the user's hash, or — when the user is absent —
+   * against a decoy hash, so login timing does not reveal whether the email
+   * exists. Always returns false for the decoy path.
+   */
+  async verifyPasswordOrDecoy(
+    user: User | null,
+    password: string,
+  ): Promise<boolean> {
+    if (user) return argon2.verify(user.passwordHash, password);
+    await argon2.verify(await this.decoyHash(), password);
+    return false;
   }
 
   async softDelete(id: string, deletedBy: string): Promise<void> {

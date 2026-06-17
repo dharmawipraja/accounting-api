@@ -21,11 +21,9 @@ export class AuthService {
 
   async login(email: string, password: string): Promise<TokenPair> {
     const user = await this.users.findByEmailWithHash(email);
-    if (!user || !user.isActive) {
-      throw new UnauthorizedDomainError('Invalid credentials');
-    }
-    const valid = await this.users.verifyPassword(user, password);
-    if (!valid) {
+    // Always run a verify (decoy when the user is absent) so timing is constant.
+    const valid = await this.users.verifyPasswordOrDecoy(user, password);
+    if (!user || !user.isActive || !valid) {
       throw new UnauthorizedDomainError('Invalid credentials');
     }
     return this.issueTokens({
