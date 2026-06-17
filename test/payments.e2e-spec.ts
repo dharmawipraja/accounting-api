@@ -307,6 +307,51 @@ describe('Payments (e2e)', () => {
       .expect(200);
   });
 
+  it('FIN-M3: void cannot drive amountPaid negative (conflict on underflow)', async () => {
+    const customerId = await newCustomer('CUST-UNDERFLOW');
+    const invoiceId = await makePostedInvoice(customerId); // total 1,110,000
+    const r = await request(server())
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        direction: 'RECEIPT',
+        partnerId: customerId,
+        date: '2026-02-15',
+        cashAccountId: acc['1-1000'],
+        allocations: [{ salesInvoiceId: invoiceId, amount: '1110000' }],
+      })
+      .expect(201);
+    const paymentId = (r.body as { id: string }).id;
+    await request(server())
+      .post(`/v1/payments/${paymentId}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    // Manufacture the otherwise-impossible state: amountPaid below the allocation.
+    await prisma.client.salesInvoice.update({
+      where: { id: invoiceId },
+      data: { amountPaid: '500000' },
+    });
+    try {
+      await request(server())
+        .post(`/v1/payments/${paymentId}/void`)
+        .set('Authorization', `Bearer ${appr}`)
+        .set('Idempotency-Key', randomUUID())
+        .expect(409);
+      const inv = await prisma.client.salesInvoice.findFirst({
+        where: { id: invoiceId },
+      });
+      expect(inv!.amountPaid.toString()).toBe('500000'); // unchanged; tx rolled back
+    } finally {
+      // Restore the true posted value so the cross-suite AR reconciliation invariant holds.
+      await prisma.client.salesInvoice.update({
+        where: { id: invoiceId },
+        data: { amountPaid: '1110000' },
+      });
+    }
+  });
+
   it('concurrent post of two full-outstanding payments settles exactly once (one 200, one 409)', async () => {
     const customerId = await newCustomer('CUST-PAY-RACE');
     const invoiceId = await makePostedInvoice(customerId); // total 1,110,000

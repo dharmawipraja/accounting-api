@@ -476,16 +476,42 @@ export class PaymentsService {
         if (locked.length === 0 || locked[0].status !== 'POSTED')
           throw new ValidationFailedError('Payment is not posted', { id });
         for (const a of allocations) {
-          if (a.salesInvoiceId)
+          if (a.salesInvoiceId) {
+            const rows = await tx.$queryRaw<{ amount_paid: string }[]>`
+              SELECT amount_paid FROM sales_invoices WHERE id = ${a.salesInvoiceId} AND deleted_at IS NULL FOR UPDATE`;
+            if (
+              rows.length === 0 ||
+              Money.of(rows[0].amount_paid)
+                .subtract(Money.of(a.amount.toString()))
+                .isNegative()
+            )
+              throw new ConflictDomainError(
+                'Void would drive amountPaid negative',
+                { id: a.salesInvoiceId },
+              );
             await tx.salesInvoice.update({
               where: { id: a.salesInvoiceId },
               data: { amountPaid: { decrement: a.amount } },
             });
-          if (a.purchaseBillId)
+          }
+          if (a.purchaseBillId) {
+            const rows = await tx.$queryRaw<{ amount_paid: string }[]>`
+              SELECT amount_paid FROM purchase_bills WHERE id = ${a.purchaseBillId} AND deleted_at IS NULL FOR UPDATE`;
+            if (
+              rows.length === 0 ||
+              Money.of(rows[0].amount_paid)
+                .subtract(Money.of(a.amount.toString()))
+                .isNegative()
+            )
+              throw new ConflictDomainError(
+                'Void would drive amountPaid negative',
+                { id: a.purchaseBillId },
+              );
             await tx.purchaseBill.update({
               where: { id: a.purchaseBillId },
               data: { amountPaid: { decrement: a.amount } },
             });
+          }
         }
         await this.posting.reverseInTx(
           tx,
