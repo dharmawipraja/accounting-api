@@ -342,15 +342,23 @@ export class PaymentsService {
           const amt = Money.of(a.amount.toString());
           if (isReceipt) {
             const rows = await tx.$queryRaw<
-              { status: string; total: string; amount_paid: string }[]
+              {
+                status: string;
+                total: string;
+                amount_paid: string;
+                partner_id: string;
+              }[]
             >`
-            SELECT status, total, amount_paid FROM sales_invoices WHERE id = ${a.salesInvoiceId} AND deleted_at IS NULL FOR UPDATE`;
+            SELECT status, total, amount_paid, partner_id FROM sales_invoices WHERE id = ${a.salesInvoiceId} AND deleted_at IS NULL FOR UPDATE`;
             if (rows.length === 0 || rows[0].status !== 'POSTED')
               throw new ValidationFailedError(
                 'Allocated invoice is not posted',
-                {
-                  id: a.salesInvoiceId,
-                },
+                { id: a.salesInvoiceId },
+              );
+            if (rows[0].partner_id !== payment.partnerId)
+              throw new ValidationFailedError(
+                'Allocated invoice belongs to another partner',
+                { id: a.salesInvoiceId },
               );
             const outstanding = Money.of(rows[0].total).subtract(
               Money.of(rows[0].amount_paid),
@@ -368,13 +376,23 @@ export class PaymentsService {
             });
           } else {
             const rows = await tx.$queryRaw<
-              { status: string; total: string; amount_paid: string }[]
+              {
+                status: string;
+                total: string;
+                amount_paid: string;
+                partner_id: string;
+              }[]
             >`
-            SELECT status, total, amount_paid FROM purchase_bills WHERE id = ${a.purchaseBillId} AND deleted_at IS NULL FOR UPDATE`;
+            SELECT status, total, amount_paid, partner_id FROM purchase_bills WHERE id = ${a.purchaseBillId} AND deleted_at IS NULL FOR UPDATE`;
             if (rows.length === 0 || rows[0].status !== 'POSTED')
               throw new ValidationFailedError('Allocated bill is not posted', {
                 id: a.purchaseBillId,
               });
+            if (rows[0].partner_id !== payment.partnerId)
+              throw new ValidationFailedError(
+                'Allocated bill belongs to another partner',
+                { id: a.purchaseBillId },
+              );
             const outstanding = Money.of(rows[0].total).subtract(
               Money.of(rows[0].amount_paid),
             );

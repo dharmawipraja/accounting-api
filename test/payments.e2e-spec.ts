@@ -389,6 +389,35 @@ describe('Payments (e2e)', () => {
     });
   });
 
+  it('FIN-M2: rejects post when the allocated document no longer belongs to the payment partner', async () => {
+    const customerA = await newCustomer('CUST-OWNER-A');
+    const customerB = await newCustomer('CUST-OWNER-B');
+    const invoiceId = await makePostedInvoice(customerA);
+    const draft = await request(server())
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        direction: 'RECEIPT',
+        partnerId: customerA,
+        date: '2026-02-15',
+        cashAccountId: acc['1-1000'],
+        allocations: [{ salesInvoiceId: invoiceId, amount: '600000' }],
+      })
+      .expect(201);
+    const paymentId = (draft.body as { id: string }).id;
+    // Manufacture the otherwise-impossible state: reassign the invoice to B.
+    await prisma.client.salesInvoice.update({
+      where: { id: invoiceId },
+      data: { partnerId: customerB },
+    });
+    await request(server())
+      .post(`/v1/payments/${paymentId}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(422);
+  });
+
   it('reconciliation invariant: AR control GL balance == Σ all posted invoice outstanding', async () => {
     const customerId = await newCustomer('CUST-RECON');
     const invoiceId = await makePostedInvoice(customerId);
