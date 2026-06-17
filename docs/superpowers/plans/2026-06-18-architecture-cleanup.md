@@ -106,6 +106,13 @@ describe('listPaginated', () => {
     expect(page).toHaveBeenCalled();
     expect(search).not.toHaveBeenCalled();
   });
+
+  it('uses the page branch when no search closure is provided (search-less endpoint)', async () => {
+    const page = jest.fn().mockResolvedValue({ rows: [{ id: 'a', n: 2 }], total: 1 });
+    const res = await listPaginated({ q: 'anything', present, page });
+    expect(res.data).toEqual([{ id: 'a', doubled: 4 }]);
+    expect(page).toHaveBeenCalled();
+  });
 });
 ```
 
@@ -144,10 +151,10 @@ export interface ListPaginatedParams<TRow extends { id: string }, TOut> {
   offset?: number;
   /** Map a hydrated row to its response shape. */
   present: (row: TRow) => TOut;
-  /** Relevance-ranked id search; invoked only when the trimmed term length >= MIN_QUERY_LENGTH. */
-  search: (args: { term: string; limit: number; offset: number }) => Promise<{ ids: string[]; total: number }>;
-  /** Hydrate full rows for the ranked ids (order not guaranteed; the seam re-orders to the id rank). */
-  hydrate: (ids: string[]) => Promise<TRow[]>;
+  /** Relevance-ranked id search; provide for endpoints with fuzzy ?q= support. Omit to disable search entirely (search-less endpoints like accounts/tax-codes). */
+  search?: (args: { term: string; limit: number; offset: number }) => Promise<{ ids: string[]; total: number }>;
+  /** Hydrate full rows for the ranked ids (order not guaranteed; the seam re-orders to the id rank). Required iff `search` is provided. */
+  hydrate?: (ids: string[]) => Promise<TRow[]>;
   /** Non-search branch: a page of rows + the matching total. */
   page: (args: { limit: number; offset: number }) => Promise<{ rows: TRow[]; total: number }>;
 }
@@ -164,7 +171,7 @@ export async function listPaginated<TRow extends { id: string }, TOut>(
   const limit = params.limit ?? DEFAULT_PAGE_SIZE;
   const offset = params.offset ?? 0;
   const term = params.q?.trim() ?? '';
-  if (term.length >= MIN_QUERY_LENGTH) {
+  if (term.length >= MIN_QUERY_LENGTH && params.search && params.hydrate) {
     const { ids, total } = await params.search({ term, limit, offset });
     const rows = ids.length ? await params.hydrate(ids) : [];
     const byId = new Map(rows.map((r) => [r.id, r]));
@@ -1169,17 +1176,15 @@ Expected: FAIL (service still returns a bare array).
 
 - [ ] **Step 3: Paginate the services**
 
+Accounts and tax-codes are excluded from fuzzy search (per the fuzzy-search design), so they accept `PaginationQueryDto` (no `q`) and omit the optional `search`/`hydrate` — `listPaginated` then always takes the page branch.
+
 ```ts
 // accounts.service.ts
-async list(q: { q?: string; limit?: number; offset?: number }) {
-  const where = {}; // accounts are not soft-search-indexed; reuse listPaginated's page branch
+async list(q: { limit?: number; offset?: number }) {
   return listPaginated({
-    q: q.q,
     limit: q.limit,
     offset: q.offset,
     present: (r: Account) => r,
-    search: async () => ({ ids: [], total: 0 }), // accounts excluded from fuzzy search (per fuzzy-search design)
-    hydrate: async () => [],
     page: async ({ limit, offset }) => {
       const [rows, total] = await Promise.all([
         this.prisma.client.account.findMany({ orderBy: { code: 'asc' }, take: limit, skip: offset }),
@@ -1190,19 +1195,7 @@ async list(q: { q?: string; limit?: number; offset?: number }) {
   });
 }
 ```
-`tax-codes.service.ts` `list` (117-122) — same shape with `this.prisma.client.taxCode`, `orderBy: { code: 'asc' }`, **and drop the redundant `where: { deletedAt: null }`** (the soft-delete extension injects it — this also closes dead-code item 1e). Since accounts/tax-codes are excluded from fuzzy search by the fuzzy-search design, the `search`/`hydrate` are inert stubs; alternatively give them no `q` param at all and accept only `PaginationQueryDto`. Prefer `PaginationQueryDto` (no `q`) for these two so the stubs aren't needed:
-
-```ts
-async list(q: { limit?: number; offset?: number }) {
-  return listPaginated({
-    limit: q.limit, offset: q.offset,
-    present: (r: Account) => r,
-    search: async () => ({ ids: [], total: 0 }),
-    hydrate: async () => [],
-    page: async ({ limit, offset }) => { /* as above */ },
-  });
-}
-```
+`tax-codes.service.ts` `list` (117-122) — same shape with `this.prisma.client.taxCode`, `orderBy: { code: 'asc' }`, **and drop the redundant `where: { deletedAt: null }`** (the soft-delete extension injects it on the `count` and `findMany` — this also closes dead-code item 1e).
 
 - [ ] **Step 4: Update the controllers**
 
@@ -1259,18 +1252,24 @@ must unwrap .data. OpenAPI regenerated; frontend-guide updated."
 import { Type } from '@nestjs/common';
 import { ApiProperty } from '@nestjs/swagger';
 
-/** Builds a named `Paginated<Model>ResponseDto` envelope class for OpenAPI. */
-export function PaginatedDto<TModel extends Type<unknown>>(model: TModel) {
+/**
+ * Builds a named paginated-envelope class for OpenAPI. Pass `schemaName` to
+ * preserve an existing schema name (avoids renaming already-published schemas);
+ * defaults to `Paginated<Model>` for genuinely new endpoints.
+ */
+export function PaginatedDto<TModel extends Type<unknown>>(model: TModel, schemaName?: string) {
   class PaginatedResponseDto {
     @ApiProperty({ type: [model] }) data!: InstanceType<TModel>[];
     @ApiProperty({ example: 240 }) total!: number;
     @ApiProperty({ example: 50 }) limit!: number;
     @ApiProperty({ example: 0 }) offset!: number;
   }
-  Object.defineProperty(PaginatedResponseDto, 'name', { value: `Paginated${model.name}` });
+  Object.defineProperty(PaginatedResponseDto, 'name', { value: schemaName ?? `Paginated${model.name}` });
   return PaginatedResponseDto;
 }
 ```
+
+> **Contract preservation:** at the 5 existing envelope sites, pass the current schema name verbatim (e.g. `PaginatedDto(SalesInvoiceResponseDto, 'SalesInvoiceListResponseDto')`) so the regenerated OpenAPI is byte-identical for those schemas — the dedup is internal-only. Only the new accounts/tax-codes envelopes (Task 15) introduce new schema names.
 
 - [ ] **Step 2: Extract the shared base response DTO**
 
@@ -1282,7 +1281,7 @@ Keep the `@ApiMoney`/`@ApiProperty` decorators on the base fields (Swagger flatt
 - [ ] **Step 3: Regenerate OpenAPI + reconcile the contract spec**
 
 Run: `npm run openapi:export && npm test`
-Update `openapi-contract.spec.ts` for any renamed envelope schemas. Expected: contract spec green.
+Because the factory preserves the existing schema names (Step 1) and inherited `@ApiProperty` fields flatten unchanged, the regenerated `openapi.json` should be byte-identical for the 5 existing list/response schemas — `openapi-contract.spec.ts` should pass without edits. If `git diff docs/api/openapi.json` shows any change to those schemas, reconcile it (the goal is no diff for them). Expected: contract spec green.
 
 - [ ] **Step 4: Typecheck + full e2e**
 
