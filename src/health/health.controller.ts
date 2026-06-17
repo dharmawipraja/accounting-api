@@ -3,11 +3,14 @@ import {
   Get,
   HttpException,
   HttpStatus,
+  Inject,
   VERSION_NEUTRAL,
 } from '@nestjs/common';
 import { ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
+import type { Redis } from 'ioredis';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { REDIS_CLIENT } from '../common/redis/redis.constants';
 import { Public } from '../auth/decorators/public.decorator';
 import {
   HealthStatusDto,
@@ -19,7 +22,10 @@ import {
 @ApiTags('Health')
 @Controller({ version: VERSION_NEUTRAL })
 export class HealthController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis | null,
+  ) {}
 
   @Public()
   @Get('health')
@@ -40,6 +46,16 @@ export class HealthController {
         { status: 'error', db: 'down' },
         HttpStatus.SERVICE_UNAVAILABLE,
       );
+    }
+    if (this.redis) {
+      try {
+        await this.redis.ping();
+      } catch {
+        throw new HttpException(
+          { status: 'error', redis: 'down' },
+          HttpStatus.SERVICE_UNAVAILABLE,
+        );
+      }
     }
     return { status: 'ok', db: 'up' };
   }
