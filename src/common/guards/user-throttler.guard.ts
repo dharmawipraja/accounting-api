@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { ThrottlerException, ThrottlerGuard } from '@nestjs/throttler';
+import type { ThrottlerRequest } from '@nestjs/throttler';
 
 /**
  * Keys the rate limit by the *verified* authenticated user (so concurrent users
@@ -20,5 +21,21 @@ export class UserThrottlerGuard extends ThrottlerGuard {
     return Promise.resolve(
       userId ? `user:${userId}` : `ip:${req.ip ?? 'unknown'}`,
     );
+  }
+
+  /**
+   * Fail-closed: a real limit hit stays a 429 (ThrottlerException); any other error
+   * (the Redis store being unavailable) becomes a 503 so we never silently stop
+   * limiting. Paired with the fail-fast ioredis client, this rejects promptly.
+   */
+  protected async handleRequest(
+    requestProps: ThrottlerRequest,
+  ): Promise<boolean> {
+    try {
+      return await super.handleRequest(requestProps);
+    } catch (err) {
+      if (err instanceof ThrottlerException) throw err;
+      throw new ServiceUnavailableException('Rate limiter unavailable');
+    }
   }
 }
