@@ -1,3 +1,4 @@
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { IdempotencyService } from './idempotency.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -11,15 +12,17 @@ const P2002 = new Prisma.PrismaClientKnownRequestError('dup', {
   clientVersion: 'test',
 });
 
-function makeService() {
+function makeService(ttlMs?: number) {
   const idempotencyKey = {
     create: jest.fn(),
     findUnique: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
+    deleteMany: jest.fn(),
   };
   const prisma = { client: { idempotencyKey } } as unknown as PrismaService;
-  return { service: new IdempotencyService(prisma), idempotencyKey };
+  const config = { get: () => ttlMs } as unknown as ConfigService;
+  return { service: new IdempotencyService(prisma, config), idempotencyKey };
 }
 
 describe('IdempotencyService', () => {
@@ -127,5 +130,46 @@ describe('IdempotencyService', () => {
     const { service, idempotencyKey } = makeService();
     idempotencyKey.delete.mockRejectedValue(new Error('gone'));
     await expect(service.release('k')).resolves.toBeUndefined();
+  });
+
+  it('reclaims a stale in-flight key and re-reserves it', async () => {
+    const { service, idempotencyKey } = makeService();
+    idempotencyKey.create
+      .mockRejectedValueOnce(P2002) // first attempt: row exists
+      .mockResolvedValueOnce({}); // after reclaim: fresh insert succeeds
+    idempotencyKey.findUnique.mockResolvedValue({
+      key: 'k',
+      method: 'POST',
+      path: '/v1/partners',
+      requestHash: 'h',
+      response: null,
+      httpStatus: null,
+      completedAt: null,
+      createdAt: new Date('2000-01-01'), // far older than the TTL
+    });
+    idempotencyKey.deleteMany.mockResolvedValue({ count: 1 });
+    await expect(
+      service.reserve('k', 'POST', '/v1/partners', 'h'),
+    ).resolves.toEqual({ replay: false });
+    expect(idempotencyKey.deleteMany).toHaveBeenCalled();
+  });
+
+  it('keeps a fresh in-flight key as 409 (not reclaimed)', async () => {
+    const { service, idempotencyKey } = makeService();
+    idempotencyKey.create.mockRejectedValue(P2002);
+    idempotencyKey.findUnique.mockResolvedValue({
+      key: 'k',
+      method: 'POST',
+      path: '/v1/partners',
+      requestHash: 'h',
+      response: null,
+      httpStatus: null,
+      completedAt: null,
+      createdAt: new Date(), // fresh
+    });
+    await expect(
+      service.reserve('k', 'POST', '/v1/partners', 'h'),
+    ).rejects.toBeInstanceOf(ConflictDomainError);
+    expect(idempotencyKey.deleteMany).not.toHaveBeenCalled();
   });
 });

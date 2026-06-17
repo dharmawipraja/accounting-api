@@ -62,6 +62,11 @@ export class EnvVars {
   DB_STATEMENT_TIMEOUT_MS?: number;
 
   @IsOptional()
+  @IsInt()
+  @Min(1000)
+  IDEMPOTENCY_INFLIGHT_TTL_MS?: number;
+
+  @IsOptional()
   @IsString()
   METRICS_TOKEN?: string;
 

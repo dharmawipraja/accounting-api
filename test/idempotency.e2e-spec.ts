@@ -18,6 +18,8 @@ import { UsersService } from '../src/users/users.service';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
 import { makePrismaOverride } from './e2e-helpers';
 import { startTestDb, TestDb } from './testcontainers';
+import { IdempotencyService } from '../src/common/idempotency/idempotency.service';
+import { ConflictDomainError } from '../src/common/errors/domain-errors';
 
 describe('Idempotency (e2e)', () => {
   let app: INestApplication;
@@ -163,5 +165,50 @@ describe('Idempotency (e2e)', () => {
       where: { partnerId },
     });
     expect(count).toBe(1);
+  });
+
+  // Real-Postgres tests that verify the DbNull predicate in deleteMany actually
+  // matches SQL-NULL response rows (which is the true in-flight state). These
+  // tests bypass the HTTP interceptor and call IdempotencyService directly so
+  // they are not coupled to the interceptor's request-hash computation.
+  describe('stale in-flight key reclaim — real-Postgres predicate (FIN-L2)', () => {
+    let idem: IdempotencyService;
+
+    beforeAll(() => {
+      idem = app.get(IdempotencyService);
+    });
+
+    it('reclaims a stale in-flight row (SQL-NULL response) and returns replay:false', async () => {
+      const key = 'reclaim-stale-' + randomUUID();
+      // Insert a reservation without a response value → SQL NULL (the real in-flight state).
+      await prisma.client.idempotencyKey.create({
+        data: { key, method: 'POST', path: '/v1/x', requestHash: 'h' },
+      });
+      // Back-date createdAt beyond the 120 s TTL so the row is considered stale.
+      await prisma.client.idempotencyKey.update({
+        where: { key },
+        data: { createdAt: new Date(Date.now() - 200_000) },
+      });
+
+      // reserve() must delete the stale SQL-NULL row and re-insert → replay:false.
+      // If the DbNull predicate were wrong (JsonNull), deleteMany would match 0
+      // rows and this would throw ConflictDomainError (409) instead.
+      await expect(idem.reserve(key, 'POST', '/v1/x', 'h')).resolves.toEqual({
+        replay: false,
+      });
+    });
+
+    it('keeps a fresh in-flight row as ConflictDomainError (not reclaimed)', async () => {
+      const key = 'reclaim-fresh-' + randomUUID();
+      // Insert a fresh reservation (createdAt defaults to now()).
+      await prisma.client.idempotencyKey.create({
+        data: { key, method: 'POST', path: '/v1/y', requestHash: 'h' },
+      });
+
+      // reserve() must NOT reclaim a row that is still within the TTL window.
+      await expect(
+        idem.reserve(key, 'POST', '/v1/y', 'h'),
+      ).rejects.toBeInstanceOf(ConflictDomainError);
+    });
   });
 });

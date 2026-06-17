@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -19,13 +20,30 @@ export type ReserveResult =
  */
 @Injectable()
 export class IdempotencyService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
+
+  private get inflightTtlMs(): number {
+    return this.config.get<number>('IDEMPOTENCY_INFLIGHT_TTL_MS') ?? 120_000;
+  }
 
   async reserve(
     key: string,
     method: string,
     path: string,
     requestHash: string,
+  ): Promise<ReserveResult> {
+    return this.reserveOnce(key, method, path, requestHash, true);
+  }
+
+  private async reserveOnce(
+    key: string,
+    method: string,
+    path: string,
+    requestHash: string,
+    allowReclaim: boolean,
   ): Promise<ReserveResult> {
     try {
       await this.prisma.client.idempotencyKey.create({
@@ -37,7 +55,13 @@ export class IdempotencyService {
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === 'P2002'
       ) {
-        return this.resolveExisting(key, method, path, requestHash);
+        return this.resolveExisting(
+          key,
+          method,
+          path,
+          requestHash,
+          allowReclaim,
+        );
       }
       throw err;
     }
@@ -48,6 +72,7 @@ export class IdempotencyService {
     method: string,
     path: string,
     requestHash: string,
+    allowReclaim: boolean,
   ): Promise<ReserveResult> {
     const record = await this.prisma.client.idempotencyKey.findUnique({
       where: { key },
@@ -72,6 +97,27 @@ export class IdempotencyService {
       );
     }
     if (record.response === null || record.httpStatus === null) {
+      // In-flight. If the reservation is older than the TTL, the owner crashed
+      // between its commit and complete(); reclaim it once so this retry can
+      // proceed. The atomic deleteMany ensures only one racing retry wins.
+      if (allowReclaim && this.isStale(record.createdAt)) {
+        // isStale() is a fast in-memory early-exit; the createdAt predicate
+        // below is the authoritative atomic filter so only one racing retry wins.
+        const cleared = await this.prisma.client.idempotencyKey.deleteMany({
+          where: {
+            key,
+            // DbNull matches SQL NULL (the real in-flight state — response was
+            // never set). JsonNull would match the JSON literal null, not SQL NULL,
+            // and would always match zero rows, making the reclaim a no-op.
+            response: { equals: Prisma.DbNull },
+            completedAt: null,
+            createdAt: { lt: new Date(Date.now() - this.inflightTtlMs) },
+          },
+        });
+        if (cleared.count > 0) {
+          return this.reserveOnce(key, method, path, requestHash, false);
+        }
+      }
       throw new ConflictDomainError(
         'A request with this idempotency key is in progress',
         { key },
@@ -82,6 +128,11 @@ export class IdempotencyService {
       response: record.response,
       httpStatus: record.httpStatus,
     };
+  }
+
+  private isStale(createdAt: Date | null | undefined): boolean {
+    if (!createdAt) return false;
+    return Date.now() - new Date(createdAt).getTime() > this.inflightTtlMs;
   }
 
   async complete(
