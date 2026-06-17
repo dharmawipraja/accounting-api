@@ -13,6 +13,7 @@ import { CompanySettingsDto } from './dto/company-settings-response.dto';
 export class CompanyController {
   constructor(private readonly company: CompanyService) {}
 
+  @Roles(Role.ADMIN, Role.ACCOUNTANT)
   @Get()
   @ApiOkResponse({ type: CompanySettingsDto })
   get(): Promise<CompanySettings> {

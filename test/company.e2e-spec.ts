@@ -20,6 +20,9 @@ describe('Company settings (e2e)', () => {
   let db: TestDb;
   let prismaOverride: PrismaService;
   let adminToken: string;
+  let accountantToken: string;
+  let approverToken: string;
+  let viewerToken: string;
 
   beforeAll(async () => {
     db = await startTestDb();
@@ -47,6 +50,17 @@ describe('Company settings (e2e)', () => {
     });
     adminToken = (await app.get(AuthService).login('admin@x.com', 'secret123'))
       .accessToken;
+
+    const mkToken = async (
+      email: string,
+      role: 'ACCOUNTANT' | 'APPROVER' | 'VIEWER',
+    ) => {
+      await users.create({ email, password: 'secret123', name: role, role });
+      return (await app.get(AuthService).login(email, 'secret123')).accessToken;
+    };
+    accountantToken = await mkToken('acct@x.com', 'ACCOUNTANT');
+    approverToken = await mkToken('appr@x.com', 'APPROVER');
+    viewerToken = await mkToken('view@x.com', 'VIEWER');
   }, 120_000);
 
   afterAll(async () => {
@@ -86,5 +100,16 @@ describe('Company settings (e2e)', () => {
     await app.get(CompanyService).seedIfEmpty();
     const count = await prismaOverride.client.companySettings.count();
     expect(count).toBe(1);
+  });
+
+  it('SEC-4: company settings GET is limited to ADMIN and ACCOUNTANT', async () => {
+    const get = (token: string) =>
+      request(app.getHttpServer() as App)
+        .get('/v1/company/settings')
+        .set('Authorization', `Bearer ${token}`);
+    await get(adminToken).expect(200);
+    await get(accountantToken).expect(200);
+    await get(approverToken).expect(403);
+    await get(viewerToken).expect(403);
   });
 });
