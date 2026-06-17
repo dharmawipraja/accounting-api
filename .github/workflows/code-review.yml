@@ -13,8 +13,9 @@ name: Claude PR Review
 #     console API key instead, add an ANTHROPIC_API_KEY secret and switch the
 #     auth line below (see the comment there).
 # Optional tuning: see https://github.com/anthropics/claude-code-action for
-# extra inputs (e.g. use_sticky_comment, classify_inline_comments). Bump the
-# model to claude-opus-4-8 in claude_args for deeper (pricier) reviews.
+# extra inputs (e.g. use_sticky_comment, classify_inline_comments). The
+# reviewer runs on claude-opus-4-8 (the most capable model). Drop to
+# claude-sonnet-4-6 in claude_args for cheaper, lighter reviews.
 
 on:
   pull_request:
@@ -55,7 +56,7 @@ jobs:
           # PR reviews fail with an empty token.
           allowed_bots: 'dependabot[bot]'
           track_progress: true
-          claude_args: '--model claude-sonnet-4-6'
+          claude_args: '--model claude-opus-4-8'
           prompt: |
             You are reviewing a pull request for a production Indonesian
             double-entry accounting API (NestJS 11 + Prisma 7 + Postgres). Money
