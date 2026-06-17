@@ -8,8 +8,10 @@ name: Claude PR Review
 # Setup required (operator, one-time):
 #   - Install the Claude GitHub App: https://github.com/apps/claude
 #     (or run `claude /install-github-app`).
-#   - Add an ANTHROPIC_API_KEY repo secret:
-#     Settings -> Secrets and variables -> Actions -> New repository secret.
+#   - Auth: `claude /install-github-app` sets up a CLAUDE_CODE_OAUTH_TOKEN
+#     secret (Claude-subscription path), which this workflow uses. If you use a
+#     console API key instead, add an ANTHROPIC_API_KEY secret and switch the
+#     auth line below (see the comment there).
 # Optional tuning: see https://github.com/anthropics/claude-code-action for
 # extra inputs (e.g. use_sticky_comment, classify_inline_comments). Bump the
 # model to claude-opus-4-8 in claude_args for deeper (pricier) reviews.
@@ -40,7 +42,11 @@ jobs:
       - name: Claude review
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Uses the same secret `claude /install-github-app` configured (the
+          # Claude-subscription OAuth token), so both workflows share one secret.
+          # If you authenticate with a console API key instead, swap this line to:
+          #   anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           track_progress: true
           claude_args: '--model claude-sonnet-4-6'
           prompt: |
