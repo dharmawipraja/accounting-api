@@ -1,5 +1,6 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { Prisma, TaxCode, TaxKind } from '@prisma/client';
+import { Decimal } from 'decimal.js';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { AccountsService } from '../ledger/accounts/accounts.service';
 import {
@@ -39,10 +40,21 @@ export class TaxCodesService implements OnModuleInit {
   }
 
   private validateRate(rate: string): void {
-    const r = Number(rate);
-    if (!(r > 0 && r < 1)) {
+    let r: Decimal;
+    try {
+      r = new Decimal(rate);
+    } catch {
+      throw new ValidationFailedError('Rate must be a valid decimal', { rate });
+    }
+    if (!(r.greaterThan(0) && r.lessThan(1))) {
       throw new ValidationFailedError(
         'Rate must be greater than 0 and less than 1',
+        { rate },
+      );
+    }
+    if (r.decimalPlaces() > 6) {
+      throw new ValidationFailedError(
+        'Rate must have at most 6 decimal places',
         { rate },
       );
     }
