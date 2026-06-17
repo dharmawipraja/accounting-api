@@ -3,6 +3,7 @@ import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UnauthorizedDomainError } from '../common/errors/domain-errors';
+import { RefreshTokenService } from './refresh-token.service';
 
 describe('AuthService.login (constant-time)', () => {
   it('verifies a hash even when the user does not exist (no early return)', async () => {
@@ -15,6 +16,7 @@ describe('AuthService.login (constant-time)', () => {
       users,
       {} as unknown as JwtService,
       {} as unknown as ConfigService,
+      {} as unknown as RefreshTokenService,
     );
 
     await expect(auth.login('ghost@x.com', 'whatever')).rejects.toBeInstanceOf(
@@ -39,6 +41,7 @@ describe('AuthService.login (constant-time)', () => {
       users,
       {} as unknown as JwtService,
       {} as unknown as ConfigService,
+      {} as unknown as RefreshTokenService,
     );
 
     await expect(auth.login('x@y.com', 'correct')).rejects.toBeInstanceOf(

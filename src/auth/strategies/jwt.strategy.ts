@@ -10,6 +10,11 @@ export interface JwtPayload {
   role: Role;
 }
 
+export interface RefreshJwtPayload {
+  sub: string;
+  jti: string;
+}
+
 export interface AuthenticatedUser {
   id: string;
   email: string;
