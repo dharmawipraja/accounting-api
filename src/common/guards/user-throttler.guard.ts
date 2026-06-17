@@ -16,11 +16,17 @@ export class UserThrottlerGuard extends ThrottlerGuard {
   protected getTracker(req: {
     user?: { id?: string };
     ip?: string;
+    body?: { email?: unknown };
   }): Promise<string> {
     const userId = req.user?.id;
-    return Promise.resolve(
-      userId ? `user:${userId}` : `ip:${req.ip ?? 'unknown'}`,
-    );
+    if (userId) return Promise.resolve(`user:${userId}`);
+    // Anonymous: a login carries an email — key by it so per-account brute force
+    // is bounded regardless of a spoofed X-Forwarded-For. Combining with IP would
+    // let a rotating spoofed IP restore a fresh budget, defeating the limit.
+    const email =
+      typeof req.body?.email === 'string' ? req.body.email.toLowerCase() : null;
+    if (email) return Promise.resolve(`login:${email}`);
+    return Promise.resolve(`ip:${req.ip ?? 'unknown'}`);
   }
 
   /**

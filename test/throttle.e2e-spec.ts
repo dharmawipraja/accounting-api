@@ -35,6 +35,11 @@ describe('Throttle policy (e2e)', () => {
     );
     app.useGlobalFilters(new AllExceptionsFilter());
     await app.init();
+    (
+      app.getHttpAdapter().getInstance() as {
+        set: (k: string, v: unknown) => void;
+      }
+    ).set('trust proxy', 1);
     await app.get(UsersService).create({
       email: 'thr@test.io',
       password: 'secret123',
@@ -62,6 +67,22 @@ describe('Throttle policy (e2e)', () => {
     }
     expect(statuses.slice(0, 10).every((s) => s === 401)).toBe(true); // bad creds, under the cap
     expect(statuses[10]).toBe(429); // 11th blocked by the login throttle
+  });
+
+  it('SEC-3: login throttle is per-email, not bypassable by rotating X-Forwarded-For', async () => {
+    const statuses: number[] = [];
+    for (let i = 0; i < 11; i++) {
+      const res = await request(app.getHttpServer() as App)
+        .post('/v1/auth/login')
+        .set('X-Forwarded-For', `203.0.113.${i}`) // a DIFFERENT client IP each attempt
+        // distinct email → fresh bucket, isolated from the per-IP test above
+        .send({ email: 'sec3@test.io', password: 'wrong-password' });
+      statuses.push(res.status);
+    }
+    // The first 10 genuinely land under the cap (proves no bucket bleed)...
+    expect(statuses.slice(0, 10).every((s) => s === 401)).toBe(true);
+    // ...then the email-keyed bucket trips regardless of the rotating IP.
+    expect(statuses[10]).toBe(429);
   });
 
   it('a normal low-volume authenticated request is not throttled', async () => {
