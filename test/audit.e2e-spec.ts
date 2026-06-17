@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Test } from '@nestjs/testing';
 import {
   INestApplication,
@@ -114,5 +115,24 @@ describe('Audit log (e2e)', () => {
       .get('/v1/audit?method=POST')
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
+  });
+
+  it('SEC-7: audit_log is append-only — UPDATE and DELETE are rejected', async () => {
+    const id = randomUUID();
+    await prisma.client.auditLog.create({
+      data: { id, method: 'GET', path: '/v1/probe', statusCode: 200, durationMs: 3 },
+    });
+
+    await expect(
+      prisma.client.$executeRaw`UPDATE audit_log SET path = ${'/v1/tampered'} WHERE id = ${id}`,
+    ).rejects.toThrow(/append-only/i);
+
+    await expect(
+      prisma.client.$executeRaw`DELETE FROM audit_log WHERE id = ${id}`,
+    ).rejects.toThrow(/append-only/i);
+
+    const row = await prisma.client.auditLog.findFirst({ where: { id } });
+    expect(row).not.toBeNull();
+    expect(row!.path).toBe('/v1/probe'); // unchanged by the rejected UPDATE
   });
 });
