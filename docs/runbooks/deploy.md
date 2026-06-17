@@ -60,3 +60,18 @@ non-prod TLS setting). Instead either:
   (`docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d db migrate api`); or
 - **Throwaway internal TLS:** copy the Caddyfile, append `tls internal`, and mount the copy
   via a one-off override file — e.g. `cp Caddyfile /tmp/Caddyfile.staging && printf '\n\ttls internal\n' >> /tmp/Caddyfile.staging`, then a small `docker-compose.staging.yml` that remaps `caddy.volumes` to `/tmp/Caddyfile.staging:/etc/caddy/Caddyfile:ro`, and add `-f docker-compose.staging.yml` to the up command. `DOMAIN=localhost`, then `curl -k https://localhost/health`.
+
+## Activating CI (SEC-8)
+The CI workflow (`.github/workflows/ci.yml`) is committed but dormant — the repo
+has no git remote, so nothing triggers it. To activate:
+```bash
+# 1. Create a GitHub repository, then add it as the remote:
+git remote add origin git@github.com:<org>/accounting-api.git
+# 2. Push main (this triggers CI on push):
+git push -u origin main
+```
+On push/PR to `main`, CI runs three jobs: `verify` (Prisma generate + typecheck +
+lint + unit + e2e with coverage), `audit` (`npm run audit:ci`, fails on a
+moderate-or-higher advisory in prod deps), and `docker` (production image build).
+Recommended next step: enable branch protection on `main` requiring the `verify`
+and `audit` checks to pass before merge.
