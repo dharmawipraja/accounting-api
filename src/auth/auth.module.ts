@@ -6,10 +6,16 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RefreshTokenService } from './refresh-token.service';
+import { RefreshTokenPurgeService } from './refresh-token-purge.service';
 
 @Module({
   imports: [UsersModule, PassportModule, JwtModule.register({})],
-  providers: [AuthService, JwtStrategy, RefreshTokenService],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    RefreshTokenService,
+    RefreshTokenPurgeService,
+  ],
   controllers: [AuthController],
   exports: [AuthService],
 })

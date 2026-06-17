@@ -9,6 +9,7 @@ import { type App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { UsersService } from '../src/users/users.service';
+import { RefreshTokenService } from '../src/auth/refresh-token.service';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
 import { startTestDb, TestDb } from './testcontainers';
 import { makePrismaOverride } from './e2e-helpers';
@@ -193,5 +194,42 @@ describe('Auth Refresh Rotation (e2e)', () => {
       .post('/v1/auth/refresh')
       .send({ refreshToken: tB })
       .expect(200);
+  });
+
+  it('purgeExpired deletes only rows past their expiry', async () => {
+    const svc = app.get(RefreshTokenService);
+    const userId = (await prismaOverride.client.user.findFirst({
+      where: { email: 'rot@test.io' },
+    }))!.id;
+    await prismaOverride.client.refreshToken.create({
+      data: {
+        id: 'expired-1',
+        userId,
+        familyId: 'fam-x',
+        status: 'CONSUMED',
+        expiresAt: new Date('2000-01-01'), // past
+      },
+    });
+    await prismaOverride.client.refreshToken.create({
+      data: {
+        id: 'fresh-1',
+        userId,
+        familyId: 'fam-y',
+        status: 'ACTIVE',
+        expiresAt: new Date(Date.now() + 60_000), // future
+      },
+    });
+    const deleted = await svc.purgeExpired();
+    expect(deleted).toBeGreaterThanOrEqual(1);
+    expect(
+      await prismaOverride.client.refreshToken.findUnique({
+        where: { id: 'expired-1' },
+      }),
+    ).toBeNull();
+    expect(
+      await prismaOverride.client.refreshToken.findUnique({
+        where: { id: 'fresh-1' },
+      }),
+    ).not.toBeNull();
   });
 });

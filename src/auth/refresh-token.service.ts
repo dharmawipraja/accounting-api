@@ -114,4 +114,15 @@ export class RefreshTokenService {
       data: { status: 'REVOKED' },
     });
   }
+
+  /**
+   * Hard-delete rows past their expiry. CONSUMED/REVOKED rows are kept until they
+   * expire so a replay within the TTL is still detectable. Returns the count.
+   */
+  async purgeExpired(): Promise<number> {
+    const { count } = await this.prisma.client.refreshToken.deleteMany({
+      where: { expiresAt: { lt: new Date() } },
+    });
+    return count;
+  }
 }
