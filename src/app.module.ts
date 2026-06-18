@@ -38,6 +38,7 @@ import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
     ScheduleModule.forRoot(),
     LoggerModule.forRoot({
       pinoHttp: {
+        level: process.env.LOG_LEVEL ?? 'info',
         autoLogging: true,
         genReqId: (req, res) => {
           // Reuse an inbound X-Request-Id only if it's a safe shape/length;

@@ -7,6 +7,7 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { parseCorsOrigins } from './config/cors-origins';
+import { scrubSentryEvent } from './config/sentry-scrub';
 
 async function bootstrap(): Promise<void> {
   if (process.env.SENTRY_DSN) {
@@ -16,8 +17,27 @@ async function bootstrap(): Promise<void> {
       environment: process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV,
       release: process.env.SENTRY_RELEASE,
       tracesSampleRate: 0,
+      beforeSend: (event) => scrubSentryEvent(event),
     });
   }
+
+  // Last-resort crash safety. An uncaughtException leaves the process in an
+  // undefined state → log, capture, flush, exit(1) (Docker `unless-stopped`
+  // restarts). An unhandledRejection is logged + captured without exiting.
+  const captureFatal = async (err: unknown): Promise<void> => {
+    console.error(err);
+    if (process.env.SENTRY_DSN) {
+      const Sentry = await import('@sentry/node');
+      Sentry.captureException(err);
+      await Sentry.flush(2000);
+    }
+  };
+  process.on('uncaughtException', (err) => {
+    void captureFatal(err).finally(() => process.exit(1));
+  });
+  process.on('unhandledRejection', (reason) => {
+    void captureFatal(reason);
+  });
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
