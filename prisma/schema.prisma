@@ -55,17 +55,17 @@ model RefreshToken {
 }
 
 model CompanySettings {
-  id                          String   @id @default(uuid())
-  singleton                   Boolean  @unique @default(true)
-  legalName                   String   @map("legal_name")
-  npwp                        String?
-  address                     String?
-  fiscalYearStartMonth        Int      @default(1) @map("fiscal_year_start_month")
-  baseCurrency                String   @default("IDR") @map("base_currency")
-  segregationOfDutiesEnabled  Boolean  @default(true) @map("segregation_of_duties_enabled")
-  isPkp                       Boolean  @default(true) @map("is_pkp")
-  createdAt                   DateTime @default(now()) @map("created_at")
-  updatedAt                   DateTime @updatedAt @map("updated_at")
+  id                         String   @id @default(uuid())
+  singleton                  Boolean  @unique @default(true)
+  legalName                  String   @map("legal_name")
+  npwp                       String?
+  address                    String?
+  fiscalYearStartMonth       Int      @default(1) @map("fiscal_year_start_month")
+  baseCurrency               String   @default("IDR") @map("base_currency")
+  segregationOfDutiesEnabled Boolean  @default(true) @map("segregation_of_duties_enabled")
+  isPkp                      Boolean  @default(true) @map("is_pkp")
+  createdAt                  DateTime @default(now()) @map("created_at")
+  updatedAt                  DateTime @updatedAt @map("updated_at")
 
   @@map("company_settings")
 }
@@ -223,6 +223,8 @@ model JournalEntry {
   @@index([date])
   @@index([status])
   @@index([deletedAt])
+  @@index([entryRef(ops: raw("gin_trgm_ops"))], type: Gin, map: "journal_entries_entry_ref_trgm")
+  @@index([description(ops: raw("gin_trgm_ops"))], type: Gin, map: "journal_entries_description_trgm")
   @@map("journal_entries")
 }
 
@@ -313,6 +315,10 @@ model BusinessPartner {
 
   @@unique([code], name: "business_partners_code_unique")
   @@index([deletedAt])
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "business_partners_name_trgm")
+  @@index([code(ops: raw("gin_trgm_ops"))], type: Gin, map: "business_partners_code_trgm")
+  @@index([npwp(ops: raw("gin_trgm_ops"))], type: Gin, map: "business_partners_npwp_trgm")
+  @@index([email(ops: raw("gin_trgm_ops"))], type: Gin, map: "business_partners_email_trgm")
   @@map("business_partners")
 }
 
@@ -344,6 +350,8 @@ model SalesInvoice {
   @@unique([fiscalYear, invoiceNumber], name: "sales_invoices_fy_number_unique")
   @@index([deletedAt])
   @@index([partnerId])
+  @@index([invoiceRef(ops: raw("gin_trgm_ops"))], type: Gin, map: "sales_invoices_invoice_ref_trgm")
+  @@index([description(ops: raw("gin_trgm_ops"))], type: Gin, map: "sales_invoices_description_trgm")
   @@map("sales_invoices")
 }
 
@@ -392,6 +400,9 @@ model PurchaseBill {
   @@unique([fiscalYear, billNumber], name: "purchase_bills_fy_number_unique")
   @@index([deletedAt])
   @@index([partnerId])
+  @@index([billRef(ops: raw("gin_trgm_ops"))], type: Gin, map: "purchase_bills_bill_ref_trgm")
+  @@index([vendorInvoiceNo(ops: raw("gin_trgm_ops"))], type: Gin, map: "purchase_bills_vendor_invoice_no_trgm")
+  @@index([description(ops: raw("gin_trgm_ops"))], type: Gin, map: "purchase_bills_description_trgm")
   @@map("purchase_bills")
 }
 
@@ -438,6 +449,8 @@ model Payment {
   @@unique([direction, fiscalYear, number], name: "payments_direction_fy_number_unique")
   @@index([deletedAt])
   @@index([partnerId])
+  @@index([ref(ops: raw("gin_trgm_ops"))], type: Gin, map: "payments_ref_trgm")
+  @@index([description(ops: raw("gin_trgm_ops"))], type: Gin, map: "payments_description_trgm")
   @@map("payments")
 }
 
