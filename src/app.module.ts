@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import Redis from 'ioredis';
@@ -27,6 +27,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
+import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout.interceptor';
 
 @Module({
   imports: [
@@ -90,6 +91,13 @@ import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: UserThrottlerGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    {
+      provide: APP_INTERCEPTOR,
+      useFactory: () =>
+        new RequestTimeoutInterceptor(
+          Number(process.env.REQUEST_TIMEOUT_MS) || 30_000,
+        ),
+    },
   ],
 })
 export class AppModule {}

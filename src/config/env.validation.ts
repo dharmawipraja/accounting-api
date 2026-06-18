@@ -119,6 +119,11 @@ export class EnvVars {
   @IsOptional()
   @IsIn(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
   LOG_LEVEL?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1000)
+  REQUEST_TIMEOUT_MS?: number;
 }
 
 export function validate(config: Record<string, unknown>): EnvVars {
