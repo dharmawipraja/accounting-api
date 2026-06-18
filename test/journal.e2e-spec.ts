@@ -262,7 +262,7 @@ describe('JournalEntries (e2e)', () => {
 
   it('createAndPost is idempotent: same Idempotency-Key returns the same entry', async () => {
     await app.get(CompanyService).update({ segregationOfDutiesEnabled: false });
-    const key = `idem-${Date.now()}`;
+    const key = `idem-${randomUUID()}`;
 
     const first = await request(app.getHttpServer() as App)
       .post('/v1/ledger/journal-entries?post=true')
@@ -284,7 +284,7 @@ describe('JournalEntries (e2e)', () => {
 
   it('concurrent same-key createAndPost posts exactly once (no double-post)', async () => {
     await app.get(CompanyService).update({ segregationOfDutiesEnabled: false });
-    const key = `idem-concurrent-${Date.now()}`;
+    const key = `idem-concurrent-${randomUUID()}`;
     const desc = `Concurrent ${Date.now()}`;
     const payload = { ...balancedBody(), description: desc };
     const before = await prismaOverride.client.journalEntry.count({
