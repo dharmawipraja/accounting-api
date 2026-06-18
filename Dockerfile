@@ -17,7 +17,11 @@ ENV NODE_ENV=production
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 COPY package*.json ./
-RUN npm ci --omit=dev
+# Install prod deps, then drop the lockfile so the image's vuln scan (Trivy)
+# reflects only what's actually shipped — not dev-only build tooling (jest,
+# nest-cli, etc.) that the lockfile lists but `--omit=dev` never installs.
+# Dev-dependency CVEs are still surfaced by `npm audit` / the CI audit job.
+RUN npm ci --omit=dev && rm -f package-lock.json
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=build --chown=node:node /app/prisma ./prisma
