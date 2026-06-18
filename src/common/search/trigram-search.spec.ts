@@ -1,20 +1,37 @@
 import { Prisma } from '@prisma/client';
-import {
-  buildTrigramIdQuery,
-  buildTrigramCountQuery,
-  MIN_QUERY_LENGTH,
-  SIMILARITY_THRESHOLD,
-} from './trigram-search';
+import { MIN_QUERY_LENGTH, trigramSearch } from './trigram-search';
+import { PrismaService } from '../prisma/prisma.service';
 
-describe('buildTrigramIdQuery', () => {
-  it('exposes sane constants', () => {
+/** Capture Prisma.Sql objects passed to $queryRaw by trigramSearch. */
+function makePrismaMock(): {
+  prisma: PrismaService;
+  getCaptured: () => Prisma.Sql[];
+} {
+  const captured: Prisma.Sql[] = [];
+  const prisma = {
+    $queryRaw: jest.fn((sql: Prisma.Sql) => {
+      captured.push(sql);
+      // trigramSearch calls $queryRaw twice in parallel: id query first, count query second.
+      // Detect by checking if the SQL contains COUNT(*).
+      if (sql.sql.includes('COUNT(*)')) {
+        return Promise.resolve([{ total: BigInt(0) }]);
+      }
+      return Promise.resolve([]);
+    }),
+  } as unknown as PrismaService;
+  return { prisma, getCaptured: () => captured };
+}
+
+describe('trigramSearch constants', () => {
+  it('exposes sane MIN_QUERY_LENGTH', () => {
     expect(MIN_QUERY_LENGTH).toBe(2);
-    expect(SIMILARITY_THRESHOLD).toBeGreaterThan(0);
-    expect(SIMILARITY_THRESHOLD).toBeLessThan(1);
   });
+});
 
-  it('parameterizes the query value (never interpolates it) and inlines identifiers', () => {
-    const sql = buildTrigramIdQuery({
+describe('trigramSearch — id query SQL structure', () => {
+  it('parameterizes the query value (never interpolates it) and inlines identifiers', async () => {
+    const { prisma, getCaptured } = makePrismaMock();
+    await trigramSearch(prisma, {
       table: 'business_partners',
       alias: 't',
       ownColumns: ['name', 'code'],
@@ -23,26 +40,29 @@ describe('buildTrigramIdQuery', () => {
       limit: 20,
       offset: 0,
     });
+
+    const [idSql] = getCaptured();
     // Identifiers are inlined (constants); the user value is bound, not inlined.
-    expect(sql.sql).toContain('business_partners');
-    expect(sql.sql).toContain('t.name');
-    expect(sql.sql).toContain('t.code');
-    expect(sql.sql).toContain('deleted_at IS NULL');
-    expect(sql.sql).toContain('GREATEST');
-    // id query selects only id — COUNT(*) OVER() was moved to buildTrigramCountQuery
-    expect(sql.sql).not.toContain('COUNT(*) OVER()');
-    expect(sql.sql).not.toContain("bo'bby");
-    expect(sql.values).toContain("bo'bby");
-    expect(sql.values).toContain(20); // limit
-    expect(sql.values).toContain(0); // offset
+    expect(idSql.sql).toContain('business_partners');
+    expect(idSql.sql).toContain('t.name');
+    expect(idSql.sql).toContain('t.code');
+    expect(idSql.sql).toContain('deleted_at IS NULL');
+    expect(idSql.sql).toContain('GREATEST');
+    // id query selects only id — COUNT(*) OVER() was moved to the count query
+    expect(idSql.sql).not.toContain('COUNT(*) OVER()');
+    expect(idSql.sql).not.toContain("bo'bby");
+    expect(idSql.values).toContain("bo'bby");
+    expect(idSql.values).toContain(20); // limit
+    expect(idSql.values).toContain(0); // offset
     // Must still have ORDER BY and LIMIT/OFFSET for ranking + pagination
-    expect(sql.sql).toContain('ORDER BY');
-    expect(sql.sql).toContain('LIMIT');
-    expect(sql.sql).toContain('OFFSET');
+    expect(idSql.sql).toContain('ORDER BY');
+    expect(idSql.sql).toContain('LIMIT');
+    expect(idSql.sql).toContain('OFFSET');
   });
 
-  it('adds a JOIN and joined column refs when a join is given', () => {
-    const sql = buildTrigramIdQuery({
+  it('adds a JOIN and joined column refs when a join is given', async () => {
+    const { prisma, getCaptured } = makePrismaMock();
+    await trigramSearch(prisma, {
       table: 'sales_invoices',
       alias: 't',
       ownColumns: ['invoice_ref', 'description'],
@@ -57,17 +77,20 @@ describe('buildTrigramIdQuery', () => {
       limit: 50,
       offset: 0,
     });
-    expect(sql.sql).toContain('JOIN business_partners p');
-    expect(sql.sql).toContain('p.name');
-    expect(sql.sql).toContain('t.partner_id');
-    expect(sql.values).toContain('POSTED'); // filter value bound
-    expect(sql.values).toContain('budi');
+
+    const [idSql] = getCaptured();
+    expect(idSql.sql).toContain('JOIN business_partners p');
+    expect(idSql.sql).toContain('p.name');
+    expect(idSql.sql).toContain('t.partner_id');
+    expect(idSql.values).toContain('POSTED'); // filter value bound
+    expect(idSql.values).toContain('budi');
   });
 });
 
-describe('buildTrigramCountQuery', () => {
-  it('selects COUNT(*), includes deleted_at IS NULL and bound q, but has no LIMIT/OFFSET/ORDER BY', () => {
-    const sql = buildTrigramCountQuery({
+describe('trigramSearch — count query SQL structure', () => {
+  it('selects COUNT(*), includes deleted_at IS NULL and bound q, but has no LIMIT/OFFSET/ORDER BY', async () => {
+    const { prisma, getCaptured } = makePrismaMock();
+    await trigramSearch(prisma, {
       table: 'business_partners',
       alias: 't',
       ownColumns: ['name', 'code'],
@@ -76,22 +99,25 @@ describe('buildTrigramCountQuery', () => {
       limit: 20,
       offset: 0,
     });
+
+    const [, countSql] = getCaptured();
     // Must count all matches regardless of pagination
-    expect(sql.sql).toContain('COUNT(*)');
-    expect(sql.sql).toContain('deleted_at IS NULL');
+    expect(countSql.sql).toContain('COUNT(*)');
+    expect(countSql.sql).toContain('deleted_at IS NULL');
     // The match group (ILIKE / similarity) must be present
-    expect(sql.sql).toContain('ILIKE');
+    expect(countSql.sql).toContain('ILIKE');
     // User value must be parameterized, never inlined
-    expect(sql.sql).not.toContain("bo'bby");
-    expect(sql.values).toContain("bo'bby");
+    expect(countSql.sql).not.toContain("bo'bby");
+    expect(countSql.values).toContain("bo'bby");
     // No pagination clauses — count must reflect the full match set
-    expect(sql.sql).not.toContain('ORDER BY');
-    expect(sql.sql).not.toContain('LIMIT');
-    expect(sql.sql).not.toContain('OFFSET');
+    expect(countSql.sql).not.toContain('ORDER BY');
+    expect(countSql.sql).not.toContain('LIMIT');
+    expect(countSql.sql).not.toContain('OFFSET');
   });
 
-  it('includes filter values as bound parameters', () => {
-    const sql = buildTrigramCountQuery({
+  it('includes filter values as bound parameters', async () => {
+    const { prisma, getCaptured } = makePrismaMock();
+    await trigramSearch(prisma, {
       table: 'sales_invoices',
       alias: 't',
       ownColumns: ['invoice_ref', 'description'],
@@ -106,9 +132,11 @@ describe('buildTrigramCountQuery', () => {
       limit: 50,
       offset: 0,
     });
-    expect(sql.sql).toContain('COUNT(*)');
-    expect(sql.sql).toContain('JOIN business_partners p');
-    expect(sql.values).toContain('POSTED');
-    expect(sql.values).toContain('budi');
+
+    const [, countSql] = getCaptured();
+    expect(countSql.sql).toContain('COUNT(*)');
+    expect(countSql.sql).toContain('JOIN business_partners p');
+    expect(countSql.values).toContain('POSTED');
+    expect(countSql.values).toContain('budi');
   });
 });

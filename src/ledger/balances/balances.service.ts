@@ -28,7 +28,6 @@ export interface AccountBalanceRow {
   subtype: string;
   normalBalance: string;
   cashFlowCategory: string;
-  parentId: string | null;
   debit: string; // raw summed debits, 4dp
   credit: string; // raw summed credits, 4dp
   balance: string; // normalBalance-signed net, 4dp (convenience)
@@ -42,7 +41,6 @@ interface RawBalanceRow {
   subtype: string;
   normal_balance: string;
   cash_flow_category: string;
-  parent_id: string | null;
   debit: Prisma.Decimal;
   credit: Prisma.Decimal;
 }
@@ -69,14 +67,14 @@ export class BalancesService {
   ): Promise<RawBalanceRow[]> {
     return this.prisma.$queryRaw<RawBalanceRow[]>(Prisma.sql`
       SELECT a.id AS account_id, a.code, a.name, a.type, a.subtype,
-             a.normal_balance, a.cash_flow_category, a.parent_id,
+             a.normal_balance, a.cash_flow_category,
              COALESCE(SUM(jl.debit), 0) AS debit,
              COALESCE(SUM(jl.credit), 0) AS credit
       FROM accounts a
       JOIN journal_lines jl ON jl.account_id = a.id
       JOIN journal_entries je ON je.id = jl.journal_entry_id
       WHERE je.posted_at IS NOT NULL AND je.deleted_at IS NULL AND a.deleted_at IS NULL AND ${dateFilter}
-      GROUP BY a.id, a.code, a.name, a.type, a.subtype, a.normal_balance, a.cash_flow_category, a.parent_id
+      GROUP BY a.id, a.code, a.name, a.type, a.subtype, a.normal_balance, a.cash_flow_category
       ORDER BY a.code ASC`);
   }
 
@@ -93,7 +91,6 @@ export class BalancesService {
       subtype: r.subtype,
       normalBalance: r.normal_balance,
       cashFlowCategory: r.cash_flow_category,
-      parentId: r.parent_id,
       debit: r.debit.toFixed(4),
       credit: r.credit.toFixed(4),
       balance: net.toFixed(4),

@@ -9,6 +9,7 @@ import {
   NotFoundDomainError,
   ValidationFailedError,
 } from '../common/errors/domain-errors';
+import { mapUniqueViolation } from '../common/errors/map-unique-violation';
 import { TAX_CODE_SEED } from './tax-codes.seed';
 
 export interface CreateTaxCodeInput {
@@ -103,15 +104,7 @@ export class TaxCodesService implements OnModuleInit {
       });
     } catch (err) {
       // A concurrent create with the same code lost the race past the pre-check.
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
-        throw new ConflictDomainError('Tax code already exists', {
-          code: input.code,
-        });
-      }
-      throw err;
+      mapUniqueViolation(err, 'Tax code already exists', { code: input.code });
     }
   }
 

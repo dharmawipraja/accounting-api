@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { randomBytes } from 'crypto';
-import { Prisma, Role, User } from '@prisma/client';
+import { Role, User } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import {
   ConflictDomainError,
   NotFoundDomainError,
 } from '../common/errors/domain-errors';
+import { mapUniqueViolation } from '../common/errors/map-unique-violation';
 
 export interface CreateUserInput {
   email: string;
@@ -49,21 +50,10 @@ export class UsersService {
     } catch (err) {
       // Concurrent creates can both pass the pre-check above; the unique
       // constraint is the real guard. Map it to a clean 409.
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
-        throw new ConflictDomainError('A user with this email already exists', {
-          email: input.email,
-        });
-      }
-      throw err;
+      mapUniqueViolation(err, 'A user with this email already exists', {
+        email: input.email,
+      });
     }
-  }
-
-  async findByEmail(email: string): Promise<SafeUser | null> {
-    const user = await this.prisma.client.user.findFirst({ where: { email } });
-    return user ? stripHash(user) : null;
   }
 
   /**

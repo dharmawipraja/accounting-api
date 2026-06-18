@@ -27,8 +27,8 @@ export class ReportsController {
     private readonly balanceSheetSvc: BalanceSheetService,
     private readonly incomeStatementSvc: IncomeStatementService,
     private readonly generalLedgerSvc: GeneralLedgerService,
-    private readonly aging: AgingService,
-    private readonly cashFlow: CashFlowService,
+    private readonly agingSvc: AgingService,
+    private readonly cashFlowSvc: CashFlowService,
   ) {}
 
   private range(q: { from: string; to: string }): { from: Date; to: Date } {
@@ -68,19 +68,19 @@ export class ReportsController {
   @ApiOkResponse({ type: AgingReportDto })
   @Get('ar-aging')
   arAging(@Query() q: AsOfQueryDto) {
-    return this.aging.aging('AR', q.asOf ? new Date(q.asOf) : new Date());
+    return this.agingSvc.aging('AR', q.asOf ? new Date(q.asOf) : new Date());
   }
 
   @ApiOkResponse({ type: AgingReportDto })
   @Get('ap-aging')
   apAging(@Query() q: AsOfQueryDto) {
-    return this.aging.aging('AP', q.asOf ? new Date(q.asOf) : new Date());
+    return this.agingSvc.aging('AP', q.asOf ? new Date(q.asOf) : new Date());
   }
 
   @ApiOkResponse({ type: CashFlowDto })
   @Get('cash-flow')
   cashFlowReport(@Query() q: RangeQueryDto) {
     const { from, to } = this.range(q);
-    return this.cashFlow.generate(from, to);
+    return this.cashFlowSvc.generate(from, to);
   }
 }

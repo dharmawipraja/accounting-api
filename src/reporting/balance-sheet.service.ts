@@ -6,12 +6,8 @@ import {
 } from '../ledger/balances/balances.service';
 import { CompanyService } from '../company/company.service';
 import { fiscalYearForDate } from '../common/dates/fiscal-year';
+import { ReportLine } from './report-line';
 
-export interface ReportLine {
-  code: string;
-  name: string;
-  amount: string;
-}
 export interface ReportGroup {
   subtype: string;
   lines: ReportLine[];

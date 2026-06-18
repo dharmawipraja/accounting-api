@@ -58,7 +58,7 @@ describe('UsersService (e2e)', () => {
       role: 'VIEWER',
     });
     await users.softDelete(user.id, 'admin-id');
-    expect(await users.findByEmail('del@example.com')).toBeNull();
+    expect(await users.findByEmailWithHash('del@example.com')).toBeNull();
   });
 
   it('allows reusing a soft-deleted email (tombstone)', async () => {

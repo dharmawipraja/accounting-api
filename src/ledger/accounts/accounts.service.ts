@@ -7,6 +7,7 @@ import {
   NotFoundDomainError,
   ValidationFailedError,
 } from '../../common/errors/domain-errors';
+import { mapUniqueViolation } from '../../common/errors/map-unique-violation';
 import { CHART_OF_ACCOUNTS } from './chart-of-accounts.seed';
 
 export interface CreateAccountInput {
@@ -179,15 +180,9 @@ export class AccountsService implements OnModuleInit {
         },
       });
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
-        throw new ConflictDomainError('Account code already exists', {
-          code: input.code,
-        });
-      }
-      throw err;
+      mapUniqueViolation(err, 'Account code already exists', {
+        code: input.code,
+      });
     }
   }
 

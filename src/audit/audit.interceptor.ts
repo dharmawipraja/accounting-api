@@ -10,8 +10,9 @@ import { catchError, concatMap } from 'rxjs/operators';
 import { AuditService } from './audit.service';
 import { sanitize } from './audit-sanitize';
 import { DomainError } from '../common/errors/domain-errors';
+import { MUTATING_METHODS } from './mutating-methods';
 
-const MUTATING = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
+const MUTATING: Set<string> = new Set(MUTATING_METHODS);
 
 interface AuditableRequest {
   method: string;

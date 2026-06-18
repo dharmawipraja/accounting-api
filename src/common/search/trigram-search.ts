@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 /** Min trimmed length of `q` before search activates (shorter -> normal list). */
 export const MIN_QUERY_LENGTH = 2;
 /** Trigram similarity cutoff for a fuzzy (non-substring) match. */
-export const SIMILARITY_THRESHOLD = 0.3;
+const SIMILARITY_THRESHOLD = 0.3;
 
 export interface TrigramJoin {
   /** Joined table (constant), e.g. 'business_partners'. */
@@ -93,7 +93,7 @@ function buildSharedClauses(input: TrigramSearchInput): {
  * arm is a recheck (the `%` operator + `SET LOCAL pg_trgm.similarity_threshold`
  * would be index-aware, but needs a tx — not worth it at single-company scale).
  */
-export function buildTrigramIdQuery(input: TrigramSearchInput): Prisma.Sql {
+function buildTrigramIdQuery(input: TrigramSearchInput): Prisma.Sql {
   const refs = columnRefs(input);
   const rank = Prisma.join(
     refs.map((ref) => Prisma.sql`similarity(${ref}, ${input.q})`),
@@ -119,7 +119,7 @@ export function buildTrigramIdQuery(input: TrigramSearchInput): Prisma.Sql {
  * parallel with the id query gives a correct total even when the page offset
  * overshoots the match count (which would collapse COUNT(*) OVER() to 0).
  */
-export function buildTrigramCountQuery(input: TrigramSearchInput): Prisma.Sql {
+function buildTrigramCountQuery(input: TrigramSearchInput): Prisma.Sql {
   const { joinClause, whereClause } = buildSharedClauses(input);
 
   return Prisma.sql`

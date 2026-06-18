@@ -25,6 +25,23 @@ function isSoftDelete(model: string | undefined): boolean {
   return !!model && SOFT_DELETE_MODELS.has(model as Prisma.ModelName);
 }
 
+/**
+ * Injects `deletedAt: true` into the `select` projection when the caller
+ * supplied a select but omitted `deletedAt`. Returns whether the field was
+ * injected (so the caller knows to strip it from the result).
+ */
+function injectDeletedAtSelect(args: unknown): boolean {
+  const typed = args as { select?: Record<string, unknown> };
+  if (
+    typed.select !== undefined &&
+    !Object.prototype.hasOwnProperty.call(typed.select, 'deletedAt')
+  ) {
+    typed.select = { ...typed.select, deletedAt: true };
+    return true;
+  }
+  return false;
+}
+
 export function applySoftDelete(base: PrismaClient) {
   return base
     .$extends({
@@ -61,19 +78,7 @@ export function applySoftDelete(base: PrismaClient) {
             }
             // Force-include deletedAt so the guard always sees it,
             // even if the caller's select projection omits it.
-            const callerSelect = (args as { select?: Record<string, unknown> })
-              .select;
-            let injected = false;
-            if (
-              callerSelect !== undefined &&
-              !Object.prototype.hasOwnProperty.call(callerSelect, 'deletedAt')
-            ) {
-              (args as { select?: Record<string, unknown> }).select = {
-                ...callerSelect,
-                deletedAt: true,
-              };
-              injected = true;
-            }
+            const injected = injectDeletedAtSelect(args);
             const found = await query(args);
             if (!found) return found;
             const row = found as Record<string, unknown>;
@@ -90,19 +95,7 @@ export function applySoftDelete(base: PrismaClient) {
               return query(args);
             }
             // Force-include deletedAt so the guard always sees it.
-            const callerSelect = (args as { select?: Record<string, unknown> })
-              .select;
-            let injected = false;
-            if (
-              callerSelect !== undefined &&
-              !Object.prototype.hasOwnProperty.call(callerSelect, 'deletedAt')
-            ) {
-              (args as { select?: Record<string, unknown> }).select = {
-                ...callerSelect,
-                deletedAt: true,
-              };
-              injected = true;
-            }
+            const injected = injectDeletedAtSelect(args);
             const found = await query(args);
             const row = found as Record<string, unknown>;
             if (row['deletedAt']) {

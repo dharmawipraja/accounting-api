@@ -4,13 +4,9 @@ import {
   BalancesService,
   AccountBalanceRow,
 } from '../ledger/balances/balances.service';
+import { ReportLine } from './report-line';
 
 const TAX_EXPENSE_CODE = '5-9000';
-export interface ReportLine {
-  code: string;
-  name: string;
-  amount: string;
-}
 
 @Injectable()
 export class IncomeStatementService {

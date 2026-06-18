@@ -53,10 +53,6 @@ export class Money {
     return this.value.greaterThan(other.value);
   }
 
-  lessThan(other: Money): boolean {
-    return this.value.lessThan(other.value);
-  }
-
   isZero(): boolean {
     return this.value.isZero();
   }
