@@ -12,10 +12,12 @@ import { BusinessPartnersService } from './business-partners.service';
 import { DocumentPostingService } from './document-posting.service';
 import {
   trigramSearch,
-  MIN_QUERY_LENGTH,
 } from '../common/search/trigram-search';
-
-const AR_CONTROL_CODE = '1-1200';
+import { listPaginated } from '../common/pagination/paginated';
+import { serializeMoney } from '../common/money/serialize-money';
+import { taxableLines, findControlAccountId, AR_CONTROL_CODE } from './document-helpers';
+import { mapUniqueViolation } from '../common/errors/map-unique-violation';
+import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
 
 export interface InvoiceLineInput {
   description: string;
@@ -46,35 +48,8 @@ export class SalesInvoicesService {
     private readonly partners: BusinessPartnersService,
     private readonly docPosting: DocumentPostingService,
     private readonly posting: PostingService,
+    private readonly lifecycle: DocumentLifecycleService,
   ) {}
-
-  private async arControlId(): Promise<string> {
-    const acc = await this.prisma.client.account.findFirst({
-      where: { code: AR_CONTROL_CODE },
-    });
-    if (!acc)
-      throw new ValidationFailedError('AR control account missing from chart', {
-        code: AR_CONTROL_CODE,
-      });
-    return acc.id;
-  }
-
-  private taxableLines(
-    lines: {
-      accountId: string;
-      quantity: Prisma.Decimal | string;
-      unitPrice: Prisma.Decimal | string;
-      taxCodeIds: string[];
-    }[],
-  ) {
-    return lines.map((l) => ({
-      accountId: l.accountId,
-      amount: Money.of(l.unitPrice.toString())
-        .multiply(l.quantity.toString())
-        .toPersistence(),
-      taxCodeIds: l.taxCodeIds,
-    }));
-  }
 
   async createDraft(input: CreateInvoiceInput): Promise<SalesInvoice> {
     const partner = await this.partners.findById(input.partnerId);
@@ -83,11 +58,11 @@ export class SalesInvoicesService {
         partnerId: input.partnerId,
       });
     }
-    const settlementId = await this.arControlId();
+    const settlementId = await findControlAccountId(this.prisma, AR_CONTROL_CODE);
     const totals = await this.docPosting.computeTotals(
       'SALE',
       settlementId,
-      this.taxableLines(input.lines),
+      taxableLines(input.lines),
     );
     return this.prisma.client.salesInvoice.create({
       data: {
@@ -142,11 +117,11 @@ export class SalesInvoicesService {
           unitPrice: l.unitPrice.toString(),
           taxCodeIds: l.taxCodeIds,
         }));
-    const settlementId = await this.arControlId();
+    const settlementId = await findControlAccountId(this.prisma, AR_CONTROL_CODE);
     const totals = await this.docPosting.computeTotals(
       'SALE',
       settlementId,
-      this.taxableLines(nextLines),
+      taxableLines(nextLines),
     );
     await this.prisma.client.$transaction(async (tx) => {
       await tx.salesInvoiceLine.deleteMany({ where: { salesInvoiceId: id } });
@@ -194,75 +169,40 @@ export class SalesInvoicesService {
     status?: DocumentStatus;
     limit?: number;
     offset?: number;
-  }): Promise<{
-    data: ReturnType<SalesInvoicesService['present']>[];
-    total: number;
-    limit: number;
-    offset: number;
-  }> {
-    const limit = q.limit ?? 50;
-    const offset = q.offset ?? 0;
-    const term = q.q?.trim() ?? '';
-    if (term.length >= MIN_QUERY_LENGTH) {
-      const filters: Prisma.Sql[] = [];
-      if (q.partnerId) filters.push(Prisma.sql`t.partner_id = ${q.partnerId}`);
-      if (q.status) filters.push(Prisma.sql`t.status::text = ${q.status}`);
-      const { ids, total } = await trigramSearch(this.prisma, {
-        table: 'sales_invoices',
-        alias: 't',
-        ownColumns: ['invoice_ref', 'description'],
-        join: {
-          table: 'business_partners',
-          alias: 'p',
-          onColumn: 'partner_id',
-          columns: ['name'],
-        },
-        filters,
-        q: term,
-        limit,
-        offset,
-      });
-      const rows = ids.length
-        ? await this.prisma.client.salesInvoice.findMany({
-            where: { id: { in: ids } },
-          })
-        : [];
-      const byId = new Map(rows.map((r) => [r.id, r]));
-      const data = ids
-        .map((id) => byId.get(id))
-        .filter((r): r is SalesInvoice => r !== undefined)
-        .map((r) => this.present(r));
-      return { data, total, limit, offset };
-    }
+  }) {
+    const filters: Prisma.Sql[] = [];
+    if (q.partnerId) filters.push(Prisma.sql`t.partner_id = ${q.partnerId}`);
+    if (q.status) filters.push(Prisma.sql`t.status::text = ${q.status}`);
     const where = { partnerId: q.partnerId, status: q.status };
-    const [rows, total] = await Promise.all([
-      this.prisma.client.salesInvoice.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-        skip: offset,
-      }),
-      this.prisma.client.salesInvoice.count({ where }),
-    ]);
-    return { data: rows.map((r) => this.present(r)), total, limit, offset };
+    return listPaginated({
+      q: q.q,
+      limit: q.limit,
+      offset: q.offset,
+      present: (r: SalesInvoice) => this.present(r),
+      search: ({ term, limit, offset }) =>
+        trigramSearch(this.prisma, {
+          table: 'sales_invoices',
+          alias: 't',
+          ownColumns: ['invoice_ref', 'description'],
+          join: { table: 'business_partners', alias: 'p', onColumn: 'partner_id', columns: ['name'] },
+          filters,
+          q: term,
+          limit,
+          offset,
+        }),
+      hydrate: (ids) => this.prisma.client.salesInvoice.findMany({ where: { id: { in: ids } } }),
+      page: async ({ limit, offset }) => {
+        const [rows, total] = await Promise.all([
+          this.prisma.client.salesInvoice.findMany({ where, orderBy: { createdAt: 'desc' }, take: limit, skip: offset }),
+          this.prisma.client.salesInvoice.count({ where }),
+        ]);
+        return { rows, total };
+      },
+    });
   }
 
   async deleteDraft(id: string, deletedBy: string): Promise<void> {
-    const inv = await this.getById(id);
-    if (inv.status !== 'DRAFT') {
-      throw new ValidationFailedError('Only a DRAFT invoice can be deleted', {
-        id,
-        status: inv.status,
-      });
-    }
-    const res = await this.prisma.client.salesInvoice.updateMany({
-      where: { id, status: 'DRAFT', deletedAt: null },
-      data: { deletedAt: new Date(), deletedBy },
-    });
-    if (res.count !== 1)
-      throw new ValidationFailedError('Only a DRAFT invoice can be deleted', {
-        id,
-      });
+    return this.lifecycle.softDeleteDraft(this.prisma.client.salesInvoice, id, deletedBy, 'invoice');
   }
 
   async post(id: string, postedBy: string): Promise<SalesInvoice> {
@@ -279,7 +219,7 @@ export class SalesInvoicesService {
         partnerId: inv.partnerId,
       });
     }
-    const settlementId = await this.arControlId();
+    const settlementId = await findControlAccountId(this.prisma, AR_CONTROL_CODE);
     const lines = (
       inv as SalesInvoice & {
         lines: {
@@ -302,7 +242,7 @@ export class SalesInvoicesService {
         createdBy: inv.createdBy,
         postedBy,
         documentType: 'INV',
-        lines: this.taxableLines(lines),
+        lines: taxableLines(lines),
       },
       async (tx) => {
         const locked = await tx.$queryRaw<{ status: string }[]>`
@@ -349,48 +289,30 @@ export class SalesInvoicesService {
         { id },
       );
     }
-    const { original, periodId, fiscalYear, reversalDate } =
-      await this.posting.prepareReversal(inv.journalEntryId!);
-    try {
-      await this.prisma.client.$transaction(async (tx) => {
-        const locked = await tx.$queryRaw<
-          { status: string; amount_paid: string }[]
-        >`
+    await this.lifecycle.reverseWithGuard({
+      id,
+      journalEntryId: inv.journalEntryId!,
+      reversedBy: voidedBy,
+      alreadyReversedMessage: 'Invoice journal entry was already reversed',
+      notPostedMessage: 'Invoice is not posted',
+      lock: async (tx) => {
+        const rows = await tx.$queryRaw<{ status: string; amount_paid: string }[]>`
           SELECT status, amount_paid FROM sales_invoices WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
-        if (locked.length === 0 || locked[0].status !== 'POSTED') {
-          throw new ValidationFailedError('Invoice is not posted', { id });
-        }
-        if (Number(locked[0].amount_paid) !== 0) {
+        return rows[0];
+      },
+      applyInTx: async (tx, locked) => {
+        if (Number(locked.amount_paid) !== 0) {
           throw new ConflictDomainError(
             'Cannot void an invoice with payments',
             { id },
           );
         }
-        await this.posting.reverseInTx(
-          tx,
-          original,
-          voidedBy,
-          periodId,
-          fiscalYear,
-          reversalDate,
-        );
         await tx.salesInvoice.update({
           where: { id },
           data: { status: 'VOID' },
         });
-      });
-    } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
-        throw new ValidationFailedError(
-          'Invoice journal entry was already reversed',
-          { id },
-        );
-      }
-      throw err;
-    }
+      },
+    });
     return this.getById(id);
   }
 
@@ -408,40 +330,14 @@ export class SalesInvoicesService {
       : outstanding.isZero() || outstanding.isNegative()
         ? 'PAID'
         : 'PARTIAL';
-    // Nested lines (present on getById, absent on list) carry raw Decimals whose
-    // toJSON strips trailing zeros — serialize their money fields to 4dp too.
-    const lines = (
-      inv as SalesInvoice & {
-        lines?: {
-          quantity: Prisma.Decimal;
-          unitPrice: Prisma.Decimal;
-          amount: Prisma.Decimal;
-        }[];
-      }
-    ).lines;
+    const lines = (inv as SalesInvoice & { lines?: Record<string, unknown>[] }).lines;
     return {
-      ...inv,
-      subtotal: inv.subtotal.toFixed(4) as unknown as SalesInvoice['subtotal'],
-      taxTotal: inv.taxTotal.toFixed(4) as unknown as SalesInvoice['taxTotal'],
-      withholdingTotal: inv.withholdingTotal.toFixed(
-        4,
-      ) as unknown as SalesInvoice['withholdingTotal'],
-      total: inv.total.toFixed(4) as unknown as SalesInvoice['total'],
-      amountPaid: inv.amountPaid.toFixed(
-        4,
-      ) as unknown as SalesInvoice['amountPaid'],
+      ...serializeMoney(inv, ['subtotal', 'taxTotal', 'withholdingTotal', 'total', 'amountPaid']),
       ...(lines
-        ? {
-            lines: lines.map((l) => ({
-              ...l,
-              quantity: l.quantity.toFixed(4),
-              unitPrice: l.unitPrice.toFixed(4),
-              amount: l.amount.toFixed(4),
-            })),
-          }
+        ? { lines: lines.map((l) => serializeMoney(l, ['quantity', 'unitPrice', 'amount'])) }
         : {}),
       outstanding: outstanding.toPersistence(),
       paymentStatus,
-    };
+    } as SalesInvoice & { outstanding: string; paymentStatus: string };
   }
 }
