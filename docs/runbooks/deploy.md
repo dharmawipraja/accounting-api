@@ -75,6 +75,10 @@ An optional observability overlay ships in `docker-compose.monitoring.yml` (Prom
 compose command and setting `GRAFANA_ADMIN_PASSWORD` in `.env`. Alert *delivery* still
 needs a real receiver wired in `monitoring/alertmanager.yml` (see the ops backlog).
 
+> **Metrics auth coupling (OPS-OBS-4):** if you set `METRICS_TOKEN` on the api, you MUST
+> uncomment the `authorization.credentials` block in `monitoring/prometheus.yml` with the
+> same token, or scrapes get `401` and the `ApiDown` alert false-fires.
+
 ### Activate alert delivery (OPS-OBS-1)
 
 By default `monitoring/alertmanager.yml` has an inert `default` receiver — rules in
