@@ -15,11 +15,18 @@ export interface ListPaginatedParams<TRow extends { id: string }, TOut> {
   /** Map a hydrated row to its response shape. */
   present: (row: TRow) => TOut;
   /** Relevance-ranked id search; provide for endpoints with fuzzy ?q= support. Omit to disable search entirely (search-less endpoints like accounts/tax-codes). */
-  search?: (args: { term: string; limit: number; offset: number }) => Promise<{ ids: string[]; total: number }>;
+  search?: (args: {
+    term: string;
+    limit: number;
+    offset: number;
+  }) => Promise<{ ids: string[]; total: number }>;
   /** Hydrate full rows for the ranked ids (order not guaranteed; the seam re-orders to the id rank). Required iff `search` is provided. */
   hydrate?: (ids: string[]) => Promise<TRow[]>;
   /** Non-search branch: a page of rows + the matching total. */
-  page: (args: { limit: number; offset: number }) => Promise<{ rows: TRow[]; total: number }>;
+  page: (args: {
+    limit: number;
+    offset: number;
+  }) => Promise<{ rows: TRow[]; total: number }>;
 }
 
 /**

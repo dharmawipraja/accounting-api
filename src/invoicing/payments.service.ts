@@ -524,6 +524,6 @@ export class PaymentsService {
             allocations: allocations.map((a) => serializeMoney(a, ['amount'])),
           }
         : {}),
-    } as Payment;
+    };
   }
 }

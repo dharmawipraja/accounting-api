@@ -9,12 +9,14 @@ import {
 } from '../common/errors/domain-errors';
 import { BusinessPartnersService } from './business-partners.service';
 import { DocumentPostingService } from './document-posting.service';
-import {
-  trigramSearch,
-} from '../common/search/trigram-search';
+import { trigramSearch } from '../common/search/trigram-search';
 import { listPaginated } from '../common/pagination/paginated';
 import { serializeMoney } from '../common/money/serialize-money';
-import { taxableLines, findControlAccountId, AP_CONTROL_CODE } from './document-helpers';
+import {
+  taxableLines,
+  findControlAccountId,
+  AP_CONTROL_CODE,
+} from './document-helpers';
 import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
 
 export interface BillLineInput {
@@ -57,7 +59,10 @@ export class PurchaseBillsService {
         partnerId: input.partnerId,
       });
     }
-    const settlementId = await findControlAccountId(this.prisma, AP_CONTROL_CODE);
+    const settlementId = await findControlAccountId(
+      this.prisma,
+      AP_CONTROL_CODE,
+    );
     const totals = await this.docPosting.computeTotals(
       'PURCHASE',
       settlementId,
@@ -117,7 +122,10 @@ export class PurchaseBillsService {
           unitPrice: l.unitPrice.toString(),
           taxCodeIds: l.taxCodeIds,
         }));
-    const settlementId = await findControlAccountId(this.prisma, AP_CONTROL_CODE);
+    const settlementId = await findControlAccountId(
+      this.prisma,
+      AP_CONTROL_CODE,
+    );
     const totals = await this.docPosting.computeTotals(
       'PURCHASE',
       settlementId,
@@ -185,16 +193,29 @@ export class PurchaseBillsService {
           table: 'purchase_bills',
           alias: 't',
           ownColumns: ['bill_ref', 'vendor_invoice_no', 'description'],
-          join: { table: 'business_partners', alias: 'p', onColumn: 'partner_id', columns: ['name'] },
+          join: {
+            table: 'business_partners',
+            alias: 'p',
+            onColumn: 'partner_id',
+            columns: ['name'],
+          },
           filters,
           q: term,
           limit,
           offset,
         }),
-      hydrate: (ids) => this.prisma.client.purchaseBill.findMany({ where: { id: { in: ids } } }),
+      hydrate: (ids) =>
+        this.prisma.client.purchaseBill.findMany({
+          where: { id: { in: ids } },
+        }),
       page: async ({ limit, offset }) => {
         const [rows, total] = await Promise.all([
-          this.prisma.client.purchaseBill.findMany({ where, orderBy: { createdAt: 'desc' }, take: limit, skip: offset }),
+          this.prisma.client.purchaseBill.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            take: limit,
+            skip: offset,
+          }),
           this.prisma.client.purchaseBill.count({ where }),
         ]);
         return { rows, total };
@@ -203,7 +224,12 @@ export class PurchaseBillsService {
   }
 
   async deleteDraft(id: string, deletedBy: string): Promise<void> {
-    return this.lifecycle.softDeleteDraft(this.prisma.client.purchaseBill, id, deletedBy, 'bill');
+    return this.lifecycle.softDeleteDraft(
+      this.prisma.client.purchaseBill,
+      id,
+      deletedBy,
+      'bill',
+    );
   }
 
   async post(id: string, postedBy: string): Promise<PurchaseBill> {
@@ -220,7 +246,10 @@ export class PurchaseBillsService {
         partnerId: bill.partnerId,
       });
     }
-    const settlementId = await findControlAccountId(this.prisma, AP_CONTROL_CODE);
+    const settlementId = await findControlAccountId(
+      this.prisma,
+      AP_CONTROL_CODE,
+    );
     const lines = (
       bill as PurchaseBill & {
         lines: {
@@ -297,7 +326,9 @@ export class PurchaseBillsService {
       alreadyReversedMessage: 'Bill journal entry was already reversed',
       notPostedMessage: 'Bill is not posted',
       lock: async (tx) => {
-        const rows = await tx.$queryRaw<{ status: string; amount_paid: string }[]>`
+        const rows = await tx.$queryRaw<
+          { status: string; amount_paid: string }[]
+        >`
           SELECT status, amount_paid FROM purchase_bills WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
         return rows[0];
       },
@@ -330,14 +361,25 @@ export class PurchaseBillsService {
       : outstanding.isZero() || outstanding.isNegative()
         ? 'PAID'
         : 'PARTIAL';
-    const lines = (bill as PurchaseBill & { lines?: Record<string, unknown>[] }).lines;
+    const lines = (bill as PurchaseBill & { lines?: Record<string, unknown>[] })
+      .lines;
     return {
-      ...serializeMoney(bill, ['subtotal', 'taxTotal', 'withholdingTotal', 'total', 'amountPaid']),
+      ...serializeMoney(bill, [
+        'subtotal',
+        'taxTotal',
+        'withholdingTotal',
+        'total',
+        'amountPaid',
+      ]),
       ...(lines
-        ? { lines: lines.map((l) => serializeMoney(l, ['quantity', 'unitPrice', 'amount'])) }
+        ? {
+            lines: lines.map((l) =>
+              serializeMoney(l, ['quantity', 'unitPrice', 'amount']),
+            ),
+          }
         : {}),
       outstanding: outstanding.toPersistence(),
       paymentStatus,
-    } as PurchaseBill & { outstanding: string; paymentStatus: string };
+    };
   }
 }

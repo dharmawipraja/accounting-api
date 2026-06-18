@@ -11,7 +11,10 @@ export function mapUniqueViolation(
   message: string,
   context?: Record<string, unknown>,
 ): never {
-  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+  if (
+    err instanceof Prisma.PrismaClientKnownRequestError &&
+    err.code === 'P2002'
+  ) {
     throw new ConflictDomainError(message, context);
   }
   throw err;

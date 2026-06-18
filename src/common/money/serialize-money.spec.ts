@@ -4,12 +4,16 @@ import { serializeMoney } from './serialize-money';
 
 describe('serializeMoney', () => {
   it('renders named string fields to fixed 4dp', () => {
-    const out = serializeMoney({ id: 'x', amount: '10.5', other: 7 }, ['amount']);
+    const out = serializeMoney({ id: 'x', amount: '10.5', other: 7 }, [
+      'amount',
+    ]);
     expect(out).toEqual({ id: 'x', amount: '10.5000', other: 7 });
   });
 
   it('renders Prisma.Decimal fields to fixed 4dp', () => {
-    const out = serializeMoney({ total: new Prisma.Decimal('1234.5') } as { total: Prisma.Decimal }, ['total']);
+    const out = serializeMoney({ total: new Prisma.Decimal('1234.5') }, [
+      'total',
+    ]);
     expect(out.total as unknown as string).toBe('1234.5000');
   });
 

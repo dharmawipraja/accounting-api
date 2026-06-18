@@ -19,16 +19,23 @@ type TaxableLineInput = {
 export function taxableLines(lines: TaxableLineInput[]) {
   return lines.map((l) => ({
     accountId: l.accountId,
-    amount: Money.of(l.unitPrice.toString()).multiply(l.quantity.toString()).toPersistence(),
+    amount: Money.of(l.unitPrice.toString())
+      .multiply(l.quantity.toString())
+      .toPersistence(),
     taxCodeIds: l.taxCodeIds,
   }));
 }
 
 /** Resolves a control account's id by chart code; 422 if it is missing. */
-export async function findControlAccountId(prisma: PrismaService, code: string): Promise<string> {
+export async function findControlAccountId(
+  prisma: PrismaService,
+  code: string,
+): Promise<string> {
   const acc = await prisma.client.account.findFirst({ where: { code } });
   if (!acc) {
-    throw new ValidationFailedError('Control account missing from chart', { code });
+    throw new ValidationFailedError('Control account missing from chart', {
+      code,
+    });
   }
   return acc.id;
 }

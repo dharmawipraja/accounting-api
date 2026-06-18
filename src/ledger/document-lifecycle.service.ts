@@ -34,7 +34,9 @@ export class DocumentLifecycleService {
       data: { deletedAt: new Date(), deletedBy },
     });
     if (res.count !== 1) {
-      throw new ValidationFailedError(`Only a DRAFT ${noun} can be deleted`, { id });
+      throw new ValidationFailedError(`Only a DRAFT ${noun} can be deleted`, {
+        id,
+      });
     }
   }
 
@@ -68,7 +70,9 @@ export class DocumentLifecycleService {
         const ltx = tx as unknown as LedgerTx;
         const locked = await opts.lock(ltx);
         if (!locked || locked.status !== 'POSTED') {
-          throw new ValidationFailedError(opts.notPostedMessage, { id: opts.id });
+          throw new ValidationFailedError(opts.notPostedMessage, {
+            id: opts.id,
+          });
         }
         await opts.applyInTx(ltx, locked);
         await this.posting.reverseInTx(
@@ -85,7 +89,9 @@ export class DocumentLifecycleService {
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === 'P2002'
       ) {
-        throw new ValidationFailedError(opts.alreadyReversedMessage, { id: opts.id });
+        throw new ValidationFailedError(opts.alreadyReversedMessage, {
+          id: opts.id,
+        });
       }
       throw err;
     }

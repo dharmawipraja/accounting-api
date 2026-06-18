@@ -9,12 +9,14 @@ import {
 } from '../common/errors/domain-errors';
 import { BusinessPartnersService } from './business-partners.service';
 import { DocumentPostingService } from './document-posting.service';
-import {
-  trigramSearch,
-} from '../common/search/trigram-search';
+import { trigramSearch } from '../common/search/trigram-search';
 import { listPaginated } from '../common/pagination/paginated';
 import { serializeMoney } from '../common/money/serialize-money';
-import { taxableLines, findControlAccountId, AR_CONTROL_CODE } from './document-helpers';
+import {
+  taxableLines,
+  findControlAccountId,
+  AR_CONTROL_CODE,
+} from './document-helpers';
 import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
 
 export interface InvoiceLineInput {
@@ -55,7 +57,10 @@ export class SalesInvoicesService {
         partnerId: input.partnerId,
       });
     }
-    const settlementId = await findControlAccountId(this.prisma, AR_CONTROL_CODE);
+    const settlementId = await findControlAccountId(
+      this.prisma,
+      AR_CONTROL_CODE,
+    );
     const totals = await this.docPosting.computeTotals(
       'SALE',
       settlementId,
@@ -114,7 +119,10 @@ export class SalesInvoicesService {
           unitPrice: l.unitPrice.toString(),
           taxCodeIds: l.taxCodeIds,
         }));
-    const settlementId = await findControlAccountId(this.prisma, AR_CONTROL_CODE);
+    const settlementId = await findControlAccountId(
+      this.prisma,
+      AR_CONTROL_CODE,
+    );
     const totals = await this.docPosting.computeTotals(
       'SALE',
       settlementId,
@@ -181,16 +189,29 @@ export class SalesInvoicesService {
           table: 'sales_invoices',
           alias: 't',
           ownColumns: ['invoice_ref', 'description'],
-          join: { table: 'business_partners', alias: 'p', onColumn: 'partner_id', columns: ['name'] },
+          join: {
+            table: 'business_partners',
+            alias: 'p',
+            onColumn: 'partner_id',
+            columns: ['name'],
+          },
           filters,
           q: term,
           limit,
           offset,
         }),
-      hydrate: (ids) => this.prisma.client.salesInvoice.findMany({ where: { id: { in: ids } } }),
+      hydrate: (ids) =>
+        this.prisma.client.salesInvoice.findMany({
+          where: { id: { in: ids } },
+        }),
       page: async ({ limit, offset }) => {
         const [rows, total] = await Promise.all([
-          this.prisma.client.salesInvoice.findMany({ where, orderBy: { createdAt: 'desc' }, take: limit, skip: offset }),
+          this.prisma.client.salesInvoice.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            take: limit,
+            skip: offset,
+          }),
           this.prisma.client.salesInvoice.count({ where }),
         ]);
         return { rows, total };
@@ -199,7 +220,12 @@ export class SalesInvoicesService {
   }
 
   async deleteDraft(id: string, deletedBy: string): Promise<void> {
-    return this.lifecycle.softDeleteDraft(this.prisma.client.salesInvoice, id, deletedBy, 'invoice');
+    return this.lifecycle.softDeleteDraft(
+      this.prisma.client.salesInvoice,
+      id,
+      deletedBy,
+      'invoice',
+    );
   }
 
   async post(id: string, postedBy: string): Promise<SalesInvoice> {
@@ -216,7 +242,10 @@ export class SalesInvoicesService {
         partnerId: inv.partnerId,
       });
     }
-    const settlementId = await findControlAccountId(this.prisma, AR_CONTROL_CODE);
+    const settlementId = await findControlAccountId(
+      this.prisma,
+      AR_CONTROL_CODE,
+    );
     const lines = (
       inv as SalesInvoice & {
         lines: {
@@ -293,7 +322,9 @@ export class SalesInvoicesService {
       alreadyReversedMessage: 'Invoice journal entry was already reversed',
       notPostedMessage: 'Invoice is not posted',
       lock: async (tx) => {
-        const rows = await tx.$queryRaw<{ status: string; amount_paid: string }[]>`
+        const rows = await tx.$queryRaw<
+          { status: string; amount_paid: string }[]
+        >`
           SELECT status, amount_paid FROM sales_invoices WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
         return rows[0];
       },
@@ -327,14 +358,25 @@ export class SalesInvoicesService {
       : outstanding.isZero() || outstanding.isNegative()
         ? 'PAID'
         : 'PARTIAL';
-    const lines = (inv as SalesInvoice & { lines?: Record<string, unknown>[] }).lines;
+    const lines = (inv as SalesInvoice & { lines?: Record<string, unknown>[] })
+      .lines;
     return {
-      ...serializeMoney(inv, ['subtotal', 'taxTotal', 'withholdingTotal', 'total', 'amountPaid']),
+      ...serializeMoney(inv, [
+        'subtotal',
+        'taxTotal',
+        'withholdingTotal',
+        'total',
+        'amountPaid',
+      ]),
       ...(lines
-        ? { lines: lines.map((l) => serializeMoney(l, ['quantity', 'unitPrice', 'amount'])) }
+        ? {
+            lines: lines.map((l) =>
+              serializeMoney(l, ['quantity', 'unitPrice', 'amount']),
+            ),
+          }
         : {}),
       outstanding: outstanding.toPersistence(),
       paymentStatus,
-    } as SalesInvoice & { outstanding: string; paymentStatus: string };
+    };
   }
 }

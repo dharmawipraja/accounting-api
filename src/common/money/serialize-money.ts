@@ -6,7 +6,10 @@ import { Money } from './money';
  * Other fields are untouched. This is the single home for the Decimal→string
  * money cast that the document presenters used to repeat per field.
  */
-export function serializeMoney<T extends object>(obj: T, fields: (keyof T)[]): T {
+export function serializeMoney<T extends object>(
+  obj: T,
+  fields: (keyof T)[],
+): T {
   const out: T = { ...obj };
   for (const f of fields) {
     const v = obj[f];

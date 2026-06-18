@@ -377,10 +377,7 @@ export class PostingService {
   }
 
   /** Lock-and-increment the per-fiscal-year counter; gapless because it lives in the tx. */
-  private async nextNumber(
-    tx: RawTx,
-    fiscalYear: number,
-  ): Promise<number> {
+  private async nextNumber(tx: RawTx, fiscalYear: number): Promise<number> {
     await tx.$executeRaw`INSERT INTO journal_sequences (fiscal_year, next_number, updated_at)
       VALUES (${fiscalYear}, 1, now()) ON CONFLICT (fiscal_year) DO NOTHING`;
     const rows = await tx.$queryRaw<{ next_number: number }[]>`
