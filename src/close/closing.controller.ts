@@ -7,12 +7,7 @@ import {
   ParseIntPipe,
   Post,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiHeader,
-  ApiOkResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { YearEndClosingResponseDto } from './dto/closing-response.dto';
 import { YearEndClosing } from '@prisma/client';
 import { YearEndCloseService } from './year-end-close.service';
@@ -22,7 +17,7 @@ import { Role } from '../auth/role.enum';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { NotFoundDomainError } from '../common/errors/domain-errors';
-import { Idempotent } from '../common/idempotency/idempotent.decorator';
+import { IdempotentWrite } from '../common/idempotency/idempotent-write.decorator';
 
 @ApiTags('Close')
 @ApiBearerAuth()
@@ -32,12 +27,7 @@ export class ClosingController {
 
   @Roles(Role.ADMIN)
   @ApiOkResponse({ type: YearEndClosingResponseDto })
-  @ApiHeader({
-    name: 'Idempotency-Key',
-    required: true,
-    description: 'Unique key to make this write safely retryable.',
-  })
-  @Idempotent()
+  @IdempotentWrite()
   @Post()
   @HttpCode(200)
   run(

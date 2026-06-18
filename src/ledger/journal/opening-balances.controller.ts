@@ -1,10 +1,5 @@
 import { Body, Controller, HttpCode, Post } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiHeader,
-  ApiOkResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { JournalEntryResponseDto } from '../journal/dto/journal-response.dto';
 import { JournalEntry } from '@prisma/client';
 import { JournalService } from './journal.service';
@@ -13,7 +8,7 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 import { Role } from '../../auth/role.enum';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
-import { Idempotent } from '../../common/idempotency/idempotent.decorator';
+import { IdempotentWrite } from '../../common/idempotency/idempotent-write.decorator';
 
 @ApiTags('Journal')
 @ApiBearerAuth()
@@ -23,12 +18,7 @@ export class OpeningBalancesController {
 
   @ApiOkResponse({ type: JournalEntryResponseDto })
   @Roles(Role.ADMIN)
-  @ApiHeader({
-    name: 'Idempotency-Key',
-    required: true,
-    description: 'Unique key to make this write safely retryable.',
-  })
-  @Idempotent()
+  @IdempotentWrite()
   @Post()
   @HttpCode(200)
   post(

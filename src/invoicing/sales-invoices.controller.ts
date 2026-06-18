@@ -13,7 +13,6 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
-  ApiHeader,
   ApiNoContentResponse,
   ApiOkResponse,
   ApiTags,
@@ -25,12 +24,12 @@ import {
 import { SalesInvoicesService } from './sales-invoices.service';
 import { CreateSalesInvoiceDto } from './dto/create-sales-invoice.dto';
 import { UpdateSalesInvoiceDto } from './dto/update-sales-invoice.dto';
-import { SalesInvoiceListQueryDto } from './dto/list-sales-invoices.dto';
+import { DocumentListQueryDto } from './dto/document-list-query.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../auth/role.enum';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
-import { Idempotent } from '../common/idempotency/idempotent.decorator';
+import { IdempotentWrite } from '../common/idempotency/idempotent-write.decorator';
 
 @ApiTags('Sales Invoices')
 @ApiBearerAuth()
@@ -40,7 +39,7 @@ export class SalesInvoicesController {
 
   @ApiOkResponse({ type: SalesInvoiceListResponseDto })
   @Get()
-  list(@Query() q: SalesInvoiceListQueryDto) {
+  list(@Query() q: DocumentListQueryDto) {
     return this.invoices.listPage(q);
   }
 
@@ -52,12 +51,7 @@ export class SalesInvoicesController {
 
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
   @ApiCreatedResponse({ type: SalesInvoiceResponseDto })
-  @ApiHeader({
-    name: 'Idempotency-Key',
-    required: true,
-    description: 'Unique key to make this write safely retryable.',
-  })
-  @Idempotent()
+  @IdempotentWrite()
   @Post()
   async create(
     @Body() dto: CreateSalesInvoiceDto,
@@ -92,12 +86,7 @@ export class SalesInvoicesController {
 
   @Roles(Role.APPROVER, Role.ADMIN)
   @ApiOkResponse({ type: SalesInvoiceResponseDto })
-  @ApiHeader({
-    name: 'Idempotency-Key',
-    required: true,
-    description: 'Unique key to make this write safely retryable.',
-  })
-  @Idempotent()
+  @IdempotentWrite()
   @Post(':id/post')
   @HttpCode(200)
   async post(
@@ -109,12 +98,7 @@ export class SalesInvoicesController {
 
   @Roles(Role.APPROVER, Role.ADMIN)
   @ApiOkResponse({ type: SalesInvoiceResponseDto })
-  @ApiHeader({
-    name: 'Idempotency-Key',
-    required: true,
-    description: 'Unique key to make this write safely retryable.',
-  })
-  @Idempotent()
+  @IdempotentWrite()
   @Post(':id/void')
   @HttpCode(200)
   async void(

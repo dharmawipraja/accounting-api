@@ -12,7 +12,6 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
-  ApiHeader,
   ApiNoContentResponse,
   ApiOkResponse,
   ApiTags,
@@ -31,7 +30,7 @@ import { Role } from '../../auth/role.enum';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { ForbiddenDomainError } from '../../common/errors/domain-errors';
-import { Idempotent } from '../../common/idempotency/idempotent.decorator';
+import { IdempotentWrite } from '../../common/idempotency/idempotent-write.decorator';
 
 @ApiTags('Journal')
 @ApiBearerAuth()
@@ -62,12 +61,7 @@ export class JournalController {
 
   @ApiCreatedResponse({ type: JournalEntryResponseDto })
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)
-  @ApiHeader({
-    name: 'Idempotency-Key',
-    required: true,
-    description: 'Unique key to make this write safely retryable.',
-  })
-  @Idempotent()
+  @IdempotentWrite()
   @Post()
   async createOrPost(
     @Body() dto: CreateJournalEntryDto,
@@ -98,12 +92,7 @@ export class JournalController {
 
   @ApiOkResponse({ type: JournalEntryResponseDto })
   @Roles(Role.APPROVER, Role.ADMIN)
-  @ApiHeader({
-    name: 'Idempotency-Key',
-    required: true,
-    description: 'Unique key to make this write safely retryable.',
-  })
-  @Idempotent()
+  @IdempotentWrite()
   @Post(':id/post')
   @HttpCode(200)
   post(
@@ -115,12 +104,7 @@ export class JournalController {
 
   @ApiOkResponse({ type: JournalEntryResponseDto })
   @Roles(Role.APPROVER, Role.ADMIN)
-  @ApiHeader({
-    name: 'Idempotency-Key',
-    required: true,
-    description: 'Unique key to make this write safely retryable.',
-  })
-  @Idempotent()
+  @IdempotentWrite()
   @Post(':id/reverse')
   @HttpCode(200)
   reverse(
