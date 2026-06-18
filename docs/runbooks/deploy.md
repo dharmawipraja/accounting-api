@@ -9,6 +9,11 @@
   `BACKUP_INTERVAL`, `THROTTLE_LIMIT` (per-user requests/min, default 300),
   `THROTTLE_LOGIN_LIMIT` (per-IP login attempts/min, default 10),
   `THROTTLE_REFRESH_LIMIT` (per-IP refresh attempts/min, default 30).
+- **Redis** must be running and reachable at `REDIS_URL` before the API starts. The
+  rate limiter is **fail-closed**: without Redis the API returns `503` on every
+  throttled route, so a deploy can come up "running" (container healthy) yet 503 all
+  business requests. The prod compose stack includes a `redis` service; if you run
+  the API standalone, provision Redis and set `REDIS_URL` first.
 
 ## Deploy / upgrade
 ```bash
@@ -47,11 +52,28 @@ leftmost-IP spoofing.
 from one source while rotating a forged `X-Forwarded-For`; it should still 429
 (the forged header is ignored), confirming the real client IP is used.
 
-## Rollback caveats
-- App rollback: redeploy the previous image tag/commit.
-- **Migrations are forward-only.** A bad migration is NOT undone by rolling back the
-  image — recover via a corrective migration or a restore (see backup-and-restore.md).
-  Never edit an already-applied migration.
+## Rollback
+
+1. **App-only rollback (no schema change):** redeploy the previous image tag/commit —
+   `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` after
+   checking out the prior commit (or pinning the prior image tag). Caddy/api/backup
+   restart against the unchanged DB.
+2. **Migrations are forward-only.** Rolling back the image does NOT undo a migration.
+   If a bad migration shipped:
+   a. Stop the API: `docker compose ... stop api`.
+   b. Prefer a **corrective forward migration** (a new migration that fixes the bad
+      one) over editing history — never edit an already-applied migration.
+   c. If data is corrupted, **restore from backup**: follow `backup-and-restore.md`
+      (stop `api`, restore the latest good `pg_dump -Fc` into the `db` volume, then
+      bring `api` back up). Accept the data delta since that backup.
+3. After any rollback, verify `/health` (200) and `/ready` (200 — DB + Redis reachable).
+
+## Monitoring (optional)
+
+An optional observability overlay ships in `docker-compose.monitoring.yml` (Prometheus
++ Grafana + alertmanager). Enable it by adding `-f docker-compose.monitoring.yml` to the
+compose command and setting `GRAFANA_ADMIN_PASSWORD` in `.env`. Alert *delivery* still
+needs a real receiver wired in `monitoring/alertmanager.yml` (see the ops backlog).
 
 ## Staging without a public domain
 Don't edit the committed `Caddyfile` (it would dirty the repo and risk shipping a

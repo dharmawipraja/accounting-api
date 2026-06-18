@@ -114,24 +114,25 @@ watch -n1 'curl -s http://127.0.0.1:3000/metrics | grep -E "^db_pool_(total|idle
   no growing `db_pool_waiting`) confirms no query is approaching the timeout; a
   cluster of 500s with the timeout in the logs would point at it.
 
-## ⚠️ Rate limiter caveat (single-source load)
+## ⚠️ Rate limiter caveat (load testing)
 
-The app applies a global throttle of **100 requests / 60s per source IP**
-(`ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }])`). The report/ledger/
-invoice hot paths are **not** `@SkipThrottle()`, so a single-host k6 run at the
-default 20 VUs blows past the per-IP quota in the first second and the API returns
-`429 Too Many Requests` — which k6 counts as `http_req_failed`. This is the rate
-limiter working as designed, **not** an app or DB problem.
+The app applies a global throttle of **300 requests / 60s per authenticated user**
+(`app.module.ts` `ThrottlerModule`, `ttl: 60_000`, `limit` default 300 via
+`THROTTLE_LIMIT`), backed by Redis in dev/prod and **fail-closed** (429 on the
+limit; 503 if Redis is unreachable). Auth endpoints are stricter and per-IP: login
+**10/60s** (`THROTTLE_LOGIN_LIMIT`), refresh/logout **30/60s** (`THROTTLE_REFRESH_LIMIT`).
+The report/ledger/invoice hot paths are **not** `@SkipThrottle()`, so a k6 run that
+drives more than 300 req/min as a single user trips `429 Too Many Requests` — which
+k6 counts as `http_req_failed`. That is the limiter working as designed, **not** an
+app or DB problem.
 
-To baseline the protected hot paths above ~100 req/min you must therefore either:
-- run **distributed** k6 (multiple source IPs / k6 Cloud) so each IP stays under
-  the per-IP quota; or
-- temporarily raise/relax the throttle for the test window; or
-- keep a single host **under** the per-IP ceiling (≲1.6 req/s) — which still
-  yields a clean latency/pool baseline for the hot paths (see *Recorded baseline*).
+To baseline the protected hot paths above the per-user quota you must therefore either:
+- spread load across **multiple authenticated users** (each gets its own 300/min bucket); or
+- temporarily raise `THROTTLE_LIMIT` for the test window; or
+- keep a single user **under** the quota (≲5 req/s) — still a clean latency/pool baseline.
 
-`/health` and `/metrics` are `@SkipThrottle()`, so a `/health` smoke (below) is the
-clean way to prove k6 + raw concurrency without tripping the limiter.
+`/health`, `/ready`, and `/metrics` are `@SkipThrottle()`, so a `/health` smoke (below)
+proves k6 + raw concurrency without tripping the limiter.
 
 ## Recorded baseline
 
