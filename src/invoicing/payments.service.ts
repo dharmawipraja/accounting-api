@@ -19,9 +19,14 @@ import {
 } from '../common/errors/domain-errors';
 import { BusinessPartnersService } from './business-partners.service';
 import { DocumentNumberService } from './document-number.service';
-
-const AR_CONTROL_CODE = '1-1200';
-const AP_CONTROL_CODE = '2-1000';
+import { listPaginated } from '../common/pagination/paginated';
+import { serializeMoney } from '../common/money/serialize-money';
+import {
+  AR_CONTROL_CODE,
+  AP_CONTROL_CODE,
+  findControlAccountId,
+} from './document-helpers';
+import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
 
 export interface AllocationInput {
   salesInvoiceId?: string;
@@ -45,16 +50,8 @@ export class PaymentsService {
     private readonly partners: BusinessPartnersService,
     private readonly posting: PostingService,
     private readonly docNumber: DocumentNumberService,
+    private readonly lifecycle: DocumentLifecycleService,
   ) {}
-
-  private async controlId(code: string): Promise<string> {
-    const a = await this.prisma.client.account.findFirst({ where: { code } });
-    if (!a)
-      throw new ValidationFailedError('Control account missing from chart', {
-        code,
-      });
-    return a.id;
-  }
 
   /** Load the target document (sales invoice for RECEIPT, purchase bill for DISBURSEMENT). */
   private async loadTarget(
@@ -210,74 +207,61 @@ export class PaymentsService {
     limit: number;
     offset: number;
   }> {
-    const limit = q.limit ?? 50;
-    const offset = q.offset ?? 0;
-    const term = q.q?.trim() ?? '';
-    if (term.length >= MIN_QUERY_LENGTH) {
-      const filters: Prisma.Sql[] = [];
-      if (q.partnerId) filters.push(Prisma.sql`t.partner_id = ${q.partnerId}`);
-      if (q.direction)
-        filters.push(Prisma.sql`t.direction::text = ${q.direction}`);
-      if (q.status) filters.push(Prisma.sql`t.status::text = ${q.status}`);
-      const { ids, total } = await trigramSearch(this.prisma, {
-        table: 'payments',
-        alias: 't',
-        ownColumns: ['ref', 'description'],
-        join: {
-          table: 'business_partners',
-          alias: 'p',
-          onColumn: 'partner_id',
-          columns: ['name'],
-        },
-        filters,
-        q: term,
-        limit,
-        offset,
-      });
-      const rows = ids.length
-        ? await this.prisma.client.payment.findMany({
-            where: { id: { in: ids } },
-          })
-        : [];
-      const byId = new Map(rows.map((r) => [r.id, r]));
-      const data = ids
-        .map((id) => byId.get(id))
-        .filter((r): r is Payment => r !== undefined)
-        .map((r) => this.present(r));
-      return { data, total, limit, offset };
-    }
+    const filters: Prisma.Sql[] = [];
+    if (q.partnerId) filters.push(Prisma.sql`t.partner_id = ${q.partnerId}`);
+    if (q.direction)
+      filters.push(Prisma.sql`t.direction::text = ${q.direction}`);
+    if (q.status) filters.push(Prisma.sql`t.status::text = ${q.status}`);
     const where = {
       partnerId: q.partnerId,
       direction: q.direction,
       status: q.status,
     };
-    const [rows, total] = await Promise.all([
-      this.prisma.client.payment.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-        skip: offset,
-      }),
-      this.prisma.client.payment.count({ where }),
-    ]);
-    return { data: rows.map((r) => this.present(r)), total, limit, offset };
+    return listPaginated({
+      q: q.q,
+      limit: q.limit,
+      offset: q.offset,
+      present: (r: Payment) => this.present(r),
+      search: ({ term, limit, offset }) =>
+        trigramSearch(this.prisma, {
+          table: 'payments',
+          alias: 't',
+          ownColumns: ['ref', 'description'],
+          join: {
+            table: 'business_partners',
+            alias: 'p',
+            onColumn: 'partner_id',
+            columns: ['name'],
+          },
+          filters,
+          q: term,
+          limit,
+          offset,
+        }),
+      hydrate: (ids) =>
+        this.prisma.client.payment.findMany({ where: { id: { in: ids } } }),
+      page: async ({ limit, offset }) => {
+        const [rows, total] = await Promise.all([
+          this.prisma.client.payment.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            take: limit,
+            skip: offset,
+          }),
+          this.prisma.client.payment.count({ where }),
+        ]);
+        return { rows, total };
+      },
+    });
   }
 
   async deleteDraft(id: string, deletedBy: string): Promise<void> {
-    const p = await this.getById(id);
-    if (p.status !== 'DRAFT')
-      throw new ValidationFailedError('Only a DRAFT payment can be deleted', {
-        id,
-        status: p.status,
-      });
-    const res = await this.prisma.client.payment.updateMany({
-      where: { id, status: 'DRAFT', deletedAt: null },
-      data: { deletedAt: new Date(), deletedBy },
-    });
-    if (res.count !== 1)
-      throw new ValidationFailedError('Only a DRAFT payment can be deleted', {
-        id,
-      });
+    return this.lifecycle.softDeleteDraft(
+      this.prisma.client.payment,
+      id,
+      deletedBy,
+      'payment',
+    );
   }
 
   async post(id: string, postedBy: string): Promise<Payment> {
@@ -297,7 +281,8 @@ export class PaymentsService {
       }
     ).allocations;
     const isReceipt = payment.direction === 'RECEIPT';
-    const controlId = await this.controlId(
+    const controlId = await findControlAccountId(
+      this.prisma,
       isReceipt ? AR_CONTROL_CODE : AP_CONTROL_CODE,
     );
     const amount = Money.of(payment.amount.toString());
@@ -467,14 +452,18 @@ export class PaymentsService {
         }[];
       }
     ).allocations;
-    const { original, periodId, fiscalYear, reversalDate } =
-      await this.posting.prepareReversal(payment.journalEntryId!);
-    try {
-      await this.prisma.client.$transaction(async (tx) => {
+    await this.lifecycle.reverseWithGuard({
+      id,
+      journalEntryId: payment.journalEntryId!,
+      reversedBy: voidedBy,
+      alreadyReversedMessage: 'Payment journal entry was already reversed',
+      notPostedMessage: 'Payment is not posted',
+      lock: async (tx) => {
         const locked = await tx.$queryRaw<{ status: string }[]>`
           SELECT status FROM payments WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
-        if (locked.length === 0 || locked[0].status !== 'POSTED')
-          throw new ValidationFailedError('Payment is not posted', { id });
+        return locked[0];
+      },
+      applyInTx: async (tx) => {
         for (const a of allocations) {
           if (a.salesInvoiceId) {
             const rows = await tx.$queryRaw<{ amount_paid: string }[]>`
@@ -513,30 +502,12 @@ export class PaymentsService {
             });
           }
         }
-        await this.posting.reverseInTx(
-          tx,
-          original,
-          voidedBy,
-          periodId,
-          fiscalYear,
-          reversalDate,
-        );
         await tx.payment.update({
           where: { id },
           data: { status: 'VOID' },
         });
-      });
-    } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      )
-        throw new ValidationFailedError(
-          'Payment journal entry was already reversed',
-          { id },
-        );
-      throw err;
-    }
+      },
+    });
     return this.getById(id);
   }
 
@@ -550,16 +521,12 @@ export class PaymentsService {
       }
     ).allocations;
     return {
-      ...payment,
-      amount: payment.amount.toFixed(4) as unknown as Payment['amount'],
+      ...serializeMoney(payment, ['amount']),
       ...(allocations
         ? {
-            allocations: allocations.map((a) => ({
-              ...a,
-              amount: a.amount.toFixed(4),
-            })),
+            allocations: allocations.map((a) => serializeMoney(a, ['amount'])),
           }
         : {}),
-    };
+    } as Payment;
   }
 }
