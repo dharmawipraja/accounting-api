@@ -1,13 +1,5 @@
 import { Injectable } from '@nestjs/common';
-
-/** The raw-SQL subset of an interactive-tx client (same shape PostingService uses). */
-type RawTx = {
-  $executeRaw: (q: TemplateStringsArray, ...v: unknown[]) => Promise<number>;
-  $queryRaw: <T = unknown>(
-    q: TemplateStringsArray,
-    ...v: unknown[]
-  ) => Promise<T>;
-};
+import { RawTx } from '../common/db/raw-tx';
 
 @Injectable()
 export class DocumentNumberService {
