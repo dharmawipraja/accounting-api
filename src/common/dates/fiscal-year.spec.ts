@@ -1,0 +1,13 @@
+import { fiscalYearForDate } from './fiscal-year';
+
+describe('fiscalYearForDate', () => {
+  it('returns the calendar year when month >= start month', () => {
+    expect(fiscalYearForDate(new Date('2026-07-01T00:00:00Z'), 7)).toBe(2026);
+  });
+  it('returns the prior year when month < start month', () => {
+    expect(fiscalYearForDate(new Date('2026-06-30T00:00:00Z'), 7)).toBe(2025);
+  });
+  it('handles a January start month (calendar year)', () => {
+    expect(fiscalYearForDate(new Date('2026-12-31T00:00:00Z'), 1)).toBe(2026);
+  });
+});
