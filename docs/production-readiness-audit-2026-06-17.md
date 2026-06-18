@@ -128,7 +128,10 @@ argon2id @ OWASP params (t=3, 64 MiB, p=4), `passwordHash` stripped from respons
 > - **Breaking change:** `GET /v1/...accounts` & `/v1/...tax/codes` lists → `{data,total,limit,offset}` envelope (the sibling `accounting-client` must unwrap `.data` — cross-repo follow-up).
 > - Tests grew 80→**103 unit**; **198 e2e** unchanged.
 >
-> ⏸ **DEFERRED to their own specs (out of scope for this cleanup):** deepening **C** (push period/closed-year TOCTOU checks inside the write tx, `FOR SHARE`) and **D** (replace by-code account coupling with account **role flags** — ⚠️ latent: a new bank account silently breaks cash-flow reconciliation *today*).
+> ✅ **Deepening D — DONE & merged 2026-06-18** (ff `e02d851`, spec/plan `2026-06-18-account-role-flags*`): `AccountRole` enum + nullable `role` on Account replaces all six by-code couplings (`CASH_CODES`, `AR/AP_CONTROL_CODE`, `RETAINED_EARNINGS_CODE`, `OPENING_BALANCE_EQUITY_CODE`, `TAX_EXPENSE_CODE`); fixed the latent cash-flow bug; CASH=set, other 5=singletons (partial-unique index + create-time 409). Whole-branch opus review clean.
+> ✅ **Deepening C — DONE & merged 2026-06-18** (ff `9528193`, spec/plan `2026-06-18-posting-period-toctou*`): in-tx `assertPostablePeriodInTx` guard on all POSTED-write paths (period `FOR SHARE` + re-check OPEN; year `pg_advisory_xact_lock_shared` + plain `year_end_closings` re-check), `periods.close` hardened to `FOR UPDATE`, `allowClosedYear` preserves reopen. No single-threaded behavior change; opus deadlock analysis passed.
+>
+> **Remaining §3 remnants (both minor):** nit **#2 still PARTIAL** (`audit-query.dto.ts:20` keeps `@Max(500)` vs `MAX_LIMIT = 200` — reconcile or document the audit-query exception); and the **cross-repo follow-up** — sibling `accounting-client` must unwrap `.data` from the accounts/tax-codes list envelope (not done in this repo's scope). **All §3 audit work in this repo is otherwise complete; remaining audit backlog is §4 only.**
 
 ### Dead code (grep-verified — safe quick wins)
 
