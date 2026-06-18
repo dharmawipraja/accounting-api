@@ -120,11 +120,18 @@ describe('Audit log (e2e)', () => {
   it('SEC-7: audit_log is append-only — UPDATE and DELETE are rejected', async () => {
     const id = randomUUID();
     await prisma.client.auditLog.create({
-      data: { id, method: 'GET', path: '/v1/probe', statusCode: 200, durationMs: 3 },
+      data: {
+        id,
+        method: 'GET',
+        path: '/v1/probe',
+        statusCode: 200,
+        durationMs: 3,
+      },
     });
 
     await expect(
-      prisma.client.$executeRaw`UPDATE audit_log SET path = ${'/v1/tampered'} WHERE id = ${id}`,
+      prisma.client
+        .$executeRaw`UPDATE audit_log SET path = ${'/v1/tampered'} WHERE id = ${id}`,
     ).rejects.toThrow(/append-only/i);
 
     await expect(
