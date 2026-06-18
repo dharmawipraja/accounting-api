@@ -6,10 +6,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
-import {
-  trigramSearch,
-  MIN_QUERY_LENGTH,
-} from '../common/search/trigram-search';
+import { trigramSearch } from '../common/search/trigram-search';
 import { Money } from '../common/money/money';
 import { PostingService } from '../ledger/posting/posting.service';
 import {
