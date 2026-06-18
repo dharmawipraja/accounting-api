@@ -10,9 +10,19 @@ services:
       db:
         condition: service_healthy
     restart: 'no'
+    read_only: true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp
 
   api:
     init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp
     depends_on:
       db:
         condition: service_healthy
