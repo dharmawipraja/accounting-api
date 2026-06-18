@@ -31,6 +31,7 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { ForbiddenDomainError } from '../../common/errors/domain-errors';
 import { IdempotentWrite } from '../../common/idempotency/idempotent-write.decorator';
+import { parseDate } from '../../common/dates/parse-date';
 
 @ApiTags('Journal')
 @ApiBearerAuth()
@@ -46,8 +47,8 @@ export class JournalController {
       status: q.status,
       sourceType: q.sourceType,
       fiscalYear: q.fiscalYear,
-      from: q.from ? new Date(q.from) : undefined,
-      to: q.to ? new Date(q.to) : undefined,
+      from: parseDate(q.from),
+      to: parseDate(q.to),
       limit: q.limit ?? 50,
       offset: q.offset ?? 0,
     });
@@ -74,7 +75,7 @@ export class JournalController {
       lines: dto.lines,
       createdBy: user.id,
     };
-    if (q.post === 'true') {
+    if (q.post) {
       // Posting authority is APPROVER+ (the route allows ACCOUNTANT only to
       // create drafts). Block an accountant from create-and-post directly.
       if (user.role === Role.ACCOUNTANT) {

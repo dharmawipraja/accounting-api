@@ -1,5 +1,9 @@
-import { IsBooleanString, IsOptional } from 'class-validator';
+import { IsBoolean, IsOptional } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class JournalPostQueryDto {
-  @IsOptional() @IsBooleanString() post?: string;
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  post?: boolean;
 }

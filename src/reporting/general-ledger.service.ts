@@ -50,8 +50,8 @@ export class GeneralLedgerService {
         date: r.date.toISOString().slice(0, 10),
         entryRef: r.entry_ref,
         description: r.description,
-        debit: r.debit.toFixed(4),
-        credit: r.credit.toFixed(4),
+        debit: Money.of(r.debit.toString()).toPersistence(),
+        credit: Money.of(r.credit.toString()).toPersistence(),
         runningBalance: running.toPersistence(),
       };
     });

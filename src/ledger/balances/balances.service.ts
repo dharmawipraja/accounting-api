@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AccountsService } from '../accounts/accounts.service';
 import { truncateToUtcDay } from '../../common/dates/utc-day';
+import { Money } from '../../common/money/money';
 
 export interface TrialBalanceRow {
   accountId: string;
@@ -91,9 +92,9 @@ export class BalancesService {
       subtype: r.subtype,
       normalBalance: r.normal_balance,
       cashFlowCategory: r.cash_flow_category,
-      debit: r.debit.toFixed(4),
-      credit: r.credit.toFixed(4),
-      balance: net.toFixed(4),
+      debit: Money.of(r.debit.toString()).toPersistence(),
+      credit: Money.of(r.credit.toString()).toPersistence(),
+      balance: Money.of(net.toString()).toPersistence(),
     };
   }
 
@@ -132,16 +133,16 @@ export class BalancesService {
         accountId: r.account_id,
         code: r.code,
         name: r.name,
-        debit: r.debit.toFixed(4),
-        credit: r.credit.toFixed(4),
-        balance: net.toFixed(4),
+        debit: Money.of(r.debit.toString()).toPersistence(),
+        credit: Money.of(r.credit.toString()).toPersistence(),
+        balance: Money.of(net.toString()).toPersistence(),
       });
     }
     return {
       asOf: asOf.toISOString().slice(0, 10),
       rows: out,
-      totalDebit: totalDebit.toFixed(4),
-      totalCredit: totalCredit.toFixed(4),
+      totalDebit: Money.of(totalDebit.toString()).toPersistence(),
+      totalCredit: Money.of(totalCredit.toString()).toPersistence(),
     };
   }
 
@@ -169,9 +170,9 @@ export class BalancesService {
       account.normalBalance === 'DEBIT' ? debit.sub(credit) : credit.sub(debit);
     return {
       accountId,
-      debit: debit.toFixed(4),
-      credit: credit.toFixed(4),
-      balance: net.toFixed(4),
+      debit: Money.of(debit.toString()).toPersistence(),
+      credit: Money.of(credit.toString()).toPersistence(),
+      balance: Money.of(net.toString()).toPersistence(),
     };
   }
 }
