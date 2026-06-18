@@ -10,6 +10,7 @@ import { JournalController } from './journal/journal.controller';
 import { OpeningBalancesController } from './journal/opening-balances.controller';
 import { BalancesService } from './balances/balances.service';
 import { BalancesController } from './balances/balances.controller';
+import { DocumentLifecycleService } from './document-lifecycle.service';
 
 @Module({
   imports: [CompanyModule],
@@ -19,6 +20,7 @@ import { BalancesController } from './balances/balances.controller';
     PostingService,
     JournalService,
     BalancesService,
+    DocumentLifecycleService,
   ],
   controllers: [
     AccountsController,
@@ -33,6 +35,7 @@ import { BalancesController } from './balances/balances.controller';
     PostingService,
     JournalService,
     BalancesService,
+    DocumentLifecycleService,
   ],
 })
 export class LedgerModule {}
