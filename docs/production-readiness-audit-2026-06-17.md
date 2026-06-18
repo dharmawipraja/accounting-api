@@ -120,6 +120,16 @@ argon2id @ OWASP params (t=3, 64 MiB, p=4), `passwordHash` stripped from respons
 
 ## 3. Architecture & dead code
 
+> **Status (updated 2026-06-18):** ✅ **RESOLVED & merged to `main`** (fast-forward `5dab246`, branch `refactor/architecture-cleanup`) via the architecture-cleanup effort (spec/plan: `docs/superpowers/{specs,plans}/2026-06-18-architecture-cleanup*`). Done — behavior-preserving except one sanctioned breaking change:
+> - **Dead code:** all 7 removed.
+> - **Duplication & shallow modules:** all 10 patterns collapsed into tested seams (`listPaginated`, `serializeMoney`, `reverseWithGuard`/`softDeleteDraft`, `findControlAccountId`/`taxableLines`, `@IdempotentWrite`, shared `RawTx`/`buildDocRef`, `truncateToUtcDay`/`fiscalYearForDate`, `PaginatedDto` factory + `TransactionalDocumentResponseDto` base).
+> - **Deepening A, E, B:** done.
+> - **Quality nits #1, #3–#10:** done. **#2 PARTIAL** — `DEFAULT_PAGE_SIZE`/`MAX_LIMIT` hoisted, but `audit-query.dto.ts` `@Max(500)` not yet reconciled.
+> - **Breaking change:** `GET /v1/...accounts` & `/v1/...tax/codes` lists → `{data,total,limit,offset}` envelope (the sibling `accounting-client` must unwrap `.data` — cross-repo follow-up).
+> - Tests grew 80→**103 unit**; **198 e2e** unchanged.
+>
+> ⏸ **DEFERRED to their own specs (out of scope for this cleanup):** deepening **C** (push period/closed-year TOCTOU checks inside the write tx, `FOR SHARE`) and **D** (replace by-code account coupling with account **role flags** — ⚠️ latent: a new bank account silently breaks cash-flow reconciliation *today*).
+
 ### Dead code (grep-verified — safe quick wins)
 
 - `Money.lessThan()` — `src/common/money/money.ts:56–58` — zero references.
