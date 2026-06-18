@@ -6,6 +6,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import {
+  AccountRole,
   AccountSubtype,
   AccountType,
   CashFlowCategory,
@@ -19,6 +20,7 @@ export class CreateAccountDto {
   @IsEnum(AccountSubtype) subtype!: AccountSubtype;
   @IsEnum(NormalBalance) normalBalance!: NormalBalance;
   @IsOptional() @IsEnum(CashFlowCategory) cashFlowCategory?: CashFlowCategory;
+  @IsOptional() @IsEnum(AccountRole) role?: AccountRole;
   @IsOptional() @IsBoolean() isPostable?: boolean;
   @IsOptional() @IsString() parentCode?: string;
 }

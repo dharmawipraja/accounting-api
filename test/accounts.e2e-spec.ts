@@ -201,4 +201,37 @@ describe('Accounts (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(404);
   });
+
+  it('creates an account with a CASH role', async () => {
+    const res = await request(app.getHttpServer() as App)
+      .post('/v1/ledger/accounts')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: '1-1700',
+        name: 'Bank Ketiga',
+        type: 'ASSET',
+        subtype: 'CURRENT_ASSET',
+        normalBalance: 'DEBIT',
+        role: 'CASH',
+        parentCode: '1-0000',
+      })
+      .expect(201);
+    expect((res.body as { role: string }).role).toBe('CASH');
+  });
+
+  it('rejects a second holder of a singleton role with 409', async () => {
+    await request(app.getHttpServer() as App)
+      .post('/v1/ledger/accounts')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: '1-1250',
+        name: 'AR Control 2',
+        type: 'ASSET',
+        subtype: 'CURRENT_ASSET',
+        normalBalance: 'DEBIT',
+        role: 'AR_CONTROL',
+        parentCode: '1-0000',
+      })
+      .expect(409);
+  });
 });

@@ -29,6 +29,18 @@ export class AccountResponseDto {
   cashFlowCategory!: string;
   @ApiProperty({ enum: ['DEBIT', 'CREDIT'] }) normalBalance!: string;
   @ApiProperty({ format: 'uuid', nullable: true }) parentId!: string | null;
+  @ApiProperty({
+    enum: [
+      'CASH',
+      'AR_CONTROL',
+      'AP_CONTROL',
+      'RETAINED_EARNINGS',
+      'OPENING_BALANCE_EQUITY',
+      'TAX_EXPENSE',
+    ],
+    nullable: true,
+  })
+  role!: string | null;
   @ApiProperty({ example: true }) isPostable!: boolean;
   @ApiProperty({ example: true }) isActive!: boolean;
   @ApiProperty({ example: 'IDR' }) currency!: string;

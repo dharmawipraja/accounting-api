@@ -3272,6 +3272,18 @@
             "nullable": true,
             "format": "uuid"
           },
+          "role": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "CASH",
+              "AR_CONTROL",
+              "AP_CONTROL",
+              "RETAINED_EARNINGS",
+              "OPENING_BALANCE_EQUITY",
+              "TAX_EXPENSE"
+            ]
+          },
           "isPostable": {
             "type": "boolean",
             "example": true
@@ -3302,6 +3314,7 @@
           "cashFlowCategory",
           "normalBalance",
           "parentId",
+          "role",
           "isPostable",
           "isActive",
           "currency",
@@ -3422,6 +3435,17 @@
               "INVESTING",
               "FINANCING",
               "NONE"
+            ]
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "CASH",
+              "AR_CONTROL",
+              "AP_CONTROL",
+              "RETAINED_EARNINGS",
+              "OPENING_BALANCE_EQUITY",
+              "TAX_EXPENSE"
             ]
           },
           "isPostable": {

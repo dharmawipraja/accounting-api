@@ -17,6 +17,7 @@ export interface CreateAccountInput {
   subtype: Account['subtype'];
   normalBalance: Account['normalBalance'];
   cashFlowCategory?: Account['cashFlowCategory'];
+  role?: Account['role'];
   isPostable?: boolean;
   parentCode?: string;
 }
@@ -153,6 +154,18 @@ export class AccountsService implements OnModuleInit {
       });
     }
 
+    // Singleton roles (everything except CASH) may be held by at most one account.
+    if (input.role && input.role !== 'CASH') {
+      const roleHolder = await this.prisma.client.account.findFirst({
+        where: { role: input.role },
+      });
+      if (roleHolder) {
+        throw new ConflictDomainError('That account role is already assigned', {
+          role: input.role,
+        });
+      }
+    }
+
     let parentId: string | null = null;
     if (input.parentCode) {
       const parent = await this.prisma.client.account.findFirst({
@@ -181,6 +194,7 @@ export class AccountsService implements OnModuleInit {
           subtype: input.subtype,
           normalBalance: input.normalBalance,
           cashFlowCategory: input.cashFlowCategory ?? 'NONE',
+          role: input.role ?? null,
           isPostable: input.isPostable ?? true,
           parentId,
         },
