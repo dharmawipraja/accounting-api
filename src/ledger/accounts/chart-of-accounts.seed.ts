@@ -1,4 +1,5 @@
 import {
+  AccountRole,
   AccountSubtype,
   AccountType,
   CashFlowCategory,
@@ -12,6 +13,7 @@ export interface SeedAccount {
   subtype: AccountSubtype;
   normalBalance: NormalBalance;
   cashFlowCategory?: CashFlowCategory;
+  role?: AccountRole;
   isPostable?: boolean;
   parentCode?: string;
 }
@@ -34,6 +36,7 @@ export const CHART_OF_ACCOUNTS: SeedAccount[] = [
     subtype: 'CURRENT_ASSET',
     normalBalance: 'DEBIT',
     cashFlowCategory: 'OPERATING',
+    role: 'CASH',
     parentCode: '1-0000',
   },
   {
@@ -43,6 +46,7 @@ export const CHART_OF_ACCOUNTS: SeedAccount[] = [
     subtype: 'CURRENT_ASSET',
     normalBalance: 'DEBIT',
     cashFlowCategory: 'OPERATING',
+    role: 'CASH',
     parentCode: '1-0000',
   },
   {
@@ -52,6 +56,7 @@ export const CHART_OF_ACCOUNTS: SeedAccount[] = [
     subtype: 'CURRENT_ASSET',
     normalBalance: 'DEBIT',
     cashFlowCategory: 'OPERATING',
+    role: 'AR_CONTROL',
     parentCode: '1-0000',
   },
   {
@@ -124,6 +129,7 @@ export const CHART_OF_ACCOUNTS: SeedAccount[] = [
     subtype: 'CURRENT_LIABILITY',
     normalBalance: 'CREDIT',
     cashFlowCategory: 'OPERATING',
+    role: 'AP_CONTROL',
     parentCode: '2-0000',
   },
   {
@@ -178,6 +184,7 @@ export const CHART_OF_ACCOUNTS: SeedAccount[] = [
     subtype: 'EQUITY',
     normalBalance: 'CREDIT',
     cashFlowCategory: 'FINANCING',
+    role: 'RETAINED_EARNINGS',
     parentCode: '3-0000',
   },
   {
@@ -186,6 +193,7 @@ export const CHART_OF_ACCOUNTS: SeedAccount[] = [
     type: 'EQUITY',
     subtype: 'EQUITY',
     normalBalance: 'CREDIT',
+    role: 'OPENING_BALANCE_EQUITY',
     parentCode: '3-0000',
   },
   // 4 — Pendapatan
@@ -267,6 +275,7 @@ export const CHART_OF_ACCOUNTS: SeedAccount[] = [
     subtype: 'OTHER_EXPENSE',
     normalBalance: 'DEBIT',
     cashFlowCategory: 'OPERATING',
+    role: 'TAX_EXPENSE',
     parentCode: '5-0000',
   },
 ];

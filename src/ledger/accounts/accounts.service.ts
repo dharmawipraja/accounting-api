@@ -77,6 +77,7 @@ export class AccountsService implements OnModuleInit {
               subtype: a.subtype,
               normalBalance: a.normalBalance,
               cashFlowCategory: a.cashFlowCategory ?? 'NONE',
+              role: a.role ?? null,
               isPostable: a.isPostable ?? true,
               parentId,
             },

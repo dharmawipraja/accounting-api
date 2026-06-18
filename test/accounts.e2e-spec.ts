@@ -83,6 +83,20 @@ describe('Accounts (e2e)', () => {
     expect(count).toBe(28);
   });
 
+  it('seedIfEmpty assigns system-account roles', async () => {
+    const byCode = async (code: string) =>
+      prismaOverride.client.account.findFirst({ where: { code } });
+    expect((await byCode('1-1000'))?.role).toBe('CASH');
+    expect((await byCode('1-1100'))?.role).toBe('CASH');
+    expect((await byCode('1-1200'))?.role).toBe('AR_CONTROL');
+    expect((await byCode('2-1000'))?.role).toBe('AP_CONTROL');
+    expect((await byCode('3-2000'))?.role).toBe('RETAINED_EARNINGS');
+    expect((await byCode('3-9000'))?.role).toBe('OPENING_BALANCE_EQUITY');
+    expect((await byCode('5-9000'))?.role).toBe('TAX_EXPENSE');
+    // a non-system account has no role
+    expect((await byCode('1-1300'))?.role).toBeNull();
+  });
+
   it('creates a postable account', async () => {
     await request(app.getHttpServer() as App)
       .post('/v1/ledger/accounts')

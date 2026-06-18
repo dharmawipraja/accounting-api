@@ -107,6 +107,15 @@ enum NormalBalance {
   CREDIT
 }
 
+enum AccountRole {
+  CASH
+  AR_CONTROL
+  AP_CONTROL
+  RETAINED_EARNINGS
+  OPENING_BALANCE_EQUITY
+  TAX_EXPENSE
+}
+
 model Account {
   id               String           @id @default(uuid())
   code             String
@@ -114,6 +123,7 @@ model Account {
   type             AccountType
   subtype          AccountSubtype
   cashFlowCategory CashFlowCategory @default(NONE) @map("cash_flow_category")
+  role             AccountRole?
   normalBalance    NormalBalance    @map("normal_balance")
   parentId         String?          @map("parent_id")
   parent           Account?         @relation("AccountHierarchy", fields: [parentId], references: [id])
