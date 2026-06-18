@@ -279,6 +279,3 @@ export const CHART_OF_ACCOUNTS: SeedAccount[] = [
     parentCode: '5-0000',
   },
 ];
-
-/** The account used to absorb the opening-balance plug. */
-export const OPENING_BALANCE_EQUITY_CODE = '3-9000';

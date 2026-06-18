@@ -11,8 +11,6 @@ import {
   ValidationFailedError,
 } from '../common/errors/domain-errors';
 
-const RETAINED_EARNINGS_CODE = '3-2000';
-
 @Injectable()
 export class YearEndCloseService {
   constructor(
@@ -88,14 +86,12 @@ export class YearEndCloseService {
 
     if (!netIncome.isZero()) {
       const retained = await this.prisma.client.account.findFirst({
-        where: { code: RETAINED_EARNINGS_CODE },
+        where: { role: 'RETAINED_EARNINGS' },
       });
       if (!retained) {
         throw new ValidationFailedError(
           'Laba Ditahan account missing from chart',
-          {
-            code: RETAINED_EARNINGS_CODE,
-          },
+          { role: 'RETAINED_EARNINGS' },
         );
       }
       lines.push(

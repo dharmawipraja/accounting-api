@@ -9,11 +9,9 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { trigramSearch } from '../../common/search/trigram-search';
 import { listPaginated } from '../../common/pagination/paginated';
 import { PostingService } from '../posting/posting.service';
-import { AccountsService } from '../accounts/accounts.service';
 import { DocumentLifecycleService } from '../document-lifecycle.service';
 import { PostLineInput } from '../posting/posting.types';
 import { Money } from '../../common/money/money';
-import { OPENING_BALANCE_EQUITY_CODE } from '../accounts/chart-of-accounts.seed';
 import {
   NotFoundDomainError,
   ValidationFailedError,
@@ -56,7 +54,6 @@ export class JournalService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly posting: PostingService,
-    private readonly accounts: AccountsService,
     private readonly lifecycle: DocumentLifecycleService,
   ) {}
 
@@ -142,9 +139,9 @@ export class JournalService {
       credit = credit.add(Money.of(b.credit ?? '0'));
     }
 
-    const equity = (await this.accounts.listAll()).find(
-      (a) => a.code === OPENING_BALANCE_EQUITY_CODE,
-    );
+    const equity = await this.prisma.client.account.findFirst({
+      where: { role: 'OPENING_BALANCE_EQUITY' },
+    });
     if (!equity) {
       throw new ValidationFailedError(
         'Opening Balance Equity account missing from chart',
