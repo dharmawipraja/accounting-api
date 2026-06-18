@@ -18,11 +18,7 @@ import { BusinessPartnersService } from './business-partners.service';
 import { DocumentNumberService } from './document-number.service';
 import { listPaginated } from '../common/pagination/paginated';
 import { serializeMoney } from '../common/money/serialize-money';
-import {
-  AR_CONTROL_CODE,
-  AP_CONTROL_CODE,
-  findControlAccountId,
-} from './document-helpers';
+import { findControlAccountId } from './document-helpers';
 import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
 
 export interface AllocationInput {
@@ -280,7 +276,7 @@ export class PaymentsService {
     const isReceipt = payment.direction === 'RECEIPT';
     const controlId = await findControlAccountId(
       this.prisma,
-      isReceipt ? AR_CONTROL_CODE : AP_CONTROL_CODE,
+      isReceipt ? 'AR_CONTROL' : 'AP_CONTROL',
     );
     const amount = Money.of(payment.amount.toString());
 

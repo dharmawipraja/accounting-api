@@ -12,11 +12,7 @@ import { DocumentPostingService } from './document-posting.service';
 import { trigramSearch } from '../common/search/trigram-search';
 import { listPaginated } from '../common/pagination/paginated';
 import { serializeMoney } from '../common/money/serialize-money';
-import {
-  taxableLines,
-  findControlAccountId,
-  AR_CONTROL_CODE,
-} from './document-helpers';
+import { taxableLines, findControlAccountId } from './document-helpers';
 import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
 
 export interface InvoiceLineInput {
@@ -57,10 +53,7 @@ export class SalesInvoicesService {
         partnerId: input.partnerId,
       });
     }
-    const settlementId = await findControlAccountId(
-      this.prisma,
-      AR_CONTROL_CODE,
-    );
+    const settlementId = await findControlAccountId(this.prisma, 'AR_CONTROL');
     const totals = await this.docPosting.computeTotals(
       'SALE',
       settlementId,
@@ -119,10 +112,7 @@ export class SalesInvoicesService {
           unitPrice: l.unitPrice.toString(),
           taxCodeIds: l.taxCodeIds,
         }));
-    const settlementId = await findControlAccountId(
-      this.prisma,
-      AR_CONTROL_CODE,
-    );
+    const settlementId = await findControlAccountId(this.prisma, 'AR_CONTROL');
     const totals = await this.docPosting.computeTotals(
       'SALE',
       settlementId,
@@ -242,10 +232,7 @@ export class SalesInvoicesService {
         partnerId: inv.partnerId,
       });
     }
-    const settlementId = await findControlAccountId(
-      this.prisma,
-      AR_CONTROL_CODE,
-    );
+    const settlementId = await findControlAccountId(this.prisma, 'AR_CONTROL');
     const lines = (
       inv as SalesInvoice & {
         lines: {
