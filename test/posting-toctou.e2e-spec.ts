@@ -8,6 +8,7 @@ import { PostingService } from '../src/ledger/posting/posting.service';
 import { CompanyService } from '../src/company/company.service';
 import { YearEndCloseService } from '../src/close/year-end-close.service';
 import {
+  ClosedPeriodError,
   ClosedYearError,
   ValidationFailedError,
 } from '../src/common/errors/domain-errors';
@@ -38,6 +39,7 @@ describe('PostingService TOCTOU guard (e2e)', () => {
     await app.get(AccountsService).seedIfEmpty();
     await app.get(PeriodsService).generatePeriods(2026);
     await app.get(PeriodsService).generatePeriods(2027);
+    await app.get(PeriodsService).generatePeriods(2029);
     posting = app.get(PostingService);
     const { data: accounts } = await app.get(AccountsService).list();
     kasId = accounts.find((a) => a.code === '1-1000')!.id;
@@ -119,5 +121,54 @@ describe('PostingService TOCTOU guard (e2e)', () => {
         ),
       ),
     ).rejects.toBeInstanceOf(ClosedYearError);
+  });
+
+  it('posting vs year-close serialize: post either commits-before or is rejected; never orphans', async () => {
+    const close = app.get(YearEndCloseService);
+    const [postRes] = await Promise.all([
+      posting
+        .post(balanced(new Date('2029-06-15')), 'p')
+        .then((e) => ({ ok: true as const, e }))
+        .catch((err: unknown) => ({ ok: false as const, err })),
+      close.close(2029, 'admin').catch(() => null),
+    ]);
+    // Year ends CLOSED regardless of which operation won.
+    expect((await close.getStatus(2029))?.status).toBe('CLOSED');
+    // The post either committed (before close) or was rejected with ClosedYearError — never another error.
+    if (!postRes.ok) expect(postRes.err).toBeInstanceOf(ClosedYearError);
+    // No MANUAL POSTED entry orphaned into 2029 after close: exactly 1 if post won, 0 if close won.
+    const manual = await prisma.client.journalEntry.count({
+      where: { fiscalYear: 2029, status: 'POSTED', sourceType: 'MANUAL' },
+    });
+    expect(manual).toBe(postRes.ok ? 1 : 0);
+    // A fresh post into the now-closed year is firmly rejected.
+    await expect(
+      posting.post(balanced(new Date('2029-06-16')), 'p'),
+    ).rejects.toBeInstanceOf(ClosedYearError);
+  });
+
+  it('posting vs period-close serialize: post commits-before or is rejected', async () => {
+    const periods = app.get(PeriodsService);
+    const sep = (await periods.list(2026)).find((p) => p.name === '2026-09')!;
+    const [postRes] = await Promise.all([
+      posting
+        .post(balanced(new Date('2026-09-15')), 'p')
+        .then(() => ({ ok: true as const }))
+        .catch((err: unknown) => ({ ok: false as const, err })),
+      periods.close(sep.id, 'admin').catch(() => null),
+    ]);
+    // Period ends CLOSED regardless of which operation won.
+    expect(
+      (await periods.list(2026)).find((p) => p.name === '2026-09')!.status,
+    ).toBe('CLOSED');
+    // The post either committed or was rejected with ValidationFailedError (in-tx guard).
+    if (!postRes.ok)
+      expect((postRes as { err: unknown }).err).toBeInstanceOf(
+        ValidationFailedError,
+      );
+    // A fresh post into the now-closed period is rejected by the pre-tx check (ClosedPeriodError).
+    await expect(
+      posting.post(balanced(new Date('2026-09-16')), 'p'),
+    ).rejects.toBeInstanceOf(ClosedPeriodError);
   });
 });
