@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { DocumentStatus, Prisma, PurchaseBill } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { Money } from '../common/money/money';
-import { PostingService } from '../ledger/posting/posting.service';
 import {
   ConflictDomainError,
   NotFoundDomainError,
@@ -12,10 +11,11 @@ import { BusinessPartnersService } from './business-partners.service';
 import { DocumentPostingService } from './document-posting.service';
 import {
   trigramSearch,
-  MIN_QUERY_LENGTH,
 } from '../common/search/trigram-search';
-
-const AP_CONTROL_CODE = '2-1000';
+import { listPaginated } from '../common/pagination/paginated';
+import { serializeMoney } from '../common/money/serialize-money';
+import { taxableLines, findControlAccountId, AP_CONTROL_CODE } from './document-helpers';
+import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
 
 export interface BillLineInput {
   description: string;
@@ -47,36 +47,8 @@ export class PurchaseBillsService {
     private readonly prisma: PrismaService,
     private readonly partners: BusinessPartnersService,
     private readonly docPosting: DocumentPostingService,
-    private readonly posting: PostingService,
+    private readonly lifecycle: DocumentLifecycleService,
   ) {}
-
-  private async apControlId(): Promise<string> {
-    const acc = await this.prisma.client.account.findFirst({
-      where: { code: AP_CONTROL_CODE },
-    });
-    if (!acc)
-      throw new ValidationFailedError('AP control account missing from chart', {
-        code: AP_CONTROL_CODE,
-      });
-    return acc.id;
-  }
-
-  private taxableLines(
-    lines: {
-      accountId: string;
-      quantity: Prisma.Decimal | string;
-      unitPrice: Prisma.Decimal | string;
-      taxCodeIds: string[];
-    }[],
-  ) {
-    return lines.map((l) => ({
-      accountId: l.accountId,
-      amount: Money.of(l.unitPrice.toString())
-        .multiply(l.quantity.toString())
-        .toPersistence(),
-      taxCodeIds: l.taxCodeIds,
-    }));
-  }
 
   async createDraft(input: CreateBillInput): Promise<PurchaseBill> {
     const partner = await this.partners.findById(input.partnerId);
@@ -85,11 +57,11 @@ export class PurchaseBillsService {
         partnerId: input.partnerId,
       });
     }
-    const settlementId = await this.apControlId();
+    const settlementId = await findControlAccountId(this.prisma, AP_CONTROL_CODE);
     const totals = await this.docPosting.computeTotals(
       'PURCHASE',
       settlementId,
-      this.taxableLines(input.lines),
+      taxableLines(input.lines),
     );
     return this.prisma.client.purchaseBill.create({
       data: {
@@ -145,11 +117,11 @@ export class PurchaseBillsService {
           unitPrice: l.unitPrice.toString(),
           taxCodeIds: l.taxCodeIds,
         }));
-    const settlementId = await this.apControlId();
+    const settlementId = await findControlAccountId(this.prisma, AP_CONTROL_CODE);
     const totals = await this.docPosting.computeTotals(
       'PURCHASE',
       settlementId,
-      this.taxableLines(nextLines),
+      taxableLines(nextLines),
     );
     await this.prisma.client.$transaction(async (tx) => {
       await tx.purchaseBillLine.deleteMany({ where: { purchaseBillId: id } });
@@ -198,75 +170,40 @@ export class PurchaseBillsService {
     status?: DocumentStatus;
     limit?: number;
     offset?: number;
-  }): Promise<{
-    data: ReturnType<PurchaseBillsService['present']>[];
-    total: number;
-    limit: number;
-    offset: number;
-  }> {
-    const limit = q.limit ?? 50;
-    const offset = q.offset ?? 0;
-    const term = q.q?.trim() ?? '';
-    if (term.length >= MIN_QUERY_LENGTH) {
-      const filters: Prisma.Sql[] = [];
-      if (q.partnerId) filters.push(Prisma.sql`t.partner_id = ${q.partnerId}`);
-      if (q.status) filters.push(Prisma.sql`t.status::text = ${q.status}`);
-      const { ids, total } = await trigramSearch(this.prisma, {
-        table: 'purchase_bills',
-        alias: 't',
-        ownColumns: ['bill_ref', 'vendor_invoice_no', 'description'],
-        join: {
-          table: 'business_partners',
-          alias: 'p',
-          onColumn: 'partner_id',
-          columns: ['name'],
-        },
-        filters,
-        q: term,
-        limit,
-        offset,
-      });
-      const rows = ids.length
-        ? await this.prisma.client.purchaseBill.findMany({
-            where: { id: { in: ids } },
-          })
-        : [];
-      const byId = new Map(rows.map((r) => [r.id, r]));
-      const data = ids
-        .map((id) => byId.get(id))
-        .filter((r): r is PurchaseBill => r !== undefined)
-        .map((r) => this.present(r));
-      return { data, total, limit, offset };
-    }
+  }) {
+    const filters: Prisma.Sql[] = [];
+    if (q.partnerId) filters.push(Prisma.sql`t.partner_id = ${q.partnerId}`);
+    if (q.status) filters.push(Prisma.sql`t.status::text = ${q.status}`);
     const where = { partnerId: q.partnerId, status: q.status };
-    const [rows, total] = await Promise.all([
-      this.prisma.client.purchaseBill.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        take: limit,
-        skip: offset,
-      }),
-      this.prisma.client.purchaseBill.count({ where }),
-    ]);
-    return { data: rows.map((r) => this.present(r)), total, limit, offset };
+    return listPaginated({
+      q: q.q,
+      limit: q.limit,
+      offset: q.offset,
+      present: (r: PurchaseBill) => this.present(r),
+      search: ({ term, limit, offset }) =>
+        trigramSearch(this.prisma, {
+          table: 'purchase_bills',
+          alias: 't',
+          ownColumns: ['bill_ref', 'vendor_invoice_no', 'description'],
+          join: { table: 'business_partners', alias: 'p', onColumn: 'partner_id', columns: ['name'] },
+          filters,
+          q: term,
+          limit,
+          offset,
+        }),
+      hydrate: (ids) => this.prisma.client.purchaseBill.findMany({ where: { id: { in: ids } } }),
+      page: async ({ limit, offset }) => {
+        const [rows, total] = await Promise.all([
+          this.prisma.client.purchaseBill.findMany({ where, orderBy: { createdAt: 'desc' }, take: limit, skip: offset }),
+          this.prisma.client.purchaseBill.count({ where }),
+        ]);
+        return { rows, total };
+      },
+    });
   }
 
   async deleteDraft(id: string, deletedBy: string): Promise<void> {
-    const bill = await this.getById(id);
-    if (bill.status !== 'DRAFT') {
-      throw new ValidationFailedError('Only a DRAFT bill can be deleted', {
-        id,
-        status: bill.status,
-      });
-    }
-    const res = await this.prisma.client.purchaseBill.updateMany({
-      where: { id, status: 'DRAFT', deletedAt: null },
-      data: { deletedAt: new Date(), deletedBy },
-    });
-    if (res.count !== 1)
-      throw new ValidationFailedError('Only a DRAFT bill can be deleted', {
-        id,
-      });
+    return this.lifecycle.softDeleteDraft(this.prisma.client.purchaseBill, id, deletedBy, 'bill');
   }
 
   async post(id: string, postedBy: string): Promise<PurchaseBill> {
@@ -283,7 +220,7 @@ export class PurchaseBillsService {
         partnerId: bill.partnerId,
       });
     }
-    const settlementId = await this.apControlId();
+    const settlementId = await findControlAccountId(this.prisma, AP_CONTROL_CODE);
     const lines = (
       bill as PurchaseBill & {
         lines: {
@@ -306,7 +243,7 @@ export class PurchaseBillsService {
         createdBy: bill.createdBy,
         postedBy,
         documentType: 'BILL',
-        lines: this.taxableLines(lines),
+        lines: taxableLines(lines),
       },
       async (tx) => {
         const locked = await tx.$queryRaw<{ status: string }[]>`
@@ -353,47 +290,29 @@ export class PurchaseBillsService {
         { id },
       );
     }
-    const { original, periodId, fiscalYear, reversalDate } =
-      await this.posting.prepareReversal(bill.journalEntryId!);
-    try {
-      await this.prisma.client.$transaction(async (tx) => {
-        const locked = await tx.$queryRaw<
-          { status: string; amount_paid: string }[]
-        >`
+    await this.lifecycle.reverseWithGuard({
+      id,
+      journalEntryId: bill.journalEntryId!,
+      reversedBy: voidedBy,
+      alreadyReversedMessage: 'Bill journal entry was already reversed',
+      notPostedMessage: 'Bill is not posted',
+      lock: async (tx) => {
+        const rows = await tx.$queryRaw<{ status: string; amount_paid: string }[]>`
           SELECT status, amount_paid FROM purchase_bills WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
-        if (locked.length === 0 || locked[0].status !== 'POSTED') {
-          throw new ValidationFailedError('Bill is not posted', { id });
-        }
-        if (Number(locked[0].amount_paid) !== 0) {
+        return rows[0];
+      },
+      applyInTx: async (tx, locked) => {
+        if (Number(locked.amount_paid) !== 0) {
           throw new ConflictDomainError('Cannot void a bill with payments', {
             id,
           });
         }
-        await this.posting.reverseInTx(
-          tx,
-          original,
-          voidedBy,
-          periodId,
-          fiscalYear,
-          reversalDate,
-        );
         await tx.purchaseBill.update({
           where: { id },
           data: { status: 'VOID' },
         });
-      });
-    } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
-        throw new ValidationFailedError(
-          'Bill journal entry was already reversed',
-          { id },
-        );
-      }
-      throw err;
-    }
+      },
+    });
     return this.getById(id);
   }
 
@@ -411,40 +330,14 @@ export class PurchaseBillsService {
       : outstanding.isZero() || outstanding.isNegative()
         ? 'PAID'
         : 'PARTIAL';
-    // Nested lines (present on getById, absent on list) carry raw Decimals whose
-    // toJSON strips trailing zeros — serialize their money fields to 4dp too.
-    const lines = (
-      bill as PurchaseBill & {
-        lines?: {
-          quantity: Prisma.Decimal;
-          unitPrice: Prisma.Decimal;
-          amount: Prisma.Decimal;
-        }[];
-      }
-    ).lines;
+    const lines = (bill as PurchaseBill & { lines?: Record<string, unknown>[] }).lines;
     return {
-      ...bill,
-      subtotal: bill.subtotal.toFixed(4) as unknown as PurchaseBill['subtotal'],
-      taxTotal: bill.taxTotal.toFixed(4) as unknown as PurchaseBill['taxTotal'],
-      withholdingTotal: bill.withholdingTotal.toFixed(
-        4,
-      ) as unknown as PurchaseBill['withholdingTotal'],
-      total: bill.total.toFixed(4) as unknown as PurchaseBill['total'],
-      amountPaid: bill.amountPaid.toFixed(
-        4,
-      ) as unknown as PurchaseBill['amountPaid'],
+      ...serializeMoney(bill, ['subtotal', 'taxTotal', 'withholdingTotal', 'total', 'amountPaid']),
       ...(lines
-        ? {
-            lines: lines.map((l) => ({
-              ...l,
-              quantity: l.quantity.toFixed(4),
-              unitPrice: l.unitPrice.toFixed(4),
-              amount: l.amount.toFixed(4),
-            })),
-          }
+        ? { lines: lines.map((l) => serializeMoney(l, ['quantity', 'unitPrice', 'amount'])) }
         : {}),
       outstanding: outstanding.toPersistence(),
       paymentStatus,
-    };
+    } as PurchaseBill & { outstanding: string; paymentStatus: string };
   }
 }
