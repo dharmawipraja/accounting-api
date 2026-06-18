@@ -152,6 +152,10 @@ export class PostingService {
   ): Promise<void> {
     if (!opts.allowClosedYear) {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock_shared(${fiscalYear})`;
+      // Plain read (no FOR SHARE): the advisory lock above — not a row lock — is
+      // the serializer here, because the year_end_closings row may not exist
+      // before the first close. Do NOT "tidy" this into FOR SHARE; it would lock
+      // nothing for a never-closed year and reopen the year-close TOCTOU.
       const yr = await tx.$queryRaw<{ status: string }[]>`
         SELECT status FROM year_end_closings WHERE fiscal_year = ${fiscalYear}`;
       if (yr.length > 0 && yr[0].status === 'CLOSED') {
