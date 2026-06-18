@@ -235,9 +235,16 @@ Pagination is **not uniform** — check per endpoint:
   `{ data, total, limit, offset }` envelope (same as every other paginated list).
   Read items from `.data`. Both accept `?limit` / `?offset` query params.
 
+  > ⚠️ **Breaking change — FE client action required.** These two endpoints
+  > previously returned a **bare JSON array**; they now return the `{ data, … }`
+  > envelope. A frontend built before this change reads the response as an array
+  > directly and will break. **Fix:** unwrap `.data` for `GET /v1/ledger/accounts`
+  > and `GET /v1/tax/codes` (the other lists above were always enveloped). This is
+  > the only list-shape change; no other endpoint's response shape changed.
+
 - **Other bare-array list endpoints** — including `GET /v1/audit`, `GET /v1/ledger/periods`
   — return a **bare JSON array** (no envelope). `GET /v1/audit` still accepts
-  `limit`/`offset` query params (limit default 50, max 500), but its response body
+  `limit`/`offset` query params (limit default 50, max 200), but its response body
   is a bare array.
 
 ### Dates
