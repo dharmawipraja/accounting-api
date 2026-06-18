@@ -55,3 +55,10 @@ jobs:
       - uses: actions/checkout@v6
       - name: Build production image
         run: docker build -t accounting-api:ci .
+      - name: Scan image for vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: accounting-api:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
