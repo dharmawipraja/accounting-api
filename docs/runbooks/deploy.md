@@ -75,6 +75,15 @@ An optional observability overlay ships in `docker-compose.monitoring.yml` (Prom
 compose command and setting `GRAFANA_ADMIN_PASSWORD` in `.env`. Alert *delivery* still
 needs a real receiver wired in `monitoring/alertmanager.yml` (see the ops backlog).
 
+### Activate alert delivery (OPS-OBS-1)
+
+By default `monitoring/alertmanager.yml` has an inert `default` receiver — rules in
+`monitoring/alerts.yml` fire but reach no one. To deliver alerts, edit
+`monitoring/alertmanager.yml`: uncomment the `webhook_configs` (generic; point at a
+Slack incoming webhook, Discord, or your handler) **or** `slack_configs`, set the URL,
+and ensure `route.receiver` names it. Restart alertmanager. Send a test by triggering a
+rule (e.g. stop the api so `ApiDown` fires) and confirm it lands in the channel.
+
 ## Staging without a public domain
 Don't edit the committed `Caddyfile` (it would dirty the repo and risk shipping a
 non-prod TLS setting). Instead either:

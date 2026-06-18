@@ -3,6 +3,15 @@ route:
   group_by: ['alertname']
 receivers:
   - name: default
-    # Fill in a real receiver, e.g. email_configs / slack_configs / webhook_configs.
-    # webhook_configs:
-    #   - url: 'https://example.com/alerts'
+    # ALERTS REACH NO ONE until you configure a receiver below. To activate, paste
+    # your webhook URL and switch `route.receiver` to `notify` (or add the block here).
+    #
+    # webhook_configs:        # generic — works for a custom handler, or Slack/Discord
+    #   - url: 'https://hooks.slack.com/services/XXX/YYY/ZZZ'
+    #     send_resolved: true
+    #
+    # For native Slack formatting instead of a raw webhook:
+    # slack_configs:
+    #   - api_url: 'https://hooks.slack.com/services/XXX/YYY/ZZZ'
+    #     channel: '#alerts'
+    #     send_resolved: true
