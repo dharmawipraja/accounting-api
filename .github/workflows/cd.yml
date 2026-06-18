@@ -31,11 +31,29 @@ jobs:
             ghcr.io/${{ github.repository }}:${{ github.ref_name }}
             ghcr.io/${{ github.repository }}:${{ github.sha }}
             ghcr.io/${{ github.repository }}:latest
-  deploy:
+  # The `secrets` context cannot be used in a job-level `if:` (GitHub errors with
+  # "Unrecognized named-value: 'secrets'"). So read the secret into an output here,
+  # then gate the deploy job on it via the (allowed) `needs` context.
+  gate:
     needs: [push]
     runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.check.outputs.deploy }}
+    steps:
+      - id: check
+        env:
+          DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+        run: |
+          if [ -n "$DEPLOY_SSH_HOST" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+  deploy:
+    needs: [push, gate]
+    runs-on: ubuntu-latest
     # Inert until the deploy secrets exist. Add DEPLOY_SSH_HOST/USER/KEY to activate.
-    if: ${{ secrets.DEPLOY_SSH_HOST != '' }}
+    if: ${{ needs.gate.outputs.deploy == 'true' }}
     steps:
       - name: Deploy over SSH
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
