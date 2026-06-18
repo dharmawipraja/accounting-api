@@ -4,6 +4,7 @@ import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import {
   IsEnum,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -106,6 +107,18 @@ export class EnvVars {
   @IsString()
   @IsNotEmpty()
   REDIS_URL?: string;
+
+  @IsOptional()
+  @IsString()
+  CORS_ORIGIN?: string;
+
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  ENABLE_SWAGGER?: string;
+
+  @IsOptional()
+  @IsIn(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
+  LOG_LEVEL?: string;
 }
 
 export function validate(config: Record<string, unknown>): EnvVars {

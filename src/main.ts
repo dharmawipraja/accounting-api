@@ -6,6 +6,7 @@ import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { parseCorsOrigins } from './config/cors-origins';
 
 async function bootstrap(): Promise<void> {
   if (process.env.SENTRY_DSN) {
@@ -26,7 +27,7 @@ async function bootstrap(): Promise<void> {
   // request IPs reflect the real client, not the proxy's loopback address.
   app.set('trust proxy', 1);
   app.use(helmet());
-  app.enableCors({ origin: process.env.CORS_ORIGIN?.split(',') ?? false });
+  app.enableCors({ origin: parseCorsOrigins(process.env.CORS_ORIGIN) });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

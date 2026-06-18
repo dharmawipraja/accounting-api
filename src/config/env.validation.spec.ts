@@ -63,4 +63,23 @@ describe('env validation', () => {
   it('does NOT require REDIS_URL when NODE_ENV is test', () => {
     expect(() => validate(validEnv)).not.toThrow(); // test env, no REDIS_URL
   });
+
+  it('accepts valid optional ops vars', () => {
+    expect(() =>
+      validate({
+        ...validEnv,
+        CORS_ORIGIN: 'https://app.example.com',
+        ENABLE_SWAGGER: 'true',
+        LOG_LEVEL: 'debug',
+      }),
+    ).not.toThrow();
+  });
+
+  it('rejects a malformed ENABLE_SWAGGER', () => {
+    expect(() => validate({ ...validEnv, ENABLE_SWAGGER: 'yes' })).toThrow();
+  });
+
+  it('rejects an invalid LOG_LEVEL', () => {
+    expect(() => validate({ ...validEnv, LOG_LEVEL: 'verbose' })).toThrow();
+  });
 });
