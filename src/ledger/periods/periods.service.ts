@@ -77,15 +77,19 @@ export class PeriodsService implements OnModuleInit {
   }
 
   async close(id: string, closedBy: string): Promise<AccountingPeriod> {
-    const period = await this.prisma.client.accountingPeriod.findUnique({
-      where: { id },
-    });
-    if (!period) throw new NotFoundDomainError('Period not found', { id });
-    if (period.status === 'CLOSED')
-      throw new ConflictDomainError('Period already closed', { id });
-    return this.prisma.client.accountingPeriod.update({
-      where: { id },
-      data: { status: 'CLOSED', closedAt: new Date(), closedBy },
+    return this.prisma.client.$transaction(async (tx) => {
+      // FOR UPDATE the period row so a concurrent posting (which takes FOR SHARE
+      // + re-checks OPEN) serializes; re-check status under the lock.
+      const rows = await tx.$queryRaw<{ status: string }[]>`
+        SELECT status FROM accounting_periods WHERE id = ${id} FOR UPDATE`;
+      if (rows.length === 0)
+        throw new NotFoundDomainError('Period not found', { id });
+      if (rows[0].status === 'CLOSED')
+        throw new ConflictDomainError('Period already closed', { id });
+      return tx.accountingPeriod.update({
+        where: { id },
+        data: { status: 'CLOSED', closedAt: new Date(), closedBy },
+      });
     });
   }
 
