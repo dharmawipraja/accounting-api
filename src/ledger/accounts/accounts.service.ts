@@ -155,6 +155,9 @@ export class AccountsService implements OnModuleInit {
     }
 
     // Singleton roles (everything except CASH) may be held by at most one account.
+    // This CASH carve-out MUST stay in sync with the partial-unique index in
+    // migration 20260618000000_account_role (`WHERE role IS NOT NULL AND role <> 'CASH'`):
+    // if a second set-valued (non-singleton) role is ever added, update BOTH.
     if (input.role && input.role !== 'CASH') {
       const roleHolder = await this.prisma.client.account.findFirst({
         where: { role: input.role },
