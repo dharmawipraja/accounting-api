@@ -10,10 +10,10 @@ import {
   InvalidAccountError,
   NotFoundDomainError,
   SegregationOfDutiesError,
-  UnbalancedEntryError,
   ValidationFailedError,
 } from '../../common/errors/domain-errors';
 import { PostEntryInput, PostLineInput } from './posting.types';
+import { assertBalanced } from './assert-balanced';
 import { ExtendedPrismaClient } from '../../common/prisma/soft-delete.extension';
 import { MetricsService } from '../../metrics/metrics.service';
 import { RawTx } from '../../common/db/raw-tx';
@@ -52,7 +52,7 @@ export class PostingService {
     input: PostEntryInput,
     postedBy: string,
   ): Promise<{ periodId: string; fiscalYear: number }> {
-    this.assertBalanced(input.lines);
+    assertBalanced(input.lines);
     const settings = await this.company.get();
     if (
       settings.segregationOfDutiesEnabled &&
@@ -340,7 +340,7 @@ export class PostingService {
       debit: l.debit.toString(),
       credit: l.credit.toString(),
     }));
-    this.assertBalanced(lines);
+    assertBalanced(lines);
 
     const settings = await this.company.get();
     if (
@@ -426,33 +426,6 @@ export class PostingService {
     await tx.$executeRaw`UPDATE journal_sequences SET next_number = ${current + 1}, updated_at = now()
       WHERE fiscal_year = ${fiscalYear}`;
     return current;
-  }
-
-  private assertBalanced(lines: PostLineInput[]): void {
-    if (lines.length < 2) {
-      throw new UnbalancedEntryError('An entry needs at least two lines');
-    }
-    let debit = Money.zero();
-    let credit = Money.zero();
-    for (const l of lines) {
-      const d = Money.of(l.debit ?? '0');
-      const c = Money.of(l.credit ?? '0');
-      const dPos = !d.isZero();
-      const cPos = !c.isZero();
-      if (dPos === cPos) {
-        throw new UnbalancedEntryError(
-          'Each line must have exactly one of debit or credit > 0',
-        );
-      }
-      debit = debit.add(d);
-      credit = credit.add(c);
-    }
-    if (!debit.equals(credit)) {
-      throw new UnbalancedEntryError('Total debits must equal total credits', {
-        debit: debit.toString(),
-        credit: credit.toString(),
-      });
-    }
   }
 
   private async assertPostableAccounts(lines: PostLineInput[]): Promise<void> {
