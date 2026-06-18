@@ -107,6 +107,17 @@ Provide them via a custom backup image (recommended) or a bind-mount; the script
 clear WARN and keeps the local dump if a configured tool is missing. Restore: decrypt
 with `age -d -i <key> file.dump.age > file.dump`, then follow `backup-and-restore.md`.
 
+## CD pipeline (OPS-CI-1)
+
+`.github/workflows/cd.yml` runs on push to `main` (once the repo is on GitHub):
+1. **Publish** — builds and pushes the image to `ghcr.io/<owner>/<repo>:<sha>` and
+   `:latest` using the built-in `GITHUB_TOKEN` (no extra secret; ensure the repo's
+   Package settings allow Actions to write packages).
+2. **Deploy (optional, gated)** — runs ONLY if a `DEPLOY_SSH_HOST` secret is set. Add
+   `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_PATH` (repo dir on the
+   VM) as Actions secrets; the VM's compose must reference the GHCR image. Until then,
+   CD only publishes. Recommend branch protection requiring `verify` + `audit` first.
+
 ## Activating CI (SEC-8)
 The CI workflow (`.github/workflows/ci.yml`) is committed but dormant — the repo
 has no git remote, so nothing triggers it. To activate:
