@@ -6,13 +6,6 @@ import {
 } from '../ledger/balances/balances.service';
 import { truncateToUtcDay } from '../common/dates/utc-day';
 
-// IMPORTANT: the cash/bank accounts whose movement this statement explains.
-// If a new cash/bank account is added to the chart (e.g. a second bank), it MUST
-// be added here — otherwise its movements would wrongly appear as operating
-// adjustments and the statement would no longer reconcile to actual cash.
-// (A future `isCash` flag on Account would remove this by-code coupling.)
-const CASH_CODES = new Set(['1-1000', '1-1100']);
-
 export interface CashFlowLine {
   code: string;
   name: string;
@@ -31,7 +24,7 @@ export class CashFlowService {
   private cashBalance(rows: AccountBalanceRow[]): Money {
     // Kas/Bank are debit-normal assets: balance = debit − credit.
     return rows
-      .filter((r) => CASH_CODES.has(r.code))
+      .filter((r) => r.role === 'CASH')
       .reduce(
         (s, r) => s.add(Money.of(r.debit).subtract(Money.of(r.credit))),
         Money.zero(),
@@ -40,7 +33,7 @@ export class CashFlowService {
 
   async generate(from: Date, to: Date) {
     const movements = await this.balances.movementsBetween(from, to);
-    const nonCash = movements.filter((r) => !CASH_CODES.has(r.code));
+    const nonCash = movements.filter((r) => r.role !== 'CASH');
 
     // Net income = Σ cash-effect of P&L accounts.
     const pl = nonCash.filter(

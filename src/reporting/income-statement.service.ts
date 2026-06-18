@@ -6,8 +6,6 @@ import {
 } from '../ledger/balances/balances.service';
 import { ReportLine } from './report-line';
 
-const TAX_EXPENSE_CODE = '5-9000';
-
 @Injectable()
 export class IncomeStatementService {
   constructor(private readonly balances: BalancesService) {}
@@ -39,8 +37,8 @@ export class IncomeStatementService {
     );
     // Pull the income-tax-expense account out FIRST (whatever subtype it carries),
     // so it appears only on its own line and never double-counts in a subtype section.
-    const taxRows = all.filter((r) => r.code === TAX_EXPENSE_CODE);
-    const rows = all.filter((r) => r.code !== TAX_EXPENSE_CODE);
+    const taxRows = all.filter((r) => r.role === 'TAX_EXPENSE');
+    const rows = all.filter((r) => r.role !== 'TAX_EXPENSE');
     const revenue = this.section(rows, (r) => r.subtype === 'REVENUE');
     const cogs = this.section(rows, (r) => r.subtype === 'COGS');
     const grossProfit = revenue.total.subtract(cogs.total);
