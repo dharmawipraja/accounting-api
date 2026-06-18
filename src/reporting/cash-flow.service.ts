@@ -4,6 +4,7 @@ import {
   BalancesService,
   AccountBalanceRow,
 } from '../ledger/balances/balances.service';
+import { truncateToUtcDay } from '../common/dates/utc-day';
 
 // IMPORTANT: the cash/bank accounts whose movement this statement explains.
 // If a new cash/bank account is added to the chart (e.g. a second bank), it MUST
@@ -82,10 +83,7 @@ export class CashFlowService {
     const financing = sections.FINANCING.total;
     const netChange = operating.add(investing).add(financing);
 
-    const dayBefore = new Date(
-      Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()) -
-        86_400_000,
-    );
+    const dayBefore = new Date(truncateToUtcDay(from).getTime() - 86_400_000);
     const kasAwal = this.cashBalance(
       await this.balances.balancesAsOf(dayBefore),
     );

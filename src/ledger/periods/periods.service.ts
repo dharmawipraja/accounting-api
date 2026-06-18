@@ -6,6 +6,8 @@ import {
   ConflictDomainError,
   NotFoundDomainError,
 } from '../../common/errors/domain-errors';
+import { fiscalYearForDate } from '../../common/dates/fiscal-year';
+import { truncateToUtcDay } from '../../common/dates/utc-day';
 
 @Injectable()
 export class PeriodsService implements OnModuleInit {
@@ -19,11 +21,7 @@ export class PeriodsService implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     const settings = await this.company.get();
     const now = new Date();
-    const month = now.getUTCMonth() + 1;
-    const fiscalYear =
-      month >= settings.fiscalYearStartMonth
-        ? now.getUTCFullYear()
-        : now.getUTCFullYear() - 1;
+    const fiscalYear = fiscalYearForDate(now, settings.fiscalYearStartMonth);
     await this.generatePeriods(fiscalYear);
   }
 
@@ -68,9 +66,7 @@ export class PeriodsService implements OnModuleInit {
   async findOpenPeriodForDate(date: Date): Promise<AccountingPeriod | null> {
     // Truncate to UTC midnight so a date carrying a time-of-day still matches the
     // @db.Date bounds (startDate/endDate are stored at 00:00:00).
-    const d = new Date(
-      Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
-    );
+    const d = truncateToUtcDay(date);
     return this.prisma.client.accountingPeriod.findFirst({
       where: {
         status: 'OPEN',

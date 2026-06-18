@@ -5,6 +5,7 @@ import {
   AccountBalanceRow,
 } from '../ledger/balances/balances.service';
 import { CompanyService } from '../company/company.service';
+import { fiscalYearForDate } from '../common/dates/fiscal-year';
 
 export interface ReportLine {
   code: string;
@@ -58,11 +59,7 @@ export class BalanceSheetService {
 
   async generate(asOf: Date) {
     const settings = await this.company.get();
-    const month = asOf.getUTCMonth() + 1;
-    const fy =
-      month >= settings.fiscalYearStartMonth
-        ? asOf.getUTCFullYear()
-        : asOf.getUTCFullYear() - 1;
+    const fy = fiscalYearForDate(asOf, settings.fiscalYearStartMonth);
     const fyStart = new Date(
       Date.UTC(fy, settings.fiscalYearStartMonth - 1, 1),
     );

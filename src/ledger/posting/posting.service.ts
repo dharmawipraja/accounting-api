@@ -16,23 +16,9 @@ import {
 import { PostEntryInput, PostLineInput } from './posting.types';
 import { ExtendedPrismaClient } from '../../common/prisma/soft-delete.extension';
 import { MetricsService } from '../../metrics/metrics.service';
-
-/**
- * The subset of the interactive-tx client that {@link PostingService.nextNumber}
- * needs. Typed structurally (only the two raw-SQL methods) because the
- * soft-delete-extended client's `$transaction` callback `tx` is not nominally
- * assignable to `Prisma.TransactionClient`, but is structurally compatible here.
- */
-type RawTxClient = {
-  $executeRaw: (
-    query: TemplateStringsArray,
-    ...values: unknown[]
-  ) => Promise<number>;
-  $queryRaw: <T = unknown>(
-    query: TemplateStringsArray,
-    ...values: unknown[]
-  ) => Promise<T>;
-};
+import { RawTx } from '../../common/db/raw-tx';
+import { buildDocRef } from '../../common/db/doc-ref';
+import { fiscalYearForDate } from '../../common/dates/fiscal-year';
 
 /** The interactive-transaction view of the soft-delete-extended client — what the
  *  `$transaction(async (tx) => …)` callback receives. Shared so document services
@@ -387,12 +373,12 @@ export class PostingService {
 
   /** Human-readable posted-entry reference, e.g. JE/2026/000123. */
   private buildEntryRef(fiscalYear: number, entryNumber: number): string {
-    return `JE/${fiscalYear}/${String(entryNumber).padStart(6, '0')}`;
+    return buildDocRef('JE', fiscalYear, entryNumber);
   }
 
   /** Lock-and-increment the per-fiscal-year counter; gapless because it lives in the tx. */
   private async nextNumber(
-    tx: RawTxClient,
+    tx: RawTx,
     fiscalYear: number,
   ): Promise<number> {
     await tx.$executeRaw`INSERT INTO journal_sequences (fiscal_year, next_number, updated_at)
@@ -456,8 +442,6 @@ export class PostingService {
 
   /** Fiscal year that a date falls into, given the configured start month. */
   fiscalYearFor(date: Date, startMonth: number): number {
-    const y = date.getUTCFullYear();
-    const m = date.getUTCMonth() + 1;
-    return m >= startMonth ? y : y - 1;
+    return fiscalYearForDate(date, startMonth);
   }
 }

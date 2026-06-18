@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AccountsService } from '../accounts/accounts.service';
+import { truncateToUtcDay } from '../../common/dates/utc-day';
 
 export interface TrialBalanceRow {
   accountId: string;
@@ -58,9 +59,7 @@ export class BalancesService {
    * includes entries dated on that day (`je.date` is a `@db.Date`).
    */
   private toUtcDay(d: Date): Date {
-    return new Date(
-      Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
-    );
+    return truncateToUtcDay(d);
   }
 
   /** Grouped per-account debit/credit sums + metadata over a date predicate.

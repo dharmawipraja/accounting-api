@@ -4,6 +4,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { Money } from '../common/money/money';
 import { AccountsService } from '../ledger/accounts/accounts.service';
 import { BalancesService } from '../ledger/balances/balances.service';
+import { truncateToUtcDay } from '../common/dates/utc-day';
 
 interface LineRow {
   date: Date;
@@ -22,9 +23,7 @@ export class GeneralLedgerService {
   ) {}
 
   private day(d: Date): Date {
-    return new Date(
-      Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
-    );
+    return truncateToUtcDay(d);
   }
 
   async generate(accountId: string, from: Date, to: Date) {

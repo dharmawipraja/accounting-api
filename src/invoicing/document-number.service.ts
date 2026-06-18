@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { RawTx } from '../common/db/raw-tx';
+import { buildDocRef } from '../common/db/doc-ref';
 
 @Injectable()
 export class DocumentNumberService {
@@ -23,6 +24,6 @@ export class DocumentNumberService {
 
   /** e.g. INV/2026/000042 */
   buildRef(prefix: string, fiscalYear: number, number: number): string {
-    return `${prefix}/${fiscalYear}/${String(number).padStart(6, '0')}`;
+    return buildDocRef(prefix, fiscalYear, number);
   }
 }

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { Money } from '../common/money/money';
+import { truncateToUtcDay } from '../common/dates/utc-day';
 
 interface DocRow {
   id: string;
@@ -21,9 +22,7 @@ export class AgingService {
   constructor(private readonly prisma: PrismaService) {}
 
   private day(d: Date): Date {
-    return new Date(
-      Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
-    );
+    return truncateToUtcDay(d);
   }
 
   private bucketOf(daysPastDue: number): string {
