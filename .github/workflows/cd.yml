@@ -2,6 +2,10 @@ name: cd
 on:
   push:
     branches: [main]
+    # Docs-only commits shouldn't rebuild/republish the image (avoids churned :latest tags).
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
 concurrency:
   group: cd-${{ github.ref }}
   cancel-in-progress: false
