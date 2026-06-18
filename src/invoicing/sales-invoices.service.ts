@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { DocumentStatus, Prisma, SalesInvoice } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { Money } from '../common/money/money';
-import { PostingService } from '../ledger/posting/posting.service';
 import {
   ConflictDomainError,
   NotFoundDomainError,
@@ -16,7 +15,6 @@ import {
 import { listPaginated } from '../common/pagination/paginated';
 import { serializeMoney } from '../common/money/serialize-money';
 import { taxableLines, findControlAccountId, AR_CONTROL_CODE } from './document-helpers';
-import { mapUniqueViolation } from '../common/errors/map-unique-violation';
 import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
 
 export interface InvoiceLineInput {
@@ -47,7 +45,6 @@ export class SalesInvoicesService {
     private readonly prisma: PrismaService,
     private readonly partners: BusinessPartnersService,
     private readonly docPosting: DocumentPostingService,
-    private readonly posting: PostingService,
     private readonly lifecycle: DocumentLifecycleService,
   ) {}
 
