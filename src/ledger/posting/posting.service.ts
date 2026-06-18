@@ -101,6 +101,7 @@ export class PostingService {
     periodId: string,
     fiscalYear: number,
   ): Promise<JournalEntry> {
+    await this.assertPostablePeriodInTx(tx, periodId, fiscalYear);
     const entryNumber = await this.nextNumber(tx, fiscalYear);
     const entryRef = this.buildEntryRef(fiscalYear, entryNumber);
     const entry = await tx.journalEntry.create({
@@ -136,6 +137,38 @@ export class PostingService {
     // for a throughput metric.
     this.metrics.incLedgerEntriesPosted();
     return entry;
+  }
+
+  /** Authoritative in-transaction TOCTOU guard. Serializes against a concurrent
+   *  period/year close: shared advisory lock on the fiscal year (close holds the
+   *  exclusive one) + re-check year_end_closings; FOR SHARE on the period row
+   *  (periods.close takes the conflicting exclusive lock) + re-check OPEN. Must be
+   *  the FIRST statement in every posted-entry write path. */
+  private async assertPostablePeriodInTx(
+    tx: LedgerTx,
+    periodId: string,
+    fiscalYear: number,
+    opts: { allowClosedYear?: boolean } = {},
+  ): Promise<void> {
+    if (!opts.allowClosedYear) {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock_shared(${fiscalYear})`;
+      const yr = await tx.$queryRaw<{ status: string }[]>`
+        SELECT status FROM year_end_closings WHERE fiscal_year = ${fiscalYear}`;
+      if (yr.length > 0 && yr[0].status === 'CLOSED') {
+        throw new ClosedYearError(
+          'Fiscal year is closed; reopen it before posting',
+          { fiscalYear },
+        );
+      }
+    }
+    const p = await tx.$queryRaw<{ status: string }[]>`
+      SELECT status FROM accounting_periods WHERE id = ${periodId} FOR SHARE`;
+    if (p.length === 0 || p[0].status !== 'OPEN') {
+      throw new ValidationFailedError(
+        'No open accounting period contains this date',
+        { periodId },
+      );
+    }
   }
 
   async reverse(
@@ -354,6 +387,7 @@ export class PostingService {
           id: draftId,
         });
       }
+      await this.assertPostablePeriodInTx(tx, period.id, fiscalYear);
       const entryNumber = await this.nextNumber(tx, fiscalYear);
       const entryRef = this.buildEntryRef(fiscalYear, entryNumber);
       return tx.journalEntry.update({
