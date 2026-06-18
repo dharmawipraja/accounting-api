@@ -115,6 +115,68 @@
         ]
       }
     },
+    "/v1/auth/logout": {
+      "post": {
+        "operationId": "AuthController_logout_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogoutDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkFlagDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/v1/auth/logout-all": {
+      "post": {
+        "operationId": "AuthController_logoutAll_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkFlagDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
     "/v1/auth/me": {
       "get": {
         "operationId": "AuthController_me_v1",
@@ -230,17 +292,34 @@
     "/v1/ledger/accounts": {
       "get": {
         "operationId": "AccountsController_list_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "type": "number"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AccountResponseDto"
-                  }
+                  "$ref": "#/components/schemas/AccountListResponseDto"
                 }
               }
             }
@@ -624,6 +703,25 @@
         "operationId": "JournalController_list_v1",
         "parameters": [
           {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "type": "number"
+            }
+          },
+          {
             "name": "status",
             "required": false,
             "in": "query",
@@ -686,25 +784,6 @@
             "schema": {
               "maxLength": 100,
               "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minimum": 1,
-              "maximum": 200,
-              "type": "number"
-            }
-          },
-          {
-            "name": "offset",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minimum": 0,
-              "type": "number"
             }
           }
         ],
@@ -1015,17 +1094,34 @@
     "/v1/tax/codes": {
       "get": {
         "operationId": "TaxCodesController_list_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "type": "number"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/TaxCodeResponseDto"
-                  }
+                  "$ref": "#/components/schemas/TaxCodeListResponseDto"
                 }
               }
             }
@@ -1255,15 +1351,6 @@
         "operationId": "BusinessPartnersController_list_v1",
         "parameters": [
           {
-            "name": "q",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "maxLength": 100,
-              "type": "string"
-            }
-          },
-          {
             "name": "limit",
             "required": false,
             "in": "query",
@@ -1280,6 +1367,15 @@
             "schema": {
               "minimum": 0,
               "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
             }
           }
         ],
@@ -1483,15 +1579,6 @@
         "operationId": "SalesInvoicesController_list_v1",
         "parameters": [
           {
-            "name": "q",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "maxLength": 100,
-              "type": "string"
-            }
-          },
-          {
             "name": "limit",
             "required": false,
             "in": "query",
@@ -1508,6 +1595,15 @@
             "schema": {
               "minimum": 0,
               "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
             }
           },
           {
@@ -1796,15 +1892,6 @@
         "operationId": "PurchaseBillsController_list_v1",
         "parameters": [
           {
-            "name": "q",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "maxLength": 100,
-              "type": "string"
-            }
-          },
-          {
             "name": "limit",
             "required": false,
             "in": "query",
@@ -1821,6 +1908,15 @@
             "schema": {
               "minimum": 0,
               "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
             }
           },
           {
@@ -2109,15 +2205,6 @@
         "operationId": "PaymentsController_list_v1",
         "parameters": [
           {
-            "name": "q",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "maxLength": 100,
-              "type": "string"
-            }
-          },
-          {
             "name": "limit",
             "required": false,
             "in": "query",
@@ -2134,6 +2221,15 @@
             "schema": {
               "minimum": 0,
               "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
             }
           },
           {
@@ -2973,6 +3069,29 @@
           "refreshToken"
         ]
       },
+      "LogoutDto": {
+        "type": "object",
+        "properties": {
+          "refreshToken": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "refreshToken"
+        ]
+      },
+      "OkFlagDto": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
       "AuthenticatedUserDto": {
         "type": "object",
         "properties": {
@@ -2998,18 +3117,6 @@
           "id",
           "email",
           "role"
-        ]
-      },
-      "OkFlagDto": {
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "example": true
-          }
-        },
-        "required": [
-          "ok"
         ]
       },
       "CompanySettingsDto": {
@@ -3200,6 +3307,35 @@
           "currency",
           "createdAt",
           "updatedAt"
+        ]
+      },
+      "AccountListResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccountResponseDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "example": 28
+          },
+          "limit": {
+            "type": "number",
+            "example": 50
+          },
+          "offset": {
+            "type": "number",
+            "example": 0
+          }
+        },
+        "required": [
+          "data",
+          "total",
+          "limit",
+          "offset"
         ]
       },
       "AccountBalanceDto": {
@@ -3870,6 +4006,35 @@
           "isActive",
           "createdAt",
           "updatedAt"
+        ]
+      },
+      "TaxCodeListResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaxCodeResponseDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "example": 6
+          },
+          "limit": {
+            "type": "number",
+            "example": 50
+          },
+          "offset": {
+            "type": "number",
+            "example": 0
+          }
+        },
+        "required": [
+          "data",
+          "total",
+          "limit",
+          "offset"
         ]
       },
       "CreateTaxCodeDto": {

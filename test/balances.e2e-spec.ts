@@ -54,7 +54,7 @@ describe('Balances (e2e)', () => {
     });
     token = (await app.get(AuthService).login('v@x.com', 'secret123'))
       .accessToken;
-    const accounts = await app.get(AccountsService).list();
+    const { data: accounts } = await app.get(AccountsService).list();
     kasId = accounts.find((a) => a.code === '1-1000')!.id;
     modalId = accounts.find((a) => a.code === '3-1000')!.id;
     const posting = app.get(PostingService);

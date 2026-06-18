@@ -39,7 +39,7 @@ describe('Year-end close (e2e)', () => {
     await app.get(AccountsService).seedIfEmpty();
     await app.get(PeriodsService).generatePeriods(2026);
     await app.get(PeriodsService).generatePeriods(2027);
-    const accounts = await app.get(AccountsService).list();
+    const { data: accounts } = await app.get(AccountsService).list();
     acc = Object.fromEntries(accounts.map((a) => [a.code, a.id]));
     posting = app.get(PostingService);
     close = app.get(YearEndCloseService);

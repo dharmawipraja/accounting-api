@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { Account, AccountSubtype, AccountType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { listPaginated, Paginated } from '../../common/pagination/paginated';
 import {
   ConflictDomainError,
   NotFoundDomainError,
@@ -94,8 +95,28 @@ export class AccountsService implements OnModuleInit {
     }
   }
 
-  async list(): Promise<Account[]> {
-    return this.prisma.client.account.findMany({ orderBy: { code: 'asc' } });
+  async list(
+    q: {
+      limit?: number;
+      offset?: number;
+    } = {},
+  ): Promise<Paginated<Account>> {
+    return listPaginated({
+      limit: q.limit,
+      offset: q.offset,
+      present: (r: Account) => r,
+      page: async ({ limit, offset }) => {
+        const [rows, total] = await Promise.all([
+          this.prisma.client.account.findMany({
+            orderBy: { code: 'asc' },
+            take: limit,
+            skip: offset,
+          }),
+          this.prisma.client.account.count(),
+        ]);
+        return { rows, total };
+      },
+    });
   }
 
   async findById(id: string): Promise<Account> {

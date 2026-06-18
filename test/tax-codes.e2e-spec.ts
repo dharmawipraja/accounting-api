@@ -49,9 +49,9 @@ describe('TaxCodes (e2e)', () => {
     adminToken = (
       await app.get(AuthService).login('admin@tax.test', 'secret123')
     ).accessToken;
-    const accounts = await app.get(AccountsService).list();
-    ppnKeluaranId = accounts.find((a) => a.code === '2-1100')!.id;
-    kasId = accounts.find((a) => a.code === '1-1000')!.id;
+    const accountsPage = await app.get(AccountsService).list({});
+    ppnKeluaranId = accountsPage.data.find((a) => a.code === '2-1100')!.id;
+    kasId = accountsPage.data.find((a) => a.code === '1-1000')!.id;
   }, 120_000);
 
   afterAll(async () => {
@@ -66,7 +66,17 @@ describe('TaxCodes (e2e)', () => {
       .get('/v1/tax/codes')
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
-    const codes = res.body as { code: string }[];
+    const body = res.body as {
+      data: { code: string }[];
+      total: number;
+      limit: number;
+      offset: number;
+    };
+    expect(body.total).toBeGreaterThanOrEqual(0);
+    expect(body.limit).toBeGreaterThan(0);
+    expect(body.offset).toBe(0);
+    expect(Array.isArray(body.data)).toBe(true);
+    const codes = body.data;
     expect(codes).toHaveLength(6);
     expect(codes.map((c) => c.code).sort()).toEqual([
       'PPH23-PAY',
@@ -162,8 +172,7 @@ describe('TaxCodes (e2e)', () => {
       .get('/v1/tax/codes')
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
-    expect((list.body as { id: string }[]).some((c) => c.id === id)).toBe(
-      false,
-    );
+    const listBody = list.body as { data: { id: string }[] };
+    expect(listBody.data.some((c) => c.id === id)).toBe(false);
   });
 });

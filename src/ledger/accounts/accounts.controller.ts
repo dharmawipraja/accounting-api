@@ -18,6 +18,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AccountResponseDto } from './dto/account-response.dto';
+import { AccountListResponseDto } from './dto/account-list-response.dto';
 import { AccountBalanceDto } from '../balances/dto/balance-response.dto';
 import { Account } from '@prisma/client';
 import { AccountsService } from './accounts.service';
@@ -29,6 +30,7 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { BalancesService } from '../balances/balances.service';
 import { AsOfQueryDto } from '../../common/dto/as-of-query.dto';
+import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 
 @ApiTags('Accounts')
 @ApiBearerAuth()
@@ -40,9 +42,9 @@ export class AccountsController {
   ) {}
 
   @Get()
-  @ApiOkResponse({ type: AccountResponseDto, isArray: true })
-  list(): Promise<Account[]> {
-    return this.accounts.list();
+  @ApiOkResponse({ type: AccountListResponseDto })
+  list(@Query() q: PaginationQueryDto) {
+    return this.accounts.list(q);
   }
 
   @Get(':id/balance')

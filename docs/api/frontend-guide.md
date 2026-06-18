@@ -231,10 +231,11 @@ Pagination is **not uniform** — check per endpoint:
 
   Read items from the `.data` array on these responses.
 
-- **`GET /v1/ledger/accounts` and `GET /v1/tax/codes` return bare arrays** (bounded
-  reference data — no pagination needed; load them wholesale).
+- **`GET /v1/ledger/accounts` and `GET /v1/tax/codes`** now return the standard
+  `{ data, total, limit, offset }` envelope (same as every other paginated list).
+  Read items from `.data`. Both accept `?limit` / `?offset` query params.
 
-- **All other list endpoints** — including `GET /v1/audit`, `GET /v1/ledger/periods`
+- **Other bare-array list endpoints** — including `GET /v1/audit`, `GET /v1/ledger/periods`
   — return a **bare JSON array** (no envelope). `GET /v1/audit` still accepts
   `limit`/`offset` query params (limit default 50, max 500), but its response body
   is a bare array.
@@ -458,7 +459,7 @@ no auth.
 - `GET    /metrics` · public · Prometheus metrics (may be token-gated by ops)
 
 ### Ledger — accounts
-- `GET    /v1/ledger/accounts` · any · list chart of accounts (**bare array** — bounded reference data)
+- `GET    /v1/ledger/accounts` · any · list chart of accounts (**envelope** `{data,total,limit,offset}`; supports `?limit`/`?offset`)
 - `GET    /v1/ledger/accounts/:id` · any · get one account
 - `GET    /v1/ledger/accounts/:id/balance` · any · account balance (`?asOf=`)
 - `POST   /v1/ledger/accounts` · ACCOUNTANT+ · create account
@@ -525,7 +526,7 @@ no auth.
 - `DELETE /v1/partners/:id` · ADMIN · delete
 
 ### Tax
-- `GET    /v1/tax/codes` · any · list tax codes (**bare array** — bounded reference data)
+- `GET    /v1/tax/codes` · any · list tax codes (**envelope** `{data,total,limit,offset}`; supports `?limit`/`?offset`)
 - `GET    /v1/tax/codes/:id` · any · get one
 - `POST   /v1/tax/codes` · ACCOUNTANT+ · create
 - `PATCH  /v1/tax/codes/:id` · ACCOUNTANT+ · update
@@ -548,18 +549,18 @@ no auth.
 ### Response schema quick-map
 
 Each endpoint's 2xx body resolves to a named schema in `openapi.json` — look up the
-fields there; this is just the name to find. The five enveloped list endpoints wrap
+fields there; this is just the name to find. The seven enveloped list endpoints wrap
 their items in `{ data, total, limit, offset }`; bare-array endpoints return the item
-schema directly in an array. Accounts and tax codes return bare arrays.
+schema directly in an array.
 
 | Domain | Response schema(s) |
 |---|---|
 | Auth | `TokenPairDto` (login/refresh) · `AuthenticatedUserDto` (`/auth/me`) · `OkFlagDto` (`/auth/admin-only`) |
 | Health / ops | `HealthStatusDto` · `ReadinessStatusDto` · `/metrics` → `text/plain` (not JSON) |
-| Accounts | `AccountResponseDto` (bare array on list) · balance → `AccountBalanceDto` · trial balance → `TrialBalanceDto` |
+| Accounts | list → `AccountListResponseDto` (envelope) · single → `AccountResponseDto` · balance → `AccountBalanceDto` · trial balance → `TrialBalanceDto` |
 | Journal | `JournalEntryResponseDto` (incl. `JournalLineResponseDto[]`) · list → `JournalEntryListResponseDto` (envelope; items `JournalEntryListItemDto`) · opening-balances → `JournalEntryResponseDto` |
 | Periods | `FiscalPeriodResponseDto` (bare array on list) |
-| Tax | `TaxCodeResponseDto` (bare array on list) · calculate → `TaxCalculationDto` (`TaxBreakdownRowDto[]` + `CalculatedLineDto[]`) |
+| Tax | list → `TaxCodeListResponseDto` (envelope) · single → `TaxCodeResponseDto` · calculate → `TaxCalculationDto` (`TaxBreakdownRowDto[]` + `CalculatedLineDto[]`) |
 | Partners | `BusinessPartnerResponseDto` (single) · list → `BusinessPartnerListResponseDto` (envelope) |
 | Sales invoices | `SalesInvoiceResponseDto` (single; incl. optional `SalesInvoiceLineResponseDto[]`) · list → `SalesInvoiceListResponseDto` (envelope) |
 | Purchase bills | `PurchaseBillResponseDto` (single; incl. optional `PurchaseBillLineResponseDto[]`) · list → `PurchaseBillListResponseDto` (envelope) |
@@ -612,7 +613,8 @@ Screens → the endpoints they consume:
   every call to a covered write endpoint (invoice/bill/payment create/post/void,
   year-end close, journal/opening-balances). Store the key before the call so you
   can replay it on retry without changing the body.
-- **Pagination helpers** — build one reusable envelope reader for the five enveloped
-  lists (`journal-entries`, `partners`, `sales-invoices`, `purchase-bills`,
-  `payments`); treat all other lists (`accounts`, `tax-codes`, `periods`, `audit`)
-  as bare arrays.
+- **Pagination helpers** — build one reusable envelope reader for the seven enveloped
+  lists (`accounts`, `tax-codes`, `journal-entries`, `partners`, `sales-invoices`,
+  `purchase-bills`, `payments`); treat remaining bare-array lists (`periods`, `audit`)
+  as plain arrays. **BREAKING (from prior guide):** `accounts` and `tax-codes` now
+  return the envelope — unwrap `.data` instead of using the response directly as an array.

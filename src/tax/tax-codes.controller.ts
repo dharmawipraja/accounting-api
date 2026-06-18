@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -18,6 +19,7 @@ import {
 } from '@nestjs/swagger';
 import { TaxCode } from '@prisma/client';
 import { TaxCodeResponseDto } from './dto/tax-code-response.dto';
+import { TaxCodeListResponseDto } from './dto/tax-code-list-response.dto';
 import { TaxCodesService } from './tax-codes.service';
 import { CreateTaxCodeDto } from './dto/create-tax-code.dto';
 import { UpdateTaxCodeDto } from './dto/update-tax-code.dto';
@@ -25,6 +27,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../auth/role.enum';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 
 @ApiTags('Tax')
 @ApiBearerAuth()
@@ -32,10 +35,10 @@ import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 export class TaxCodesController {
   constructor(private readonly taxCodes: TaxCodesService) {}
 
-  @ApiOkResponse({ type: TaxCodeResponseDto, isArray: true })
+  @ApiOkResponse({ type: TaxCodeListResponseDto })
   @Get()
-  list(): Promise<TaxCode[]> {
-    return this.taxCodes.list();
+  list(@Query() q: PaginationQueryDto) {
+    return this.taxCodes.list(q);
   }
 
   @ApiOkResponse({ type: TaxCodeResponseDto })

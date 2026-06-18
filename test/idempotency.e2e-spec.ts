@@ -80,10 +80,10 @@ describe('Idempotency (e2e)', () => {
     acct = (await app.get(AuthService).login('acct@idem.test', 'secret123'))
       .accessToken;
     acc = Object.fromEntries(
-      (await app.get(AccountsService).list()).map((a) => [a.code, a.id]),
+      (await app.get(AccountsService).list()).data.map((a) => [a.code, a.id]),
     );
     code = Object.fromEntries(
-      (await app.get(TaxCodesService).list()).map((c) => [c.code, c.id]),
+      (await app.get(TaxCodesService).list()).data.map((c) => [c.code, c.id]),
     );
   }, 120_000);
 

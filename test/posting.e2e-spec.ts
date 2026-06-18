@@ -36,7 +36,7 @@ describe('PostingService (e2e)', () => {
     await app.get(AccountsService).seedIfEmpty();
     await app.get(PeriodsService).generatePeriods(2026);
     posting = app.get(PostingService);
-    const accounts = await app.get(AccountsService).list();
+    const { data: accounts } = await app.get(AccountsService).list();
     kasId = accounts.find((a) => a.code === '1-1000')!.id;
     modalId = accounts.find((a) => a.code === '3-1000')!.id;
   }, 120_000);
@@ -180,7 +180,7 @@ describe('PostingService (e2e)', () => {
   });
 
   it('rejects posting to a non-postable header account', async () => {
-    const accounts = await app.get(AccountsService).list();
+    const { data: accounts } = await app.get(AccountsService).list();
     const header = accounts.find((a) => a.code === '1-0000')!; // Aset header, isPostable=false
     await expect(
       posting.post(

@@ -53,7 +53,7 @@ describe('Reporting general ledger (e2e)', () => {
     });
     token = (await app.get(AuthService).login('v@ledger.test', 'secret123'))
       .accessToken;
-    const accounts = await app.get(AccountsService).list();
+    const { data: accounts } = await app.get(AccountsService).list();
     acc = Object.fromEntries(accounts.map((a) => [a.code, a.id]));
     kasId = acc['1-1000'];
 

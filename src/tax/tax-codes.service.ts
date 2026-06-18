@@ -2,6 +2,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { Prisma, TaxCode, TaxKind } from '@prisma/client';
 import { Decimal } from 'decimal.js';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { listPaginated, Paginated } from '../common/pagination/paginated';
 import { AccountsService } from '../ledger/accounts/accounts.service';
 import {
   ConflictDomainError,
@@ -114,10 +115,27 @@ export class TaxCodesService implements OnModuleInit {
     }
   }
 
-  async list(): Promise<TaxCode[]> {
-    return this.prisma.client.taxCode.findMany({
-      where: { deletedAt: null },
-      orderBy: { code: 'asc' },
+  async list(
+    q: {
+      limit?: number;
+      offset?: number;
+    } = {},
+  ): Promise<Paginated<TaxCode>> {
+    return listPaginated({
+      limit: q.limit,
+      offset: q.offset,
+      present: (r: TaxCode) => r,
+      page: async ({ limit, offset }) => {
+        const [rows, total] = await Promise.all([
+          this.prisma.client.taxCode.findMany({
+            orderBy: { code: 'asc' },
+            take: limit,
+            skip: offset,
+          }),
+          this.prisma.client.taxCode.count(),
+        ]);
+        return { rows, total };
+      },
     });
   }
 
@@ -161,7 +179,7 @@ export class TaxCodesService implements OnModuleInit {
   async seedIfEmpty(): Promise<void> {
     const count = await this.prisma.client.taxCode.count();
     if (count > 0) return;
-    const allAccounts = await this.accounts.list();
+    const { data: allAccounts } = await this.accounts.list();
     const idByCode = new Map(allAccounts.map((a) => [a.code, a.id]));
     try {
       await this.prisma.client.$transaction(async (tx) => {

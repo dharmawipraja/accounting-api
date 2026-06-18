@@ -53,7 +53,7 @@ describe('JournalEntries (e2e)', () => {
     await app.get(PeriodsService).generatePeriods(2026);
 
     // Resolve account IDs
-    const accounts = await app.get(AccountsService).list();
+    const { data: accounts } = await app.get(AccountsService).list();
     kasId = accounts.find((a) => a.code === '1-1000')!.id;
     modalId = accounts.find((a) => a.code === '3-1000')!.id;
     saldoAwalId = accounts.find((a) => a.code === '3-9000')!.id;

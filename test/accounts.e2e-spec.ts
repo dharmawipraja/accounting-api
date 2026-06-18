@@ -60,12 +60,20 @@ describe('Accounts (e2e)', () => {
       .get('/v1/ledger/accounts')
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
-    const codes = (res.body as { code: string }[]).map((a) => a.code);
+    const body = res.body as {
+      data: { code: string; parentId: string | null }[];
+      total: number;
+      limit: number;
+      offset: number;
+    };
+    expect(body.total).toBeGreaterThanOrEqual(0);
+    expect(body.limit).toBeGreaterThan(0);
+    expect(body.offset).toBe(0);
+    expect(Array.isArray(body.data)).toBe(true);
+    const codes = body.data.map((a) => a.code);
     expect(codes).toContain('1-1000'); // Kas
     expect(codes).toContain('3-9000'); // Saldo Awal
-    const kas = (res.body as { code: string; parentId: string | null }[]).find(
-      (a) => a.code === '1-1000',
-    );
+    const kas = body.data.find((a) => a.code === '1-1000');
     expect(kas?.parentId).toBeTruthy();
   });
 

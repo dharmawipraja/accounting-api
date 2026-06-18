@@ -40,7 +40,7 @@ describe('Year-end close — reversal year-lock (e2e)', () => {
     await app.get(CompanyService).seedIfEmpty();
     await app.get(AccountsService).seedIfEmpty();
     await app.get(PeriodsService).generatePeriods(2026);
-    const accounts = await app.get(AccountsService).list();
+    const { data: accounts } = await app.get(AccountsService).list();
     acc = Object.fromEntries(accounts.map((a) => [a.code, a.id]));
     posting = app.get(PostingService);
     close = app.get(YearEndCloseService);

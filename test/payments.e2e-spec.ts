@@ -103,9 +103,9 @@ describe('Payments (e2e)', () => {
       .accessToken;
     appr = (await app.get(AuthService).login('appr@pay.test', 'secret123'))
       .accessToken;
-    const accounts = await app.get(AccountsService).list();
+    const { data: accounts } = await app.get(AccountsService).list();
     acc = Object.fromEntries(accounts.map((a) => [a.code, a.id]));
-    const codes = await app.get(TaxCodesService).list();
+    const { data: codes } = await app.get(TaxCodesService).list();
     code = Object.fromEntries(codes.map((c) => [c.code, c.id]));
   }, 120_000);
 

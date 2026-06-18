@@ -52,7 +52,7 @@ describe('Reporting cash flow (e2e)', () => {
     });
     token = (await app.get(AuthService).login('v@cf.test', 'secret123'))
       .accessToken;
-    const accounts = await app.get(AccountsService).list();
+    const { data: accounts } = await app.get(AccountsService).list();
     acc = Object.fromEntries(accounts.map((a) => [a.code, a.id]));
 
     const posting = app.get(PostingService);
