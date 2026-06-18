@@ -83,6 +83,21 @@ non-prod TLS setting). Instead either:
 - **Throwaway internal TLS:** copy the Caddyfile, append `tls internal`, and mount the copy
   via a one-off override file — e.g. `cp Caddyfile /tmp/Caddyfile.staging && printf '\n\ttls internal\n' >> /tmp/Caddyfile.staging`, then a small `docker-compose.staging.yml` that remaps `caddy.volumes` to `/tmp/Caddyfile.staging:/etc/caddy/Caddyfile:ro`, and add `-f docker-compose.staging.yml` to the up command. `DOMAIN=localhost`, then `curl -k https://localhost/health`.
 
+### Activate offsite + encrypted backups (OPS-DB-1)
+
+`scripts/backup.sh` writes a local `pg_dump` by default. To also encrypt and ship
+offsite, set env on the `backup` service (all optional; unset = local-only, as today):
+- `BACKUP_AGE_RECIPIENT` — an [age](https://age-encryption.org) recipient public key;
+  the dump is encrypted to `*.dump.age` before leaving the host.
+- **S3:** `BACKUP_S3_BUCKET` (e.g. `my-bucket/accounting`) + AWS creds (`AWS_ACCESS_KEY_ID`/
+  `AWS_SECRET_ACCESS_KEY`/`AWS_DEFAULT_REGION`) for `aws`, or an `rclone` remote config.
+- **rsync:** `BACKUP_RSYNC_TARGET` (e.g. `user@host:/backups/`) with SSH access.
+
+The default `backup` image (`postgres:16`) does NOT include `age`/`aws`/`rclone`/`rsync`.
+Provide them via a custom backup image (recommended) or a bind-mount; the script logs a
+clear WARN and keeps the local dump if a configured tool is missing. Restore: decrypt
+with `age -d -i <key> file.dump.age > file.dump`, then follow `backup-and-restore.md`.
+
 ## Activating CI (SEC-8)
 The CI workflow (`.github/workflows/ci.yml`) is committed but dormant — the repo
 has no git remote, so nothing triggers it. To activate:
