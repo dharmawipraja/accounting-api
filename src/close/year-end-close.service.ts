@@ -226,6 +226,7 @@ export class YearEndCloseService {
           periodId,
           fy,
           reversalDate,
+          { allowClosedYear: true },
         );
         await tx.yearEndClosing.update({
           where: { fiscalYear },

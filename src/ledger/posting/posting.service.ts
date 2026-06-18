@@ -281,7 +281,9 @@ export class PostingService {
     periodId: string,
     fiscalYear: number,
     reversalDate: Date,
+    opts: { allowClosedYear?: boolean } = {},
   ): Promise<JournalEntry> {
+    await this.assertPostablePeriodInTx(tx, periodId, fiscalYear, opts);
     const entryNumber = await this.nextNumber(tx, fiscalYear);
     const entryRef = this.buildEntryRef(fiscalYear, entryNumber);
     const reversal = await tx.journalEntry.create({

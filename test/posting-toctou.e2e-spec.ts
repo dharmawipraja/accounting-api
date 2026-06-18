@@ -96,4 +96,28 @@ describe('PostingService TOCTOU guard (e2e)', () => {
       ),
     ).rejects.toBeInstanceOf(ClosedYearError);
   });
+
+  it('in-tx guard rejects reverseInTx into a CLOSED year (allowClosedYear=false)', async () => {
+    // Post a real balance-sheet entry in 2028, then close 2028 (no P&L → CLOSED, no closing entry).
+    await app.get(PeriodsService).generatePeriods(2028);
+    const entry = await posting.post(balanced(new Date('2028-03-15')), 'p');
+    await app.get(YearEndCloseService).close(2028, 'admin');
+    // prepareReversal with allowClosedYear bypasses ONLY the pre-tx check and returns the real original.
+    const prepared = await posting.prepareReversal(entry.id, undefined, {
+      allowClosedYear: true,
+    });
+    // Calling reverseInTx WITHOUT allowClosedYear must be rejected by the in-tx guard.
+    await expect(
+      prisma.client.$transaction((tx) =>
+        posting.reverseInTx(
+          tx,
+          prepared.original,
+          'p',
+          prepared.periodId,
+          prepared.fiscalYear,
+          prepared.reversalDate,
+        ),
+      ),
+    ).rejects.toBeInstanceOf(ClosedYearError);
+  });
 });
