@@ -6,12 +6,11 @@ import {
   Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import {
-  trigramSearch,
-  MIN_QUERY_LENGTH,
-} from '../../common/search/trigram-search';
+import { trigramSearch } from '../../common/search/trigram-search';
+import { listPaginated } from '../../common/pagination/paginated';
 import { PostingService } from '../posting/posting.service';
 import { AccountsService } from '../accounts/accounts.service';
+import { DocumentLifecycleService } from '../document-lifecycle.service';
 import { PostLineInput } from '../posting/posting.types';
 import { Money } from '../../common/money/money';
 import { OPENING_BALANCE_EQUITY_CODE } from '../accounts/chart-of-accounts.seed';
@@ -58,6 +57,7 @@ export class JournalService {
     private readonly prisma: PrismaService,
     private readonly posting: PostingService,
     private readonly accounts: AccountsService,
+    private readonly lifecycle: DocumentLifecycleService,
   ) {}
 
   async createDraft(input: DraftInput): Promise<JournalEntry> {
@@ -92,24 +92,12 @@ export class JournalService {
   }
 
   async deleteDraft(id: string, deletedBy: string): Promise<void> {
-    const entry = await this.getById(id);
-    if (entry.status !== 'DRAFT') {
-      throw new ValidationFailedError('Only a DRAFT entry can be deleted', {
-        id,
-        status: entry.status,
-      });
-    }
-    // Conditional soft-delete: only if it is STILL a draft, so a post racing in
-    // between the check above and here cannot have a POSTED entry soft-deleted.
-    const res = await this.prisma.client.journalEntry.updateMany({
-      where: { id, status: 'DRAFT', deletedAt: null },
-      data: { deletedAt: new Date(), deletedBy },
-    });
-    if (res.count !== 1) {
-      throw new ValidationFailedError('Only a DRAFT entry can be deleted', {
-        id,
-      });
-    }
+    return this.lifecycle.softDeleteDraft(
+      this.prisma.client.journalEntry,
+      id,
+      deletedBy,
+      'entry',
+    );
   }
 
   async postDraft(id: string, postedBy: string): Promise<JournalEntry> {
@@ -193,42 +181,6 @@ export class JournalService {
     limit: number;
     offset: number;
   }> {
-    const term = filter.q?.trim() ?? '';
-    if (term.length >= MIN_QUERY_LENGTH) {
-      const filters: Prisma.Sql[] = [];
-      if (filter.status)
-        filters.push(Prisma.sql`t.status::text = ${filter.status}`);
-      if (filter.sourceType)
-        filters.push(Prisma.sql`t.source_type::text = ${filter.sourceType}`);
-      if (filter.fiscalYear)
-        filters.push(Prisma.sql`t.fiscal_year = ${filter.fiscalYear}`);
-      if (filter.from) filters.push(Prisma.sql`t.date >= ${filter.from}`);
-      if (filter.to) filters.push(Prisma.sql`t.date <= ${filter.to}`);
-      const { ids, total } = await trigramSearch(this.prisma, {
-        table: 'journal_entries',
-        alias: 't',
-        ownColumns: ['entry_ref', 'description'],
-        filters,
-        q: term,
-        limit: filter.limit,
-        offset: filter.offset,
-      });
-      const rows = ids.length
-        ? await this.prisma.client.journalEntry.findMany({
-            where: { id: { in: ids } },
-            include: { lines: { select: { debit: true } } },
-          })
-        : [];
-      const byId = new Map(rows.map((r) => [r.id, r]));
-      const data = ids
-        .map((id) => byId.get(id))
-        .filter(
-          (r): r is NonNullable<ReturnType<(typeof byId)['get']>> =>
-            r !== undefined,
-        )
-        .map((r) => this.present(r));
-      return { data, total, limit: filter.limit, offset: filter.offset };
-    }
     const where: Prisma.JournalEntryWhereInput = {
       status: filter.status,
       sourceType: filter.sourceType,
@@ -238,22 +190,49 @@ export class JournalService {
           ? { gte: filter.from, lte: filter.to }
           : undefined,
     };
-    const [rows, total] = await Promise.all([
-      this.prisma.client.journalEntry.findMany({
-        where,
-        include: { lines: { select: { debit: true } } },
-        orderBy: [{ date: 'desc' }, { entryNumber: 'desc' }],
-        take: filter.limit,
-        skip: filter.offset,
-      }),
-      this.prisma.client.journalEntry.count({ where }),
-    ]);
-    return {
-      data: rows.map((r) => this.present(r)),
-      total,
+    return listPaginated({
+      q: filter.q,
       limit: filter.limit,
       offset: filter.offset,
-    };
+      present: (r: JournalEntry & { lines: { debit: Prisma.Decimal }[] }) =>
+        this.present(r),
+      search: ({ term, limit, offset }) => {
+        const filters: Prisma.Sql[] = [];
+        if (filter.status)
+          filters.push(Prisma.sql`t.status::text = ${filter.status}`);
+        if (filter.sourceType)
+          filters.push(Prisma.sql`t.source_type::text = ${filter.sourceType}`);
+        if (filter.fiscalYear)
+          filters.push(Prisma.sql`t.fiscal_year = ${filter.fiscalYear}`);
+        if (filter.from) filters.push(Prisma.sql`t.date >= ${filter.from}`);
+        if (filter.to) filters.push(Prisma.sql`t.date <= ${filter.to}`);
+        return trigramSearch(this.prisma, {
+          table: 'journal_entries',
+          alias: 't',
+          ownColumns: ['entry_ref', 'description'],
+          filters,
+          q: term,
+          limit,
+          offset,
+        });
+      },
+      hydrate: (ids) =>
+        this.prisma.client.journalEntry.findMany({
+          where: { id: { in: ids } },
+          include: { lines: { select: { debit: true } } },
+        }),
+      page: ({ limit, offset }) =>
+        Promise.all([
+          this.prisma.client.journalEntry.findMany({
+            where,
+            include: { lines: { select: { debit: true } } },
+            orderBy: [{ date: 'desc' }, { entryNumber: 'desc' }],
+            take: limit,
+            skip: offset,
+          }),
+          this.prisma.client.journalEntry.count({ where }),
+        ]).then(([rows, total]) => ({ rows, total })),
+    });
   }
 
   private present(
