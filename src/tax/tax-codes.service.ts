@@ -172,7 +172,7 @@ export class TaxCodesService implements OnModuleInit {
   async seedIfEmpty(): Promise<void> {
     const count = await this.prisma.client.taxCode.count();
     if (count > 0) return;
-    const { data: allAccounts } = await this.accounts.list();
+    const allAccounts = await this.accounts.listAll();
     const idByCode = new Map(allAccounts.map((a) => [a.code, a.id]));
     try {
       await this.prisma.client.$transaction(async (tx) => {

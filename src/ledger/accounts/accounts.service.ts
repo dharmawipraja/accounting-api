@@ -120,6 +120,11 @@ export class AccountsService implements OnModuleInit {
     });
   }
 
+  /** Full chart of accounts (unpaginated) — for internal lookups that scan all accounts. */
+  async listAll(): Promise<Account[]> {
+    return this.prisma.client.account.findMany({ orderBy: { code: 'asc' } });
+  }
+
   async findById(id: string): Promise<Account> {
     const account = await this.prisma.client.account.findFirst({
       where: { id },

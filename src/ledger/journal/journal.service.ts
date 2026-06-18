@@ -142,7 +142,7 @@ export class JournalService {
       credit = credit.add(Money.of(b.credit ?? '0'));
     }
 
-    const equity = (await this.accounts.list()).data.find(
+    const equity = (await this.accounts.listAll()).find(
       (a) => a.code === OPENING_BALANCE_EQUITY_CODE,
     );
     if (!equity) {
