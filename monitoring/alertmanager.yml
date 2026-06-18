@@ -3,8 +3,8 @@ route:
   group_by: ['alertname']
 receivers:
   - name: default
-    # ALERTS REACH NO ONE until you configure a receiver below. To activate, paste
-    # your webhook URL and switch `route.receiver` to `notify` (or add the block here).
+    # ALERTS REACH NO ONE until you configure a receiver below. To activate,
+    # uncomment ONE block below and set its URL — `route.receiver` already points here.
     #
     # webhook_configs:        # generic — works for a custom handler, or Slack/Discord
     #   - url: 'https://hooks.slack.com/services/XXX/YYY/ZZZ'
