@@ -1,15 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { BusinessPartner, Prisma } from '@prisma/client';
+import { BusinessPartner } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import {
   ConflictDomainError,
   NotFoundDomainError,
   ValidationFailedError,
 } from '../common/errors/domain-errors';
-import {
-  trigramSearch,
-  MIN_QUERY_LENGTH,
-} from '../common/search/trigram-search';
+import { mapUniqueViolation } from '../common/errors/map-unique-violation';
+import { trigramSearch } from '../common/search/trigram-search';
+import { listPaginated, Paginated } from '../common/pagination/paginated';
 
 export interface CreatePartnerInput {
   code: string;
@@ -60,59 +59,48 @@ export class BusinessPartnersService {
         },
       });
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      )
-        throw new ConflictDomainError('Partner code already exists', {
-          code: input.code,
-        });
-      throw err;
+      mapUniqueViolation(err, 'Partner code already exists', {
+        code: input.code,
+      });
     }
   }
 
-  async listPage(q: { q?: string; limit?: number; offset?: number }): Promise<{
-    data: BusinessPartner[];
-    total: number;
-    limit: number;
-    offset: number;
-  }> {
-    const limit = q.limit ?? 50;
-    const offset = q.offset ?? 0;
-    const term = q.q?.trim() ?? '';
-    if (term.length >= MIN_QUERY_LENGTH) {
-      const { ids, total } = await trigramSearch(this.prisma, {
-        table: 'business_partners',
-        alias: 't',
-        ownColumns: ['name', 'code', 'npwp', 'email'],
-        filters: [],
-        q: term,
-        limit,
-        offset,
-      });
-      const rows = ids.length
-        ? await this.prisma.client.businessPartner.findMany({
-            where: { id: { in: ids } },
-          })
-        : [];
-      const byId = new Map(rows.map((r) => [r.id, r]));
-      // Re-order to the relevance rank; drop any id concurrently soft-deleted
-      // between the ranked-id query and hydration (the typed filter narrows away
-      // the undefined without a non-null assertion).
-      const data = ids
-        .map((id) => byId.get(id))
-        .filter((r): r is BusinessPartner => r !== undefined);
-      return { data, total, limit, offset };
-    }
-    const [data, total] = await Promise.all([
-      this.prisma.client.businessPartner.findMany({
-        orderBy: { code: 'asc' },
-        take: limit,
-        skip: offset,
-      }),
-      this.prisma.client.businessPartner.count(),
-    ]);
-    return { data, total, limit, offset };
+  async listPage(q: {
+    q?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<Paginated<BusinessPartner>> {
+    return listPaginated<BusinessPartner, BusinessPartner>({
+      q: q.q,
+      limit: q.limit,
+      offset: q.offset,
+      present: (r) => r,
+      search: ({ term, limit, offset }) =>
+        trigramSearch(this.prisma, {
+          table: 'business_partners',
+          alias: 't',
+          ownColumns: ['name', 'code', 'npwp', 'email'],
+          filters: [],
+          q: term,
+          limit,
+          offset,
+        }),
+      hydrate: (ids) =>
+        this.prisma.client.businessPartner.findMany({
+          where: { id: { in: ids } },
+        }),
+      page: async ({ limit: take, offset: skip }) => {
+        const [rows, total] = await Promise.all([
+          this.prisma.client.businessPartner.findMany({
+            orderBy: { code: 'asc' },
+            take,
+            skip,
+          }),
+          this.prisma.client.businessPartner.count(),
+        ]);
+        return { rows, total };
+      },
+    });
   }
 
   async findById(id: string): Promise<BusinessPartner> {
