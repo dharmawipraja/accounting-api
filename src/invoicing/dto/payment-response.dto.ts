@@ -1,6 +1,7 @@
 // src/invoicing/dto/payment-response.dto.ts
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ApiMoney } from '../../common/openapi/api-money.decorator';
+import { PaginatedDto } from '../../common/openapi/paginated-dto';
 
 export class PaymentAllocationResponseDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
@@ -41,9 +42,8 @@ export class PaymentResponseDto {
   allocations?: PaymentAllocationResponseDto[];
 }
 
-export class PaymentListResponseDto {
-  @ApiProperty({ type: [PaymentResponseDto] }) data!: PaymentResponseDto[];
-  @ApiProperty({ example: 310 }) total!: number;
-  @ApiProperty({ example: 50 }) limit!: number;
-  @ApiProperty({ example: 0 }) offset!: number;
-}
+export const PaymentListResponseDto = PaginatedDto(
+  PaymentResponseDto,
+  'PaymentListResponseDto',
+  { totalExample: 310 },
+);

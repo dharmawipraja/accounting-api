@@ -1,6 +1,7 @@
 // src/ledger/journal/dto/journal-response.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
 import { ApiMoney } from '../../../common/openapi/api-money.decorator';
+import { PaginatedDto } from '../../../common/openapi/paginated-dto';
 
 const SOURCE_TYPES = [
   'MANUAL',
@@ -66,10 +67,8 @@ export class JournalEntryListItemDto {
   @ApiProperty({ example: 2 }) lineCount!: number;
 }
 
-export class JournalEntryListResponseDto {
-  @ApiProperty({ type: [JournalEntryListItemDto] })
-  data!: JournalEntryListItemDto[];
-  @ApiProperty({ example: 137 }) total!: number;
-  @ApiProperty({ example: 50 }) limit!: number;
-  @ApiProperty({ example: 0 }) offset!: number;
-}
+export const JournalEntryListResponseDto = PaginatedDto(
+  JournalEntryListItemDto,
+  'JournalEntryListResponseDto',
+  { totalExample: 137 },
+);

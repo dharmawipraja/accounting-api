@@ -4477,14 +4477,6 @@
             "type": "string",
             "format": "uuid"
           },
-          "invoiceNumber": {
-            "type": "number",
-            "nullable": true
-          },
-          "invoiceRef": {
-            "type": "string",
-            "nullable": true
-          },
           "fiscalYear": {
             "type": "number",
             "nullable": true
@@ -4580,6 +4572,14 @@
               "PAID"
             ]
           },
+          "invoiceNumber": {
+            "type": "number",
+            "nullable": true
+          },
+          "invoiceRef": {
+            "type": "string",
+            "nullable": true
+          },
           "lines": {
             "type": "array",
             "items": {
@@ -4589,8 +4589,6 @@
         },
         "required": [
           "id",
-          "invoiceNumber",
-          "invoiceRef",
           "fiscalYear",
           "partnerId",
           "date",
@@ -4609,7 +4607,9 @@
           "createdAt",
           "updatedAt",
           "outstanding",
-          "paymentStatus"
+          "paymentStatus",
+          "invoiceNumber",
+          "invoiceRef"
         ]
       },
       "SalesInvoiceListResponseDto": {
@@ -4793,14 +4793,6 @@
             "type": "string",
             "format": "uuid"
           },
-          "billNumber": {
-            "type": "number",
-            "nullable": true
-          },
-          "billRef": {
-            "type": "string",
-            "nullable": true
-          },
           "fiscalYear": {
             "type": "number",
             "nullable": true
@@ -4808,10 +4800,6 @@
           "partnerId": {
             "type": "string",
             "format": "uuid"
-          },
-          "vendorInvoiceNo": {
-            "type": "string",
-            "nullable": true
           },
           "date": {
             "type": "string",
@@ -4900,6 +4888,18 @@
               "PAID"
             ]
           },
+          "billNumber": {
+            "type": "number",
+            "nullable": true
+          },
+          "billRef": {
+            "type": "string",
+            "nullable": true
+          },
+          "vendorInvoiceNo": {
+            "type": "string",
+            "nullable": true
+          },
           "lines": {
             "type": "array",
             "items": {
@@ -4909,11 +4909,8 @@
         },
         "required": [
           "id",
-          "billNumber",
-          "billRef",
           "fiscalYear",
           "partnerId",
-          "vendorInvoiceNo",
           "date",
           "dueDate",
           "description",
@@ -4930,7 +4927,10 @@
           "createdAt",
           "updatedAt",
           "outstanding",
-          "paymentStatus"
+          "paymentStatus",
+          "billNumber",
+          "billRef",
+          "vendorInvoiceNo"
         ]
       },
       "PurchaseBillListResponseDto": {
