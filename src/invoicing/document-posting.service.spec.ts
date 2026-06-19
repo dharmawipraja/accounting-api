@@ -2,6 +2,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { PostingService } from '../ledger/posting/posting.service';
 import { TaxService } from '../tax/tax.service';
 import { DocumentPostingService } from './document-posting.service';
+import { ValidationFailedError } from '../common/errors/domain-errors';
 
 describe('DocumentPostingService (orchestration)', () => {
   function build() {
@@ -105,5 +106,47 @@ describe('DocumentPostingService (orchestration)', () => {
         totals: expect.objectContaining(expectedTotals),
       }),
     );
+  });
+
+  it('throws (consuming no number) when the row is no longer DRAFT', async () => {
+    const { svc, docNumber, prisma, tx } = build();
+    const txWithLock = {
+      ...tx,
+      // FOR UPDATE lock re-reads the row as already POSTED (lost the race)
+      $queryRaw: jest.fn().mockResolvedValue([{ status: 'POSTED' }]),
+    };
+    (prisma.client.$transaction as jest.Mock).mockImplementation(
+      (cb: (t: unknown) => unknown) => cb(txWithLock),
+    );
+    const finalize = jest.fn().mockResolvedValue(undefined);
+
+    const err = await svc.post(params, finalize).then(
+      () => undefined,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(ValidationFailedError);
+    expect((err as Error).message).toBe('Invoice is no longer a draft');
+    // lock failed before numbering: no document number consumed, nothing finalized
+    expect(docNumber.next).not.toHaveBeenCalled();
+    expect(finalize).not.toHaveBeenCalled();
+  });
+
+  it('throws when the row is gone (deleted or never existed)', async () => {
+    const { svc, docNumber, prisma, tx } = build();
+    const txWithLock = {
+      ...tx,
+      // FOR UPDATE lock finds no row (soft-deleted / missing)
+      $queryRaw: jest.fn().mockResolvedValue([]),
+    };
+    (prisma.client.$transaction as jest.Mock).mockImplementation(
+      (cb: (t: unknown) => unknown) => cb(txWithLock),
+    );
+    const finalize = jest.fn().mockResolvedValue(undefined);
+
+    await expect(svc.post(params, finalize)).rejects.toThrow(
+      ValidationFailedError,
+    );
+    expect(docNumber.next).not.toHaveBeenCalled();
+    expect(finalize).not.toHaveBeenCalled();
   });
 });
