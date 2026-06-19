@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { JournalEntry } from '@prisma/client';
+import { JournalEntry, Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { Money } from '../common/money/money';
 import { PostingService, LedgerTx } from '../ledger/posting/posting.service';
@@ -9,6 +9,7 @@ import {
   TaxCalculation,
 } from '../tax/tax.service';
 import { DocumentNumberService } from './document-number.service';
+import { ValidationFailedError } from '../common/errors/domain-errors';
 
 export interface PostTaxedDocParams {
   nature: 'SALE' | 'PURCHASE';
@@ -21,6 +22,10 @@ export interface PostTaxedDocParams {
   postedBy: string;
   documentType: string; // 'INV' | 'BILL'
   lines: TaxableLineInput[];
+  /** Table the source document lives in — a constant literal, never user input. */
+  table: 'sales_invoices' | 'purchase_bills';
+  /** Type-specific "no longer a draft" message (from documentMessages(spec)). */
+  notDraftMessage: string;
 }
 
 export interface PostedDocContext {
@@ -87,12 +92,12 @@ export class DocumentPostingService {
     return this.summarize(calc);
   }
 
-  /** Post a taxed document atomically. `lockDraft` must lock + re-check the row is
-   *  still DRAFT (FOR UPDATE) BEFORE a number is consumed; `finalize` updates the
-   *  document row to POSTED with the assigned number/ref + journal entry id. */
+  /** Post a taxed document atomically. The source row is locked (FOR UPDATE) and
+   *  re-checked still-DRAFT internally, before a number is consumed; `finalize`
+   *  updates the document row to POSTED with the assigned number/ref + journal
+   *  entry id. */
   async post(
     params: PostTaxedDocParams,
-    lockDraft: (tx: LedgerTx) => Promise<void>,
     finalize: (ctx: PostedDocContext) => Promise<void>,
   ): Promise<void> {
     const calc = await this.tax.calculate({
@@ -113,7 +118,12 @@ export class DocumentPostingService {
       params.postedBy,
     );
     await this.prisma.client.$transaction(async (tx) => {
-      await lockDraft(tx);
+      await this.lockDraftInTx(
+        tx,
+        params.table,
+        params.sourceId,
+        params.notDraftMessage,
+      );
       const number = await this.docNumber.next(
         tx,
         params.documentType,
@@ -140,5 +150,21 @@ export class DocumentPostingService {
         totals: this.summarize(calc),
       });
     });
+  }
+
+  /** FOR UPDATE the source row and re-check it is still DRAFT, before a number is
+   *  consumed. `table` is a constant union literal supplied by the adapter (never
+   *  user input), so Prisma.raw(table) is injection-safe; `id` is a bound param. */
+  private async lockDraftInTx(
+    tx: LedgerTx,
+    table: 'sales_invoices' | 'purchase_bills',
+    id: string,
+    notDraftMessage: string,
+  ): Promise<void> {
+    const rows = await tx.$queryRaw<{ status: string }[]>(
+      Prisma.sql`SELECT status FROM ${Prisma.raw(table)} WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`,
+    );
+    if (rows.length === 0 || rows[0].status !== 'DRAFT')
+      throw new ValidationFailedError(notDraftMessage, { id });
   }
 }

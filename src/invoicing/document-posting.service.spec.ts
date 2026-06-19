@@ -53,14 +53,23 @@ describe('DocumentPostingService (orchestration)', () => {
     postedBy: 'u2',
     documentType: 'INV',
     lines: [],
+    table: 'sales_invoices' as const,
+    notDraftMessage: 'Invoice is no longer a draft',
   };
 
   it('prepares before the transaction, locks before numbering, threads period/fy, and finalizes', async () => {
     const { svc, tx, entry, tax, posting, docNumber, prisma } = build();
-    const lockDraft = jest.fn().mockResolvedValue(undefined);
+    // $queryRaw is the internal FOR UPDATE lock — return a DRAFT row
+    const txWithLock = {
+      ...tx,
+      $queryRaw: jest.fn().mockResolvedValue([{ status: 'DRAFT' }]),
+    };
+    (prisma.client.$transaction as jest.Mock).mockImplementation(
+      (cb: (t: unknown) => unknown) => cb(txWithLock),
+    );
     const finalize = jest.fn().mockResolvedValue(undefined);
 
-    await svc.post(params, lockDraft, finalize);
+    await svc.post(params, finalize);
 
     // tax + prepare run OUTSIDE the tx, before it opens
     expect(tax.calculate).toHaveBeenCalledTimes(1);
@@ -68,13 +77,13 @@ describe('DocumentPostingService (orchestration)', () => {
     expect(posting.preparePosting.mock.invocationCallOrder[0]).toBeLessThan(
       prisma.client.$transaction.mock.invocationCallOrder[0],
     );
-    // lock-before-number is the gapless invariant
-    expect(lockDraft.mock.invocationCallOrder[0]).toBeLessThan(
+    // lock-before-number: $queryRaw (FOR UPDATE) must precede docNumber.next
+    expect(txWithLock.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
       docNumber.next.mock.invocationCallOrder[0],
     );
     // period/fiscalYear from preparePosting are threaded into the posted-entry write
     expect(posting.createPostedEntryInTx).toHaveBeenCalledWith(
-      tx,
+      txWithLock,
       expect.objectContaining({ sourceType: 'SALES_INVOICE', sourceId: 's1' }),
       'u2',
       'p1',
@@ -87,7 +96,7 @@ describe('DocumentPostingService (orchestration)', () => {
     };
     expect(finalize).toHaveBeenCalledWith(
       expect.objectContaining({
-        tx,
+        tx: txWithLock,
         number: 42,
         ref: 'INV/2026/000042',
         entry,

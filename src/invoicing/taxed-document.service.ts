@@ -228,8 +228,9 @@ export class TaxedDocumentService {
         postedBy,
         documentType: spec.documentType,
         lines: taxableLines(row.lines ?? []),
+        table: spec.table,
+        notDraftMessage: m.noLongerDraft,
       },
-      (tx) => this.lockDraft(tx, spec, id),
       (ctx) => spec.finalizePosted(ctx.tx, id, ctx, postedBy),
     );
     return this.getById(spec, id);
@@ -263,21 +264,6 @@ export class TaxedDocumentService {
       },
     });
     return this.getById(spec, id);
-  }
-
-  /** FOR UPDATE draft lock built from the descriptor's constant table identifier. */
-  private async lockDraft<
-    R extends DocumentRow,
-    C extends CreateDocumentInput,
-    U extends UpdateDocumentInput,
-  >(tx: LedgerTx, spec: Spec<R, C, U>, id: string): Promise<void> {
-    const rows = await tx.$queryRaw<{ status: string }[]>(
-      Prisma.sql`SELECT status FROM ${Prisma.raw(spec.table)} WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`,
-    );
-    if (rows.length === 0 || rows[0].status !== 'DRAFT')
-      throw new ValidationFailedError(documentMessages(spec).noLongerDraft, {
-        id,
-      });
   }
 
   /** FOR UPDATE lock for void: returns status + amount_paid for the in-tx re-check. */
