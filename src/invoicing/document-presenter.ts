@@ -64,6 +64,8 @@ export function presentDocument<T extends DocumentRow>(
     : outstanding.isZero() || outstanding.isNegative()
       ? 'PAID'
       : 'PARTIAL';
+  // Widen the typed lines to a generic record so serializeMoney can map them;
+  // DocumentRow.lines is narrower than serializeMoney's object-field parameter.
   const lines = (doc as DocumentRow & { lines?: Record<string, unknown>[] })
     .lines;
   return {

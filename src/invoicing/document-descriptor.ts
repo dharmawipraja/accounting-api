@@ -117,7 +117,8 @@ export interface DocumentDescriptor<
   sourceType: 'SALES_INVOICE' | 'PURCHASE_BILL';
   documentType: string; // 'INV' | 'BILL'
   table: 'sales_invoices' | 'purchase_bills';
-  trigramColumns: string[];
+  /** Own searched columns for fuzzy ?q= search — a non-empty tuple (trigramSearch requires ≥1). */
+  trigramColumns: [string, ...string[]];
   model: SoftDeletableModel;
   findById(id: string): Promise<TRow | null>;
   page(a: {

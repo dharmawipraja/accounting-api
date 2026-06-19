@@ -172,7 +172,7 @@ export class TaxedDocumentService {
         trigramSearch(this.prisma, {
           table: spec.table,
           alias: 't',
-          ownColumns: spec.trigramColumns as [string, ...string[]],
+          ownColumns: spec.trigramColumns,
           join: {
             table: 'business_partners',
             alias: 'p',
