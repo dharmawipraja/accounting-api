@@ -4,18 +4,12 @@ import {
   BalancesService,
   AccountBalanceRow,
 } from '../ledger/balances/balances.service';
+import { naturalSide } from '../ledger/balances/signing';
 import { ReportLine } from './report-line';
 
 @Injectable()
 export class IncomeStatementService {
   constructor(private readonly balances: BalancesService) {}
-
-  /** credit−debit for revenue/income; debit−credit for cost/expense. Magnitudes positive. */
-  private mag(r: AccountBalanceRow): Money {
-    const d = Money.of(r.debit);
-    const c = Money.of(r.credit);
-    return r.type === 'REVENUE' ? c.subtract(d) : d.subtract(c);
-  }
 
   private section(
     rows: AccountBalanceRow[],
@@ -24,7 +18,7 @@ export class IncomeStatementService {
     const lines: ReportLine[] = [];
     let total = Money.zero();
     for (const r of rows.filter(pred)) {
-      const amt = this.mag(r);
+      const amt = naturalSide(r.type, Money.of(r.debit), Money.of(r.credit));
       total = total.add(amt);
       lines.push({ code: r.code, name: r.name, amount: amt.toPersistence() });
     }

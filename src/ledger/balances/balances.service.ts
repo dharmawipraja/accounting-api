@@ -4,6 +4,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { AccountsService } from '../accounts/accounts.service';
 import { truncateToUtcDay } from '../../common/dates/utc-day';
 import { Money } from '../../common/money/money';
+import { signedNet } from './signing';
 
 export interface TrialBalanceRow {
   accountId: string;
@@ -82,10 +83,11 @@ export class BalancesService {
   }
 
   private toRow(r: RawBalanceRow): AccountBalanceRow {
-    const net =
-      r.normal_balance === 'DEBIT'
-        ? r.debit.sub(r.credit)
-        : r.credit.sub(r.debit);
+    const net = signedNet(
+      r.normal_balance,
+      Money.of(r.debit.toString()),
+      Money.of(r.credit.toString()),
+    );
     return {
       accountId: r.account_id,
       code: r.code,
@@ -97,7 +99,7 @@ export class BalancesService {
       role: r.role,
       debit: Money.of(r.debit.toString()).toPersistence(),
       credit: Money.of(r.credit.toString()).toPersistence(),
-      balance: Money.of(net.toString()).toPersistence(),
+      balance: net.toPersistence(),
     };
   }
 
@@ -128,17 +130,18 @@ export class BalancesService {
       if (r.debit.isZero() && r.credit.isZero()) continue; // preserve old HAVING
       totalDebit = totalDebit.add(r.debit);
       totalCredit = totalCredit.add(r.credit);
-      const net =
-        r.normal_balance === 'DEBIT'
-          ? r.debit.sub(r.credit)
-          : r.credit.sub(r.debit);
+      const net = signedNet(
+        r.normal_balance,
+        Money.of(r.debit.toString()),
+        Money.of(r.credit.toString()),
+      );
       out.push({
         accountId: r.account_id,
         code: r.code,
         name: r.name,
         debit: Money.of(r.debit.toString()).toPersistence(),
         credit: Money.of(r.credit.toString()).toPersistence(),
-        balance: Money.of(net.toString()).toPersistence(),
+        balance: net.toPersistence(),
       });
     }
     return {
@@ -169,13 +172,16 @@ export class BalancesService {
       WHERE jl.account_id = ${accountId} AND je.posted_at IS NOT NULL AND je.deleted_at IS NULL AND je.date <= ${day}`;
     const debit = rows[0].debit;
     const credit = rows[0].credit;
-    const net =
-      account.normalBalance === 'DEBIT' ? debit.sub(credit) : credit.sub(debit);
+    const net = signedNet(
+      account.normalBalance,
+      Money.of(debit.toString()),
+      Money.of(credit.toString()),
+    );
     return {
       accountId,
       debit: Money.of(debit.toString()).toPersistence(),
       credit: Money.of(credit.toString()).toPersistence(),
-      balance: Money.of(net.toString()).toPersistence(),
+      balance: net.toPersistence(),
     };
   }
 }

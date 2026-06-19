@@ -4,6 +4,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { Money } from '../common/money/money';
 import { AccountsService } from '../ledger/accounts/accounts.service';
 import { BalancesService } from '../ledger/balances/balances.service';
+import { signedNet } from '../ledger/balances/signing';
 import { truncateToUtcDay } from '../common/dates/utc-day';
 
 interface LineRow {
@@ -28,7 +29,6 @@ export class GeneralLedgerService {
 
   async generate(accountId: string, from: Date, to: Date) {
     const account = await this.accounts.findById(accountId); // 404 if missing
-    const debitNormal = account.normalBalance === 'DEBIT';
     const dayBefore = new Date(this.day(from).getTime() - 86_400_000);
     const opening = await this.balances.accountBalance(accountId, dayBefore);
     let running = Money.of(opening.balance);
@@ -42,9 +42,11 @@ export class GeneralLedgerService {
       ORDER BY je.date ASC, je.entry_number ASC`);
 
     const lines = rows.map((r) => {
-      const delta = debitNormal
-        ? Money.of(r.debit.toString()).subtract(Money.of(r.credit.toString()))
-        : Money.of(r.credit.toString()).subtract(Money.of(r.debit.toString()));
+      const delta = signedNet(
+        account.normalBalance,
+        Money.of(r.debit.toString()),
+        Money.of(r.credit.toString()),
+      );
       running = running.add(delta);
       return {
         date: r.date.toISOString().slice(0, 10),

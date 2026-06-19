@@ -4,6 +4,7 @@ import {
   BalancesService,
   AccountBalanceRow,
 } from '../ledger/balances/balances.service';
+import { naturalSide } from '../ledger/balances/signing';
 import { CompanyService } from '../company/company.service';
 import { fiscalYearForDate } from '../common/dates/fiscal-year';
 import { ReportLine } from './report-line';
@@ -21,13 +22,6 @@ export class BalanceSheetService {
     private readonly company: CompanyService,
   ) {}
 
-  /** ASSET → debit−credit; LIABILITY/EQUITY → credit−debit (handles contras). */
-  private bsAmount(r: AccountBalanceRow): Money {
-    const d = Money.of(r.debit);
-    const c = Money.of(r.credit);
-    return r.type === 'ASSET' ? d.subtract(c) : c.subtract(d);
-  }
-
   private group(rows: AccountBalanceRow[]): {
     groups: ReportGroup[];
     total: Money;
@@ -35,7 +29,7 @@ export class BalanceSheetService {
     const bySubtype = new Map<string, ReportLine[]>();
     let total = Money.zero();
     for (const r of rows) {
-      const amt = this.bsAmount(r);
+      const amt = naturalSide(r.type, Money.of(r.debit), Money.of(r.credit));
       total = total.add(amt);
       const lines = bySubtype.get(r.subtype) ?? [];
       lines.push({ code: r.code, name: r.name, amount: amt.toPersistence() });
