@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { LedgerModule } from '../ledger/ledger.module';
 import { TaxModule } from '../tax/tax.module';
 import { CompanyModule } from '../company/company.module';
+import { TaxedDocumentService } from './taxed-document.service';
 import { DocumentNumberService } from './document-number.service';
 import { BusinessPartnersService } from './business-partners.service';
 import { BusinessPartnersController } from './business-partners.controller';
@@ -16,6 +17,7 @@ import { PaymentsController } from './payments.controller';
 @Module({
   imports: [LedgerModule, TaxModule, CompanyModule],
   providers: [
+    TaxedDocumentService,
     DocumentNumberService,
     BusinessPartnersService,
     DocumentPostingService,
