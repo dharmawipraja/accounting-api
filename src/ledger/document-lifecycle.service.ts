@@ -4,7 +4,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { PostingService, LedgerTx } from './posting/posting.service';
 import { ValidationFailedError } from '../common/errors/domain-errors';
 
-type SoftDeletableModel = {
+export type SoftDeletableModel = {
   updateMany: (args: {
     where: { id: string; status: 'DRAFT'; deletedAt: null };
     data: { deletedAt: Date; deletedBy: string };
