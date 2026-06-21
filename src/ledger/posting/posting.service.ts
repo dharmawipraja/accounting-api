@@ -18,7 +18,6 @@ import { ExtendedPrismaClient } from '../../common/prisma/soft-delete.extension'
 import { MetricsService } from '../../metrics/metrics.service';
 import { RawTx } from '../../common/db/raw-tx';
 import { buildDocRef } from '../../common/db/doc-ref';
-import { fiscalYearForDate } from '../../common/dates/fiscal-year';
 
 /** The interactive-transaction view of the soft-delete-extended client — what the
  *  `$transaction(async (tx) => …)` callback receives. Shared so document services
@@ -53,11 +52,12 @@ export class PostingService {
     postedBy: string,
   ): Promise<{ periodId: string; fiscalYear: number }> {
     assertBalanced(input.lines);
-    const settings = await this.company.get();
     if (
-      settings.segregationOfDutiesEnabled &&
-      input.sourceType === 'MANUAL' &&
-      postedBy === input.createdBy
+      await this.company.isSegregationViolation({
+        sourceType: input.sourceType,
+        createdBy: input.createdBy,
+        postedBy,
+      })
     ) {
       throw new SegregationOfDutiesError(
         'The poster must differ from the entry creator',
@@ -76,10 +76,7 @@ export class PostingService {
       );
     }
     await this.assertPostableAccounts(input.lines);
-    const fiscalYear = this.fiscalYearFor(
-      input.date,
-      settings.fiscalYearStartMonth,
-    );
+    const fiscalYear = await this.company.fiscalYearFor(input.date);
     const closedYear = await this.prisma.client.yearEndClosing.findFirst({
       where: { fiscalYear, status: 'CLOSED' },
     });
@@ -249,11 +246,7 @@ export class PostingService {
         date: reversalDate.toISOString().slice(0, 10),
       });
     }
-    const settings = await this.company.get();
-    const fiscalYear = this.fiscalYearFor(
-      reversalDate,
-      settings.fiscalYearStartMonth,
-    );
+    const fiscalYear = await this.company.fiscalYearFor(reversalDate);
     // Same year-lock as preparePosting/postDraft: a reversal (or document void)
     // must not write a POSTED entry into a year that has been closed. reopen()
     // legitimately reverses the closing entry while the year is still CLOSED, so
@@ -342,11 +335,12 @@ export class PostingService {
     }));
     assertBalanced(lines);
 
-    const settings = await this.company.get();
     if (
-      settings.segregationOfDutiesEnabled &&
-      draft.sourceType === 'MANUAL' &&
-      postedBy === draft.createdBy
+      await this.company.isSegregationViolation({
+        sourceType: draft.sourceType,
+        createdBy: draft.createdBy,
+        postedBy,
+      })
     ) {
       throw new SegregationOfDutiesError(
         'The poster must differ from the entry creator',
@@ -365,10 +359,7 @@ export class PostingService {
       );
     }
     await this.assertPostableAccounts(lines);
-    const fiscalYear = this.fiscalYearFor(
-      draft.date,
-      settings.fiscalYearStartMonth,
-    );
+    const fiscalYear = await this.company.fiscalYearFor(draft.date);
     // Same year-lock as preparePosting: a draft created while the year was open
     // must not be postable into it once the year has been closed.
     const closedYear = await this.prisma.client.yearEndClosing.findFirst({
@@ -448,10 +439,5 @@ export class PostingService {
       if (!a.isActive)
         throw new InvalidAccountError('Account is inactive', { accountId: id });
     }
-  }
-
-  /** Fiscal year that a date falls into, given the configured start month. */
-  fiscalYearFor(date: Date, startMonth: number): number {
-    return fiscalYearForDate(date, startMonth);
   }
 }

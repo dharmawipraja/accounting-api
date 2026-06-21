@@ -6,7 +6,6 @@ import {
 } from '../ledger/balances/balances.service';
 import { naturalSide } from '../ledger/balances/signing';
 import { CompanyService } from '../company/company.service';
-import { fiscalYearForDate } from '../common/dates/fiscal-year';
 import { ReportLine } from './report-line';
 
 export interface ReportGroup {
@@ -48,11 +47,8 @@ export class BalanceSheetService {
   }
 
   async generate(asOf: Date) {
-    const settings = await this.company.get();
-    const fy = fiscalYearForDate(asOf, settings.fiscalYearStartMonth);
-    const fyStart = new Date(
-      Date.UTC(fy, settings.fiscalYearStartMonth - 1, 1),
-    );
+    const fy = await this.company.fiscalYearFor(asOf);
+    const { start: fyStart } = await this.company.fiscalYearBounds(fy);
 
     const rows = await this.balances.balancesAsOf(asOf);
     const assets = this.group(rows.filter((r) => r.type === 'ASSET'));

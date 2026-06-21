@@ -20,18 +20,6 @@ export class YearEndCloseService {
     private readonly company: CompanyService,
   ) {}
 
-  /** First UTC day of the fiscal year, given the company's start month. */
-  private fiscalYearStart(fiscalYear: number, startMonth: number): Date {
-    return new Date(Date.UTC(fiscalYear, startMonth - 1, 1));
-  }
-
-  /** Last UTC day of the fiscal year, given the company's start month. */
-  private fiscalYearEnd(fiscalYear: number, startMonth: number): Date {
-    const endYear = startMonth === 1 ? fiscalYear : fiscalYear + 1;
-    const endMonth0 = startMonth === 1 ? 11 : startMonth - 2; // 0-based last month
-    return new Date(Date.UTC(endYear, endMonth0 + 1, 0)); // day 0 of next month = last day
-  }
-
   async getStatus(fiscalYear: number): Promise<YearEndClosing | null> {
     return this.prisma.client.yearEndClosing.findUnique({
       where: { fiscalYear },
@@ -45,15 +33,8 @@ export class YearEndCloseService {
         fiscalYear,
       });
     }
-    const settings = await this.company.get();
-    const yearEnd = this.fiscalYearEnd(
-      fiscalYear,
-      settings.fiscalYearStartMonth,
-    );
-    const fyStart = this.fiscalYearStart(
-      fiscalYear,
-      settings.fiscalYearStartMonth,
-    );
+    const { start: fyStart, end: yearEnd } =
+      await this.company.fiscalYearBounds(fiscalYear);
 
     // Net income from THIS year's P&L movement only — not the cumulative
     // balance. Using movementsBetween makes close order-independent: closing a

@@ -6,7 +6,6 @@ import {
   ConflictDomainError,
   NotFoundDomainError,
 } from '../../common/errors/domain-errors';
-import { fiscalYearForDate } from '../../common/dates/fiscal-year';
 import { truncateToUtcDay } from '../../common/dates/utc-day';
 
 @Injectable()
@@ -19,9 +18,8 @@ export class PeriodsService implements OnModuleInit {
   /** On boot, ensure the current fiscal year's periods exist so a fresh deploy
    *  can accept postings immediately (idempotent). */
   async onModuleInit(): Promise<void> {
-    const settings = await this.company.get();
     const now = new Date();
-    const fiscalYear = fiscalYearForDate(now, settings.fiscalYearStartMonth);
+    const fiscalYear = await this.company.fiscalYearFor(now);
     await this.generatePeriods(fiscalYear);
   }
 
@@ -29,8 +27,8 @@ export class PeriodsService implements OnModuleInit {
   async generatePeriods(fiscalYear: number): Promise<AccountingPeriod[]> {
     const existing = await this.list(fiscalYear);
     if (existing.length === 12) return existing;
-    const settings = await this.company.get();
-    const startMonth = settings.fiscalYearStartMonth; // 1..12
+    const { start } = await this.company.fiscalYearBounds(fiscalYear);
+    const startMonth = start.getUTCMonth() + 1; // 1..12
     const data = Array.from({ length: 12 }, (_, i) => {
       const monthIndex = startMonth - 1 + i; // 0-based from Jan of fiscalYear
       const year = fiscalYear + Math.floor(monthIndex / 12);
