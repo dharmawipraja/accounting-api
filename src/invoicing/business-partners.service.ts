@@ -135,13 +135,11 @@ export class BusinessPartnersService {
 
   async softDelete(id: string, deletedBy: string): Promise<void> {
     const p = await this.findById(id);
-    await this.prisma.client.businessPartner.update({
-      where: { id },
-      data: {
-        code: `${p.code}#deleted-${id}`,
-        deletedAt: new Date(),
-        deletedBy,
-      },
-    });
+    await this.prisma.client.businessPartner.tombstoneDelete(
+      id,
+      'code',
+      p.code,
+      deletedBy,
+    );
   }
 }

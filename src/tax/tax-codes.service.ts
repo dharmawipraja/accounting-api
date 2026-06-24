@@ -159,14 +159,12 @@ export class TaxCodesService implements OnModuleInit {
 
   async softDelete(id: string, deletedBy: string): Promise<void> {
     const taxCode = await this.findById(id);
-    await this.prisma.client.taxCode.update({
-      where: { id },
-      data: {
-        code: `${taxCode.code}#deleted-${id}`,
-        deletedAt: new Date(),
-        deletedBy,
-      },
-    });
+    await this.prisma.client.taxCode.tombstoneDelete(
+      id,
+      'code',
+      taxCode.code,
+      deletedBy,
+    );
   }
 
   async seedIfEmpty(): Promise<void> {

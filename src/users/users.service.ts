@@ -102,13 +102,11 @@ export class UsersService {
       throw new NotFoundDomainError('User not found', { id });
     }
     // Tombstone the unique email so it can be reused, and mark soft-deleted.
-    await this.prisma.client.user.update({
-      where: { id },
-      data: {
-        email: `${user.email}#deleted-${id}`,
-        deletedAt: new Date(),
-        deletedBy,
-      },
-    });
+    await this.prisma.client.user.tombstoneDelete(
+      id,
+      'email',
+      user.email,
+      deletedBy,
+    );
   }
 }

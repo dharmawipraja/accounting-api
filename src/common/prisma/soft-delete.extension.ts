@@ -1,4 +1,5 @@
 import { Prisma, PrismaClient } from '@prisma/client';
+import { tombstoneValue } from './tombstone';
 
 /**
  * Models subject to soft delete. Add new soft-deletable models here as later
@@ -194,6 +195,31 @@ export function applySoftDelete(base: PrismaClient) {
             return typedCtx.update({
               where,
               data: { deletedAt: new Date(), deletedBy },
+            });
+          },
+          async tombstoneDelete<T>(
+            this: T,
+            id: string,
+            field: string,
+            currentValue: string,
+            deletedBy?: string,
+          ) {
+            const ctx = Prisma.getExtensionContext(this);
+            if (!isSoftDelete(ctx.$name)) {
+              throw new Error(
+                `tombstoneDelete() is not supported on model ${String(ctx.$name)}`,
+              );
+            }
+            const typedCtx = ctx as unknown as {
+              update: (a: unknown) => Promise<unknown>;
+            };
+            return typedCtx.update({
+              where: { id },
+              data: {
+                [field]: tombstoneValue(currentValue, id),
+                deletedAt: new Date(),
+                deletedBy,
+              },
             });
           },
         },

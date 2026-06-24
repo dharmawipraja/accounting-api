@@ -241,13 +241,11 @@ export class AccountsService implements OnModuleInit {
         { id },
       );
     }
-    await this.prisma.client.account.update({
-      where: { id },
-      data: {
-        code: `${account.code}#deleted-${id}`,
-        deletedAt: new Date(),
-        deletedBy,
-      },
-    });
+    await this.prisma.client.account.tombstoneDelete(
+      id,
+      'code',
+      account.code,
+      deletedBy,
+    );
   }
 }
