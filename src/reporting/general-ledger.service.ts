@@ -5,6 +5,7 @@ import { Money } from '../common/money/money';
 import { AccountsService } from '../ledger/accounts/accounts.service';
 import { BalancesService } from '../ledger/balances/balances.service';
 import { signedNet } from '../ledger/balances/signing';
+import { POSTED_JE } from '../ledger/balances/posted-entry.sql';
 import { truncateToUtcDay } from '../common/dates/utc-day';
 
 interface LineRow {
@@ -37,7 +38,7 @@ export class GeneralLedgerService {
       SELECT je.date, je.entry_ref, jl.description, jl.debit, jl.credit
       FROM journal_lines jl
       JOIN journal_entries je ON je.id = jl.journal_entry_id
-      WHERE jl.account_id = ${accountId} AND je.posted_at IS NOT NULL
+      WHERE jl.account_id = ${accountId} AND ${POSTED_JE}
         AND je.date >= ${this.day(from)} AND je.date <= ${this.day(to)}
       ORDER BY je.date ASC, je.entry_number ASC`);
 
