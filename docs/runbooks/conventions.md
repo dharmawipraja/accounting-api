@@ -30,6 +30,13 @@ bug, not a style nit.
   `money.toPersistence()` (always 4dp). Serialize in DTOs/responses as strings
   via the shared `serializeMoney` helper; document them with `@ApiMoney`. Never
   emit a money field as a JSON number — precision is lost in transit.
+- **Validate incoming money strings with `@IsMoneyString()`**
+  (`src/common/validators/is-money-string.ts`) in request DTOs — it enforces
+  non-negative and ≤ 4 decimal places. The shared `DocumentLineDto`
+  (`src/invoicing/dto/document-line.dto.ts`) uses it for `quantity` and `unitPrice`
+  on both sales-invoice and purchase-bill lines; `AllocationDto.amount` likewise.
+  **Exception:** tax-code `rate` fields stay `@Matches` at 6 dp (they are rates,
+  not money amounts).
 - **Do math through `Money`** (`add`, `subtract`, `multiply`, `roundToRupiah`,
   `equals`, `greaterThan`, `isZero`, `isNegative`), never by unwrapping to a
   Decimal/number and back. `roundToRupiah()` is for the final whole-rupiah
@@ -91,6 +98,13 @@ One stable error envelope, no leaked internals.
   `DEFAULT_PAGE_SIZE = 50` in `src/common/pagination/pagination.constants.ts`).
   All transactional lists AND accounts/tax-codes return this envelope — there are
   no remaining bare-array list endpoints, so a new list must use the envelope too.
+- **Optional date query params → `parseDate` / `query-dates` helpers.**
+  Convert a nullable string param with `parseDate(value)`
+  (`src/common/dates/parse-date.ts`, returns `Date | undefined`). For the common
+  cases use the higher-level helpers in `src/common/dates/query-dates.ts`:
+  `asOfOrToday(asOf?)` (defaults to today), `dateRange(from, to)` (required pair,
+  422 if from > to), `optionalDateRange(from?, to?)`. These are the shared
+  controller date-boundary seam — don't inline `new Date(x)` in controllers.
 
 ## 4. Idempotency
 

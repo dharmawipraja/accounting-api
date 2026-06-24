@@ -13,12 +13,12 @@ for failure triage, and [`./conventions.md`](./conventions.md) for general code 
 | **E2E** | `test/*.e2e-spec.ts` | `test/jest-e2e.json` (`rootDir: ..`, `testRegex: .e2e-spec.ts$`) | a **real Postgres 16** per suite via Testcontainers | slow |
 
 - **Unit** tests exercise pure logic (money math, tax calc, validators, interceptors,
-  guards) with hand-rolled mocks. No DB, no network. There are 31 unit spec files.
+  guards) with hand-rolled mocks. No DB, no network. There are 42 unit spec files.
 - **E2E** tests boot the real `AppModule` and talk to a throwaway `postgres:16`
   container started by Testcontainers, with **migrations applied on every run**
   (`npx prisma migrate deploy` against the fresh container — see `test/testcontainers.ts`).
   `maxWorkers: 1` forces them to run **serially**; `testTimeout` is 30s (suite
-  `beforeAll` allows 120s for container start + migrate). There are 42 e2e spec files.
+  `beforeAll` allows 120s for container start + migrate). There are 43 e2e spec files.
 
 > **Docker MUST be running for e2e.** Testcontainers spins up real Postgres
 > containers; with no Docker daemon, every e2e suite fails at `startTestDb()`.
@@ -117,50 +117,50 @@ for [`./troubleshooting.md`](./troubleshooting.md)).
 
 ### E2E bootstrap pattern (mandatory shape)
 
-Every e2e suite follows the same `beforeAll`/`afterAll` skeleton (see
-`test/posting.e2e-spec.ts`, `test/sales-invoices.e2e-spec.ts`). The shared helpers
-live in `test/testcontainers.ts` (`startTestDb`, `TestDb`) and `test/e2e-helpers.ts`
-(`makePrismaOverride`). Env defaults (JWT secrets/TTLs, `NODE_ENV=test`) are set in
-`test/setup-env.ts`, wired via `setupFiles` in `jest-e2e.json`.
+Every e2e suite uses **`bootstrapTestApp(opts?)`** from `test/e2e-helpers.ts` — it
+handles the Testcontainers start, PrismaService override, versioning, and
+`ValidationPipe` wiring in one call and returns `{ app, prisma, db, cleanup }`.
+Env defaults (JWT secrets/TTLs, `NODE_ENV=test`) are set in `test/setup-env.ts`,
+wired via `setupFiles` in `jest-e2e.json`.
 
 ```ts
-beforeAll(async () => {
-  db = await startTestDb();                      // start postgres:16 + migrate deploy
-  prisma = makePrismaOverride(db.url);           // PrismaService pointed at the container
-  await prisma.$connect();
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-    .overrideProvider(PrismaService)             // MANDATORY: inject the container-backed Prisma
-    .useValue(prisma)
-    .compile();
-  app = moduleRef.createNestApplication();
-  // MANDATORY in EVERY e2e bootstrap — routes are /v1/* and 404 without it:
-  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-  // Add these only when the suite drives HTTP via supertest:
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-  app.useGlobalFilters(new AllExceptionsFilter());
-  await app.init();
+let app: INestApplication;
+let prisma: PrismaService;
+let db: TestDb;
 
-  // Seed the minimum fixtures the module needs:
+beforeAll(async () => {
+  db = await startTestDb();                   // start postgres:16 + migrate deploy
+  ({ app, prisma } = await bootstrapTestApp({ db }));
+
+  // Seed the minimum fixtures the suite needs:
   await app.get(CompanyService).seedIfEmpty();
   await app.get(AccountsService).seedIfEmpty();
   await app.get(PeriodsService).generatePeriods(2026);
-}, 120_000);                                      // generous timeout: container + migrate
+}, 120_000);                                  // generous timeout: container + migrate
 
 afterAll(async () => {
   await app.close();
   await prisma.$disconnect();
-  await db?.stop();                              // disconnect prisma + stop container
+  await db?.stop();
 });
 ```
 
+`bootstrapTestApp` options:
+- `{ pipe: false }` — skip the `ValidationPipe` (service-layer specs that don't drive
+  HTTP and don't need DTO validation).
+- `{ configure: (app) => ... }` — pre-`app.init()` hook for extra middleware (e.g.
+  helmet).
+
 Key rules:
-- **`overrideProvider(PrismaService).useValue(prisma)` is required** — without it
-  the app connects to whatever `DATABASE_URL` points at instead of the container.
-  `makePrismaOverride` exists because NestJS freezes `ConfigModule`'s view of
-  `process.env` at require-time, so we override the provider rather than mutate env.
-- **`app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' })` is
-  mandatory in every bootstrap** (and in `main.ts` and the OpenAPI export script).
-  Forget it and every `/v1/...` request 404s.
+- **`bootstrapTestApp` is the only supported way** to bootstrap a new e2e spec.
+  Do not hand-roll the module+app setup — the factory mirrors the production
+  `main.ts` pipe and applies `enableVersioning` automatically.
+- **`overrideProvider(PrismaService)` is wired inside the factory** via
+  `makePrismaOverride(db.url)`. `makePrismaOverride` exists because NestJS freezes
+  `ConfigModule`'s view of `process.env` at require-time, so we override the
+  provider rather than mutate env.
+- **`enableVersioning` is applied inside the factory** — forget it (in `main.ts` or
+  the OpenAPI export script) and every `/v1/...` request 404s.
 - **Seed via the services**, not raw SQL: `CompanyService.seedIfEmpty()`,
   `AccountsService.seedIfEmpty()`, `TaxCodesService.seedIfEmpty()` (when taxes are
   involved), and `PeriodsService.generatePeriods(<year>)` to open posting periods.
@@ -168,9 +168,9 @@ Key rules:
   with `AuthService.login(...)`.
 - Suites either call services directly (e.g. `app.get(PostingService).post(...)`)
   or drive HTTP through `supertest` (`request(app.getHttpServer()).post('/v1/...')`).
-  The supertest variant also installs `ValidationPipe` + `AllExceptionsFilter` so
-  HTTP responses match production shapes.
-- List endpoints return the `{ data, total, limit, offset }` envelope for the four
+  The supertest variant automatically gets `ValidationPipe` + `AllExceptionsFilter`
+  so HTTP responses match production shapes.
+- List endpoints return the `{ data, total, limit, offset }` envelope for the
   transactional lists — destructure `const { data } = await ...list()`.
 
 ### Unit test pattern

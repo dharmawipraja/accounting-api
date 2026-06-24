@@ -53,7 +53,7 @@ POST /auth/login      { "email": "...", "password": "..." }
   If refresh itself fails (401), the session is over → send the user back to login.
 - `GET /auth/me` → `{ id, email, role }` for the currently authenticated user. Use
   this on app load to hydrate the user and drive role-gated UI.
-- **There is no server-side logout.** To "log out", discard both tokens client-side.
+- **Server-side logout is supported.** Call `POST /auth/logout { "refreshToken": "..." }` to revoke the current device's refresh token family (public endpoint, throttled). Call `POST /auth/logout-all` (authenticated) to revoke all sessions for the current user. On logout, also discard both tokens client-side.
 
 ### Rate limiting (throttle)
 
@@ -457,6 +457,8 @@ no auth.
 ### Auth
 - `POST   /auth/login` · public · obtain a token pair
 - `POST   /auth/refresh` · public · exchange a refresh token for a new pair
+- `POST   /auth/logout` · public (throttled) · revoke the current device's refresh token family `{ "refreshToken": "..." }`
+- `POST   /auth/logout-all` · any (authenticated) · revoke all sessions for the current user
 - `GET    /auth/me` · any · current user `{ id, email, role }`
 - `GET    /auth/admin-only` · ADMIN · RBAC smoke endpoint
 
@@ -551,7 +553,7 @@ no auth.
 - `PATCH  /v1/company/settings` · ADMIN · update company settings
 
 ### Audit
-- `GET    /v1/audit` · ADMIN · audit log — **bare array** (no envelope) (filters: `userId, method, from, to, limit, offset`; `limit` default 50, **max 500**; `method` ∈ POST/PATCH/PUT/DELETE)
+- `GET    /v1/audit` · ADMIN · audit log — **bare array** (no envelope) (filters: `userId, method, from, to, limit, offset`; `limit` default 50, **max 200**; `method` ∈ POST/PATCH/PUT/DELETE)
 
 ### Response schema quick-map
 

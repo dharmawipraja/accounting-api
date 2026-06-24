@@ -29,7 +29,7 @@ All notable changes to this project are documented here. The format is based on
   omitted soft-delete fields, the journal-list envelope, computed
   `outstanding`/`paymentStatus`, detail-only nested `lines`/`allocations`).
   Document-only — no API behavior change (additive `@Api*` annotations + response
-  DTO classes); all 152 e2e assertions pass unchanged.
+  DTO classes); all existing e2e assertions pass unchanged.
 
 ### Changed
 

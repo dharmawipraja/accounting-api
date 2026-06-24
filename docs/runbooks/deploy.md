@@ -137,6 +137,7 @@ git push -u origin main
 ```
 On push/PR to `main`, CI runs three jobs: `verify` (Prisma generate + typecheck +
 lint + unit + e2e with coverage), `audit` (`npm run audit:ci`, fails on a
-moderate-or-higher advisory in prod deps), and `docker` (production image build).
+moderate-or-higher advisory in prod deps), and `docker` (production image build +
+Trivy HIGH/CRITICAL vulnerability scan, `exit-code 1`).
 Recommended next step: enable branch protection on `main` requiring the `verify`
 and `audit` checks to pass before merge.

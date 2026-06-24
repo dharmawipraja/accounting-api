@@ -35,11 +35,11 @@ service inventory.
 | --- | --- | --- |
 | `ledger` | Chart of accounts, journal entries, **posting engine**, balances, accounting periods, opening balances | `accounts`, `journal`, `posting/posting.service.ts`, `balances`, `periods`, `document-lifecycle.service.ts` |
 | `tax` | Tax codes (CRUD/seed) + the **tax engine** (PPN/PPh calculation → journal lines) | `tax-codes.service.ts`, `tax.service.ts` |
-| `invoicing` | Sales invoices, purchase bills, payments, business partners, **AR/AP subledgers**, document numbering, the shared `DocumentPostingService` | `sales-invoices`, `purchase-bills`, `payments`, `business-partners`, `document-number.service.ts`, `document-posting.service.ts`, `document-helpers.ts` |
+| `invoicing` | Sales invoices, purchase bills, payments, business partners, **AR/AP subledgers**, document numbering, the shared `DocumentPostingService` | `sales-invoices`, `purchase-bills`, `payments`, `business-partners`, `document-number.service.ts`, `document-posting.service.ts`, `taxed-document.service.ts` (SALE/PURCHASE via `DocumentDescriptor`), `payment-targets.ts` (RECEIPT/DISBURSEMENT), `document-helpers.ts` |
 | `reporting` | Read-only financial reports: balance sheet, income statement, general ledger, AR/AP aging, cash flow (trial balance is served by `balances`) | `reports.controller.ts` → `balance-sheet`, `income-statement`, `general-ledger`, `aging`, `cash-flow` services |
 | `close` | Year-end close (zero P&L → retained earnings) + reopen | `closing.controller.ts`, `year-end-close.service.ts` |
 | `auth` / `users` | JWT auth (stateful refresh tokens w/ rotation), guards, roles; user lookup | `auth.service.ts`, `refresh-token.service.ts`, guards/strategies; `users.service.ts` |
-| `company` | Singleton company settings (fiscal-year start month, segregation-of-duties flag) | `company.service.ts` |
+| `company` | Singleton company settings (fiscal-year start month, segregation-of-duties flag); **settings interpreter** — `fiscalYearFor` / `fiscalYearBounds` / `isSegregationViolation`; settings fields read ONLY inside this service | `company.service.ts` |
 | `audit` | Append-only audit log of mutating requests + admin read API | `audit.interceptor.ts`, `audit.service.ts` |
 | `metrics` | `prom-client` registry, `/metrics` scrape (token-gated), HTTP-duration + business counters | `metrics.service.ts`, `metrics.interceptor.ts`, `metrics-token.guard.ts` |
 | `health` | Liveness/readiness probes (`HealthController`, registered directly in `AppModule`) | `health.controller.ts` |
@@ -136,20 +136,30 @@ the DB also has a one-sided CHECK on `journal_lines` as defense-in-depth.
 `toPersistence()` emits the canonical fixed-4dp string written to the DB.
 
 ### Gapless per-`(type, fiscalYear)` numbering
-`PostingService.nextNumber` (`src/ledger/posting/posting.service.ts`) does
-`INSERT … ON CONFLICT DO NOTHING` then `SELECT … FOR UPDATE` + increment, all
-**inside the write transaction** — so numbers are gapless and serialized under
-concurrency. Document numbers use the same pattern in
-`src/invoicing/document-number.service.ts`.
+**`nextSequenceNumber(tx, table, key)`** (`src/common/db/sequence.ts`, also exports
+`SqlTx`) is the single gapless-numbering primitive: `INSERT … ON CONFLICT DO NOTHING`
+then `SELECT … FOR UPDATE` + increment, all **inside the write transaction** — so
+numbers are gapless and serialized under concurrency. Both `PostingService.nextNumber`
+(journal entries) and `DocumentNumberService.next` (invoice/bill doc numbers,
+`src/invoicing/document-number.service.ts`) delegate to it. (The old `RawTx` type was
+deleted when this was extracted.)
 
 ### The tx-composable `PostingService`
 `src/ledger/posting/posting.service.ts` is the **single writer of posted journal
 entries** (manual, invoice, bill, payment, reversal, close). It splits work so
 document services can compose posting into their own `$transaction`:
 - `preparePosting(input, postedBy)` — pre-tx reads (balance, segregation-of-duties,
-  open period, postable accounts, year-not-closed) → returns `{ periodId, fiscalYear }`.
-- `createPostedEntryInTx(tx, …)` / `reverseInTx(tx, …)` — assign the gapless number
-  and write within a caller-supplied `LedgerTx`.
+  open period, postable accounts, year-not-closed) → returns a **branded `PreparedPosting`
+  token** (minted via a module-private `PROTOCOL_MINT` symbol). In-tx writes
+  (`createPostedEntryInTx` / `reverseInTx`) **require** that token; you cannot
+  construct one from outside PostingService. `prepareReversal(...)` returns a
+  `PreparedReversal` token by the same mint.
+- `createPostedEntryInTx(tx, prepared)` / `reverseInTx(tx, prepared)` — accept the
+  branded token and write within a caller-supplied `LedgerTx`.
+- **`stampPostedInTx(tx, periodId, fiscalYear, opts?)`** — the private in-tx choke
+  point shared by all three write paths (create / postDraft / reversal): runs
+  `assertPostablePeriodInTx`, assigns the gapless JE number, and increments the
+  posting metric.
 - `assertPostablePeriodInTx(tx, periodId, fiscalYear)` — the authoritative **in-tx
   TOCTOU guard**, and the **first statement** in every posted-entry write path: a
   shared advisory lock on the fiscal year (the year-close holds the exclusive one)
@@ -196,6 +206,24 @@ missing). Singleton roles (e.g. `AR_CONTROL`, `AP_CONTROL`, `RETAINED_EARNINGS`,
 - **`DocumentPostingService`** (`src/invoicing/document-posting.service.ts`) — see §4.
 - **`DocumentLifecycleService`** (`src/ledger/document-lifecycle.service.ts`) —
   shared `softDeleteDraft` / reverse-with-guard for documents.
+- **`signing.ts`** (`src/ledger/balances/signing.ts`): two pure functions —
+  `signedNet(normalBalance, debit, credit)` (normal-balance–aware sign) and
+  `naturalSide(type, debit, credit)` (contra-aware, e.g. Akumulasi Penyusutan).
+  All normal-balance signing in reporting + balances routes through here.
+- **`query-dates.ts`** (`src/common/dates/query-dates.ts`): `asOfOrToday` /
+  `dateRange` / `optionalDateRange` — the controller date-boundary seam (audit
+  `from > to` → 422). **`parseDate`** (`src/common/dates/parse-date.ts`) =
+  `value ? new Date(value) : undefined` for optional date conversion in controllers.
+- **`statusFromException`** (`src/common/errors/exception-status.ts`): single
+  exception → HTTP status resolver, shared by `AllExceptionsFilter` AND
+  `AuditInterceptor` so the audit log records the resolved status, not a blanket 500.
+- **`POSTED_JE`** (`src/ledger/balances/posted-entry.sql.ts`): shared
+  `Prisma.sql` predicate `je.posted_at IS NOT NULL AND je.deleted_at IS NULL` used
+  by all raw-SQL balance queries.
+- **`tombstoneDelete` / `tombstoneValue`** (`src/common/prisma/soft-delete.extension.ts`
+  + tombstone.ts): tombstone deletes for reference-master rows (users, accounts,
+  tax-codes, business-partners), where the unique field (e.g. `email`, `code`) is
+  mangled on delete to free the value for re-use.
 - **Dates**: `fiscalYearForDate(date, startMonth)` (`src/common/dates/fiscal-year.ts`)
   and `truncateToUtcDay(date)` (`src/common/dates/utc-day.ts`) — all fiscal-year /
   day math is UTC and centralized here.
@@ -218,21 +246,22 @@ Tracing `POST /v1/sales-invoices/:id/post` end-to-end shows how the seams compos
    active customer, and resolves the AR settlement account via
    `findControlAccountId(prisma, 'AR_CONTROL')`.
 3. It maps document lines to taxable lines (`taxableLines` → `amount = qty × unitPrice`)
-   and delegates to `DocumentPostingService.post(params, lockDraft, finalize)`.
+   and delegates to `DocumentPostingService.post(params, finalize)`.
 4. **`DocumentPostingService.post`**:
    - `TaxService.calculate(...)` (`src/tax/tax.service.ts`) — validates tax codes,
      aggregates DPP per code, rounds each code's tax **once** to whole rupiah,
      builds balanced journal lines, and computes settlement
      `= subtotal + PPN − PPh` (rejects a non-positive settlement with a 422). The
      AR settlement line is the debit that ties to the control account.
-   - `posting.preparePosting(journalInput, postedBy)` — pre-tx validation, returns
-     `{ periodId, fiscalYear }`.
-   - **`$transaction`**: `lockDraft(tx)` (`SELECT … FOR UPDATE` + re-check `DRAFT`)
-     → `docNumber.next(tx, 'INV', fiscalYear)` (gapless) → `buildRef` →
-     `posting.createPostedEntryInTx(tx, …)` (which runs `assertPostablePeriodInTx`
-     first, assigns the gapless JE number, and writes the balanced entry) →
-     `finalize(ctx)` updates the invoice row to `POSTED` with `invoiceNumber`,
-     `invoiceRef`, `fiscalYear`, and `journalEntryId`.
+   - `posting.preparePosting(journalInput, postedBy)` — pre-tx validation, returns a
+     **`PreparedPosting` token** (branded; required by the in-tx write methods).
+   - **`$transaction`**: `lockDraftInTx(tx, …)` (internal — `SELECT … FOR UPDATE` +
+     re-check `DRAFT`) → `docNumber.next(tx, 'INV', fiscalYear)` (gapless) →
+     `buildRef` → `posting.createPostedEntryInTx(tx, prepared)` (which runs
+     `stampPostedInTx` → `assertPostablePeriodInTx` first, assigns the gapless JE
+     number, and writes the balanced entry) → `finalize(ctx)` updates the invoice row
+     to `POSTED` with `invoiceNumber`, `invoiceRef`, `fiscalYear`, and
+     `journalEntryId`.
 5. **Reconciliation:** because the settlement leg posts to the `AR_CONTROL` account
    and the invoice is the AR subledger row, the subledger ↔ control-account balance
    stays reconciled (aging reports read the subledger; the balance sheet reads the

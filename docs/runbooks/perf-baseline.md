@@ -35,8 +35,8 @@ when you choose to wire it into CI (see *Not a default CI gate* below).
    ```bash
    docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T api node -e '
      const { NestFactory } = require("@nestjs/core");
-     const { AppModule } = require("./dist/app.module");
-     const { UsersService } = require("./dist/users/users.service");
+     const { AppModule } = require("./dist/src/app.module");
+     const { UsersService } = require("./dist/src/users/users.service");
      (async () => {
        const app = await NestFactory.createApplicationContext(AppModule, { logger: false });
        try {

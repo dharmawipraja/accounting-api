@@ -14,18 +14,14 @@ image is built with `npm ci --omit=dev`.
 
 ### Accepted (tooling-only) advisories
 
-Three **moderate** advisories currently exist in `@prisma/dev` ->
-`@hono/node-server` (a slash-handling middleware-bypass in Prisma's CLI/dev
-tooling). They are accepted because:
+No advisories are currently outstanding. A `package.json` `overrides` block
+pins transitive dependencies (`multer`, `form-data`, `@hono/node-server`,
+`js-yaml`) to patched versions, bringing both `npm audit` (full) and
+`npm audit --omit=dev` to **0 vulnerabilities**.
 
-- They live only in Prisma's CLI tooling chain, never in application code.
-- The production image excludes them: `npm ci --omit=dev` drops `prisma` and
-  `@prisma/dev`; only `@prisma/client` + `@prisma/adapter-pg` ship.
-- The offered "fix" is a Prisma **downgrade** (breaking), which we reject.
-
-Re-evaluate when Prisma ships a patched tooling chain. The `high` audit gate
-ensures these do not block CI while still catching anything that reaches
-production.
+Re-evaluate overrides when upgrading the packages that pull them in (Prisma,
+`@nestjs/platform-express`, `swagger-ui-express`). The `high` audit gate
+ensures any new advisories that reach production are caught immediately.
 
 ## Dependency updates
 

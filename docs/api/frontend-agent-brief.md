@@ -39,7 +39,9 @@ lifecycles, money), follow the guide.
    **422 = domain-rule violation** (e.g. `UNBALANCED_ENTRY`).
 3. **Auth = `Authorization: Bearer <accessToken>`.** Access token ~15m, refresh ~7d.
    On **401**, call `POST /auth/refresh { refreshToken }` for a fresh pair and retry
-   once; if refresh fails, go to login. There is **no server logout** — discard tokens.
+   once; if refresh fails, go to login. Call `POST /auth/logout { refreshToken }` to
+   revoke the current device's refresh token server-side; call `POST /auth/logout-all`
+   (authenticated) to revoke all sessions. Always discard tokens client-side too.
    On **429**, back off.
 4. **Respect the role matrix** (VIEWER / ACCOUNTANT / APPROVER / ADMIN; see the guide).
    Reads are open to any authenticated user. Hide/disable actions a role can't do —
@@ -92,8 +94,7 @@ lifecycles, money), follow the guide.
   (`/v1/partners`, `/v1/sales-invoices`, `/v1/purchase-bills`, `/v1/payments`,
   `/v1/ledger/journal-entries`, `/v1/ledger/accounts`, `/v1/tax/codes`) — iterate
   `.data`, not the root.
-- Don't expect a logout endpoint, a pagination envelope on periods/audit, or that a
-  creator can self-approve.
+- Don't expect a pagination envelope on periods/audit, or that a creator can self-approve.
 - Don't rely on nested `lines` (invoices/bills) or `allocations` (payments) in **list**
   responses — they're **detail-only** (present on single-resource GET/POST, omitted from
   lists; optional in the schema).
