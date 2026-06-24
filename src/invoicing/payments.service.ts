@@ -10,7 +10,6 @@ import { trigramSearch } from '../common/search/trigram-search';
 import { Money } from '../common/money/money';
 import { PostingService } from '../ledger/posting/posting.service';
 import {
-  ConflictDomainError,
   NotFoundDomainError,
   ValidationFailedError,
 } from '../common/errors/domain-errors';
@@ -20,12 +19,15 @@ import { listPaginated } from '../common/pagination/paginated';
 import { serializeMoney } from '../common/money/serialize-money';
 import { findControlAccountId } from './document-helpers';
 import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
+import {
+  AllocationInput,
+  PAYMENT_TARGETS,
+  loadTarget,
+  settleInTx,
+  unwindInTx,
+  buildPaymentLines,
+} from './payment-targets';
 
-export interface AllocationInput {
-  salesInvoiceId?: string;
-  purchaseBillId?: string;
-  amount: string;
-}
 export interface CreatePaymentInput {
   direction: PaymentDirection;
   partnerId: string;
@@ -46,53 +48,6 @@ export class PaymentsService {
     private readonly lifecycle: DocumentLifecycleService,
   ) {}
 
-  /** Load the target document (sales invoice for RECEIPT, purchase bill for DISBURSEMENT). */
-  private async loadTarget(
-    direction: PaymentDirection,
-    alloc: AllocationInput,
-  ) {
-    if (direction === 'RECEIPT') {
-      if (!alloc.salesInvoiceId || alloc.purchaseBillId)
-        throw new ValidationFailedError(
-          'A receipt allocation must reference a sales invoice',
-          {},
-        );
-      const inv = await this.prisma.client.salesInvoice.findFirst({
-        where: { id: alloc.salesInvoiceId },
-      });
-      if (!inv)
-        throw new NotFoundDomainError('Sales invoice not found', {
-          id: alloc.salesInvoiceId,
-        });
-      return {
-        id: inv.id,
-        partnerId: inv.partnerId,
-        status: inv.status,
-        total: inv.total,
-        amountPaid: inv.amountPaid,
-      };
-    }
-    if (!alloc.purchaseBillId || alloc.salesInvoiceId)
-      throw new ValidationFailedError(
-        'A disbursement allocation must reference a purchase bill',
-        {},
-      );
-    const bill = await this.prisma.client.purchaseBill.findFirst({
-      where: { id: alloc.purchaseBillId },
-    });
-    if (!bill)
-      throw new NotFoundDomainError('Purchase bill not found', {
-        id: alloc.purchaseBillId,
-      });
-    return {
-      id: bill.id,
-      partnerId: bill.partnerId,
-      status: bill.status,
-      total: bill.total,
-      amountPaid: bill.amountPaid,
-    };
-  }
-
   async createDraft(input: CreatePaymentInput): Promise<Payment> {
     if (input.allocations.length === 0)
       throw new ValidationFailedError(
@@ -104,12 +59,9 @@ export class PaymentsService {
       throw new ValidationFailedError('Partner is inactive', {
         partnerId: input.partnerId,
       });
-    if (input.direction === 'RECEIPT' && !partner.isCustomer)
-      throw new ValidationFailedError('Receipt requires a customer', {
-        partnerId: input.partnerId,
-      });
-    if (input.direction === 'DISBURSEMENT' && !partner.isVendor)
-      throw new ValidationFailedError('Disbursement requires a vendor', {
+    const target = PAYMENT_TARGETS[input.direction];
+    if (!partner[target.partnerFlag])
+      throw new ValidationFailedError(target.partnerRequiredMessage, {
         partnerId: input.partnerId,
       });
     const cash = await this.prisma.client.account.findFirst({
@@ -129,31 +81,31 @@ export class PaymentsService {
           'Allocation amount must be positive',
           {},
         );
-      const target = await this.loadTarget(input.direction, alloc);
-      if (target.partnerId !== input.partnerId)
+      const targetRow = await loadTarget(this.prisma.client, target, alloc);
+      if (targetRow.partnerId !== input.partnerId)
         throw new ValidationFailedError(
           'Allocated document belongs to another partner',
-          { documentId: target.id },
+          { documentId: targetRow.id },
         );
-      if (target.status !== 'POSTED')
+      if (targetRow.status !== 'POSTED')
         throw new ValidationFailedError(
           'Can only allocate to a POSTED document',
-          { documentId: target.id, status: target.status },
+          { documentId: targetRow.id, status: targetRow.status },
         );
       // Outstanding net of what THIS payment already allocated to the same
       // document, so two allocations to one invoice can't each pass in isolation.
-      const alreadyAllocated = allocatedByDoc.get(target.id) ?? Money.zero();
-      const outstanding = Money.of(target.total.toString())
-        .subtract(Money.of(target.amountPaid.toString()))
+      const alreadyAllocated = allocatedByDoc.get(targetRow.id) ?? Money.zero();
+      const outstanding = Money.of(targetRow.total.toString())
+        .subtract(Money.of(targetRow.amountPaid.toString()))
         .subtract(alreadyAllocated);
       // amt > outstanding  ⟺  (outstanding − amt) < 0
       if (outstanding.subtract(amt).isNegative()) {
         throw new ValidationFailedError(
           'Allocation exceeds the document outstanding',
-          { documentId: target.id },
+          { documentId: targetRow.id },
         );
       }
-      allocatedByDoc.set(target.id, alreadyAllocated.add(amt));
+      allocatedByDoc.set(targetRow.id, alreadyAllocated.add(amt));
       total = total.add(amt);
     }
 
@@ -265,40 +217,41 @@ export class PaymentsService {
         status: payment.status,
       });
     const allocations = (
-      payment as Payment & {
-        allocations: {
-          salesInvoiceId: string | null;
-          purchaseBillId: string | null;
-          amount: Prisma.Decimal;
-        }[];
-      }
-    ).allocations;
-    const isReceipt = payment.direction === 'RECEIPT';
+      (
+        payment as Payment & {
+          allocations: {
+            salesInvoiceId: string | null;
+            purchaseBillId: string | null;
+            amount: Prisma.Decimal;
+          }[];
+        }
+      ).allocations ?? []
+    ).map(
+      (a): AllocationInput => ({
+        salesInvoiceId: a.salesInvoiceId ?? undefined,
+        purchaseBillId: a.purchaseBillId ?? undefined,
+        amount: a.amount.toString(),
+      }),
+    );
+    const target = PAYMENT_TARGETS[payment.direction];
     const controlId = await findControlAccountId(
       this.prisma,
-      isReceipt ? 'AR_CONTROL' : 'AP_CONTROL',
+      target.controlRole,
     );
     const amount = Money.of(payment.amount.toString());
 
-    // Build the 2-line journal: RECEIPT Dr cash / Cr AR ; DISBURSEMENT Dr AP / Cr cash.
     const journalInput = {
       date: payment.date,
       description: payment.description ?? `Payment ${id}`,
       sourceType: 'PAYMENT' as const,
       sourceId: id,
       createdBy: payment.createdBy,
-      lines: isReceipt
-        ? [
-            { accountId: payment.cashAccountId, debit: amount.toPersistence() },
-            { accountId: controlId, credit: amount.toPersistence() },
-          ]
-        : [
-            { accountId: controlId, debit: amount.toPersistence() },
-            {
-              accountId: payment.cashAccountId,
-              credit: amount.toPersistence(),
-            },
-          ],
+      lines: buildPaymentLines(
+        target,
+        payment.cashAccountId,
+        controlId,
+        amount.toPersistence(),
+      ),
     };
     const prepared = await this.posting.preparePosting(journalInput, postedBy);
 
@@ -314,84 +267,16 @@ export class PaymentsService {
 
         // Lock each target document FOR UPDATE and re-verify outstanding (the real over-allocation guard).
         for (const a of allocations) {
-          const amt = Money.of(a.amount.toString());
-          if (isReceipt) {
-            const rows = await tx.$queryRaw<
-              {
-                status: string;
-                total: string;
-                amount_paid: string;
-                partner_id: string;
-              }[]
-            >`
-            SELECT status, total, amount_paid, partner_id FROM sales_invoices WHERE id = ${a.salesInvoiceId} AND deleted_at IS NULL FOR UPDATE`;
-            if (rows.length === 0 || rows[0].status !== 'POSTED')
-              throw new ValidationFailedError(
-                'Allocated invoice is not posted',
-                { id: a.salesInvoiceId },
-              );
-            if (rows[0].partner_id !== payment.partnerId)
-              throw new ValidationFailedError(
-                'Allocated invoice belongs to another partner',
-                { id: a.salesInvoiceId },
-              );
-            const outstanding = Money.of(rows[0].total).subtract(
-              Money.of(rows[0].amount_paid),
-            );
-            if (outstanding.subtract(amt).isNegative())
-              throw new ConflictDomainError(
-                'Allocation now exceeds outstanding',
-                {
-                  id: a.salesInvoiceId,
-                },
-              );
-            await tx.salesInvoice.update({
-              where: { id: a.salesInvoiceId! },
-              data: { amountPaid: { increment: a.amount } },
-            });
-          } else {
-            const rows = await tx.$queryRaw<
-              {
-                status: string;
-                total: string;
-                amount_paid: string;
-                partner_id: string;
-              }[]
-            >`
-            SELECT status, total, amount_paid, partner_id FROM purchase_bills WHERE id = ${a.purchaseBillId} AND deleted_at IS NULL FOR UPDATE`;
-            if (rows.length === 0 || rows[0].status !== 'POSTED')
-              throw new ValidationFailedError('Allocated bill is not posted', {
-                id: a.purchaseBillId,
-              });
-            if (rows[0].partner_id !== payment.partnerId)
-              throw new ValidationFailedError(
-                'Allocated bill belongs to another partner',
-                { id: a.purchaseBillId },
-              );
-            const outstanding = Money.of(rows[0].total).subtract(
-              Money.of(rows[0].amount_paid),
-            );
-            if (outstanding.subtract(amt).isNegative())
-              throw new ConflictDomainError(
-                'Allocation now exceeds outstanding',
-                {
-                  id: a.purchaseBillId,
-                },
-              );
-            await tx.purchaseBill.update({
-              where: { id: a.purchaseBillId! },
-              data: { amountPaid: { increment: a.amount } },
-            });
-          }
+          await settleInTx(tx, target, a, payment.partnerId);
         }
 
         const number = await this.docNumber.next(
           tx,
-          isReceipt ? 'PAY-RCV' : 'PAY-DSB',
+          target.numberPrefix,
           prepared.fiscalYear,
         );
         const ref = this.docNumber.buildRef(
-          isReceipt ? 'PAY-RCV' : 'PAY-DSB',
+          target.numberPrefix,
           prepared.fiscalYear,
           number,
         );
@@ -428,14 +313,22 @@ export class PaymentsService {
         status: payment.status,
       });
     const allocations = (
-      payment as Payment & {
-        allocations: {
-          salesInvoiceId: string | null;
-          purchaseBillId: string | null;
-          amount: Prisma.Decimal;
-        }[];
-      }
-    ).allocations;
+      (
+        payment as Payment & {
+          allocations: {
+            salesInvoiceId: string | null;
+            purchaseBillId: string | null;
+            amount: Prisma.Decimal;
+          }[];
+        }
+      ).allocations ?? []
+    ).map(
+      (a): AllocationInput => ({
+        salesInvoiceId: a.salesInvoiceId ?? undefined,
+        purchaseBillId: a.purchaseBillId ?? undefined,
+        amount: a.amount.toString(),
+      }),
+    );
     await this.lifecycle.reverseWithGuard({
       id,
       journalEntryId: payment.journalEntryId!,
@@ -448,43 +341,9 @@ export class PaymentsService {
         return locked[0];
       },
       applyInTx: async (tx) => {
+        const target = PAYMENT_TARGETS[payment.direction];
         for (const a of allocations) {
-          if (a.salesInvoiceId) {
-            const rows = await tx.$queryRaw<{ amount_paid: string }[]>`
-              SELECT amount_paid FROM sales_invoices WHERE id = ${a.salesInvoiceId} AND deleted_at IS NULL FOR UPDATE`;
-            if (
-              rows.length === 0 ||
-              Money.of(rows[0].amount_paid)
-                .subtract(Money.of(a.amount.toString()))
-                .isNegative()
-            )
-              throw new ConflictDomainError(
-                'Void would drive amountPaid negative',
-                { id: a.salesInvoiceId },
-              );
-            await tx.salesInvoice.update({
-              where: { id: a.salesInvoiceId },
-              data: { amountPaid: { decrement: a.amount } },
-            });
-          }
-          if (a.purchaseBillId) {
-            const rows = await tx.$queryRaw<{ amount_paid: string }[]>`
-              SELECT amount_paid FROM purchase_bills WHERE id = ${a.purchaseBillId} AND deleted_at IS NULL FOR UPDATE`;
-            if (
-              rows.length === 0 ||
-              Money.of(rows[0].amount_paid)
-                .subtract(Money.of(a.amount.toString()))
-                .isNegative()
-            )
-              throw new ConflictDomainError(
-                'Void would drive amountPaid negative',
-                { id: a.purchaseBillId },
-              );
-            await tx.purchaseBill.update({
-              where: { id: a.purchaseBillId },
-              data: { amountPaid: { decrement: a.amount } },
-            });
-          }
+          await unwindInTx(tx, target, a);
         }
         await tx.payment.update({
           where: { id },
