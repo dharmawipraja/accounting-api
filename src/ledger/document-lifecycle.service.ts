@@ -63,6 +63,7 @@ export class DocumentLifecycleService {
   }): Promise<void> {
     const prepared = await this.posting.prepareReversal(
       opts.journalEntryId,
+      opts.reversedBy,
       opts.reversalDate,
     );
     try {
@@ -75,14 +76,7 @@ export class DocumentLifecycleService {
           });
         }
         await opts.applyInTx(ltx, locked);
-        await this.posting.reverseInTx(
-          ltx,
-          prepared.original,
-          opts.reversedBy,
-          prepared.periodId,
-          prepared.fiscalYear,
-          prepared.reversalDate,
-        );
+        await this.posting.reverseInTx(ltx, prepared);
       });
     } catch (err) {
       if (

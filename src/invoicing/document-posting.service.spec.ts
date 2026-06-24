@@ -82,13 +82,10 @@ describe('DocumentPostingService (orchestration)', () => {
     expect(txWithLock.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
       docNumber.next.mock.invocationCallOrder[0],
     );
-    // period/fiscalYear from preparePosting are threaded into the posted-entry write
+    // preparePosting token is passed directly to the write (2-arg token form)
     expect(posting.createPostedEntryInTx).toHaveBeenCalledWith(
       txWithLock,
-      expect.objectContaining({ sourceType: 'SALES_INVOICE', sourceId: 's1' }),
-      'u2',
-      'p1',
-      2026,
+      expect.objectContaining({ periodId: 'p1', fiscalYear: 2026 }),
     );
     // finalize receives the assigned number/ref/entry + computed totals
     const expectedTotals: Record<string, string> = {

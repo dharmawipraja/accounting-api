@@ -113,7 +113,7 @@ export class DocumentPostingService {
       createdBy: params.createdBy,
       lines: calc.journalLines,
     };
-    const { periodId, fiscalYear } = await this.posting.preparePosting(
+    const prepared = await this.posting.preparePosting(
       journalInput,
       params.postedBy,
     );
@@ -127,26 +127,20 @@ export class DocumentPostingService {
       const number = await this.docNumber.next(
         tx,
         params.documentType,
-        fiscalYear,
+        prepared.fiscalYear,
       );
       const ref = this.docNumber.buildRef(
         params.documentType,
-        fiscalYear,
+        prepared.fiscalYear,
         number,
       );
-      const entry = await this.posting.createPostedEntryInTx(
-        tx,
-        journalInput,
-        params.postedBy,
-        periodId,
-        fiscalYear,
-      );
+      const entry = await this.posting.createPostedEntryInTx(tx, prepared);
       await finalize({
         tx,
         number,
         ref,
         entry,
-        fiscalYear,
+        fiscalYear: prepared.fiscalYear,
         totals: this.summarize(calc),
       });
     });

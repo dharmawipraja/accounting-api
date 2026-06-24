@@ -300,10 +300,7 @@ export class PaymentsService {
             },
           ],
     };
-    const { periodId, fiscalYear } = await this.posting.preparePosting(
-      journalInput,
-      postedBy,
-    );
+    const prepared = await this.posting.preparePosting(journalInput, postedBy);
 
     await this.prisma.client.$transaction(
       async (tx) => {
@@ -391,27 +388,21 @@ export class PaymentsService {
         const number = await this.docNumber.next(
           tx,
           isReceipt ? 'PAY-RCV' : 'PAY-DSB',
-          fiscalYear,
+          prepared.fiscalYear,
         );
         const ref = this.docNumber.buildRef(
           isReceipt ? 'PAY-RCV' : 'PAY-DSB',
-          fiscalYear,
+          prepared.fiscalYear,
           number,
         );
-        const entry = await this.posting.createPostedEntryInTx(
-          tx,
-          journalInput,
-          postedBy,
-          periodId,
-          fiscalYear,
-        );
+        const entry = await this.posting.createPostedEntryInTx(tx, prepared);
         await tx.payment.update({
           where: { id },
           data: {
             status: 'POSTED',
             number,
             ref,
-            fiscalYear,
+            fiscalYear: prepared.fiscalYear,
             journalEntryId: entry.id,
             postedBy,
             postedAt: new Date(),

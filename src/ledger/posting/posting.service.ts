@@ -27,6 +27,52 @@ export type LedgerTx = Omit<
   '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends' | '$use'
 >;
 
+/** Module-private mint key — external code cannot import it, so it cannot
+ *  satisfy the token constructors' first parameter. */
+const PROTOCOL_MINT = Symbol('posting.protocol.mint');
+
+/** The original posted entry (with lines) a reversal is built from. */
+export type OriginalEntry = JournalEntry & {
+  lines: {
+    lineNo: number;
+    accountId: string;
+    debit: Prisma.Decimal;
+    credit: Prisma.Decimal;
+    description: string | null;
+  }[];
+};
+
+/** Phase-one result for a post. Minted only by PostingService.preparePosting;
+ *  required by createPostedEntryInTx so a post cannot skip preparation. */
+export class PreparedPosting {
+  constructor(
+    mint: typeof PROTOCOL_MINT,
+    readonly input: PostEntryInput,
+    readonly postedBy: string,
+    readonly periodId: string,
+    readonly fiscalYear: number,
+  ) {
+    if (mint !== PROTOCOL_MINT) throw new Error('PreparedPosting is internal');
+  }
+}
+
+/** Phase-one result for a reversal. Carries allowClosedYear so it is specified
+ *  exactly once (not duplicated across prepare + write). Minted only by
+ *  PostingService.prepareReversal; required by reverseInTx. */
+export class PreparedReversal {
+  constructor(
+    mint: typeof PROTOCOL_MINT,
+    readonly original: OriginalEntry,
+    readonly reversedBy: string,
+    readonly periodId: string,
+    readonly fiscalYear: number,
+    readonly reversalDate: Date,
+    readonly allowClosedYear: boolean,
+  ) {
+    if (mint !== PROTOCOL_MINT) throw new Error('PreparedReversal is internal');
+  }
+}
+
 @Injectable()
 export class PostingService {
   constructor(
@@ -37,9 +83,9 @@ export class PostingService {
   ) {}
 
   async post(input: PostEntryInput, postedBy: string): Promise<JournalEntry> {
-    const { periodId, fiscalYear } = await this.preparePosting(input, postedBy);
+    const prepared = await this.preparePosting(input, postedBy);
     return this.prisma.client.$transaction((tx) =>
-      this.createPostedEntryInTx(tx, input, postedBy, periodId, fiscalYear),
+      this.createPostedEntryInTx(tx, prepared),
     );
   }
 
@@ -50,7 +96,7 @@ export class PostingService {
   async preparePosting(
     input: PostEntryInput,
     postedBy: string,
-  ): Promise<{ periodId: string; fiscalYear: number }> {
+  ): Promise<PreparedPosting> {
     assertBalanced(input.lines);
     if (
       await this.company.isSegregationViolation({
@@ -86,18 +132,22 @@ export class PostingService {
         { fiscalYear },
       );
     }
-    return { periodId: period.id, fiscalYear };
+    return new PreparedPosting(
+      PROTOCOL_MINT,
+      input,
+      postedBy,
+      period.id,
+      fiscalYear,
+    );
   }
 
   /** Assigns the gapless JE number and writes the (already-validated, balanced)
    *  entry within a caller-provided transaction. */
   async createPostedEntryInTx(
     tx: LedgerTx,
-    input: PostEntryInput,
-    postedBy: string,
-    periodId: string,
-    fiscalYear: number,
+    prepared: PreparedPosting,
   ): Promise<JournalEntry> {
+    const { input, postedBy, periodId, fiscalYear } = prepared;
     await this.assertPostablePeriodInTx(tx, periodId, fiscalYear);
     const entryNumber = await this.nextNumber(tx, fiscalYear);
     const entryRef = this.buildEntryRef(fiscalYear, entryNumber);
@@ -177,18 +227,10 @@ export class PostingService {
     reversedBy: string,
     date?: Date,
   ): Promise<JournalEntry> {
-    const { original, periodId, fiscalYear, reversalDate } =
-      await this.prepareReversal(entryId, date);
+    const prepared = await this.prepareReversal(entryId, reversedBy, date);
     try {
       return await this.prisma.client.$transaction((tx) =>
-        this.reverseInTx(
-          tx,
-          original,
-          reversedBy,
-          periodId,
-          fiscalYear,
-          reversalDate,
-        ),
+        this.reverseInTx(tx, prepared),
       );
     } catch (err) {
       // The unique on reversal_of_id means a concurrent/retried reverse of the
@@ -211,22 +253,10 @@ export class PostingService {
    *  write transaction. */
   async prepareReversal(
     entryId: string,
+    reversedBy: string,
     date?: Date,
     opts: { allowClosedYear?: boolean } = {},
-  ): Promise<{
-    original: JournalEntry & {
-      lines: {
-        lineNo: number;
-        accountId: string;
-        debit: Prisma.Decimal;
-        credit: Prisma.Decimal;
-        description: string | null;
-      }[];
-    };
-    periodId: string;
-    fiscalYear: number;
-    reversalDate: Date;
-  }> {
+  ): Promise<PreparedReversal> {
     const original = await this.prisma.client.journalEntry.findUnique({
       where: { id: entryId },
       include: { lines: { orderBy: { lineNo: 'asc' } } },
@@ -262,7 +292,15 @@ export class PostingService {
         );
       }
     }
-    return { original, periodId: period.id, fiscalYear, reversalDate };
+    return new PreparedReversal(
+      PROTOCOL_MINT,
+      original,
+      reversedBy,
+      period.id,
+      fiscalYear,
+      reversalDate,
+      opts.allowClosedYear ?? false,
+    );
   }
 
   /** Writes the reversal entry (debit/credit swapped) and marks the original
@@ -271,16 +309,19 @@ export class PostingService {
    *  date always agrees with its period. */
   async reverseInTx(
     tx: LedgerTx,
-    original: Awaited<
-      ReturnType<PostingService['prepareReversal']>
-    >['original'],
-    reversedBy: string,
-    periodId: string,
-    fiscalYear: number,
-    reversalDate: Date,
-    opts: { allowClosedYear?: boolean } = {},
+    prepared: PreparedReversal,
   ): Promise<JournalEntry> {
-    await this.assertPostablePeriodInTx(tx, periodId, fiscalYear, opts);
+    const {
+      original,
+      reversedBy,
+      periodId,
+      fiscalYear,
+      reversalDate,
+      allowClosedYear,
+    } = prepared;
+    await this.assertPostablePeriodInTx(tx, periodId, fiscalYear, {
+      allowClosedYear,
+    });
     const entryNumber = await this.nextNumber(tx, fiscalYear);
     const entryRef = this.buildEntryRef(fiscalYear, entryNumber);
     const reversal = await tx.journalEntry.create({

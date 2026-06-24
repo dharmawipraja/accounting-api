@@ -92,10 +92,7 @@ export class YearEndCloseService {
       createdBy: closedBy,
       lines,
     };
-    const { periodId, fiscalYear: fy } = await this.posting.preparePosting(
-      closingInput,
-      closedBy,
-    );
+    const prepared = await this.posting.preparePosting(closingInput, closedBy);
     const incomeStr = netIncome.toPersistence();
     await this.prisma.client.$transaction(async (tx) => {
       // Serialize concurrent year-end closes for this fiscal year, then re-check
@@ -110,13 +107,7 @@ export class YearEndCloseService {
           fiscalYear,
         });
       }
-      const entry = await this.posting.createPostedEntryInTx(
-        tx,
-        closingInput,
-        closedBy,
-        periodId,
-        fy,
-      );
+      const entry = await this.posting.createPostedEntryInTx(tx, prepared);
       await tx.yearEndClosing.upsert({
         where: { fiscalYear },
         create: {
@@ -180,14 +171,12 @@ export class YearEndCloseService {
       });
     }
     if (rec.closingEntryId) {
-      const {
-        original,
-        periodId,
-        fiscalYear: fy,
-        reversalDate,
-      } = await this.posting.prepareReversal(rec.closingEntryId, undefined, {
-        allowClosedYear: true,
-      });
+      const prepared = await this.posting.prepareReversal(
+        rec.closingEntryId,
+        reopenedBy,
+        undefined,
+        { allowClosedYear: true },
+      );
       await this.prisma.client.$transaction(async (tx) => {
         // Serialize concurrent reopens of this fiscal year (mirror close's
         // advisory lock), then re-check status under the lock so a double-reopen
@@ -200,15 +189,7 @@ export class YearEndCloseService {
             fiscalYear,
           });
         }
-        await this.posting.reverseInTx(
-          tx,
-          original,
-          reopenedBy,
-          periodId,
-          fy,
-          reversalDate,
-          { allowClosedYear: true },
-        );
+        await this.posting.reverseInTx(tx, prepared);
         await tx.yearEndClosing.update({
           where: { fiscalYear },
           data: { status: 'OPEN', reopenedAt: new Date(), reopenedBy },
