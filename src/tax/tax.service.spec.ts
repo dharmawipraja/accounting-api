@@ -69,6 +69,8 @@ describe('TaxService.calculate', () => {
     expect(r.taxes).toHaveLength(1);
     expect(r.taxes[0].amount).toBe('110000.0000'); // 1,000,000 * 0.11
     expect(r.settlementAmount).toBe('1110000.0000');
+    expect(r.taxTotal).toBe('110000.0000'); // PPN only
+    expect(r.withholdingTotal).toBe('0.0000');
     const dr = r.journalLines.reduce((s, l) => s + Number(l.debit ?? 0), 0);
     const cr = r.journalLines.reduce((s, l) => s + Number(l.credit ?? 0), 0);
     expect(dr).toBeCloseTo(cr); // balanced
@@ -88,6 +90,8 @@ describe('TaxService.calculate', () => {
     });
     // PPN 110,000 ; PPh 20,000 → settlement 1,090,000
     expect(r.settlementAmount).toBe('1090000.0000');
+    expect(r.taxTotal).toBe('110000.0000'); // PPN bucket
+    expect(r.withholdingTotal).toBe('20000.0000'); // PPh bucket
   });
 
   it('rounds each tax code to whole rupiah once', async () => {

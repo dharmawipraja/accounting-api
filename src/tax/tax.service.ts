@@ -39,6 +39,10 @@ export interface TaxCalculation {
   taxes: TaxBreakdownRow[];
   settlementAmount: string;
   journalLines: CalculatedLine[];
+  /** PPN (value-added) bucket total — the document's `taxTotal`. */
+  taxTotal: string;
+  /** PPh (withholding) bucket total — the document's `withholdingTotal`. */
+  withholdingTotal: string;
 }
 
 const ALLOWED_KINDS: Record<TaxNature, TaxKind[]> = {
@@ -203,6 +207,8 @@ export class TaxService {
       taxes,
       settlementAmount: settlement.toPersistence(),
       journalLines,
+      taxTotal: ppnTotal.toPersistence(),
+      withholdingTotal: pphTotal.toPersistence(),
     };
   }
 }

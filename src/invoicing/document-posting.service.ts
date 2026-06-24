@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { JournalEntry, Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
-import { Money } from '../common/money/money';
 import { PostingService, LedgerTx } from '../ledger/posting/posting.service';
 import {
   TaxService,
@@ -51,24 +50,18 @@ export class DocumentPostingService {
     private readonly docNumber: DocumentNumberService,
   ) {}
 
-  /** Split a tax calculation into the stored document totals. */
+  /** Assemble the stored document totals from a tax calculation. The PPN/PPh split
+   *  (taxTotal vs withholdingTotal) is computed once, inside TaxService. */
   private summarize(calc: TaxCalculation): {
     subtotal: string;
     taxTotal: string;
     withholdingTotal: string;
     total: string;
   } {
-    let taxTotal = Money.zero();
-    let withholdingTotal = Money.zero();
-    for (const t of calc.taxes) {
-      if (t.kind === 'PPN_OUTPUT' || t.kind === 'PPN_INPUT')
-        taxTotal = taxTotal.add(Money.of(t.amount));
-      else withholdingTotal = withholdingTotal.add(Money.of(t.amount));
-    }
     return {
       subtotal: calc.subtotal,
-      taxTotal: taxTotal.toPersistence(),
-      withholdingTotal: withholdingTotal.toPersistence(),
+      taxTotal: calc.taxTotal,
+      withholdingTotal: calc.withholdingTotal,
       total: calc.settlementAmount,
     };
   }
