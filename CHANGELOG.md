@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-25
+
 ### Added
 
 - **API versioning** — all business routes are served under `/v1`
@@ -18,9 +20,16 @@ All notable changes to this project are documented here. The format is based on
   response; key reuse with a different body/endpoint → 422; in-flight → 409.
   (Reference-data creates are not covered — their unique `code` already prevents
   duplicates.)
-- **List pagination** — partners, sales invoices, purchase bills, and payments
-  now return `{ data, total, limit, offset }` (`?limit` max 200, default 50;
-  `?offset`). Accounts and tax codes remain full lists (bounded reference data).
+- **List pagination** — partners, sales invoices, purchase bills, payments, and
+  the accounts and tax-code reference lists now return
+  `{ data, total, limit, offset }` (`?limit` max 200, default 50; `?offset`).
+- **Fuzzy search** — an optional `?q=` relevance-ranked search (PostgreSQL
+  `pg_trgm`) on partners, sales invoices, purchase bills, payments, and the
+  journal register. Additive — existing filters are unchanged.
+- **Session logout & stateful refresh tokens** — refresh tokens are now stored
+  server-side and rotated on every refresh, with reuse-detection that revokes the
+  whole token family. `POST /auth/logout` revokes the presented refresh token;
+  `POST /auth/logout-all` revokes all of a user's sessions.
 - **Typed OpenAPI response schemas** — every endpoint's 2xx response body is now
   fully described in `docs/api/openapi.json` (entity shapes as `*ResponseDto`,
   computed/report shapes as `*Dto`), so a generated client yields response types,
@@ -28,8 +37,6 @@ All notable changes to this project are documented here. The format is based on
   frontend guide and agent brief document the conventions (money-as-string,
   omitted soft-delete fields, the journal-list envelope, computed
   `outstanding`/`paymentStatus`, detail-only nested `lines`/`allocations`).
-  Document-only — no API behavior change (additive `@Api*` annotations + response
-  DTO classes); all existing e2e assertions pass unchanged.
 
 ### Changed
 
@@ -39,16 +46,38 @@ All notable changes to this project are documented here. The format is based on
   Fail-closed: a real limit hit returns 429; if Redis is unreachable, requests get 503
   (the limiter never silently turns off). `/ready` now also checks Redis. Requires
   `REDIS_URL` outside the test environment.
-- **Breaking:** business route paths are now `/v1/...`; the four transactional
-  lists above return an envelope instead of a bare array. The journal/
-  opening-balances endpoints now require an `Idempotency-Key`. See
-  `docs/api/openapi.json`.
+- **Breaking:** business route paths are now `/v1/...`; every list endpoint
+  (transactional lists plus the accounts and tax-code lists) returns the
+  `{ data, total, limit, offset }` envelope instead of a bare array — read
+  `.data`. The journal/opening-balances endpoints now require an
+  `Idempotency-Key`. See `docs/api/openapi.json`.
+- Audit log query: `from > to` now returns `422` instead of an empty result.
 
 ### Fixed
 
+- **Financial correctness (P0)** — two posting bugs fixed test-first: a reversal
+  could post into a closed fiscal year, and an out-of-order year-end close could
+  double-count cumulative P&L.
+- **Production image entry point** — the production Docker image started
+  `dist/main.js`, but `nest build` emits `dist/src/main.js`; the entry path is
+  corrected so the image boots.
 - `npm run openapi:export` referenced `dist/scripts/export-openapi.js`, but
   `nest build` emits to `dist/src/scripts/`; the path is corrected so the export
   actually runs.
+
+### Security
+
+- **Refresh-token revocation & rotation** — stateful refresh tokens (rotated per
+  use, reuse-detection revokes the family); access tokens are unchanged.
+- **Login hardening** — login throttling keyed by email, and constant-time login
+  (decoy password hash) to resist user enumeration and brute force.
+- `Idempotency-Key` format validation with periodic purge; `/metrics` is
+  token-gated and fail-closed.
+- **Append-only audit log** — enforced by a database trigger (no `UPDATE`/`DELETE`
+  on `audit_log`).
+- All `npm audit` advisories resolved to zero via `package.json` `overrides`; the
+  production image is hardened (read-only root filesystem, dropped Linux
+  capabilities, `npm`/`npx` removed) with a Trivy HIGH/CRITICAL scan gate in CI.
 
 ## [1.0.0] - 2026-06-12
 
@@ -88,4 +117,6 @@ Prisma 7 + PostgreSQL), conforming to SAK. Feature-complete and production-harde
   a frontend integration guide and agent brief (`docs/api/frontend-guide.md`,
   `docs/api/frontend-agent-brief.md`).
 
-[1.0.0]: https://semver.org/
+[unreleased]: https://github.com/dharmawipraja/accounting-api/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/dharmawipraja/accounting-api/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/dharmawipraja/accounting-api/releases/tag/v1.0.0

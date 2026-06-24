@@ -78,7 +78,7 @@ async function bootstrap(): Promise<void> {
   ) {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('Indonesian Accounting API')
-      .setVersion('1.0.0')
+      .setVersion('1.1.0')
       .addBearerAuth()
       .build();
     SwaggerModule.setup(
