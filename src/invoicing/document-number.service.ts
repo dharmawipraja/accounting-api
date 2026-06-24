@@ -1,25 +1,16 @@
 import { Injectable } from '@nestjs/common';
-import { RawTx } from '../common/db/raw-tx';
+import { nextSequenceNumber, SqlTx } from '../common/db/sequence';
 import { buildDocRef } from '../common/db/doc-ref';
 
 @Injectable()
 export class DocumentNumberService {
   /** Lock-and-increment the per-(type, fiscal-year) counter inside the caller's
    *  transaction. Gapless because the increment and the document write share the tx. */
-  async next(
-    tx: RawTx,
-    documentType: string,
-    fiscalYear: number,
-  ): Promise<number> {
-    await tx.$executeRaw`INSERT INTO document_sequences (document_type, fiscal_year, next_number, updated_at)
-      VALUES (${documentType}, ${fiscalYear}, 1, now()) ON CONFLICT (document_type, fiscal_year) DO NOTHING`;
-    const rows = await tx.$queryRaw<{ next_number: number }[]>`
-      SELECT next_number FROM document_sequences
-      WHERE document_type = ${documentType} AND fiscal_year = ${fiscalYear} FOR UPDATE`;
-    const current = rows[0].next_number;
-    await tx.$executeRaw`UPDATE document_sequences SET next_number = ${current + 1}, updated_at = now()
-      WHERE document_type = ${documentType} AND fiscal_year = ${fiscalYear}`;
-    return current;
+  next(tx: SqlTx, documentType: string, fiscalYear: number): Promise<number> {
+    return nextSequenceNumber(tx, 'document_sequences', {
+      document_type: documentType,
+      fiscal_year: fiscalYear,
+    });
   }
 
   /** e.g. INV/2026/000042 */

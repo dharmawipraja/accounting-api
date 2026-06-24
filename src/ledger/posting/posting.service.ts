@@ -16,7 +16,7 @@ import { PostEntryInput, PostLineInput } from './posting.types';
 import { assertBalanced } from './assert-balanced';
 import { ExtendedPrismaClient } from '../../common/prisma/soft-delete.extension';
 import { MetricsService } from '../../metrics/metrics.service';
-import { RawTx } from '../../common/db/raw-tx';
+import { nextSequenceNumber, SqlTx } from '../../common/db/sequence';
 import { buildDocRef } from '../../common/db/doc-ref';
 
 /** The interactive-transaction view of the soft-delete-extended client — what the
@@ -449,15 +449,10 @@ export class PostingService {
   }
 
   /** Lock-and-increment the per-fiscal-year counter; gapless because it lives in the tx. */
-  private async nextNumber(tx: RawTx, fiscalYear: number): Promise<number> {
-    await tx.$executeRaw`INSERT INTO journal_sequences (fiscal_year, next_number, updated_at)
-      VALUES (${fiscalYear}, 1, now()) ON CONFLICT (fiscal_year) DO NOTHING`;
-    const rows = await tx.$queryRaw<{ next_number: number }[]>`
-      SELECT next_number FROM journal_sequences WHERE fiscal_year = ${fiscalYear} FOR UPDATE`;
-    const current = rows[0].next_number;
-    await tx.$executeRaw`UPDATE journal_sequences SET next_number = ${current + 1}, updated_at = now()
-      WHERE fiscal_year = ${fiscalYear}`;
-    return current;
+  private nextNumber(tx: SqlTx, fiscalYear: number): Promise<number> {
+    return nextSequenceNumber(tx, 'journal_sequences', {
+      fiscal_year: fiscalYear,
+    });
   }
 
   private async assertPostableAccounts(lines: PostLineInput[]): Promise<void> {
