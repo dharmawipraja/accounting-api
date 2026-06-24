@@ -145,7 +145,7 @@ export class TaxedDocumentService {
       lines: { create: buildLineCreateData(nextLines) },
     };
     await this.prisma.client.$transaction(async (tx) => {
-      const ltx = tx as unknown as LedgerTx;
+      const ltx: LedgerTx = tx;
       await spec.updateRow(ltx, id, common, input, row);
     });
     return this.getById(spec, id);

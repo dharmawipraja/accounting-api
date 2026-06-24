@@ -68,7 +68,7 @@ export class DocumentLifecycleService {
     );
     try {
       await this.prisma.client.$transaction(async (tx) => {
-        const ltx = tx as unknown as LedgerTx;
+        const ltx: LedgerTx = tx;
         const locked = await opts.lock(ltx);
         if (!locked || locked.status !== 'POSTED') {
           throw new ValidationFailedError(opts.notPostedMessage, {
