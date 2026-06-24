@@ -148,10 +148,12 @@ export class PostingService {
     prepared: PreparedPosting,
   ): Promise<JournalEntry> {
     const { input, postedBy, periodId, fiscalYear } = prepared;
-    await this.assertPostablePeriodInTx(tx, periodId, fiscalYear);
-    const entryNumber = await this.nextNumber(tx, fiscalYear);
-    const entryRef = this.buildEntryRef(fiscalYear, entryNumber);
-    const entry = await tx.journalEntry.create({
+    const { entryNumber, entryRef } = await this.stampPostedInTx(
+      tx,
+      periodId,
+      fiscalYear,
+    );
+    return tx.journalEntry.create({
       data: {
         entryNumber,
         entryRef,
@@ -179,11 +181,24 @@ export class PostingService {
         },
       },
     });
-    // Central choke point for every posted entry (manual, invoice, bill, payment,
-    // close). A rare tx rollback after this point over-counts by 1 — acceptable
-    // for a throughput metric.
+  }
+
+  /** The in-transaction posted-entry choke point: re-assert the period/year is still
+   *  postable (TOCTOU guard), assign the gapless JE number + ref, and count the entry.
+   *  Both a fresh create (createPostedEntryInTx) and a draft promotion (postDraft) route
+   *  through here, so the guard, the numbering, and the metric live in exactly one place.
+   *  The metric increments inside the tx; a rare rollback after this point over-counts by
+   *  1 — acceptable for a throughput metric. */
+  private async stampPostedInTx(
+    tx: LedgerTx,
+    periodId: string,
+    fiscalYear: number,
+  ): Promise<{ entryNumber: number; entryRef: string }> {
+    await this.assertPostablePeriodInTx(tx, periodId, fiscalYear);
+    const entryNumber = await this.nextNumber(tx, fiscalYear);
+    const entryRef = this.buildEntryRef(fiscalYear, entryNumber);
     this.metrics.incLedgerEntriesPosted();
-    return entry;
+    return { entryNumber, entryRef };
   }
 
   /** Authoritative in-transaction TOCTOU guard. Serializes against a concurrent
@@ -425,9 +440,11 @@ export class PostingService {
           id: draftId,
         });
       }
-      await this.assertPostablePeriodInTx(tx, period.id, fiscalYear);
-      const entryNumber = await this.nextNumber(tx, fiscalYear);
-      const entryRef = this.buildEntryRef(fiscalYear, entryNumber);
+      const { entryNumber, entryRef } = await this.stampPostedInTx(
+        tx,
+        period.id,
+        fiscalYear,
+      );
       return tx.journalEntry.update({
         where: { id: draftId },
         data: {

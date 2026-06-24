@@ -13,6 +13,7 @@ import { CompanyService } from '../src/company/company.service';
 import { AccountsService } from '../src/ledger/accounts/accounts.service';
 import { PeriodsService } from '../src/ledger/periods/periods.service';
 import { PostingService } from '../src/ledger/posting/posting.service';
+import { JournalService } from '../src/ledger/journal/journal.service';
 import { makePrismaOverride } from './e2e-helpers';
 import { startTestDb, TestDb } from './testcontainers';
 
@@ -98,6 +99,24 @@ describe('metrics (e2e)', () => {
       'p',
     );
     expect(entry.status).toBe('POSTED');
+    const after = await scrapeCounter('ledger_entries_posted_total');
+    expect(after).toBeGreaterThan(before);
+  });
+
+  it('increments ledger_entries_posted_total after posting a DRAFT', async () => {
+    const journal = app.get(JournalService);
+    const draft = await journal.createDraft({
+      date: new Date('2026-03-02'),
+      description: 'draft post metric probe',
+      createdBy: 'a',
+      lines: [
+        { accountId: acc['1-1000'], debit: '500' },
+        { accountId: acc['3-1000'], credit: '500' },
+      ],
+    });
+    const before = await scrapeCounter('ledger_entries_posted_total');
+    const posted = await posting.postDraft(draft.id, 'p');
+    expect(posted.status).toBe('POSTED');
     const after = await scrapeCounter('ledger_entries_posted_total');
     expect(after).toBeGreaterThan(before);
   });
