@@ -31,6 +31,7 @@ import { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { BalancesService } from '../balances/balances.service';
 import { AsOfQueryDto } from '../../common/dto/as-of-query.dto';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
+import { asOfOrToday } from '../../common/dates/query-dates';
 
 @ApiTags('Accounts')
 @ApiBearerAuth()
@@ -50,10 +51,7 @@ export class AccountsController {
   @Get(':id/balance')
   @ApiOkResponse({ type: AccountBalanceDto })
   balance(@Param('id', ParseUUIDPipe) id: string, @Query() q: AsOfQueryDto) {
-    return this.balances.accountBalance(
-      id,
-      q.asOf ? new Date(q.asOf) : new Date(),
-    );
+    return this.balances.accountBalance(id, asOfOrToday(q.asOf));
   }
 
   @Get(':id')

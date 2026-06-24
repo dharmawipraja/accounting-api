@@ -1,8 +1,6 @@
-import { IsDateString, IsOptional, IsUUID } from 'class-validator';
+import { IsDateString, IsUUID } from 'class-validator';
 
-export class AsOfQueryDto {
-  @IsOptional() @IsDateString() asOf?: string;
-}
+export { AsOfQueryDto } from '../../common/dto/as-of-query.dto';
 
 export class RangeQueryDto {
   @IsDateString() from!: string;

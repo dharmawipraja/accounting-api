@@ -4,6 +4,7 @@ import { AuditEntryDto } from './dto/audit-entry-response.dto';
 import { AuditService } from './audit.service';
 import { AuditQueryDto } from './dto/audit-query.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { optionalDateRange } from '../common/dates/query-dates';
 import { Role } from '../auth/role.enum';
 
 @ApiTags('Audit')
@@ -16,11 +17,12 @@ export class AuditController {
   @ApiOkResponse({ type: AuditEntryDto, isArray: true })
   @Get()
   list(@Query() q: AuditQueryDto) {
+    const { from, to } = optionalDateRange(q.from, q.to);
     return this.audit.list({
       userId: q.userId,
       method: q.method,
-      from: q.from ? new Date(q.from) : undefined,
-      to: q.to ? new Date(q.to) : undefined,
+      from,
+      to,
       limit: q.limit ?? 50,
       offset: q.offset ?? 0,
     });
