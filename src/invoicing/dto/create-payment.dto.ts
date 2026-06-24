@@ -7,18 +7,15 @@ import {
   IsOptional,
   IsString,
   IsUUID,
-  Matches,
   MaxLength,
   ValidateNested,
 } from 'class-validator';
+import { IsMoneyString } from '../../common/validators/is-money-string';
 
 export class AllocationDto {
   @IsOptional() @IsUUID() salesInvoiceId?: string;
   @IsOptional() @IsUUID() purchaseBillId?: string;
-  @Matches(/^\d+(\.\d{1,4})?$/, {
-    message: 'amount must be a positive decimal',
-  })
-  amount!: string;
+  @IsMoneyString() amount!: string;
 }
 
 export class CreatePaymentDto {

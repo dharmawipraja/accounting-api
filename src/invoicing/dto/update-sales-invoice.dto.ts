@@ -8,7 +8,7 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator';
-import { SalesInvoiceLineDto } from './create-sales-invoice.dto';
+import { DocumentLineDto } from './document-line.dto';
 
 export class UpdateSalesInvoiceDto {
   @IsOptional() @IsDateString() date?: string;
@@ -18,6 +18,6 @@ export class UpdateSalesInvoiceDto {
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
-  @Type(() => SalesInvoiceLineDto)
-  lines?: SalesInvoiceLineDto[];
+  @Type(() => DocumentLineDto)
+  lines?: DocumentLineDto[];
 }

@@ -8,7 +8,7 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator';
-import { PurchaseBillLineDto } from './create-purchase-bill.dto';
+import { DocumentLineDto } from './document-line.dto';
 
 export class UpdatePurchaseBillDto {
   @IsOptional() @IsString() @MaxLength(64) vendorInvoiceNo?: string;
@@ -19,6 +19,6 @@ export class UpdatePurchaseBillDto {
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
-  @Type(() => PurchaseBillLineDto)
-  lines?: PurchaseBillLineDto[];
+  @Type(() => DocumentLineDto)
+  lines?: DocumentLineDto[];
 }

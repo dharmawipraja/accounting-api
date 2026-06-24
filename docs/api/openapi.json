@@ -4665,7 +4665,7 @@
           "offset"
         ]
       },
-      "SalesInvoiceLineDto": {
+      "DocumentLineDto": {
         "type": "object",
         "properties": {
           "description": {
@@ -4677,12 +4677,10 @@
             "format": "uuid"
           },
           "quantity": {
-            "type": "string",
-            "pattern": "^\\d+(\\.\\d{1,4})?$"
+            "type": "string"
           },
           "unitPrice": {
-            "type": "string",
-            "pattern": "^\\d+(\\.\\d{1,4})?$"
+            "type": "string"
           },
           "taxCodeIds": {
             "type": "array",
@@ -4721,7 +4719,7 @@
             "minItems": 1,
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/SalesInvoiceLineDto"
+              "$ref": "#/components/schemas/DocumentLineDto"
             }
           }
         },
@@ -4748,7 +4746,7 @@
             "minItems": 1,
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/SalesInvoiceLineDto"
+              "$ref": "#/components/schemas/DocumentLineDto"
             }
           }
         }
@@ -4986,41 +4984,6 @@
           "offset"
         ]
       },
-      "PurchaseBillLineDto": {
-        "type": "object",
-        "properties": {
-          "description": {
-            "type": "string",
-            "maxLength": 255
-          },
-          "accountId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "quantity": {
-            "type": "string",
-            "pattern": "^\\d+(\\.\\d{1,4})?$"
-          },
-          "unitPrice": {
-            "type": "string",
-            "pattern": "^\\d+(\\.\\d{1,4})?$"
-          },
-          "taxCodeIds": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        },
-        "required": [
-          "description",
-          "accountId",
-          "quantity",
-          "unitPrice",
-          "taxCodeIds"
-        ]
-      },
       "CreatePurchaseBillDto": {
         "type": "object",
         "properties": {
@@ -5046,7 +5009,7 @@
             "minItems": 1,
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/PurchaseBillLineDto"
+              "$ref": "#/components/schemas/DocumentLineDto"
             }
           }
         },
@@ -5077,7 +5040,7 @@
             "minItems": 1,
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/PurchaseBillLineDto"
+              "$ref": "#/components/schemas/DocumentLineDto"
             }
           }
         }
@@ -5268,8 +5231,7 @@
             "format": "uuid"
           },
           "amount": {
-            "type": "string",
-            "pattern": "^\\d+(\\.\\d{1,4})?$"
+            "type": "string"
           }
         },
         "required": [

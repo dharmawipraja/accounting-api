@@ -6,22 +6,10 @@ import {
   IsOptional,
   IsString,
   IsUUID,
-  Matches,
   MaxLength,
   ValidateNested,
 } from 'class-validator';
-
-export class PurchaseBillLineDto {
-  @IsString() @MaxLength(255) description!: string;
-  @IsUUID() accountId!: string;
-  @Matches(/^\d+(\.\d{1,4})?$/, {
-    message: 'quantity must be a positive decimal',
-  })
-  quantity!: string;
-  @Matches(/^\d+(\.\d{1,4})?$/, { message: 'unitPrice must be a decimal' })
-  unitPrice!: string;
-  @IsArray() @IsUUID('all', { each: true }) taxCodeIds!: string[];
-}
+import { DocumentLineDto } from './document-line.dto';
 
 export class CreatePurchaseBillDto {
   @IsUUID() partnerId!: string;
@@ -32,6 +20,6 @@ export class CreatePurchaseBillDto {
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
-  @Type(() => PurchaseBillLineDto)
-  lines!: PurchaseBillLineDto[];
+  @Type(() => DocumentLineDto)
+  lines!: DocumentLineDto[];
 }
