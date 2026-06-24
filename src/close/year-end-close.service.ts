@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { YearEndClosing } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { Money } from '../common/money/money';
-import { PostingService } from '../ledger/posting/posting.service';
+import { PostingService, LedgerTx } from '../ledger/posting/posting.service';
 import { BalancesService } from '../ledger/balances/balances.service';
 import { CompanyService } from '../company/company.service';
 import { PostLineInput } from '../ledger/posting/posting.types';
@@ -95,14 +95,11 @@ export class YearEndCloseService {
     const prepared = await this.posting.preparePosting(closingInput, closedBy);
     const incomeStr = netIncome.toPersistence();
     await this.prisma.client.$transaction(async (tx) => {
-      // Serialize concurrent year-end closes for this fiscal year, then re-check
-      // status under the lock — so a double-close can't post (and orphan) a
-      // second closing entry. The advisory lock auto-releases at tx end and
-      // works whether or not the year_end_closings row exists yet.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${fiscalYear})`;
-      const current = await tx.$queryRaw<{ status: string }[]>`
-        SELECT status FROM year_end_closings WHERE fiscal_year = ${fiscalYear}`;
-      if (current.length > 0 && current[0].status === 'CLOSED') {
+      // Serialize concurrent closes for this fiscal year and re-check status
+      // under the lock, so a double-close can't post (and orphan) a second
+      // closing entry.
+      const status = await this.lockAndReadClosingStatus(tx, fiscalYear);
+      if (status === 'CLOSED') {
         throw new ConflictDomainError('Fiscal year is already closed', {
           fiscalYear,
         });
@@ -130,6 +127,20 @@ export class YearEndCloseService {
       });
     });
     return this.getStatus(fiscalYear) as Promise<YearEndClosing>;
+  }
+
+  /** Take the exclusive per-fiscal-year advisory lock (auto-released at tx end) and read the
+   *  current closing status under it — the close/reopen serializer; the caller re-checks the
+   *  returned status. EXCLUSIVE lock, deliberately distinct from posting's
+   *  pg_advisory_xact_lock_shared (assertPostablePeriodInTx) — do not merge the two. */
+  private async lockAndReadClosingStatus(
+    tx: LedgerTx,
+    fiscalYear: number,
+  ): Promise<string | null> {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${fiscalYear})`;
+    const rows = await tx.$queryRaw<{ status: string }[]>`
+      SELECT status FROM year_end_closings WHERE fiscal_year = ${fiscalYear}`;
+    return rows.length > 0 ? rows[0].status : null;
   }
 
   private async upsertClosed(
@@ -178,13 +189,10 @@ export class YearEndCloseService {
         { allowClosedYear: true },
       );
       await this.prisma.client.$transaction(async (tx) => {
-        // Serialize concurrent reopens of this fiscal year (mirror close's
-        // advisory lock), then re-check status under the lock so a double-reopen
-        // can't double-reverse the closing entry.
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${fiscalYear})`;
-        const current = await tx.$queryRaw<{ status: string }[]>`
-          SELECT status FROM year_end_closings WHERE fiscal_year = ${fiscalYear}`;
-        if (current.length === 0 || current[0].status !== 'CLOSED') {
+        // Serialize concurrent reopens and re-check status under the lock, so a
+        // double-reopen can't double-reverse the closing entry.
+        const status = await this.lockAndReadClosingStatus(tx, fiscalYear);
+        if (status !== 'CLOSED') {
           throw new ValidationFailedError('Fiscal year is not closed', {
             fiscalYear,
           });
