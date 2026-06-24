@@ -1,27 +1,19 @@
-import { Test } from '@nestjs/testing';
-import {
-  INestApplication,
-  ValidationPipe,
-  VersioningType,
-} from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
-import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { AccountsService } from '../src/ledger/accounts/accounts.service';
 import { PeriodsService } from '../src/ledger/periods/periods.service';
 import { CompanyService } from '../src/company/company.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
-import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
-import { makePrismaOverride } from './e2e-helpers';
-import { startTestDb, TestDb } from './testcontainers';
+import { bootstrapTestApp } from './e2e-helpers';
 
 describe('JournalEntries (e2e)', () => {
   let app: INestApplication;
-  let db: TestDb;
-  let prismaOverride: PrismaService;
+  let prisma: PrismaService;
+  let cleanup: () => Promise<void>;
   let accountantToken: string;
   let approverToken: string;
   let adminToken: string;
@@ -30,22 +22,7 @@ describe('JournalEntries (e2e)', () => {
   let saldoAwalId: string;
 
   beforeAll(async () => {
-    db = await startTestDb();
-    prismaOverride = makePrismaOverride(db.url);
-    await prismaOverride.$connect();
-
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(PrismaService)
-      .useValue(prismaOverride)
-      .compile();
-
-    app = moduleRef.createNestApplication();
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    ({ app, prisma, cleanup } = await bootstrapTestApp());
 
     // Seed data
     await app.get(CompanyService).seedIfEmpty();
@@ -89,11 +66,7 @@ describe('JournalEntries (e2e)', () => {
       .accessToken;
   }, 120_000);
 
-  afterAll(async () => {
-    await app.close();
-    await prismaOverride.$disconnect();
-    await db?.stop();
-  });
+  afterAll(() => cleanup());
 
   const balancedBody = (date = '2026-02-10') => ({
     date,
@@ -203,7 +176,7 @@ describe('JournalEntries (e2e)', () => {
       .expect(201);
     const draftId = (draftRes.body as { id: string }).id;
 
-    const seqBefore = await prismaOverride.client.journalSequence.findUnique({
+    const seqBefore = await prisma.client.journalSequence.findUnique({
       where: { fiscalYear: 2026 },
     });
     // Distinct keys so the idempotency layer passes both through to the posting
@@ -223,7 +196,7 @@ describe('JournalEntries (e2e)', () => {
     );
     expect(codes.filter((c) => c === 200)).toHaveLength(1); // exactly one wins
     expect(codes.some((c) => c >= 400 && c < 500)).toBe(true); // the other is a 4xx
-    const seqAfter = await prismaOverride.client.journalSequence.findUnique({
+    const seqAfter = await prisma.client.journalSequence.findUnique({
       where: { fiscalYear: 2026 },
     });
     // Exactly one sequence number consumed — the loser burned none (no gap).
@@ -287,7 +260,7 @@ describe('JournalEntries (e2e)', () => {
     const key = `idem-concurrent-${randomUUID()}`;
     const desc = `Concurrent ${Date.now()}`;
     const payload = { ...balancedBody(), description: desc };
-    const before = await prismaOverride.client.journalEntry.count({
+    const before = await prisma.client.journalEntry.count({
       where: { description: desc, status: 'POSTED' },
     });
     const both = await Promise.allSettled([
@@ -302,7 +275,7 @@ describe('JournalEntries (e2e)', () => {
         .set('Idempotency-Key', key)
         .send(payload),
     ]);
-    const after = await prismaOverride.client.journalEntry.count({
+    const after = await prisma.client.journalEntry.count({
       where: { description: desc, status: 'POSTED' },
     });
     expect(after - before).toBe(1); // exactly one entry — no double-post
@@ -327,7 +300,7 @@ describe('JournalEntries (e2e)', () => {
     const body = res.body as { id: string; sourceType: string };
     expect(body.sourceType).toBe('OPENING');
 
-    const lines = await prismaOverride.client.journalLine.findMany({
+    const lines = await prisma.client.journalLine.findMany({
       where: { journalEntryId: body.id },
     });
     const plug = lines.find((l) => l.accountId === saldoAwalId);

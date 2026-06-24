@@ -1,13 +1,7 @@
-import { Test } from '@nestjs/testing';
-import {
-  INestApplication,
-  ValidationPipe,
-  VersioningType,
-} from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
-import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { AccountsService } from '../src/ledger/accounts/accounts.service';
 import { TaxCodesService } from '../src/tax/tax-codes.service';
@@ -15,16 +9,14 @@ import { PeriodsService } from '../src/ledger/periods/periods.service';
 import { BusinessPartnersService } from '../src/invoicing/business-partners.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
-import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
-import { makePrismaOverride } from './e2e-helpers';
-import { startTestDb, TestDb } from './testcontainers';
+import { bootstrapTestApp } from './e2e-helpers';
 import { IdempotencyService } from '../src/common/idempotency/idempotency.service';
 import { ConflictDomainError } from '../src/common/errors/domain-errors';
 
 describe('Idempotency (e2e)', () => {
   let app: INestApplication;
-  let db: TestDb;
   let prisma: PrismaService;
+  let cleanup: () => Promise<void>;
   let acct: string;
   let acc: Record<string, string>;
   let code: Record<string, string>;
@@ -53,20 +45,7 @@ describe('Idempotency (e2e)', () => {
   });
 
   beforeAll(async () => {
-    db = await startTestDb();
-    prisma = makePrismaOverride(db.url);
-    await prisma.$connect();
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(PrismaService)
-      .useValue(prisma)
-      .compile();
-    app = moduleRef.createNestApplication();
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    ({ app, prisma, cleanup } = await bootstrapTestApp());
     await app.get(AccountsService).seedIfEmpty();
     await app.get(TaxCodesService).seedIfEmpty();
     await app.get(PeriodsService).generatePeriods(2026);
@@ -87,11 +66,7 @@ describe('Idempotency (e2e)', () => {
     );
   }, 120_000);
 
-  afterAll(async () => {
-    await app.close();
-    await prisma.$disconnect();
-    await db?.stop();
-  });
+  afterAll(() => cleanup());
 
   it('replays the same key+body and creates exactly one invoice', async () => {
     const partnerId = await newCustomer('CUST-IDEM-1');

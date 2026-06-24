@@ -1,44 +1,21 @@
-import { Test } from '@nestjs/testing';
-import {
-  INestApplication,
-  ValidationPipe,
-  VersioningType,
-} from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
-import { AppModule } from '../src/app.module';
-import { PrismaService } from '../src/common/prisma/prisma.service';
-import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
 import { CompanyService } from '../src/company/company.service';
 import { AccountsService } from '../src/ledger/accounts/accounts.service';
 import { PeriodsService } from '../src/ledger/periods/periods.service';
 import { PostingService } from '../src/ledger/posting/posting.service';
 import { JournalService } from '../src/ledger/journal/journal.service';
-import { makePrismaOverride } from './e2e-helpers';
-import { startTestDb, TestDb } from './testcontainers';
+import { bootstrapTestApp } from './e2e-helpers';
 
 describe('metrics (e2e)', () => {
   let app: INestApplication;
-  let db: TestDb;
-  let prisma: PrismaService;
+  let cleanup: () => Promise<void>;
   let acc: Record<string, string>;
   let posting: PostingService;
 
   beforeAll(async () => {
-    db = await startTestDb();
-    prisma = makePrismaOverride(db.url);
-    await prisma.$connect();
-    const mod = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(PrismaService)
-      .useValue(prisma)
-      .compile();
-    app = mod.createNestApplication();
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    ({ app, cleanup } = await bootstrapTestApp());
     await app.get(CompanyService).seedIfEmpty();
     await app.get(AccountsService).seedIfEmpty();
     await app.get(PeriodsService).generatePeriods(2026);
@@ -47,11 +24,7 @@ describe('metrics (e2e)', () => {
     posting = app.get(PostingService);
   }, 120_000);
 
-  afterAll(async () => {
-    await app.close();
-    await prisma.$disconnect();
-    await db?.stop();
-  });
+  afterAll(() => cleanup());
 
   /** GET /metrics and return the value of the given single-value counter/gauge. */
   const scrapeCounter = async (name: string): Promise<number> => {

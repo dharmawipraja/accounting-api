@@ -1,44 +1,21 @@
-import { Test } from '@nestjs/testing';
-import {
-  INestApplication,
-  ValidationPipe,
-  VersioningType,
-} from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
-import { AppModule } from '../src/app.module';
-import { PrismaService } from '../src/common/prisma/prisma.service';
 import { AccountsService } from '../src/ledger/accounts/accounts.service';
 import { TaxCodesService } from '../src/tax/tax-codes.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
-import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
-import { makePrismaOverride } from './e2e-helpers';
-import { startTestDb, TestDb } from './testcontainers';
+import { bootstrapTestApp } from './e2e-helpers';
 
 describe('TaxCodes (e2e)', () => {
   let app: INestApplication;
-  let db: TestDb;
-  let prisma: PrismaService;
+  let cleanup: () => Promise<void>;
   let adminToken: string;
   let ppnKeluaranId: string; // 2-1100 CREDIT
   let kasId: string; // 1-1000 DEBIT (wrong side for PPN_OUTPUT)
 
   beforeAll(async () => {
-    db = await startTestDb();
-    prisma = makePrismaOverride(db.url);
-    await prisma.$connect();
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(PrismaService)
-      .useValue(prisma)
-      .compile();
-    app = moduleRef.createNestApplication();
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    ({ app, cleanup } = await bootstrapTestApp());
     await app.get(AccountsService).seedIfEmpty();
     await app.get(UsersService).create({
       email: 'admin@tax.test',
@@ -54,11 +31,7 @@ describe('TaxCodes (e2e)', () => {
     kasId = accountsPage.data.find((a) => a.code === '1-1000')!.id;
   }, 120_000);
 
-  afterAll(async () => {
-    await app.close();
-    await prisma.$disconnect();
-    await db?.stop();
-  });
+  afterAll(() => cleanup());
 
   it('seeds the 6 standard tax codes on boot (idempotent)', async () => {
     await app.get(TaxCodesService).seedIfEmpty();
