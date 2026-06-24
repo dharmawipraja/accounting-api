@@ -26,6 +26,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  id-token: write # required: claude-code-action@v1 mints its token via GitHub OIDC
 
 concurrency:
   group: claude-review-${{ github.event.pull_request.number }}
