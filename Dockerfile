@@ -21,7 +21,12 @@ COPY package*.json ./
 # reflects only what's actually shipped — not dev-only build tooling (jest,
 # nest-cli, etc.) that the lockfile lists but `--omit=dev` never installs.
 # Dev-dependency CVEs are still surfaced by `npm audit` / the CI audit job.
-RUN npm ci --omit=dev && rm -f package-lock.json
+# Then remove the npm/npx/corepack CLIs: the runtime is `node dist/src/main.js`
+# (never npm), so they are pure attack surface — and the base image's bundled npm
+# vendors its own deps (e.g. a vulnerable picomatch) that Trivy would otherwise flag.
+RUN npm ci --omit=dev && rm -f package-lock.json \
+  && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+            /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=build --chown=node:node /app/prisma ./prisma
