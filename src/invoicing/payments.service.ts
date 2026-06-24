@@ -28,6 +28,11 @@ import {
   buildPaymentLines,
 } from './payment-targets';
 
+/** A payment row with its allocations eagerly loaded — what getById always returns. */
+type PaymentWithAllocations = Prisma.PaymentGetPayload<{
+  include: { allocations: true };
+}>;
+
 export interface CreatePaymentInput {
   direction: PaymentDirection;
   partnerId: string;
@@ -130,7 +135,7 @@ export class PaymentsService {
     });
   }
 
-  async getById(id: string): Promise<Payment> {
+  async getById(id: string): Promise<PaymentWithAllocations> {
     const p = await this.prisma.client.payment.findFirst({
       where: { id },
       include: { allocations: true },
@@ -216,17 +221,7 @@ export class PaymentsService {
         id,
         status: payment.status,
       });
-    const allocations = (
-      (
-        payment as Payment & {
-          allocations: {
-            salesInvoiceId: string | null;
-            purchaseBillId: string | null;
-            amount: Prisma.Decimal;
-          }[];
-        }
-      ).allocations ?? []
-    ).map(
+    const allocations = payment.allocations.map(
       (a): AllocationInput => ({
         salesInvoiceId: a.salesInvoiceId ?? undefined,
         purchaseBillId: a.purchaseBillId ?? undefined,
@@ -312,17 +307,7 @@ export class PaymentsService {
         id,
         status: payment.status,
       });
-    const allocations = (
-      (
-        payment as Payment & {
-          allocations: {
-            salesInvoiceId: string | null;
-            purchaseBillId: string | null;
-            amount: Prisma.Decimal;
-          }[];
-        }
-      ).allocations ?? []
-    ).map(
+    const allocations = payment.allocations.map(
       (a): AllocationInput => ({
         salesInvoiceId: a.salesInvoiceId ?? undefined,
         purchaseBillId: a.purchaseBillId ?? undefined,
@@ -357,12 +342,10 @@ export class PaymentsService {
   /** Shape the API response. Money columns are normalized to 4dp strings (matching
    *  the ledger/invoice serialization convention) since Prisma's Decimal#toJSON
    *  strips trailing zeros. */
-  present(payment: Payment): Payment {
-    const allocations = (
-      payment as Payment & {
-        allocations?: { amount: Prisma.Decimal }[];
-      }
-    ).allocations;
+  present(
+    payment: Payment & { allocations?: PaymentWithAllocations['allocations'] },
+  ): Payment {
+    const allocations = payment.allocations;
     return {
       ...serializeMoney(payment, ['amount']),
       ...(allocations
