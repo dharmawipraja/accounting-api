@@ -9,22 +9,7 @@ import { Prisma } from '@prisma/client';
 import type { Response } from 'express';
 import * as Sentry from '@sentry/node';
 import { DomainError } from '../errors/domain-errors';
-
-const PRISMA_STATUS: Record<
-  string,
-  { status: number; code: string; message: string }
-> = {
-  P2025: { status: 404, code: 'NOT_FOUND', message: 'Resource not found' },
-  P2002: { status: 409, code: 'CONFLICT', message: 'Resource already exists' },
-  P2003: {
-    status: 409,
-    code: 'CONFLICT',
-    message: 'Operation violates a reference constraint',
-  },
-  P2023: { status: 400, code: 'INVALID_INPUT', message: 'Invalid input' },
-  P2000: { status: 400, code: 'INVALID_INPUT', message: 'Invalid input' },
-  P2006: { status: 400, code: 'INVALID_INPUT', message: 'Invalid input' },
-};
+import { PRISMA_STATUS, statusFromException } from '../errors/exception-status';
 
 interface ErrorEnvelope {
   code: string;
@@ -43,21 +28,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const req = ctx.getRequest<{ url?: string; id?: string }>();
     const url = req.url ?? 'unknown';
 
-    let status = 500;
+    const status = statusFromException(exception);
     let envelope: ErrorEnvelope = {
       code: 'INTERNAL_ERROR',
       message: 'Internal server error',
     };
 
     if (exception instanceof DomainError) {
-      status = exception.status;
       envelope = {
         code: exception.code,
         message: exception.message,
         details: exception.details,
       };
     } else if (exception instanceof HttpException) {
-      status = exception.getStatus();
       const res = exception.getResponse();
       if (typeof res === 'string') {
         envelope = { code: `HTTP_${status}`, message: res };
@@ -81,7 +64,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
     } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       const mapped = PRISMA_STATUS[exception.code];
       if (mapped) {
-        status = mapped.status;
         envelope = { code: mapped.code, message: mapped.message };
         this.logger.warn(
           `Prisma ${exception.code} -> ${status} on ${url}: ${exception.message}`,
@@ -98,7 +80,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
         });
       }
     } else if (exception instanceof Prisma.PrismaClientValidationError) {
-      status = 400;
       envelope = { code: 'INVALID_INPUT', message: 'Invalid input' };
       this.logger.warn(`Prisma validation error -> 400 on ${url}`);
     } else {

@@ -1,7 +1,6 @@
 import {
   CallHandler,
   ExecutionContext,
-  HttpException,
   Injectable,
   NestInterceptor,
 } from '@nestjs/common';
@@ -9,7 +8,7 @@ import { Observable, from, throwError } from 'rxjs';
 import { catchError, concatMap } from 'rxjs/operators';
 import { AuditService } from './audit.service';
 import { sanitize } from './audit-sanitize';
-import { DomainError } from '../common/errors/domain-errors';
+import { statusFromException } from '../common/errors/exception-status';
 import { MUTATING_METHODS } from './mutating-methods';
 
 const MUTATING: Set<string> = new Set(MUTATING_METHODS);
@@ -53,15 +52,10 @@ export class AuditInterceptor implements NestInterceptor {
         ).pipe(concatMap(() => from([data]))),
       ),
       catchError((err: unknown) => {
-        // Resolve the real status for the audit row: HttpException (ValidationPipe
-        // etc.) and DomainError (domain rules incl. idempotency 422/409) both map
-        // to non-500 codes via AllExceptionsFilter — record those, not a blanket 500.
-        const statusCode =
-          err instanceof HttpException
-            ? err.getStatus()
-            : err instanceof DomainError
-              ? err.status
-              : 500;
+        // Record the SAME status AllExceptionsFilter will return — one shared mapping
+        // (HttpException, DomainError, and both Prisma families) so the audit row can
+        // never disagree with the client response.
+        const statusCode = statusFromException(err);
         return from(
           this.audit.record({
             ...base,

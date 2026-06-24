@@ -1,4 +1,5 @@
 import { CallHandler, ExecutionContext, HttpException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { firstValueFrom, of, throwError } from 'rxjs';
 import { AuditInterceptor } from './audit.interceptor';
 import { AuditService } from './audit.service';
@@ -73,6 +74,19 @@ describe('AuditInterceptor', () => {
     await expect(firstValueFrom(obs)).rejects.toBeInstanceOf(HttpException);
     expect(record).toHaveBeenCalledWith(
       expect.objectContaining({ statusCode: 403 }),
+    );
+  });
+
+  it('records a Prisma P2025 as 404 (the status the filter returns), not 500', async () => {
+    const { record, interceptor } = setup();
+    const err = new Prisma.PrismaClientKnownRequestError('not found', {
+      code: 'P2025',
+      clientVersion: Prisma.prismaVersion.client,
+    });
+    const obs = interceptor.intercept(makeCtx(), handlerThatThrows(err));
+    await expect(firstValueFrom(obs)).rejects.toBe(err);
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({ statusCode: 404 }),
     );
   });
 
