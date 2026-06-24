@@ -28,6 +28,11 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
 import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout.interceptor';
+import {
+  THROTTLE,
+  THROTTLE_TTL_MS,
+  REQUEST_TIMEOUT_MS,
+} from './config/throttle.config';
 
 @Module({
   imports: [
@@ -64,9 +69,7 @@ import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout
     ThrottlerModule.forRootAsync({
       inject: [REDIS_CLIENT],
       useFactory: (redis: Redis | null) => {
-        const throttlers = [
-          { ttl: 60_000, limit: Number(process.env.THROTTLE_LIMIT) || 300 },
-        ];
+        const throttlers = [{ ttl: THROTTLE_TTL_MS, limit: THROTTLE.global }];
         // null (test) → default in-memory store; otherwise share the one Redis client.
         return redis
           ? { throttlers, storage: new ThrottlerStorageRedisService(redis) }
@@ -93,10 +96,7 @@ import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout
     { provide: APP_GUARD, useClass: RolesGuard },
     {
       provide: APP_INTERCEPTOR,
-      useFactory: () =>
-        new RequestTimeoutInterceptor(
-          Number(process.env.REQUEST_TIMEOUT_MS) || 30_000,
-        ),
+      useFactory: () => new RequestTimeoutInterceptor(REQUEST_TIMEOUT_MS),
     },
   ],
 })

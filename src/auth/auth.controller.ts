@@ -6,6 +6,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { THROTTLE, THROTTLE_TTL_MS } from '../config/throttle.config';
 import { AuthService, TokenPair } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
@@ -30,12 +31,7 @@ export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
   @Public()
-  @Throttle({
-    default: {
-      ttl: 60_000,
-      limit: Number(process.env.THROTTLE_LOGIN_LIMIT) || 10,
-    },
-  })
+  @Throttle({ default: { ttl: THROTTLE_TTL_MS, limit: THROTTLE.login } })
   @Post('login')
   @HttpCode(200)
   @ApiOkResponse({ type: TokenPairDto })
@@ -44,12 +40,7 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({
-    default: {
-      ttl: 60_000,
-      limit: Number(process.env.THROTTLE_REFRESH_LIMIT) || 30,
-    },
-  })
+  @Throttle({ default: { ttl: THROTTLE_TTL_MS, limit: THROTTLE.refresh } })
   @Post('refresh')
   @HttpCode(200)
   @ApiOkResponse({ type: TokenPairDto })
@@ -58,12 +49,7 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({
-    default: {
-      ttl: 60_000,
-      limit: Number(process.env.THROTTLE_REFRESH_LIMIT) || 30,
-    },
-  })
+  @Throttle({ default: { ttl: THROTTLE_TTL_MS, limit: THROTTLE.refresh } })
   @Post('logout')
   @ApiOkResponse({ type: OkFlagDto })
   logout(@Body() dto: LogoutDto): Promise<{ ok: true }> {
