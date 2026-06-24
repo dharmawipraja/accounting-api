@@ -69,16 +69,8 @@ describe('PostingService TOCTOU guard (e2e)', () => {
     const periods = await app.get(PeriodsService).list(2026);
     const may = periods.find((p) => p.name === '2026-05')!;
     await app.get(PeriodsService).close(may.id, 'admin');
-    // preparePosting runs outside the tx (period check happens pre-tx, but the
-    // in-tx guard is what we're testing here — it re-checks inside FOR SHARE).
-    // Use a date in an open period so preparePosting succeeds, then override the
-    // periodId inside the token by re-preparing with the closed period's date
-    // while the period row is already CLOSED — which means preparePosting itself
-    // will throw ClosedPeriodError. Instead, directly verify the in-tx guard by
-    // preparing a token for an open period and then manually injecting the closed
-    // periodId. Since PreparedPosting is mint-guarded, we verify via preparePosting
-    // succeeding for an open period but the guard catching in-tx for closed.
-    // The correct test: a period that was open when prepared, closed before tx runs.
+    // TOCTOU: mint a token while jun is OPEN, then close jun before the tx runs —
+    // the in-tx guard's FOR SHARE period re-check must reject (period no longer OPEN).
     const jun = periods.find((p) => p.name === '2026-06')!;
     const preparedOk = await posting.preparePosting(
       balanced(new Date('2026-06-15')),
