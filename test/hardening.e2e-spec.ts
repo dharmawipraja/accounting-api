@@ -1,50 +1,22 @@
-import { Test } from '@nestjs/testing';
-import {
-  INestApplication,
-  ValidationPipe,
-  VersioningType,
-} from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import helmet from 'helmet';
-import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
-import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
-import { makePrismaOverride } from './e2e-helpers';
-import { startTestDb, TestDb } from './testcontainers';
+import { bootstrapTestApp } from './e2e-helpers';
 
 describe('Hardening (e2e)', () => {
   let app: INestApplication;
-  let db: TestDb;
-  let prismaOverride: PrismaService;
+  let prisma: PrismaService;
+  let cleanup: () => Promise<void>;
 
   beforeAll(async () => {
-    db = await startTestDb();
-    prismaOverride = makePrismaOverride(db.url);
-    await prismaOverride.$connect();
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(PrismaService)
-      .useValue(prismaOverride)
-      .compile();
-    app = moduleRef.createNestApplication();
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-    app.use(helmet());
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
-    app.useGlobalFilters(new AllExceptionsFilter());
-    await app.init();
+    ({ app, prisma, cleanup } = await bootstrapTestApp({
+      configure: (a) => a.use(helmet()),
+    }));
   }, 120_000);
 
-  afterAll(async () => {
-    await app.close();
-    await prismaOverride.$disconnect();
-    await db?.stop();
-  });
+  afterAll(() => cleanup());
 
   it('GET /ready reports the database is up', () => {
     return request(app.getHttpServer() as App)
@@ -58,7 +30,7 @@ describe('Hardening (e2e)', () => {
 
   it('GET /ready returns 503 when the database is down', async () => {
     const spy = jest
-      .spyOn(prismaOverride, '$queryRaw')
+      .spyOn(prisma, '$queryRaw')
       .mockRejectedValueOnce(new Error('connection refused'));
     await request(app.getHttpServer() as App)
       .get('/ready')

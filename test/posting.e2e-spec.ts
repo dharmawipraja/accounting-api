@@ -1,6 +1,4 @@
-import { Test } from '@nestjs/testing';
-import { INestApplication, VersioningType } from '@nestjs/common';
-import { AppModule } from '../src/app.module';
+import { INestApplication } from '@nestjs/common';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { AccountsService } from '../src/ledger/accounts/accounts.service';
 import { PeriodsService } from '../src/ledger/periods/periods.service';
@@ -10,28 +8,18 @@ import {
   UnbalancedEntryError,
   ClosedPeriodError,
 } from '../src/common/errors/domain-errors';
-import { makePrismaOverride } from './e2e-helpers';
-import { startTestDb, TestDb } from './testcontainers';
+import { bootstrapTestApp } from './e2e-helpers';
 
 describe('PostingService (e2e)', () => {
   let app: INestApplication;
-  let db: TestDb;
   let prisma: PrismaService;
+  let cleanup: () => Promise<void>;
   let posting: PostingService;
   let kasId: string;
   let modalId: string;
 
   beforeAll(async () => {
-    db = await startTestDb();
-    prisma = makePrismaOverride(db.url);
-    await prisma.$connect();
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(PrismaService)
-      .useValue(prisma)
-      .compile();
-    app = moduleRef.createNestApplication();
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-    await app.init();
+    ({ app, prisma, cleanup } = await bootstrapTestApp({ pipe: false }));
     await app.get(CompanyService).seedIfEmpty();
     await app.get(AccountsService).seedIfEmpty();
     await app.get(PeriodsService).generatePeriods(2026);
@@ -41,11 +29,7 @@ describe('PostingService (e2e)', () => {
     modalId = accounts.find((a) => a.code === '3-1000')!.id;
   }, 120_000);
 
-  afterAll(async () => {
-    await app.close();
-    await prisma.$disconnect();
-    await db?.stop();
-  });
+  afterAll(() => cleanup());
 
   const balanced = (createdBy = 'u1') => ({
     date: new Date('2026-02-10'),

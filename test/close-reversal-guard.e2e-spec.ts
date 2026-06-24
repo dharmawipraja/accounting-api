@@ -1,15 +1,11 @@
-import { Test } from '@nestjs/testing';
-import { INestApplication, VersioningType } from '@nestjs/common';
-import { AppModule } from '../src/app.module';
-import { PrismaService } from '../src/common/prisma/prisma.service';
+import { INestApplication } from '@nestjs/common';
 import { AccountsService } from '../src/ledger/accounts/accounts.service';
 import { PeriodsService } from '../src/ledger/periods/periods.service';
 import { CompanyService } from '../src/company/company.service';
 import { PostingService } from '../src/ledger/posting/posting.service';
 import { YearEndCloseService } from '../src/close/year-end-close.service';
 import { ClosedYearError } from '../src/common/errors/domain-errors';
-import { makePrismaOverride } from './e2e-helpers';
-import { startTestDb, TestDb } from './testcontainers';
+import { bootstrapTestApp } from './e2e-helpers';
 
 /**
  * P0-1: a reversal/void whose date lands in a CLOSED fiscal year must be
@@ -19,24 +15,14 @@ import { startTestDb, TestDb } from './testcontainers';
  */
 describe('Year-end close — reversal year-lock (e2e)', () => {
   let app: INestApplication;
-  let db: TestDb;
-  let prisma: PrismaService;
+  let cleanup: () => Promise<void>;
   let acc: Record<string, string>;
   let posting: PostingService;
   let close: YearEndCloseService;
   let entryId: string;
 
   beforeAll(async () => {
-    db = await startTestDb();
-    prisma = makePrismaOverride(db.url);
-    await prisma.$connect();
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(PrismaService)
-      .useValue(prisma)
-      .compile();
-    app = moduleRef.createNestApplication();
-    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-    await app.init();
+    ({ app, cleanup } = await bootstrapTestApp({ pipe: false }));
     await app.get(CompanyService).seedIfEmpty();
     await app.get(AccountsService).seedIfEmpty();
     await app.get(PeriodsService).generatePeriods(2026);
@@ -62,11 +48,7 @@ describe('Year-end close — reversal year-lock (e2e)', () => {
     await close.close(2026, 'admin');
   }, 120_000);
 
-  afterAll(async () => {
-    await app.close();
-    await prisma.$disconnect();
-    await db?.stop();
-  });
+  afterAll(() => cleanup());
 
   it('rejects reversing an entry whose date lands in a closed fiscal year', async () => {
     await expect(posting.reverse(entryId, 'u')).rejects.toBeInstanceOf(
