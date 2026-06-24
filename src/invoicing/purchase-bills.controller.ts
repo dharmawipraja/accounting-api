@@ -30,6 +30,7 @@ import { Role } from '../auth/role.enum';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { IdempotentWrite } from '../common/idempotency/idempotent-write.decorator';
+import { parseDate } from '../common/dates/parse-date';
 
 @ApiTags('Purchase Bills')
 @ApiBearerAuth()
@@ -61,7 +62,7 @@ export class PurchaseBillsController {
       partnerId: dto.partnerId,
       vendorInvoiceNo: dto.vendorInvoiceNo,
       date: new Date(dto.date),
-      dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+      dueDate: parseDate(dto.dueDate),
       description: dto.description,
       lines: dto.lines,
       createdBy: user.id,
@@ -78,8 +79,8 @@ export class PurchaseBillsController {
   ) {
     const bill = await this.bills.update(id, {
       vendorInvoiceNo: dto.vendorInvoiceNo,
-      date: dto.date ? new Date(dto.date) : undefined,
-      dueDate: dto.dueDate ? new Date(dto.dueDate) : undefined,
+      date: parseDate(dto.date),
+      dueDate: parseDate(dto.dueDate),
       description: dto.description,
       lines: dto.lines,
     });
