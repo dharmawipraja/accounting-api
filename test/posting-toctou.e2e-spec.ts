@@ -40,6 +40,8 @@ describe('PostingService TOCTOU guard (e2e)', () => {
     await app.get(PeriodsService).generatePeriods(2026);
     await app.get(PeriodsService).generatePeriods(2027);
     await app.get(PeriodsService).generatePeriods(2029);
+    await app.get(PeriodsService).generatePeriods(2030);
+    await app.get(PeriodsService).generatePeriods(2031);
     posting = app.get(PostingService);
     const { data: accounts } = await app.get(AccountsService).list();
     kasId = accounts.find((a) => a.code === '1-1000')!.id;
@@ -93,41 +95,30 @@ describe('PostingService TOCTOU guard (e2e)', () => {
   });
 
   it('in-tx guard rejects a post into a CLOSED year (ClosedYearError)', async () => {
-    // Close an empty 2027 (no activity → status CLOSED, no closing entry).
-    await app.get(YearEndCloseService).close(2027, 'admin');
-    // preparePosting will reject because the year is closed — so we need a token
-    // that was prepared BEFORE the year was closed. Use 2029 (open) to get a
-    // valid token, then we can't inject 2027 (mint-guarded). Instead test the
-    // real TOCTOU: prepare while open, close the year, tx guard rejects.
-    // Since 2027 is already closed at this point, we verify the pre-tx guard
-    // rejects a fresh post attempt into 2027:
+    // TOCTOU: mint PreparedPosting while 2030 is open, then close the year so
+    // the in-tx guard (assertPostablePeriodInTx) is the one that fires.
+    const prepared = await posting.preparePosting(
+      balanced(new Date('2030-03-15')),
+      'p',
+    );
+    await app.get(YearEndCloseService).close(2030, 'admin');
     await expect(
-      posting.post(balanced(new Date('2027-01-15')), 'p'),
+      prisma.client.$transaction((tx) =>
+        posting.createPostedEntryInTx(tx, prepared),
+      ),
     ).rejects.toBeInstanceOf(ClosedYearError);
   });
 
   it('in-tx guard rejects reverseInTx into a CLOSED year (allowClosedYear=false)', async () => {
-    // Post a real balance-sheet entry in 2028, then close 2028 (no P&L → CLOSED, no closing entry).
-    await app.get(PeriodsService).generatePeriods(2028);
-    const entry = await posting.post(balanced(new Date('2028-03-15')), 'p');
-    await app.get(YearEndCloseService).close(2028, 'admin');
-    // prepareReversal with allowClosedYear bypasses ONLY the pre-tx check and returns the real original.
-    const prepared = await posting.prepareReversal(entry.id, 'p', undefined, {
-      allowClosedYear: true,
-    });
-    // Calling reverseInTx WITHOUT allowClosedYear must be rejected by the in-tx guard.
-    // The prepared token carries allowClosedYear=true; we need a token with allowClosedYear=false.
-    // Since the token is mint-guarded, we call prepareReversal again without the flag —
-    // but that will throw ClosedYearError at prepareReversal time (pre-tx). So instead,
-    // verify the token correctly carries allowClosedYear and the in-tx guard enforces it:
-    // We pass the allowClosedYear=true token to reverseInTx — this should SUCCEED from
-    // the guard's perspective. The correct TOCTOU test is: prepare before year closes,
-    // then close, then reverseInTx WITHOUT allowClosedYear rejects. Since that requires
-    // a second token without the flag, and we can't construct one externally, verify the
-    // real scenario: the prepared token (allowClosedYear=true) allows the reversal.
+    // TOCTOU: post an entry in 2031, mint PreparedReversal (allowClosedYear=false, the
+    // default) while the year is still open, then close the year so the in-tx guard fires.
+    const entry = await posting.post(balanced(new Date('2031-03-15')), 'p');
+    // prepareReversal with no opts — allowClosedYear defaults to false.
+    const prepared = await posting.prepareReversal(entry.id, 'p', undefined);
+    await app.get(YearEndCloseService).close(2031, 'admin');
     await expect(
       prisma.client.$transaction((tx) => posting.reverseInTx(tx, prepared)),
-    ).resolves.toBeDefined();
+    ).rejects.toBeInstanceOf(ClosedYearError);
   });
 
   it('posting vs year-close serialize: post either commits-before or is rejected; never orphans', async () => {
