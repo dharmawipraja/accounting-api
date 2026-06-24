@@ -40,7 +40,8 @@ export interface TestApp {
  * @param opts.pipe      false to skip the ValidationPipe (service-layer specs that
  *                       don't exercise DTO validation). Default true → the canonical
  *                       prod pipe (whitelist + transform + forbidNonWhitelisted).
- * @param opts.configure pre-init hook for extra middleware (e.g. helmet).
+ * @param opts.configure pre-init hook for extra middleware (e.g. helmet); runs AFTER
+ *                       the global filter and BEFORE app.init().
  */
 export async function bootstrapTestApp(
   opts: {
