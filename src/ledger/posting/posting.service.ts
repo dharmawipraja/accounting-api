@@ -185,16 +185,19 @@ export class PostingService {
 
   /** The in-transaction posted-entry choke point: re-assert the period/year is still
    *  postable (TOCTOU guard), assign the gapless JE number + ref, and count the entry.
-   *  Both a fresh create (createPostedEntryInTx) and a draft promotion (postDraft) route
-   *  through here, so the guard, the numbering, and the metric live in exactly one place.
-   *  The metric increments inside the tx; a rare rollback after this point over-counts by
-   *  1 — acceptable for a throughput metric. */
+   *  Every posted entry — a fresh create (createPostedEntryInTx), a draft promotion
+   *  (postDraft), and a reversal (reverseInTx) — routes through here, so the guard, the
+   *  numbering, and the metric live in exactly one place. `allowClosedYear` is passed
+   *  through to the guard (reversal/void on reopen sets it). The metric increments inside
+   *  the tx; a rare rollback after this point over-counts by 1 — acceptable for a
+   *  throughput metric. */
   private async stampPostedInTx(
     tx: LedgerTx,
     periodId: string,
     fiscalYear: number,
+    opts: { allowClosedYear?: boolean } = {},
   ): Promise<{ entryNumber: number; entryRef: string }> {
-    await this.assertPostablePeriodInTx(tx, periodId, fiscalYear);
+    await this.assertPostablePeriodInTx(tx, periodId, fiscalYear, opts);
     const entryNumber = await this.nextNumber(tx, fiscalYear);
     const entryRef = this.buildEntryRef(fiscalYear, entryNumber);
     this.metrics.incLedgerEntriesPosted();
@@ -334,11 +337,12 @@ export class PostingService {
       reversalDate,
       allowClosedYear,
     } = prepared;
-    await this.assertPostablePeriodInTx(tx, periodId, fiscalYear, {
-      allowClosedYear,
-    });
-    const entryNumber = await this.nextNumber(tx, fiscalYear);
-    const entryRef = this.buildEntryRef(fiscalYear, entryNumber);
+    const { entryNumber, entryRef } = await this.stampPostedInTx(
+      tx,
+      periodId,
+      fiscalYear,
+      { allowClosedYear },
+    );
     const reversal = await tx.journalEntry.create({
       data: {
         entryNumber,

@@ -120,4 +120,27 @@ describe('metrics (e2e)', () => {
     const after = await scrapeCounter('ledger_entries_posted_total');
     expect(after).toBeGreaterThan(before);
   });
+
+  it('increments ledger_entries_posted_total after a reversal', async () => {
+    const entry = await posting.post(
+      {
+        date: new Date('2026-03-03'),
+        description: 'reversal metric probe',
+        sourceType: 'MANUAL',
+        createdBy: 'a',
+        lines: [
+          { accountId: acc['1-1000'], debit: '750' },
+          { accountId: acc['3-1000'], credit: '750' },
+        ],
+      },
+      'p',
+    );
+    // Scrape AFTER the post so we isolate the reversal's own increment.
+    const before = await scrapeCounter('ledger_entries_posted_total');
+    const reversal = await posting.reverse(entry.id, 'reverser');
+    expect(reversal.status).toBe('POSTED');
+    expect(reversal.sourceType).toBe('REVERSAL');
+    const after = await scrapeCounter('ledger_entries_posted_total');
+    expect(after).toBeGreaterThan(before);
+  });
 });
