@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Email security reports to budi@maul.is. Please do not open public issues for
+Email security reports to dharmawipraja@gmail.com. Please do not open public issues for
 suspected vulnerabilities; we will acknowledge within a few business days.
 
 ## Dependency audit policy
