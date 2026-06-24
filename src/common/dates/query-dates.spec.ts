@@ -28,6 +28,11 @@ describe('dateRange', () => {
       '`from` must be on or before `to`',
     );
   });
+  it('allows from === to (equal boundary)', () => {
+    const { from, to } = dateRange('2026-01-01', '2026-01-01');
+    expect(from.toISOString()).toBe('2026-01-01T00:00:00.000Z');
+    expect(to.toISOString()).toBe('2026-01-01T00:00:00.000Z');
+  });
 });
 
 describe('optionalDateRange', () => {
