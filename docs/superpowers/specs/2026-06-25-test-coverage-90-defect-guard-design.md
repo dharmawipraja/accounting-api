@@ -1,162 +1,128 @@
 # Test Coverage to 90% as a Defect Guard — Design
 
-**Status:** Approved (brainstorming) — 2026-06-25
-**Goal:** Raise unit and e2e coverage toward 90% in a way that makes the suites
-stronger *defect guards*, with zero tests written merely to color lines.
+**Status:** Approved (brainstorming) — 2026-06-25. Refined after the Step-0 gap
+analysis (merged-coverage gate).
+**Goal:** Raise coverage to 90% in a way that makes the suites stronger *defect
+guards*, with zero tests written merely to color lines.
 
-## Problem & current state
+## Problem & current state (measured)
 
-Two coverage gates measure different things:
+Two suites measure different surfaces:
 
-- **Unit** (`jest`, `rootDir: src`, no DB): actual **31.2 stmts / 29.8 branch /
-  27.3 funcs / 30.5 lines**; `coverageThreshold.global` floor **22/18/18/22**. The
-  unit suite intentionally covers only a subset of `src/` — pure/algorithmic
-  modules and a few services. The 0%-unit files are integration-heavy and
-  e2e-covered: controllers, `jwt-auth`/`roles` guards, `jwt.strategy`,
-  `idempotency.interceptor`, `year-end-close.service` (212 lines), `auth.service`,
-  `refresh-token.service`, the purge services. (DTOs, `main.ts`, `*.module.ts` are
-  excluded by config.)
-- **E2E** (`jest --config test/jest-e2e.json`, testcontainers + real Postgres):
-  `coverageThreshold.global` floor **84/62/84/84**. This is the real behavioral
-  coverage. **Branches (62) are the conspicuous gap.**
+- **Unit** (`jest`, `rootDir: src`, no DB): actual **31.2 / 29.8 / 27.3 / 30.5**
+  (stmts/branch/funcs/lines); floor 22/18/18/22. Covers the pure/algorithmic
+  modules at high fidelity (most at **100%**), nothing integration-heavy.
+- **E2E** (`jest -c test/jest-e2e.json`, testcontainers + real Postgres): actual
+  **89.1 / 71.1 / 90.4 / 89.6**; floor 84/62/84/84.
 
-Naively forcing the **unit** suite to 90% global would require unit-testing
-controllers/guards/interceptors/`year-end-close` by mocking Prisma/JWT — brittle,
-implementation-coupled tests that directly contradict the "no meaningless tests"
-goal.
+**Key finding from the gap analysis:** the e2e *global* number is contaminated.
+~15 pure/infra modules show low e2e branch coverage (`fiscal-year` 50, `money` 50,
+`exception-status` 30, `map-unique-violation` 0, `cors-origins` 0, `sentry-scrub` 0,
+`metrics-token.guard` 20, `env.validation` 75, `all-exceptions.filter` 45, …) **but
+are at or near 100% branch coverage in the unit suite.** They are fully guarded — by
+unit tests, not e2e. Driving the *e2e* global number to 90 would force duplicate e2e
+tests for code already at 100% unit coverage — the exact meaningless tests we want to
+avoid.
+
+The genuine gaps are in the **integration services**, where e2e is the right guard:
+`taxed-document.service` (47), `purchase-bills.service` (0 — thin delegator),
+`payments.service` (72), `journal.service` (66), `tax-codes.service` (62),
+`year-end-close.service` (71), `periods.service` (60), `accounts.service` (78),
+`business-partners.service` (69), `posting.service` (77), `closing.controller` (0),
+`document-lifecycle.service` (60), `payment-targets` (78), `aging.service` (67). The
+uncovered branches there are real behavior — e.g. `allocations.length === 0 → 422`,
+`!partner.isActive → 422`, partner-not-customer/supplier `→ 422`, cash-not-postable
+`→ 422`, non-positive allocation `→ 422`, edit-non-`DRAFT` `→ 422`, tax-rate-out-of-
+range / `>6dp` / account-not-postable `→ 422`.
 
 ## Principle (the spine)
 
-Two suites, two jobs, one rule:
+**The defect guard is MERGED (unit ∪ e2e) coverage ≥ 90% global**, branches
+ratchet-to-meaningful. A branch covered by *either* suite counts as guarded — pure
+code via unit, integration code via e2e — so we never write a duplicate test just to
+satisfy one suite's number. One honest number.
 
-1. **E2E (real DB) = the behavioral defect guard → 90% global**, ratchet-to-meaningful
-   on branches.
-2. **Unit (pure logic) = the fast algorithmic guard → 90% per-path** on the modules
-   where isolated tests are the *right* tool; the global unit floor stays a
-   regression ratchet.
-3. **Every test maps to a concrete failure mode it would catch.** No test exists to
-   color a line; no asserting-mocks on integration code.
+Each suite keeps a fast per-suite *floor* (anti-regression, fast local feedback), but
+**the merged report is the real 90% gate.**
 
-**"Ratchet-to-meaningful":** 90 is the aim. We write a test for every
-genuinely-reachable branch (error / guard / edge / financial-invariant), then set
-the floor to the level that *honestly* achieves — which may land at 88 or 92 for
-branches. We never write a test solely to cover a defensive/unreachable branch
-(`?? fallback`, rethrow, framework edge); those are left uncovered and documented.
+**Every test maps to a concrete failure mode it would catch.** No line-coloring; no
+mocking Prisma/JWT to fake-unit-test integration code.
 
-## Workstream 1 — E2E to 90% (branch-driven; the bulk of the work)
+**"Ratchet-to-meaningful":** 90 is the aim for stmts/funcs/lines. For branches we
+write a test for every genuinely-reachable branch (error/guard/edge/financial-
+invariant), then set the merged floor to the level that *honestly* achieves (may land
+88–92). Defensive/unreachable branches (`?? fallback`, rethrow, framework edge,
+@Cron-only purge bodies) are left uncovered and documented.
 
-### Step 0 — Gap analysis (produces the test backlog)
+## Coverage tooling (the merge)
 
-Run `npm run test:e2e:cov`, take the per-file uncovered branch/line report, and
-classify every uncovered branch as:
+1. Both suites already produce coverage; ensure each emits the `json` reporter:
+   - unit → `coverage/coverage-final.json`
+   - e2e  → `coverage-e2e/coverage-final.json`
+2. Add `nyc` (devDependency). A `coverage:merge` step copies both `coverage-final.json`
+   into `.nyc_output/`, then `nyc report` (merged HTML/text) + `nyc check-coverage`
+   enforces the merged global thresholds.
+3. A new `test:cov:all` script runs unit-cov → e2e-cov → merge+check. `npm run verify`
+   calls it. The per-suite `coverageThreshold` floors remain as fast anti-regression
+   gates; the merged `check-coverage` is the 90% defect gate.
+4. `export-openapi.ts` (a build script, not runtime) is excluded from coverage
+   collection.
 
-- **(a) Real behavior worth guarding** → becomes a test. Expected categories:
-  error responses (404 / 409 / 422), role-guard 403s, validation 422s
-  (`forbidNonWhitelisted`, `IsMoneyString`, UUID, date), idempotency replay
-  (original response) / in-flight 409 / key-reuse 422, over-allocation 409,
-  post-into-closed-period and post-into-closed-year guards, reversal-of-already-
-  reversed 422, tax non-positive-settlement 422, segregation-of-duties 403,
-  `from > to` 422, not-found 404, pagination bounds, fuzzy-search `?q=`.
-- **(b) Defensive / unreachable** → left uncovered, listed in the PR with a
-  one-line reason each (rethrows, `?? fallbacks`, framework edges).
+## Workstream 1 — close the integration branch gaps (the bulk)
 
-The (a) list, grouped by module, **is** the implementation backlog. Output of Step 0
-is a written, categorized table.
+### Step 0 — Gap analysis artifact (the backlog)
+From the e2e `coverage-final.json`, produce a committed, categorized table: for each
+integration file with a branch gap, list each uncovered branch as **(a) real behavior
+→ test** (with the one-line failure mode + expected status) or **(b) defensive/
+unreachable → leave** (with reason). The (a) rows, grouped by module area, are the
+implementation backlog.
 
-### Steps 1..N — Write the (a) tests, batched by module area
+### Steps 1..N — write the (a) e2e tests, batched by area
+Areas: invoicing (sales/purchase/taxed-document/payments/partners), ledger
+(posting/journal/periods/accounts/balances), tax-codes, close (year-end/closing),
+reporting (aging). Each test via `bootstrapTestApp()`, asserts HTTP status + body,
+carries a one-line failure-mode note. Batches are independently reviewable.
 
-Each via `bootstrapTestApp()`. Each test asserts HTTP status + relevant body fields
-and carries a one-line note of the defect it guards. Batches (auth, invoicing,
-ledger/posting, close, reporting, common/idempotency) are reviewable independently.
+## Workstream 2 — unit gap-fill (small; mostly already done)
 
-### Final — Ratchet the e2e threshold
+The pure modules are already ~100% unit. The only missing spec is
+`src/common/dates/parse-date.ts` (add `parse-date.spec.ts`). Fill any pure-module
+branch < 90 that the merged gate exposes (e.g. `all-exceptions.filter` unit branch 72,
+`idempotency.service` unit branch 80 — only the genuinely-reachable branches). No
+per-path thresholds — the merged gate subsumes them.
 
-Set `test/jest-e2e.json` `coverageThreshold.global` to the achieved level:
-statements / functions / lines → a clean **90**; branches → the honest achieved
-number (target 90, never below the current 62). CI then forbids regression.
-
-## Workstream 2 — Unit 90% per-path on the pure/algorithmic modules
-
-### Target paths (unit tests are the right tool here)
-
-Pure or near-pure, branch-rich, fast to test in isolation:
-
-- `src/tax/tax.service.ts` — engine math (per-code rupiah rounding, PPN/PPh kinds,
-  dup-code / non-positive-settlement guards)
-- `src/common/money/money.ts`, `src/common/money/serialize-money.ts`
-- `src/ledger/balances/signing.ts` — `signedNet` (per `normalBalance`), `naturalSide`
-  (per `type`, contra-aware)
-- `src/common/dates/fiscal-year.ts`, `query-dates.ts`, `parse-date.ts`, `utc-day.ts`
-- `src/common/db/sequence.ts` — pure parts of `nextSequenceNumber`
-- `src/ledger/posting/assert-balanced.ts`
-- `src/common/errors/exception-status.ts`, `map-unique-violation.ts`
-- `src/common/prisma/tombstone.ts`
-- `src/common/validators/is-money-string.ts`
-- `src/reporting/income-statement.service.ts` (already specced) + any report helper
-  that is *already* pure
-
-These mostly need lock-in plus gap-filling — pure code is usually already near-complete
-in its own spec. Add branch-focused unit specs only where a metric for a path is < 90
-(e.g. every tax kind, every normal-balance sign incl. contra, rounding edges,
-`from > to`).
-
-### Mechanism
-
-Add `coverageThreshold` per-path keys in the unit jest config (package.json `jest`
-block), each at 90 on all four metrics, e.g.:
-
-```jsonc
-"coverageThreshold": {
-  "global": { "statements": 31, "branches": 29, "functions": 27, "lines": 30 },
-  "./src/ledger/balances/signing.ts": { "statements": 90, "branches": 90, "functions": 90, "lines": 90 },
-  "./src/tax/tax.service.ts":        { "statements": 90, "branches": 90, "functions": 90, "lines": 90 }
-  // ...one entry per target path
-}
-```
-
-The **global** unit floor is set to its post-work achieved level (≥ current ~31/29/27/30),
-anti-regression only — **not** raised to 90 (that would drag in e2e-only code).
-
-### Guardrail (explicit non-goal)
-
-We do **not** extract logic out of integration services (`year-end-close`, `auth`,
-`refresh-token`, interceptors, guards) to make it unit-testable. The architecture
-review explicitly rejected "extract a pure function just for testability when the
-real risk is in how it's called." Those modules stay e2e-guarded.
+**Guardrail (explicit non-goal):** do **not** extract logic out of integration
+services (`year-end-close`, `auth`, `refresh-token`, interceptors, guards) to make it
+unit-testable. The architecture review rejected "extract a pure function just for
+testability when the real risk is in how it's called." Those stay e2e-guarded.
 
 ## Enforcement (the ratchet)
-
-- All thresholds already run inside `npm run verify` (the CI gate). After this work,
-  floors = achieved levels; CI fails on any drop → coverage only ratchets up.
-- New code that isn't covered fails the relevant gate (existing behavior, now
-  stricter).
+`npm run verify` runs `test:cov:all`; the merged `nyc check-coverage` fails CI on any
+regression below the ratcheted floors → coverage only goes up.
 
 ## Quality bar (review checklist)
-
-- Asserts **observable behavior** (HTTP status + body, or function return/throw) —
-  never internal method calls or mock-interaction counts.
-- No mocking Prisma/JWT to fake-unit-test integration code (that is e2e's job).
+- Asserts **observable behavior** (HTTP status+body, or function return/throw) — never
+  internal calls / mock-interaction counts.
+- No mocking Prisma/JWT to fake-unit-test integration code.
 - Prefers an uncovered **branch** over a duplicate happy path.
 - Each test carries a one-line note of the failure mode it guards.
 - e2e via `bootstrapTestApp()`; pure unit specs follow `income-statement.service.spec.ts`.
 
 ## Phasing
-
-The e2e (a)-backlog is the large chunk; the implementation plan sizes it from Step-0
-output and batches by module area so each batch is independently reviewable.
-Workstream 2 is smaller (mostly lock-in) and can run after, or in parallel.
+The integration (a)-backlog is the large chunk; the plan sizes it from the Step-0
+artifact and batches by module area. The tooling task lands first (so the merged
+number is visible), Workstream 2 is a single small task, the ratchet is last.
 
 ## Non-goals
-
-- No global unit 90% (forces mock-theater).
+- No global *unit* 90% and no global *e2e* 90% in isolation (each would force
+  meaningless duplication); the MERGED number is the gate.
 - No tests for defensive/unreachable branches (documented exclusions).
-- No coverage of DTOs / `main.ts` / `*.module.ts` (excluded by config; correct).
-- No extraction of logic from integration services purely for unit coverage.
+- No coverage of DTOs / `main.ts` / `*.module.ts` / `export-openapi.ts`.
+- No extraction of logic from integration services purely for coverage.
 
 ## Success criteria
-
-- E2E `coverageThreshold.global`: stmts/funcs/lines = 90; branches = honest achieved
-  (≥ 62, target 90), ratcheted.
-- Each listed unit path: ≥ 90 on all four metrics, enforced per-path.
-- Every added test maps to a named failure mode; no defensive-branch theater.
-- `npm run verify` green; the categorized (b)-exclusion list documented in the PR.
+- Merged `check-coverage`: statements/functions/lines = 90; branches = honest achieved
+  (≥ current merged, target 90), ratcheted in CI.
+- `parse-date.spec.ts` added; the categorized (b)-exclusion list committed.
+- Every added test maps to a named failure mode; no duplicate/line-coloring tests.
+- `npm run verify` green.
