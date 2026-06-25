@@ -108,8 +108,11 @@ Uncovered branch lines: 55, 72, 216, 256–258, 282, 292, 383, 385, 398, 413, 48
 | L-8 | **(a)** | :385 | `original.status !== 'POSTED'` in `prepareReversal()` | Reverse a DRAFT entry | 422 ValidationFailedError |
 | L-9 | **(a)** | :398 | `if (!period)` in `prepareReversal()` — no open period for reversal date | Reversal date falls in a closed period | 422 ClosedPeriodError |
 | L-10 | **(a)** | :413 | `if (closedYear)` in `prepareReversal()` — year is closed at reversal time | Reversing into a closed fiscal year | 422 ClosedYearError |
-| L-11 | **(a)** | :487 | `if (!draft)` in `postDraft()` — draft not found | Post a non-existent draft journal entry | 404 NotFoundDomainError |
-| L-12 | **(a)** | :496 | `draft.status !== 'DRAFT'` in `postDraft()` | Post-draft on an already-posted JE | 422 ValidationFailedError |
+| L-11 | **(a)** | :383 | `if (!draft)` in `postDraft()` — draft not found | Post a non-existent draft journal entry | 404 NotFoundDomainError |
+| L-12 | **(a)** | :385 | `draft.status !== 'DRAFT'` in `postDraft()` | Post-draft on an already-posted JE | 422 ValidationFailedError |
+| L-12a | **(a)** | ~:487 (`assertPostableAccounts()`) | line references a non-existent account (`if (!a)`) | Create/post a JE whose line `accountId` does not exist | 422 INVALID_ACCOUNT |
+| L-12b | **(a)** | ~:490 (`assertPostableAccounts()`) | line references a non-postable (header) account (`!a.isPostable`) | Create/post a JE line to a header/non-postable account | 422 INVALID_ACCOUNT |
+| L-12c | **(a)** | ~:497 (`assertPostableAccounts()`) | line references an inactive account | Create/post a JE line to a soft-inactive account | 422 INVALID_ACCOUNT |
 
 ### 2.2 `journal.service.ts`
 
@@ -145,7 +148,7 @@ Uncovered branch lines: 66–67, 91–93, 177, 238
 | # | Mark | File:Line | Guard / Condition | Failure mode / Reason | Expected outcome |
 |---|------|-----------|-------------------|----------------------|-----------------|
 | L-25 | **(b)** | :66–67 | `idByCode.get(parentCode) ?? null` + `if (!parentId)` inside seed transaction | Seed failure for a missing parent code — only reachable when the in-code seed data itself is inconsistent; cannot be triggered via HTTP |
-| L-26 | **(a)** | :91–93 | type/subtype coherence check in `create()` — `!validSubtypes.includes(input.subtype)` | Creating an account with a subtype incompatible with its type (e.g. ASSET + TAX_PAYABLE) | 422 ValidationFailedError |
+| L-26 | **(a)** | :140–142 | type/subtype coherence check in `create()` — `!validSubtypes.includes(input.subtype)` | Creating an account with a subtype incompatible with its type (e.g. ASSET + TAX_PAYABLE) | 422 ValidationFailedError |
 | L-27 | **(a)** | :177 | `!parent.isPostable` check after parentCode lookup — parent is a leaf, not a header | Creating an account with a postable parent account | 422 ValidationFailedError |
 | L-28 | **(a)** | :238 | `if (postedLineCount > 0)` in `softDelete()` | Deleting an account that has posted journal lines | 422 ValidationFailedError |
 
