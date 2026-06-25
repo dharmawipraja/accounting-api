@@ -323,4 +323,162 @@ describe('SalesInvoices (e2e)', () => {
       expect(bodyAfter.total).toBe(0);
     });
   });
+
+  // ── Guard-branch coverage (I-1, I-2, I-4, I-5, I-6, I-9, I-10) ──────────
+
+  it('I-1: rejects PUT on an already-posted invoice → 422 (update onlyDraftEdit guard)', async () => {
+    // Create and post a draft, then attempt to update the now-POSTED invoice.
+    const draft = await request(app.getHttpServer() as App)
+      .post('/v1/sales-invoices')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send(draftBody())
+      .expect(201);
+    const id = (draft.body as { id: string }).id;
+    await request(app.getHttpServer() as App)
+      .post(`/v1/sales-invoices/${id}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    const res = await request(app.getHttpServer() as App)
+      .patch(`/v1/sales-invoices/${id}`)
+      .set('Authorization', `Bearer ${acct}`)
+      .send({ description: 'changed' })
+      .expect(422);
+    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+  });
+
+  it('I-2: update with no lines reuses existing lines; totals unchanged → 200', async () => {
+    // Lines-null branch: input.lines is undefined, service falls back to row.lines.
+    const draft = await request(app.getHttpServer() as App)
+      .post('/v1/sales-invoices')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send(draftBody())
+      .expect(201);
+    const id = (draft.body as { id: string }).id;
+    const res = await request(app.getHttpServer() as App)
+      .patch(`/v1/sales-invoices/${id}`)
+      .set('Authorization', `Bearer ${acct}`)
+      .send({ description: 'desc only, no lines' })
+      .expect(200);
+    const body = res.body as { subtotal: string; total: string };
+    // Totals must match the original draft (lines not changed).
+    expect(body.subtotal).toBe('1000000.0000');
+    expect(body.total).toBe('1110000.0000');
+  });
+
+  it('I-4: list filtered by status=POSTED returns only posted invoices → 200', async () => {
+    // status-filter branch in listPage() (q.status path).
+    const res = await request(app.getHttpServer() as App)
+      .get('/v1/sales-invoices?status=POSTED')
+      .set('Authorization', `Bearer ${acct}`)
+      .expect(200);
+    const body = res.body as { data: { status: string }[] };
+    expect(body.data.every((i) => i.status === 'POSTED')).toBe(true);
+  });
+
+  it('I-5: POST /post on an already-posted invoice → 422 (post notADraft guard)', async () => {
+    // status !== DRAFT guard in post() — attempt to post a POSTED invoice.
+    const draft = await request(app.getHttpServer() as App)
+      .post('/v1/sales-invoices')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send(draftBody())
+      .expect(201);
+    const id = (draft.body as { id: string }).id;
+    await request(app.getHttpServer() as App)
+      .post(`/v1/sales-invoices/${id}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    const res = await request(app.getHttpServer() as App)
+      .post(`/v1/sales-invoices/${id}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(422);
+    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+  });
+
+  it('I-6: POST /post with a deactivated customer → 422 (partnerInactive guard at post time)', async () => {
+    // !partner.isActive guard in post(): deactivate partner after draft creation.
+    const inactiveCustomer = await app
+      .get(BusinessPartnersService)
+      .create({ code: 'CUST-INACTIVE-POST', name: 'Inactive', isCustomer: true });
+    const draft = await request(app.getHttpServer() as App)
+      .post('/v1/sales-invoices')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ ...draftBody(), partnerId: inactiveCustomer.id })
+      .expect(201);
+    const id = (draft.body as { id: string }).id;
+    // Deactivate the partner after the draft was saved.
+    await app.get(BusinessPartnersService).deactivate(inactiveCustomer.id);
+    const res = await request(app.getHttpServer() as App)
+      .post(`/v1/sales-invoices/${id}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(422);
+    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+  });
+
+  it('I-9: void a DRAFT invoice → 422 (void onlyPostedVoid guard)', async () => {
+    // status !== POSTED guard in void(): attempt to void a DRAFT document.
+    const draft = await request(app.getHttpServer() as App)
+      .post('/v1/sales-invoices')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send(draftBody())
+      .expect(201);
+    const id = (draft.body as { id: string }).id;
+    const res = await request(app.getHttpServer() as App)
+      .post(`/v1/sales-invoices/${id}/void`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(422);
+    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+  });
+
+  it('I-10: void a posted invoice that has an outstanding payment → 409 (voidWithPaymentsFirst pre-tx guard)', async () => {
+    // !Money.of(row.amountPaid).isZero() guard in void(): invoice has amountPaid > 0.
+    const paidCustomer = await app
+      .get(BusinessPartnersService)
+      .create({ code: 'CUST-PAID-VOID', name: 'PaidVoid', isCustomer: true });
+    const draft = await request(app.getHttpServer() as App)
+      .post('/v1/sales-invoices')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ ...draftBody(), partnerId: paidCustomer.id })
+      .expect(201);
+    const id = (draft.body as { id: string }).id;
+    await request(app.getHttpServer() as App)
+      .post(`/v1/sales-invoices/${id}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    // Create and post a partial payment so amountPaid > 0.
+    const payment = await request(app.getHttpServer() as App)
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        direction: 'RECEIPT',
+        partnerId: paidCustomer.id,
+        date: '2026-02-20',
+        cashAccountId: acc['1-1000'],
+        allocations: [{ salesInvoiceId: id, amount: '500000' }],
+      })
+      .expect(201);
+    await request(app.getHttpServer() as App)
+      .post(`/v1/payments/${(payment.body as { id: string }).id}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    const res = await request(app.getHttpServer() as App)
+      .post(`/v1/sales-invoices/${id}/void`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(409);
+    expect((res.body as { code: string }).code).toBe('CONFLICT');
+  });
 });

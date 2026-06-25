@@ -282,4 +282,141 @@ describe('PurchaseBills (e2e)', () => {
       expect(Array.isArray(body.data)).toBe(true);
     });
   });
+
+  // ── Guard-branch coverage (purchase-bill side of I-1, I-4, I-5, I-9, I-10) ──
+
+  it('PB-I-1: rejects PATCH on an already-posted bill → 422 (update onlyDraftEdit guard)', async () => {
+    // row.status !== DRAFT guard in update(): cannot edit a posted document.
+    const draft = await request(app.getHttpServer() as App)
+      .post('/v1/purchase-bills')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send(draftBody())
+      .expect(201);
+    const id = (draft.body as { id: string }).id;
+    await request(app.getHttpServer() as App)
+      .post(`/v1/purchase-bills/${id}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    const res = await request(app.getHttpServer() as App)
+      .patch(`/v1/purchase-bills/${id}`)
+      .set('Authorization', `Bearer ${acct}`)
+      .send({ description: 'changed' })
+      .expect(422);
+    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+  });
+
+  it('PB-I-4: list filtered by status=POSTED returns only posted bills → 200', async () => {
+    // status-filter branch in listPage() (q.status path).
+    const res = await request(app.getHttpServer() as App)
+      .get('/v1/purchase-bills?status=POSTED')
+      .set('Authorization', `Bearer ${acct}`)
+      .expect(200);
+    const body = res.body as { data: { status: string }[] };
+    expect(body.data.every((b) => b.status === 'POSTED')).toBe(true);
+  });
+
+  it('PB-I-5: POST /post on an already-posted bill → 422 (post notADraft guard)', async () => {
+    // status !== DRAFT guard in post(): posting a POSTED bill must be rejected.
+    const draft = await request(app.getHttpServer() as App)
+      .post('/v1/purchase-bills')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send(draftBody())
+      .expect(201);
+    const id = (draft.body as { id: string }).id;
+    await request(app.getHttpServer() as App)
+      .post(`/v1/purchase-bills/${id}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    const res = await request(app.getHttpServer() as App)
+      .post(`/v1/purchase-bills/${id}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(422);
+    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+  });
+
+  it('PB-I-6: POST /post with a deactivated vendor → 422 (partnerInactive guard at post time)', async () => {
+    // !partner.isActive guard in post(): deactivate the vendor after draft creation.
+    const inactiveVendor = await app
+      .get(BusinessPartnersService)
+      .create({ code: 'VEND-INACTIVE-POST', name: 'InactiveV', isVendor: true });
+    const draft = await request(app.getHttpServer() as App)
+      .post('/v1/purchase-bills')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ ...draftBody(), partnerId: inactiveVendor.id })
+      .expect(201);
+    const id = (draft.body as { id: string }).id;
+    await app.get(BusinessPartnersService).deactivate(inactiveVendor.id);
+    const res = await request(app.getHttpServer() as App)
+      .post(`/v1/purchase-bills/${id}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(422);
+    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+  });
+
+  it('PB-I-9: void a DRAFT bill → 422 (void onlyPostedVoid guard)', async () => {
+    // status !== POSTED guard in void(): cannot void a DRAFT document.
+    const draft = await request(app.getHttpServer() as App)
+      .post('/v1/purchase-bills')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send(draftBody())
+      .expect(201);
+    const id = (draft.body as { id: string }).id;
+    const res = await request(app.getHttpServer() as App)
+      .post(`/v1/purchase-bills/${id}/void`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(422);
+    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+  });
+
+  it('PB-I-10: void a posted bill with outstanding payment → 409 (voidWithPaymentsFirst pre-tx guard)', async () => {
+    // !Money.of(row.amountPaid).isZero() guard in void(): bill amountPaid > 0.
+    const paidVendor = await app
+      .get(BusinessPartnersService)
+      .create({ code: 'VEND-PAID-VOID', name: 'PaidVoidV', isVendor: true });
+    const draft = await request(app.getHttpServer() as App)
+      .post('/v1/purchase-bills')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ ...draftBody(), partnerId: paidVendor.id })
+      .expect(201);
+    const id = (draft.body as { id: string }).id;
+    await request(app.getHttpServer() as App)
+      .post(`/v1/purchase-bills/${id}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    // Create and post a partial disbursement so bill amountPaid > 0.
+    const payment = await request(app.getHttpServer() as App)
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        direction: 'DISBURSEMENT',
+        partnerId: paidVendor.id,
+        date: '2026-02-22',
+        cashAccountId: acc['1-1000'],
+        allocations: [{ purchaseBillId: id, amount: '500000' }],
+      })
+      .expect(201);
+    await request(app.getHttpServer() as App)
+      .post(`/v1/payments/${(payment.body as { id: string }).id}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    const res = await request(app.getHttpServer() as App)
+      .post(`/v1/purchase-bills/${id}/void`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(409);
+    expect((res.body as { code: string }).code).toBe('CONFLICT');
+  });
 });

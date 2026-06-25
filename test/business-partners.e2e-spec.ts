@@ -81,6 +81,17 @@ describe('BusinessPartners (e2e)', () => {
     ).toBe(false);
   });
 
+  // ── Guard-branch coverage (I-26) ──────────────────────────────────────────
+
+  it('I-26: GET /partners/:nonexistent → 404 (!p guard in findById)', async () => {
+    // if (!p) NotFoundDomainError in findById() when partner id does not exist.
+    const res = await request(app.getHttpServer() as App)
+      .get('/v1/partners/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404);
+    expect((res.body as { code: string }).code).toBe('NOT_FOUND');
+  });
+
   describe('search (?q=)', () => {
     it('fuzzy-matches a typo, ranks the closer name first, and excludes non-matches', async () => {
       const partners = app.get(BusinessPartnersService);

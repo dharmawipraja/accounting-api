@@ -438,6 +438,384 @@ describe('Payments (e2e)', () => {
       .expect(422);
   });
 
+  // ── Guard-branch coverage (I-13 through I-25, I-28, I-29, I-31, I-32) ──────
+
+  it('I-13: create payment with no allocations → 400 (DTO @ArrayMinSize(1) shadows service guard at :57)', async () => {
+    // allocations.length === 0: the DTO enforces @ArrayMinSize(1) before the service
+    // guard at :57 can fire, so the server returns 400 from the ValidationPipe.
+    const customerId = await newCustomer('CUST-NO-ALLOC');
+    await request(server())
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', 'pay-empty-alloc')
+      .send({
+        direction: 'RECEIPT',
+        partnerId: customerId,
+        date: '2026-01-15',
+        cashAccountId: acc['1-1000'],
+        allocations: [],
+      })
+      .expect(400); // DTO-level; service guard at :57 is shadowed by @ArrayMinSize(1)
+  });
+
+  it('I-14: create payment for an inactive partner → 422 (!partner.isActive)', async () => {
+    // !partner.isActive guard in createDraft().
+    const p = await app
+      .get(BusinessPartnersService)
+      .create({ code: 'CUST-INACT-PAY', name: 'InactPay', isCustomer: true });
+    await app.get(BusinessPartnersService).deactivate(p.id);
+    const customerId = await newCustomer('CUST-FOR-INV-INACT');
+    const invoiceId = await makePostedInvoice(customerId);
+    const res = await request(server())
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        direction: 'RECEIPT',
+        partnerId: p.id,
+        date: '2026-01-15',
+        cashAccountId: acc['1-1000'],
+        allocations: [{ salesInvoiceId: invoiceId, amount: '500000' }],
+      })
+      .expect(422);
+    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+  });
+
+  it('I-15: create RECEIPT payment for a vendor-only partner → 422 (!partner[partnerFlag])', async () => {
+    // !partner[target.partnerFlag] guard: RECEIPT requires isCustomer; using a vendor-only partner.
+    const vendorOnly = await app
+      .get(BusinessPartnersService)
+      .create({ code: 'VEND-ONLY-PAY', name: 'VendOnlyPay', isVendor: true });
+    const realCustomer = await newCustomer('CUST-FOR-ROLE-TEST');
+    const invoiceId = await makePostedInvoice(realCustomer);
+    const res = await request(server())
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        direction: 'RECEIPT',
+        partnerId: vendorOnly.id,
+        date: '2026-01-15',
+        cashAccountId: acc['1-1000'],
+        allocations: [{ salesInvoiceId: invoiceId, amount: '500000' }],
+      })
+      .expect(422);
+    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+  });
+
+  it('I-16: create payment with a non-existent cash account UUID → 422 (!cash guard in createDraft)', async () => {
+    // !cash || !cash.isPostable || !cash.isActive guard in createDraft().
+    // cashAccountId must pass @IsUUID() DTO validation, so use a well-formed but non-existent UUID.
+    const customerId = await newCustomer('CUST-BAD-CASH');
+    const invoiceId = await makePostedInvoice(customerId);
+    const res = await request(server())
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        direction: 'RECEIPT',
+        partnerId: customerId,
+        date: '2026-01-15',
+        cashAccountId: '00000000-0000-0000-0000-000000000000', // valid UUID, no such account
+        allocations: [{ salesInvoiceId: invoiceId, amount: '500000' }],
+      })
+      .expect(422);
+    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+  });
+
+  it('I-17: create payment with a zero allocation amount → 422 (amt.isZero() guard in createDraft)', async () => {
+    // amt.isZero() || amt.isNegative() guard at :90 in createDraft().
+    // @IsMoneyString() rejects negatives at the DTO level (400), but '0' passes DTO and hits service.
+    const customerId = await newCustomer('CUST-ZERO-AMT');
+    const invoiceId = await makePostedInvoice(customerId);
+    const res = await request(server())
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        direction: 'RECEIPT',
+        partnerId: customerId,
+        date: '2026-01-15',
+        cashAccountId: acc['1-1000'],
+        allocations: [{ salesInvoiceId: invoiceId, amount: '0' }],
+      })
+      .expect(422);
+    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+  });
+
+  it('I-18: create payment allocated to a DRAFT invoice → 422 (targetRow.status !== POSTED)', async () => {
+    // targetRow.status !== POSTED guard in createDraft(): the invoice was never posted.
+    const customerId = await newCustomer('CUST-DRAFT-INV');
+    const draftInv = await request(server())
+      .post('/v1/sales-invoices')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        partnerId: customerId,
+        date: '2026-02-10',
+        description: 'Draft only',
+        lines: [
+          {
+            description: 'Line',
+            accountId: acc['4-1000'],
+            quantity: '1',
+            unitPrice: '500000',
+            taxCodeIds: [code['PPN-OUT-11']],
+          },
+        ],
+      })
+      .expect(201);
+    const draftInvoiceId = (draftInv.body as { id: string }).id;
+    const res = await request(server())
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        direction: 'RECEIPT',
+        partnerId: customerId,
+        date: '2026-01-15',
+        cashAccountId: acc['1-1000'],
+        allocations: [{ salesInvoiceId: draftInvoiceId, amount: '500000' }],
+      })
+      .expect(422);
+    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+  });
+
+  it('I-19: GET /payments/:nonexistent → 404 (!p guard in getById)', async () => {
+    // if (!p) NotFoundDomainError guard in getById().
+    const res = await request(server())
+      .get('/v1/payments/00000000-0000-0000-0000-000000000000')
+      .set('Authorization', `Bearer ${acct}`)
+      .expect(404);
+    expect((res.body as { code: string }).code).toBe('NOT_FOUND');
+  });
+
+  it('I-22: POST /post on an already-posted payment → 422 (status !== DRAFT guard in post())', async () => {
+    // payment.status !== DRAFT guard in post(): post an already-posted payment.
+    const customerId = await newCustomer('CUST-DBL-POST-PAY');
+    const invoiceId = await makePostedInvoice(customerId);
+    const r = await request(server())
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        direction: 'RECEIPT',
+        partnerId: customerId,
+        date: '2026-02-15',
+        cashAccountId: acc['1-1000'],
+        allocations: [{ salesInvoiceId: invoiceId, amount: '500000' }],
+      })
+      .expect(201);
+    const paymentId = (r.body as { id: string }).id;
+    await request(server())
+      .post(`/v1/payments/${paymentId}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    const res = await request(server())
+      .post(`/v1/payments/${paymentId}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(422);
+    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+  });
+
+  it('I-24: void a DRAFT payment → 422 (payment.status !== POSTED guard in void())', async () => {
+    // status !== POSTED guard in void(): only posted payments can be voided.
+    const customerId = await newCustomer('CUST-VOID-DRAFT-PAY');
+    const invoiceId = await makePostedInvoice(customerId);
+    const r = await request(server())
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        direction: 'RECEIPT',
+        partnerId: customerId,
+        date: '2026-02-15',
+        cashAccountId: acc['1-1000'],
+        allocations: [{ salesInvoiceId: invoiceId, amount: '500000' }],
+      })
+      .expect(201);
+    const paymentId = (r.body as { id: string }).id;
+    const res = await request(server())
+      .post(`/v1/payments/${paymentId}/void`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(422);
+    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+  });
+
+  it('I-28: void a RECEIPT payment → 200; salesInvoice.amountPaid decremented back to 0 (RECEIPT decrement arm)', async () => {
+    // sign === -1 decrement arm in RECEIPT applyPaid() hit via unwindInTx on void.
+    const customerId = await newCustomer('CUST-RCPT-VOID-UNWIND');
+    const invoiceId = await makePostedInvoice(customerId);
+    const r = await request(server())
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        direction: 'RECEIPT',
+        partnerId: customerId,
+        date: '2026-02-15',
+        cashAccountId: acc['1-1000'],
+        allocations: [{ salesInvoiceId: invoiceId, amount: '1110000' }],
+      })
+      .expect(201);
+    const paymentId = (r.body as { id: string }).id;
+    await request(server())
+      .post(`/v1/payments/${paymentId}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    await request(server())
+      .post(`/v1/payments/${paymentId}/void`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    // amountPaid on the invoice must be back at 0 after void unwind.
+    const inv = await request(server())
+      .get(`/v1/sales-invoices/${invoiceId}`)
+      .set('Authorization', `Bearer ${acct}`)
+      .expect(200);
+    expect((inv.body as { outstanding: string; total: string }).outstanding).toBe(
+      (inv.body as { total: string }).total,
+    );
+  });
+
+  it('I-29: void a DISBURSEMENT payment → 200; purchaseBill.amountPaid decremented back to 0 (DISBURSEMENT decrement arm)', async () => {
+    // sign === -1 decrement arm in DISBURSEMENT applyPaid() via unwindInTx on void.
+    const vendor = await app
+      .get(BusinessPartnersService)
+      .create({ code: 'VEND-DSB-VOID', name: 'VendDsbVoid', isVendor: true });
+    const bill = await request(server())
+      .post('/v1/purchase-bills')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        partnerId: vendor.id,
+        date: '2026-02-10',
+        description: 'Beli jasa',
+        lines: [
+          {
+            description: 'Beli jasa',
+            accountId: acc['5-2000'],
+            quantity: '1',
+            unitPrice: '1000000',
+            taxCodeIds: [code['PPN-IN-11']],
+          },
+        ],
+      })
+      .expect(201);
+    const billId = (bill.body as { id: string }).id;
+    await request(server())
+      .post(`/v1/purchase-bills/${billId}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    const dsb = await request(server())
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        direction: 'DISBURSEMENT',
+        partnerId: vendor.id,
+        date: '2026-02-15',
+        cashAccountId: acc['1-1000'],
+        allocations: [{ purchaseBillId: billId, amount: '1110000' }],
+      })
+      .expect(201);
+    const dsbId = (dsb.body as { id: string }).id;
+    await request(server())
+      .post(`/v1/payments/${dsbId}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    await request(server())
+      .post(`/v1/payments/${dsbId}/void`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    // Bill amountPaid must be back at 0 after void unwind.
+    const billRes = await request(server())
+      .get(`/v1/purchase-bills/${billId}`)
+      .set('Authorization', `Bearer ${acct}`)
+      .expect(200);
+    expect(
+      (billRes.body as { outstanding: string; total: string }).outstanding,
+    ).toBe((billRes.body as { total: string }).total);
+  });
+
+  it('I-31: allocation supplying purchaseBillId on a RECEIPT → 422 (otherId set guard in loadTarget)', async () => {
+    // !id || target.otherId(alloc) guard in loadTarget(): wrong document type for direction.
+    const customerId = await newCustomer('CUST-WRONG-TYPE');
+    const vendor = await app
+      .get(BusinessPartnersService)
+      .create({ code: 'VEND-WRONG-TYPE', name: 'VendWrong', isVendor: true });
+    // Create a posted bill (wrong type for RECEIPT).
+    const bill = await request(server())
+      .post('/v1/purchase-bills')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        partnerId: vendor.id,
+        date: '2026-02-10',
+        description: 'Beli',
+        lines: [
+          {
+            description: 'Beli',
+            accountId: acc['5-2000'],
+            quantity: '1',
+            unitPrice: '500000',
+            taxCodeIds: [code['PPN-IN-11']],
+          },
+        ],
+      })
+      .expect(201);
+    const billId = (bill.body as { id: string }).id;
+    await request(server())
+      .post(`/v1/purchase-bills/${billId}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    // RECEIPT allocation but supplies purchaseBillId (wrong type).
+    const res = await request(server())
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        direction: 'RECEIPT',
+        partnerId: customerId,
+        date: '2026-01-15',
+        cashAccountId: acc['1-1000'],
+        allocations: [{ purchaseBillId: billId, amount: '500000' }],
+      })
+      .expect(422);
+    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+  });
+
+  it('I-32: allocating to a non-existent invoice id → 404 (!row guard in loadTarget)', async () => {
+    // if (!row) NotFoundDomainError guard in loadTarget().
+    const customerId = await newCustomer('CUST-NOTEXIST-INV');
+    const res = await request(server())
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        direction: 'RECEIPT',
+        partnerId: customerId,
+        date: '2026-01-15',
+        cashAccountId: acc['1-1000'],
+        allocations: [
+          {
+            salesInvoiceId: '00000000-0000-0000-0000-000000000000',
+            amount: '500000',
+          },
+        ],
+      })
+      .expect(404);
+    expect((res.body as { code: string }).code).toBe('NOT_FOUND');
+  });
+
   it('reconciliation invariant: AR control GL balance == Σ all posted invoice outstanding', async () => {
     const customerId = await newCustomer('CUST-RECON');
     const invoiceId = await makePostedInvoice(customerId);
