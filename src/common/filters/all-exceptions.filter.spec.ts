@@ -186,4 +186,74 @@ describe('AllExceptionsFilter', () => {
     expect(m.code()).toBe(409);
     expect(Sentry.captureException as jest.Mock).not.toHaveBeenCalled();
   });
+
+  it('falls back to "unknown" URL when req.url is absent', () => {
+    // Exercises the `req.url ?? 'unknown'` branch (line 29).
+    let body: unknown;
+    const res = {
+      status(_code: number) {
+        return this;
+      },
+      json(b: unknown) {
+        body = b;
+        return this;
+      },
+    };
+    // Request has no url property — only id
+    const host = {
+      switchToHttp: () => ({
+        getResponse: () => res,
+        getRequest: () => ({ id: 'req-2' }),
+      }),
+    } as unknown as ArgumentsHost;
+    // Should not throw — falls back to 'unknown' URL for logging
+    expect(() =>
+      filter.catch(new ConflictDomainError('x', {}), host),
+    ).not.toThrow();
+    expect((body as { code: string }).code).toBe('CONFLICT');
+  });
+
+  it('handles a thrown non-Error value (string) as a 500 without crashing', () => {
+    // Exercises the `String(exception)` branch in the else block (lines 88-96).
+    const m = mockHost();
+    filter.catch('something went wrong', m.host);
+    expect(m.code()).toBe(500);
+    expect((m.payload() as { code: string }).code).toBe('INTERNAL_ERROR');
+  });
+
+  it('uses exception.message as fallback when HttpException response object has no message field', () => {
+    // Exercises the `rawMessage ?? exception.message` branch (line 58):
+    // getResponse() returns an object with no `message` key.
+    const m = mockHost();
+    const err = new HttpException({ error: 'Gone' }, 410);
+    filter.catch(err, m.host);
+    expect(m.code()).toBe(410);
+    const body = m.payload() as { code: string; message: string };
+    expect(body.code).toBe('HTTP_410');
+    // message falls back to exception.message (NestJS default: "HTTP Exception")
+    expect(typeof body.message).toBe('string');
+    expect(body.message.length).toBeGreaterThan(0);
+  });
+
+  it('omits traceId from envelope when req.id is absent (line 96)', () => {
+    // Exercises the falsy branch of `if (req.id) envelope.traceId = req.id`.
+    let body: unknown;
+    const res = {
+      status(_code: number) {
+        return this;
+      },
+      json(b: unknown) {
+        body = b;
+        return this;
+      },
+    };
+    const host = {
+      switchToHttp: () => ({
+        getResponse: () => res,
+        getRequest: () => ({ url: '/test' }), // no id
+      }),
+    } as unknown as ArgumentsHost;
+    filter.catch(new ConflictDomainError('x', {}), host);
+    expect((body as Record<string, unknown>).traceId).toBeUndefined();
+  });
 });
