@@ -21,6 +21,7 @@ Operational and developer guides for the accounting API. Start with **local-deve
 ## Operations & deploy
 - [deploy.md](./deploy.md) — single-VM Docker Compose + Caddy deploy, rollback, the (manual) CD pipeline, monitoring overlay, alert/backup activation.
 - [perf-baseline.md](./perf-baseline.md) — k6 load-test baseline, the rate-limiter caveat, and how to interpret results.
+- [operator-activation.md](./operator-activation.md) — remaining go-live wiring that needs real secrets/infra (offsite backups, alert delivery, CD deploy) + deferred-by-design notes.
 
 ## When things break
 - [troubleshooting.md](./troubleshooting.md) — symptom → cause → fix for the common gotchas (stale Prisma client, Docker/e2e, fail-closed Redis 503, env validation, `/v1` 404s, idempotency 422, 408 timeouts, `npm audit`, Swagger/metrics gating).
