@@ -3,6 +3,9 @@ import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { AccountsService } from '../src/ledger/accounts/accounts.service';
+import { PeriodsService } from '../src/ledger/periods/periods.service';
+import { PostingService } from '../src/ledger/posting/posting.service';
+import { CompanyService } from '../src/company/company.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
 import { bootstrapTestApp } from './e2e-helpers';
@@ -208,5 +211,81 @@ describe('Accounts (e2e)', () => {
         parentCode: '1-0000',
       })
       .expect(409);
+  });
+
+  it('rejects incoherent type/subtype and returns VALIDATION_FAILED code', async () => {
+    // L-26: AccountsService.create — type/subtype mismatch
+    const res = await request(app.getHttpServer() as App)
+      .post('/v1/ledger/accounts')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: '1-8888',
+        name: 'Bad Subtype',
+        type: 'ASSET',
+        subtype: 'TAX_PAYABLE',
+        normalBalance: 'DEBIT',
+      })
+      .expect(422);
+    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+  });
+
+  it('rejects a postable-account parent and returns VALIDATION_FAILED code', async () => {
+    // L-27: AccountsService.create — parentCode is a postable account
+    const res = await request(app.getHttpServer() as App)
+      .post('/v1/ledger/accounts')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: '1-1850',
+        name: 'Bad Parent Postable',
+        type: 'ASSET',
+        subtype: 'CURRENT_ASSET',
+        normalBalance: 'DEBIT',
+        parentCode: '1-1000',
+      })
+      .expect(422);
+    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+  });
+
+  it('rejects deleting an account that has posted journal lines (422 VALIDATION_FAILED)', async () => {
+    // L-28: AccountsService.softDelete — account has posted lines
+    const created = await request(app.getHttpServer() as App)
+      .post('/v1/ledger/accounts')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: '1-1910',
+        name: 'Posted Account',
+        type: 'ASSET',
+        subtype: 'CURRENT_ASSET',
+        normalBalance: 'DEBIT',
+        parentCode: '1-0000',
+      })
+      .expect(201);
+    const id = (created.body as { id: string }).id;
+
+    const { data: accounts } = await app.get(AccountsService).list();
+    const modalId = accounts.find((a) => a.code === '3-1000')!.id;
+
+    await app.get(CompanyService).seedIfEmpty();
+    await app.get(PeriodsService).generatePeriods(2026);
+
+    await app.get(PostingService).post(
+      {
+        date: new Date('2026-02-10'),
+        description: 'L-28 posted line',
+        sourceType: 'MANUAL',
+        createdBy: 'a',
+        lines: [
+          { accountId: id, debit: '1000' },
+          { accountId: modalId, credit: '1000' },
+        ],
+      },
+      'p',
+    );
+
+    const res = await request(app.getHttpServer() as App)
+      .delete(`/v1/ledger/accounts/${id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(422);
+    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
   });
 });

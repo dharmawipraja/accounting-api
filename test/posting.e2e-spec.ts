@@ -4,6 +4,7 @@ import { AccountsService } from '../src/ledger/accounts/accounts.service';
 import { PeriodsService } from '../src/ledger/periods/periods.service';
 import { PostingService } from '../src/ledger/posting/posting.service';
 import { CompanyService } from '../src/company/company.service';
+import { YearEndCloseService } from '../src/close/year-end-close.service';
 import {
   UnbalancedEntryError,
   ClosedPeriodError,
@@ -188,5 +189,151 @@ describe('PostingService (e2e)', () => {
       new Date('2026-03-15'),
     );
     expect(reversal.date.toISOString().slice(0, 10)).toBe('2026-03-15');
+  });
+
+  it('rejects reversing a non-existent entry id (NOT_FOUND)', async () => {
+    // L-7: prepareReversal — original not found
+    await expect(
+      posting.reverse('00000000-0000-0000-0000-000000000000', 'u'),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('rejects reversing a DRAFT entry (VALIDATION_FAILED)', async () => {
+    // L-8: prepareReversal — status !== POSTED
+    const draft = await prisma.client.journalEntry.create({
+      data: {
+        fiscalYear: 2026,
+        date: new Date('2026-05-01'),
+        description: 'draft for L-8',
+        sourceType: 'MANUAL',
+        createdBy: 'u',
+        status: 'DRAFT',
+      },
+    });
+    await expect(posting.reverse(draft.id, 'u')).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+    });
+  });
+
+  it('rejects reversal into a closed period (CLOSED_PERIOD)', async () => {
+    // L-9: prepareReversal — no open period for reversal date
+    const entry = await posting.post(
+      {
+        date: new Date('2026-05-15'),
+        description: 'L-9 entry',
+        sourceType: 'MANUAL',
+        createdBy: 'a',
+        lines: [
+          { accountId: kasId, debit: '1000' },
+          { accountId: modalId, credit: '1000' },
+        ],
+      },
+      'p',
+    );
+    const periods = await app.get(PeriodsService).list(2026);
+    const may = periods.find((p) => p.name === '2026-05')!;
+    await app.get(PeriodsService).close(may.id, 'admin');
+    await expect(
+      posting.reverse(entry.id, 'p', new Date('2026-05-15')),
+    ).rejects.toMatchObject({ code: 'CLOSED_PERIOD' });
+  });
+
+  it('rejects reversal into a closed fiscal year (CLOSED_YEAR)', async () => {
+    // L-10: prepareReversal — fiscal year is closed
+    await app.get(PeriodsService).generatePeriods(2028);
+    const entry = await posting.post(
+      {
+        date: new Date('2028-03-01'),
+        description: 'L-10 entry',
+        sourceType: 'MANUAL',
+        createdBy: 'a',
+        lines: [
+          { accountId: kasId, debit: '1000' },
+          { accountId: modalId, credit: '1000' },
+        ],
+      },
+      'p',
+    );
+    await app.get(YearEndCloseService).close(2028, 'admin');
+    await expect(posting.reverse(entry.id, 'p')).rejects.toMatchObject({
+      code: 'CLOSED_YEAR',
+    });
+  });
+
+  it('rejects posting to a non-existent account id (INVALID_ACCOUNT)', async () => {
+    // L-12a: assertPostableAccounts — account not found
+    await expect(
+      posting.post(
+        {
+          date: new Date('2026-02-10'),
+          description: 'bad account',
+          sourceType: 'MANUAL',
+          createdBy: 'a',
+          lines: [
+            {
+              accountId: '00000000-0000-0000-0000-000000000000',
+              debit: '1000',
+            },
+            { accountId: modalId, credit: '1000' },
+          ],
+        },
+        'p',
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_ACCOUNT' });
+  });
+
+  it('rejects posting to an inactive account (INVALID_ACCOUNT)', async () => {
+    // L-12c: assertPostableAccounts — account.isActive is false
+    const created = await app.get(AccountsService).create({
+      code: '1-1990',
+      name: 'Inactive Test',
+      type: 'ASSET',
+      subtype: 'CURRENT_ASSET',
+      normalBalance: 'DEBIT',
+      parentCode: '1-0000',
+    });
+    await app.get(AccountsService).deactivate(created.id);
+    await expect(
+      posting.post(
+        {
+          date: new Date('2026-02-10'),
+          description: 'inactive account',
+          sourceType: 'MANUAL',
+          createdBy: 'a',
+          lines: [
+            { accountId: created.id, debit: '1000' },
+            { accountId: modalId, credit: '1000' },
+          ],
+        },
+        'p',
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_ACCOUNT' });
+  });
+
+  it('rejects postDraft on a non-existent draft id (NOT_FOUND)', async () => {
+    // L-11: postDraft — draft not found
+    await expect(
+      posting.postDraft('00000000-0000-0000-0000-000000000000', 'p'),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('rejects postDraft on an already-posted entry (VALIDATION_FAILED)', async () => {
+    // L-12: postDraft — status !== DRAFT
+    const entry = await posting.post(
+      {
+        date: new Date('2026-02-10'),
+        description: 'already posted',
+        sourceType: 'MANUAL',
+        createdBy: 'a',
+        lines: [
+          { accountId: kasId, debit: '500' },
+          { accountId: modalId, credit: '500' },
+        ],
+      },
+      'p',
+    );
+    await expect(posting.postDraft(entry.id, 'p')).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+    });
   });
 });

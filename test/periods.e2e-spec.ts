@@ -109,4 +109,48 @@ describe('Periods (e2e)', () => {
     const periods = await periodsService.list(2026);
     expect(periods).toHaveLength(12);
   });
+
+  it('rejects closing a non-existent period id (404 NOT_FOUND)', async () => {
+    // L-21: PeriodsService.close — period not found
+    const res = await request(app.getHttpServer() as App)
+      .post('/v1/ledger/periods/00000000-0000-0000-0000-000000000000/close')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(404);
+    expect((res.body as { code: string }).code).toBe('NOT_FOUND');
+  });
+
+  it('rejects closing an already-closed period (409 CONFLICT)', async () => {
+    // L-22: PeriodsService.close — period is already CLOSED
+    const periods = await periodsService.list(2026);
+    const june = periods.find((p) => p.name === '2026-06')!;
+    await request(app.getHttpServer() as App)
+      .post(`/v1/ledger/periods/${june.id}/close`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const res = await request(app.getHttpServer() as App)
+      .post(`/v1/ledger/periods/${june.id}/close`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(409);
+    expect((res.body as { code: string }).code).toBe('CONFLICT');
+  });
+
+  it('rejects reopening a non-existent period id (404 NOT_FOUND)', async () => {
+    // L-23: PeriodsService.reopen — period not found
+    const res = await request(app.getHttpServer() as App)
+      .post('/v1/ledger/periods/00000000-0000-0000-0000-000000000000/reopen')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(404);
+    expect((res.body as { code: string }).code).toBe('NOT_FOUND');
+  });
+
+  it('rejects reopening an already-open period (409 CONFLICT)', async () => {
+    // L-24: PeriodsService.reopen — period is already OPEN
+    const periods = await periodsService.list(2026);
+    const july = periods.find((p) => p.name === '2026-07')!;
+    const res = await request(app.getHttpServer() as App)
+      .post(`/v1/ledger/periods/${july.id}/reopen`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(409);
+    expect((res.body as { code: string }).code).toBe('CONFLICT');
+  });
 });

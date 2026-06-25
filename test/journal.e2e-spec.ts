@@ -307,4 +307,28 @@ describe('JournalEntries (e2e)', () => {
     expect(plug).toBeDefined();
     expect(plug!.credit.toString()).toBe('5000000');
   });
+
+  it('balanced opening balances produce no equity plug line (200)', async () => {
+    // L-14: JournalService.postOpeningBalances — plug is zero, no OBE line emitted
+    const res = await request(app.getHttpServer() as App)
+      .post('/v1/ledger/opening-balances')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        date: '2026-01-02',
+        balances: [
+          { accountId: kasId, debit: '5000000' },
+          { accountId: modalId, credit: '5000000' },
+        ],
+      })
+      .expect(200);
+
+    const body = res.body as { id: string; sourceType: string };
+    expect(body.sourceType).toBe('OPENING');
+    const lines = await prisma.client.journalLine.findMany({
+      where: { journalEntryId: body.id },
+    });
+    const plug = lines.find((l) => l.accountId === saldoAwalId);
+    expect(plug).toBeUndefined(); // balanced input → no OBE plug
+  });
 });

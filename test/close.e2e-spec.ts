@@ -1,4 +1,7 @@
 import { INestApplication } from '@nestjs/common';
+import * as request from 'supertest';
+import { type App } from 'supertest/types';
+import { PrismaService } from '../src/common/prisma/prisma.service';
 import { AccountsService } from '../src/ledger/accounts/accounts.service';
 import { PeriodsService } from '../src/ledger/periods/periods.service';
 import { CompanyService } from '../src/company/company.service';
@@ -9,18 +12,22 @@ import { CashFlowService } from '../src/reporting/cash-flow.service';
 import { YearEndCloseService } from '../src/close/year-end-close.service';
 import { JournalService } from '../src/ledger/journal/journal.service';
 import { ClosedYearError } from '../src/common/errors/domain-errors';
+import { AuthService } from '../src/auth/auth.service';
+import { UsersService } from '../src/users/users.service';
 import { bootstrapTestApp } from './e2e-helpers';
 
 describe('Year-end close (e2e)', () => {
   let app: INestApplication;
+  let prisma: PrismaService;
   let cleanup: () => Promise<void>;
   let acc: Record<string, string>;
   let close: YearEndCloseService;
   let posting: PostingService;
   let balances: BalancesService;
+  let adminToken: string;
 
   beforeAll(async () => {
-    ({ app, cleanup } = await bootstrapTestApp({ pipe: false }));
+    ({ app, prisma, cleanup } = await bootstrapTestApp({ pipe: false }));
     await app.get(CompanyService).seedIfEmpty();
     await app.get(AccountsService).seedIfEmpty();
     await app.get(PeriodsService).generatePeriods(2026);
@@ -30,6 +37,15 @@ describe('Year-end close (e2e)', () => {
     posting = app.get(PostingService);
     close = app.get(YearEndCloseService);
     balances = app.get(BalancesService);
+    await app.get(UsersService).create({
+      email: 'admin@close.test',
+      password: 'secret123',
+      name: 'Admin',
+      role: 'ADMIN',
+    });
+    adminToken = (
+      await app.get(AuthService).login('admin@close.test', 'secret123')
+    ).accessToken;
     // 2026 P&L: revenue 2,000,000 (Cr 4-1000 / Dr Kas) and expense 500,000 (Dr 5-2000 / Cr Kas).
     await posting.post(
       {
@@ -172,5 +188,110 @@ describe('Year-end close (e2e)', () => {
     await expect(journal.postDraft(draft.id, 'p')).rejects.toBeInstanceOf(
       ClosedYearError,
     );
+  });
+
+  it('C-1: P&L account with zero net movement is omitted from the closing entry', async () => {
+    // C-1: zero-movement line is skipped (position.isZero() continue in close())
+    await app.get(PeriodsService).generatePeriods(2029);
+    await posting.post(
+      {
+        date: new Date('2029-03-01'),
+        description: 'C-1 revenue',
+        sourceType: 'MANUAL',
+        createdBy: 'a',
+        lines: [
+          { accountId: acc['1-1000'], debit: '1000000' },
+          { accountId: acc['4-1000'], credit: '1000000' },
+        ],
+      },
+      'p',
+    );
+    // Offsetting entry: net revenue = 0
+    await posting.post(
+      {
+        date: new Date('2029-03-02'),
+        description: 'C-1 revenue offset',
+        sourceType: 'MANUAL',
+        createdBy: 'a',
+        lines: [
+          { accountId: acc['4-1000'], debit: '1000000' },
+          { accountId: acc['1-1000'], credit: '1000000' },
+        ],
+      },
+      'p',
+    );
+    const rec = await close.close(2029, 'admin');
+    // Net P&L = 0 → empty year → no closing entry
+    expect(rec.closingEntryId).toBeNull();
+    expect(rec.netIncome.toFixed(4)).toBe('0.0000');
+  });
+
+  it('C-3: closing a loss year debits retained earnings', async () => {
+    // C-3: netIncome is negative (loss) → RETAINED_EARNINGS is debited
+    await app.get(PeriodsService).generatePeriods(2032);
+    await posting.post(
+      {
+        date: new Date('2032-03-01'),
+        description: 'C-3 revenue',
+        sourceType: 'MANUAL',
+        createdBy: 'a',
+        lines: [
+          { accountId: acc['1-1000'], debit: '500000' },
+          { accountId: acc['4-1000'], credit: '500000' },
+        ],
+      },
+      'p',
+    );
+    await posting.post(
+      {
+        date: new Date('2032-03-02'),
+        description: 'C-3 expense',
+        sourceType: 'MANUAL',
+        createdBy: 'a',
+        lines: [
+          { accountId: acc['5-2000'], debit: '1200000' },
+          { accountId: acc['1-1000'], credit: '1200000' },
+        ],
+      },
+      'p',
+    );
+    const rec = await close.close(2032, 'admin');
+    expect(rec.status).toBe('CLOSED');
+    // Net income = 500,000 − 1,200,000 = −700,000 (loss)
+    expect(rec.netIncome.toFixed(4)).toBe('-700000.0000');
+    const lines = await prisma.client.journalLine.findMany({
+      where: { journalEntryId: rec.closingEntryId! },
+    });
+    const retainedLine = lines.find((l) => l.accountId === acc['3-2000']);
+    expect(retainedLine).toBeDefined();
+    expect(Number(retainedLine!.debit)).toBeGreaterThan(0);
+    expect(Number(retainedLine!.credit)).toBe(0);
+  });
+
+  it('C-5: reopening a never-closed year throws VALIDATION_FAILED', async () => {
+    // C-5: reopen() — no close record for fiscal year → ValidationFailedError
+    await app.get(PeriodsService).generatePeriods(2035);
+    await expect(close.reopen(2035, 'admin')).rejects.toMatchObject({
+      code: 'VALIDATION_FAILED',
+    });
+  });
+
+  it('C-7: reopening an empty-year close sets status to OPEN without reversal', async () => {
+    // C-7: reopen() with closingEntryId === null → no reversal attempted, status → OPEN
+    await app.get(PeriodsService).generatePeriods(2033);
+    const closedRec = await close.close(2033, 'admin');
+    expect(closedRec.closingEntryId).toBeNull(); // empty year
+    const reopenedRec = await close.reopen(2033, 'admin');
+    expect(reopenedRec.status).toBe('OPEN');
+    expect(reopenedRec.closingEntryId).toBeNull();
+  });
+
+  it('C-8: GET /v1/close/year-end/9999 for a never-closed year returns 404 NOT_FOUND', async () => {
+    // C-8: ClosingController.status — no record for this year → 404
+    const res = await request(app.getHttpServer() as App)
+      .get('/v1/close/year-end/9999')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(404);
+    expect((res.body as { code: string }).code).toBe('NOT_FOUND');
   });
 });
