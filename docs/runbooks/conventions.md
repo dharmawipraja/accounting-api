@@ -233,7 +233,7 @@ E2e specs **must** use `bootstrapTestApp()` from `test/e2e-helpers.ts` — never
 hand-roll the module+app setup. See [`./testing.md`](./testing.md) for the full
 bootstrap pattern.
 
-## 9. OpenAPI contract
+## 10. OpenAPI contract
 
 - **Every 2xx response body is a NAMED DTO** (`*ResponseDto` / `*Dto`) declared
   via `@ApiOkResponse({ type: ... })` / `@ApiCreatedResponse({ type: ... })` —
