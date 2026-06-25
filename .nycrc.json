@@ -1,0 +1,10 @@
+{
+  "temp-dir": ".nyc_output",
+  "report-dir": "coverage-merged",
+  "reporter": ["text-summary", "html"],
+  "check-coverage": true,
+  "statements": 92,
+  "branches": 78,
+  "functions": 92,
+  "lines": 92
+}

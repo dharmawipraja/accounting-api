@@ -21,7 +21,9 @@
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "typecheck": "tsc --noEmit",
     "lint:ci": "eslint \"{src,apps,libs,test}/**/*.ts\" --max-warnings 0",
-    "verify": "npm run typecheck && npm run lint:ci && npm run test && npm run test:e2e:cov",
+    "coverage:merge": "rm -rf .nyc_output coverage-merged && mkdir -p .nyc_output && cp coverage/coverage-final.json .nyc_output/unit.json && cp coverage-e2e/coverage-final.json .nyc_output/e2e.json && nyc report && nyc check-coverage",
+    "test:cov:all": "npm run test:cov && npm run test:e2e:cov && npm run coverage:merge",
+    "verify": "npm run typecheck && npm run lint:ci && npm run test:cov:all",
     "audit:ci": "npm audit --omit=dev --audit-level=moderate",
     "audit:dev": "npm audit --audit-level=moderate || true",
     "test": "jest",
@@ -85,6 +87,7 @@
     "eslint-plugin-prettier": "^5.2.2",
     "globals": "^17.0.0",
     "jest": "^30.0.0",
+    "nyc": "^18.0.0",
     "prettier": "^3.4.2",
     "prisma": "^7.8.0",
     "source-map-support": "^0.5.21",
@@ -119,7 +122,8 @@
       "!**/*.spec.ts",
       "!**/*.dto.ts",
       "!**/main.ts",
-      "!**/*.module.ts"
+      "!**/*.module.ts",
+      "!**/scripts/**"
     ],
     "coverageDirectory": "../coverage",
     "coverageThreshold": {

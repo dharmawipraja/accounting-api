@@ -16,7 +16,8 @@
     "!<rootDir>/src/main.ts",
     "!<rootDir>/src/**/*.module.ts",
     "!<rootDir>/src/**/dto/**",
-    "!<rootDir>/src/**/*.dto.ts"
+    "!<rootDir>/src/**/*.dto.ts",
+    "!<rootDir>/src/scripts/**"
   ],
   "coverageDirectory": "<rootDir>/coverage-e2e",
   "coverageThreshold": {

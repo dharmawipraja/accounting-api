@@ -14,7 +14,8 @@ build
 # Test coverage
 coverage
 coverage-e2e
-.nyc_output
+.nyc_output/
+coverage-merged/
 
 # Logs
 logs
