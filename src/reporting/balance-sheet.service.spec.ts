@@ -50,8 +50,13 @@ describe('BalanceSheetService.generate', () => {
       row({ code: 'REV', type: 'REVENUE', subtype: 'REVENUE', credit: '200' }),
       row({ code: 'EXP', type: 'EXPENSE', subtype: 'OPERATING_EXPENSE', debit: '100' }),
     ];
-    // current-FY earnings is a SEPARATE figure from movementsBetween (80, not 100)
-    const fyRows = [row({ code: 'REV', type: 'REVENUE', credit: '80' })];
+    // current-FY earnings is a SEPARATE figure from movementsBetween (credit−debit
+    // over P&L only): REV 80 − EXP 30 = 50; the ASSET row is filtered out.
+    const fyRows = [
+      row({ code: 'REV', type: 'REVENUE', credit: '80' }),
+      row({ code: 'EXP', type: 'EXPENSE', debit: '30' }),
+      row({ code: 'KAS', type: 'ASSET', debit: '999' }), // non-P&L → excluded
+    ];
 
     const svc = make(asOfRows, fyRows);
     const r = await svc.generate(AS_OF);
@@ -59,7 +64,7 @@ describe('BalanceSheetService.generate', () => {
     expect(r.totalAssets).toBe('1000.0000'); // 1300 − 300 contra
     expect(r.totalLiabilities).toBe('400.0000');
     expect(r.totalEquity).toBe('600.0000'); // capital 500 + cumulative earnings 100
-    expect(r.currentYearEarnings).toBe('80.0000'); // from movementsBetween, not cumulative
+    expect(r.currentYearEarnings).toBe('50.0000'); // REV 80 − EXP 30, from movementsBetween (not cumulative 100)
     expect(r.balanced).toBe(true);
     // the synthetic CURRENT_EARNINGS equity group carries the cumulative figure:
     const ce = r.equity.groups.find((g) => g.subtype === 'CURRENT_EARNINGS');
