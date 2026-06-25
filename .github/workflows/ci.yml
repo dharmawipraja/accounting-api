@@ -29,8 +29,7 @@ jobs:
           DATABASE_URL: postgresql://build:build@localhost:5432/build?schema=public
       - run: npm run typecheck
       - run: npm run lint:ci
-      - run: npm run test
-      - run: npm run test:e2e:cov
+      - run: npm run test:cov:all # unit-cov + e2e-cov + nyc merge + check-coverage (the merged 90/86/90/90 defect-guard gate)
       - uses: actions/upload-artifact@v7
         if: always()
         with:
