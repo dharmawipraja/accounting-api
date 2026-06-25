@@ -224,4 +224,170 @@ describe('Reporting AR/AP aging (e2e)', () => {
       .accountBalance(acc['2-1000'], new Date('2026-03-15'));
     expect(body.totalOutstanding).toBe(Number(apControl.balance).toFixed(4));
   });
+
+  // R-1: bucketOf() '1-30' branch — invoice due yesterday (1 day past due) lands in '1-30'.
+  it("AR aging: invoice 1 day past due lands in '1-30' bucket", async () => {
+    const customer = await app.get(BusinessPartnersService).create({
+      code: 'CUST-AGING-130',
+      name: 'Pelanggan 1-30',
+      isCustomer: true,
+    });
+    const invoices = app.get(SalesInvoicesService);
+    // Due 2026-04-14; asOf 2026-04-15 → 1 day past due → '1-30'.
+    const draft = await invoices.createDraft({
+      partnerId: customer.id,
+      date: new Date('2026-04-01'),
+      dueDate: new Date('2026-04-14'),
+      description: 'Invoice 1-30 bucket test',
+      lines: [
+        {
+          description: 'Jasa',
+          accountId: acc['4-1000'],
+          quantity: '1',
+          unitPrice: '200000',
+          taxCodeIds: [],
+        },
+      ],
+      createdBy: acctUserId,
+    });
+    const inv = await invoices.post(draft.id, apprUserId);
+
+    const res = await get('/v1/reports/ar-aging?asOf=2026-04-15').expect(200);
+    const body = res.body as {
+      partners: { documents: { ref: string | null; bucket: string }[] }[];
+    };
+    const doc = body.partners
+      .flatMap((p) => p.documents)
+      .find((d) => d.ref === inv.invoiceRef);
+    expect(doc).toBeDefined();
+    expect(doc!.bucket).toBe('1-30');
+  });
+
+  // R-1: bucketOf() '61-90' branch — invoice 61 days past due.
+  it("AR aging: invoice 61 days past due lands in '61-90' bucket", async () => {
+    const customer = await app.get(BusinessPartnersService).create({
+      code: 'CUST-AGING-6190',
+      name: 'Pelanggan 61-90',
+      isCustomer: true,
+    });
+    const invoices = app.get(SalesInvoicesService);
+    // Due 2026-01-13; asOf 2026-03-15 → 61 days past due → '61-90'.
+    const draft = await invoices.createDraft({
+      partnerId: customer.id,
+      date: new Date('2026-01-01'),
+      dueDate: new Date('2026-01-13'),
+      description: 'Invoice 61-90 bucket test',
+      lines: [
+        {
+          description: 'Jasa',
+          accountId: acc['4-1000'],
+          quantity: '1',
+          unitPrice: '300000',
+          taxCodeIds: [],
+        },
+      ],
+      createdBy: acctUserId,
+    });
+    const inv = await invoices.post(draft.id, apprUserId);
+
+    const res = await get('/v1/reports/ar-aging?asOf=2026-03-15').expect(200);
+    const body = res.body as {
+      partners: { documents: { ref: string | null; bucket: string }[] }[];
+    };
+    const doc = body.partners
+      .flatMap((p) => p.documents)
+      .find((d) => d.ref === inv.invoiceRef);
+    expect(doc).toBeDefined();
+    expect(doc!.bucket).toBe('61-90');
+  });
+
+  // R-1: bucketOf() '>90' branch — invoice > 90 days past due.
+  // Due 2026-02-01; asOf 2026-05-15 → 103 days past due → '>90'.
+  // Uses a later asOf to avoid needing 2025 periods.
+  it("AR aging: invoice > 90 days past due lands in '>90' bucket", async () => {
+    const customer = await app.get(BusinessPartnersService).create({
+      code: 'CUST-AGING-GT90',
+      name: 'Pelanggan >90',
+      isCustomer: true,
+    });
+    const invoices = app.get(SalesInvoicesService);
+    const draft = await invoices.createDraft({
+      partnerId: customer.id,
+      date: new Date('2026-01-15'),
+      dueDate: new Date('2026-02-01'),
+      description: 'Invoice >90 bucket test',
+      lines: [
+        {
+          description: 'Jasa',
+          accountId: acc['4-1000'],
+          quantity: '1',
+          unitPrice: '400000',
+          taxCodeIds: [],
+        },
+      ],
+      createdBy: acctUserId,
+    });
+    const inv = await invoices.post(draft.id, apprUserId);
+
+    // 2026-05-15 − 2026-02-01 = 103 days past due → '>90'.
+    const res = await get('/v1/reports/ar-aging?asOf=2026-05-15').expect(200);
+    const body = res.body as {
+      partners: { documents: { ref: string | null; bucket: string }[] }[];
+    };
+    const doc = body.partners
+      .flatMap((p) => p.documents)
+      .find((d) => d.ref === inv.invoiceRef);
+    expect(doc).toBeDefined();
+    expect(doc!.bucket).toBe('>90');
+  });
+
+  // R-2: outstanding.isZero() skip — a fully-paid invoice must not appear in the aging report.
+  it('AR aging: fully-paid invoice does not appear in the report (outstanding skip)', async () => {
+    const customer = await app.get(BusinessPartnersService).create({
+      code: 'CUST-AGING-PAID',
+      name: 'Pelanggan Lunas',
+      isCustomer: true,
+    });
+    const invoices = app.get(SalesInvoicesService);
+    // Invoice of 500,000 (no tax), due 2026-01-31.
+    const draft = await invoices.createDraft({
+      partnerId: customer.id,
+      date: new Date('2026-01-10'),
+      dueDate: new Date('2026-01-31'),
+      description: 'Invoice fully paid',
+      lines: [
+        {
+          description: 'Jasa',
+          accountId: acc['4-1000'],
+          quantity: '1',
+          unitPrice: '500000',
+          taxCodeIds: [],
+        },
+      ],
+      createdBy: acctUserId,
+    });
+    const inv = await invoices.post(draft.id, apprUserId);
+
+    // Full receipt of 500,000 — pays the invoice completely.
+    const payments = app.get(PaymentsService);
+    const draftPay = await payments.createDraft({
+      direction: 'RECEIPT',
+      partnerId: customer.id,
+      date: new Date('2026-02-01'),
+      cashAccountId: acc['1-1000'],
+      allocations: [{ salesInvoiceId: inv.id, amount: '500000' }],
+      createdBy: acctUserId,
+    });
+    await payments.post(draftPay.id, apprUserId);
+
+    // asOf 2026-03-15: payment is before asOf, so outstanding = 500,000 − 500,000 = 0 → skipped.
+    const res = await get('/v1/reports/ar-aging?asOf=2026-03-15').expect(200);
+    const body = res.body as {
+      partners: { documents: { ref: string | null }[] }[];
+    };
+    const doc = body.partners
+      .flatMap((p) => p.documents)
+      .find((d) => d.ref === inv.invoiceRef);
+    expect(doc).toBeUndefined();
+  });
 });
