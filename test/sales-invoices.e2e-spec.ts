@@ -402,9 +402,11 @@ describe('SalesInvoices (e2e)', () => {
 
   it('I-6: POST /post with a deactivated customer → 422 (partnerInactive guard at post time)', async () => {
     // !partner.isActive guard in post(): deactivate partner after draft creation.
-    const inactiveCustomer = await app
-      .get(BusinessPartnersService)
-      .create({ code: 'CUST-INACTIVE-POST', name: 'Inactive', isCustomer: true });
+    const inactiveCustomer = await app.get(BusinessPartnersService).create({
+      code: 'CUST-INACTIVE-POST',
+      name: 'Inactive',
+      isCustomer: true,
+    });
     const draft = await request(app.getHttpServer() as App)
       .post('/v1/sales-invoices')
       .set('Authorization', `Bearer ${acct}`)

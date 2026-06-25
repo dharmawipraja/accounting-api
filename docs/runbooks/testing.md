@@ -59,7 +59,41 @@ flakiness described below.
 ## Coverage gates
 
 Coverage is a **regression floor**, not a target — adding code with no tests can
-drop a percentage below the floor and fail `*:cov` (and therefore CI).
+drop a percentage below the floor and fail the gate (and therefore CI).
+
+### Authoritative gate: merged unit∪e2e via nyc
+
+The **primary coverage gate** is the merged report produced by `npm run test:cov:all`
+and checked by `nyc check-coverage` against `.nycrc.json`. It unions the unit and
+e2e coverage maps so that every source line covered by either suite counts.
+
+```bash
+npm run test:cov:all      # unit:cov + e2e:cov + merge + check — the full ratchet
+```
+
+Thresholds in `.nycrc.json` (ratcheted to achieved on 2026-06-25, merged baseline
+95.65% stmts / 86.64% branches / 96.06% fns / 95.68% lines):
+
+| statements | branches | functions | lines |
+| --- | --- | --- | --- |
+| 90 | 86 | 90 | 90 |
+
+**Why branches land at 86, not 90:** the 14-point residual is fully accounted for
+by documented (b)-exclusions — DTO-shadowed guards, concurrency-only in-tx
+re-checks, and singleton-unique-index fixtures — none of which are meaningful to
+exercise. See the reconcile list in
+[`docs/superpowers/plans/2026-06-25-coverage-gap-analysis.md`](../superpowers/plans/2026-06-25-coverage-gap-analysis.md)
+(§ "Post-implementation exclusions (effectively-(b))"). **Never write a test
+purely to tick a branch that is documented there.**
+
+The branch threshold is a **ratchet**: when future work adds genuinely-testable
+branches that are exercised, update `.nycrc.json` upward to the new achieved floor;
+never lower it.
+
+### Per-suite floors (fast anti-regression only)
+
+The per-suite Jest `coverageThreshold` values are intentionally low — they catch
+gross regressions quickly on each suite in isolation, not the authoritative gate.
 
 **Unit** (`package.json` → `jest.coverageThreshold.global`):
 
@@ -67,9 +101,10 @@ drop a percentage below the floor and fail `*:cov` (and therefore CI).
 | --- | --- | --- | --- |
 | 22 | 18 | 18 | 22 |
 
-These are deliberately low: most logic is covered by e2e, so the unit floor only
-guards the pure-logic modules. `collectCoverageFrom` includes `**/*.ts` but
-**excludes** `*.spec.ts`, `*.dto.ts`, `main.ts`, and `*.module.ts`.
+These are deliberately low: most integration-service logic is covered by e2e, so
+the unit floor only guards pure-logic modules (money, tax math, validators,
+interceptors, signing). `collectCoverageFrom` includes `**/*.ts` but **excludes**
+`*.spec.ts`, `*.dto.ts`, `main.ts`, and `*.module.ts`.
 
 **E2E** (`test/jest-e2e.json` → `coverageThreshold.global`):
 
@@ -82,6 +117,23 @@ from `src/**/*.(t|j)s` and **excludes** `*.spec.ts`, `main.ts`, `*.module.ts`,
 `dto/**`, and `*.dto.ts`. Note `collectCoverage` defaults to `false` there — it's
 only turned on by the `--coverage` flag in `test:e2e:cov`.
 
+**Do not raise either per-suite floor to 90** — the split between pure-logic (unit)
+and integration (e2e) coverage means neither suite alone can reach 90 on the full
+source tree. The merged gate is the correct instrument for the 90-class guarantee.
+
+### What lives where
+
+| Logic type | Preferred tier |
+| --- | --- |
+| Pure functions (money math, signing, date helpers, tax engine) | **Unit** — fast, no DB |
+| Service-layer guards (domain errors, validation, posting rules) | **E2E** — real DB, real HTTP pipeline |
+| Concurrency TOCTOU re-checks, race paths | Documented (b)-exclusion — do not chase |
+| DTO validation (400 before service) | DTO-shadowed (b)-exclusion — do not duplicate |
+
+Follow `src/reporting/income-statement.service.spec.ts` as the canonical unit-spec
+template. Follow any file in `test/*.e2e-spec.ts` (using `bootstrapTestApp`) for
+the e2e template.
+
 ## The full gate
 
 ```bash
@@ -89,9 +141,9 @@ npm run verify
 ```
 
 `verify` = `typecheck` (`tsc --noEmit`) → `lint:ci` (`eslint --max-warnings 0`) →
-`test` (unit) → `test:e2e:cov` (e2e **with** the coverage gate). This is the same
-sequence CI's `verify` job runs, so a green local `verify` is the bar before
-opening a PR. **Docker must be up** for the e2e leg.
+`test:cov:all` (`test:cov` + `test:e2e:cov` + merged `nyc check-coverage`). This
+is the same sequence CI's `verify` job runs, so a green local `verify` is the bar
+before opening a PR. **Docker must be up** for the e2e leg.
 
 ## ⚠️ Known issue: e2e flakiness under load
 

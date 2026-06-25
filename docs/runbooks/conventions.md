@@ -166,7 +166,7 @@ One stable error envelope, no leaked internals.
 
 - **`npm run verify` must pass before merge.** It runs, in order:
   `typecheck` (`tsc --noEmit`, 0 errors) → `lint:ci` (ESLint
-  `--max-warnings 0`) → unit tests (`jest`) → `test:e2e:cov`.
+  `--max-warnings 0`) → `test:cov:all` (unit + e2e + merged `nyc check-coverage`).
   → `package.json` scripts.
 - **TypeScript is strict** (`strict`, `strictNullChecks`, `noImplicitAny`,
   `noFallthroughCasesInSwitch` in `tsconfig.json`). Don't loosen it; fix the
@@ -176,13 +176,62 @@ One stable error envelope, no leaked internals.
   build just like an error. Prettier runs through ESLint
   (`prettier/prettier: error`). → `eslint.config.mjs`. Use `npm run lint`
   (with `--fix`) / `npm run format` locally before pushing.
-- **Coverage floors are enforced.** Both Jest configs set `coverageThreshold`
-  (`package.json` jest block + `test/jest-e2e.json`); dropping below the floor
-  fails `verify`. Add tests for new code paths.
+- **The authoritative coverage gate is the merged unit∪e2e report** checked by
+  `nyc check-coverage` (`.nycrc.json`): 90% stmts/fns/lines, 86% branches.
+  Per-suite Jest floors (`package.json` + `test/jest-e2e.json`) are fast
+  anti-regression only; never raise them to 90. See [`./testing.md`](./testing.md)
+  for the full policy and the branch-exclusion rationale.
 - **TypeScript is pinned to 5.x on purpose.** The codebase is not TS6-ready
   (a TS6/ESLint10 bump was reverted because it surfaced ~1167 hidden errors).
   Don't blindly accept Dependabot bumps for `typescript`/`eslint` majors — they
   require a dedicated migration.
+
+## 9. Test quality bar
+
+Every test — unit or e2e — must meet this checklist. A test that fails it is not
+counted toward coverage targets and should be reworked.
+
+### Assert observable behavior, not implementation
+
+- **Assert HTTP status + response body**, or (for unit tests) function return
+  value / thrown error. Never assert that an internal method was called or that a
+  mock received specific arguments — those assertions couple the test to the
+  implementation, not the contract.
+- **Name each test's failure mode explicitly.** The `it`/`test` string should
+  read as a sentence describing what breaks and what the expected outcome is:
+  `'returns 422 when invoice is already POSTED'`, not `'handles posted invoice'`.
+- **One meaningful assertion per scenario.** Test the status code *and* the
+  `body.code` (domain error code) where applicable; don't stop at status alone,
+  and don't assert every field of a large response body in a single test.
+
+### No mock-theater on integration code
+
+- **E2E specs use the real NestJS app and a real Testcontainer Postgres.** Do not
+  mock `PrismaService`, `JwtService`, or any other infrastructure dependency in an
+  e2e spec — mock-theater at this layer validates the mock, not the system.
+  Override the DB URL via `bootstrapTestApp({ db })` (which calls
+  `makePrismaOverride(db.url)` internally) and let the real code run.
+- **Unit specs mock only the minimum.** For pure-logic services that accept a
+  `PrismaService`, mock only the specific `client.<model>.<method>` calls the path
+  under test touches, and cast the partial with `as never`. Do not mock an entire
+  service module or use `jest.mock()` on NestJS providers in unit specs.
+- **Do not extract logic from integration services** (year-end-close, auth,
+  refresh-token, interceptors, guards) just to make them unit-testable. If the
+  code needs the real DB/pipeline to be meaningful, it belongs in an e2e spec.
+
+### Where to write each test
+
+| Scenario | Tier | Template |
+| --- | --- | --- |
+| Pure function (money math, date helper, signing, tax calculation) | **Unit** | `src/reporting/income-statement.service.spec.ts` |
+| Service guard (domain error, status 4xx) | **E2E** | any `test/*.e2e-spec.ts` |
+| HTTP shape + envelope validation | **E2E** | any `test/*.e2e-spec.ts` |
+| Concurrency race / advisory-lock path | (b)-exclusion — do not write | — |
+| DTO-shadowed branch (400 before service) | (b)-exclusion — do not duplicate | — |
+
+E2e specs **must** use `bootstrapTestApp()` from `test/e2e-helpers.ts` — never
+hand-roll the module+app setup. See [`./testing.md`](./testing.md) for the full
+bootstrap pattern.
 
 ## 9. OpenAPI contract
 

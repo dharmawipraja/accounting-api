@@ -677,9 +677,9 @@ describe('Payments (e2e)', () => {
       .get(`/v1/sales-invoices/${invoiceId}`)
       .set('Authorization', `Bearer ${acct}`)
       .expect(200);
-    expect((inv.body as { outstanding: string; total: string }).outstanding).toBe(
-      (inv.body as { total: string }).total,
-    );
+    expect(
+      (inv.body as { outstanding: string; total: string }).outstanding,
+    ).toBe((inv.body as { total: string }).total);
   });
 
   it('I-29: void a DISBURSEMENT payment → 200; purchaseBill.amountPaid decremented back to 0 (DISBURSEMENT decrement arm)', async () => {

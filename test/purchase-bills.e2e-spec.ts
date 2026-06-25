@@ -341,9 +341,11 @@ describe('PurchaseBills (e2e)', () => {
 
   it('PB-I-6: POST /post with a deactivated vendor → 422 (partnerInactive guard at post time)', async () => {
     // !partner.isActive guard in post(): deactivate the vendor after draft creation.
-    const inactiveVendor = await app
-      .get(BusinessPartnersService)
-      .create({ code: 'VEND-INACTIVE-POST', name: 'InactiveV', isVendor: true });
+    const inactiveVendor = await app.get(BusinessPartnersService).create({
+      code: 'VEND-INACTIVE-POST',
+      name: 'InactiveV',
+      isVendor: true,
+    });
     const draft = await request(app.getHttpServer() as App)
       .post('/v1/purchase-bills')
       .set('Authorization', `Bearer ${acct}`)

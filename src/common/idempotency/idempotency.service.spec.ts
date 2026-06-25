@@ -205,7 +205,7 @@ describe('IdempotencyService', () => {
     const result = await service.purgeCompleted(3_600_000);
     expect(result).toBe(3);
     expect(idempotencyKey.deleteMany).toHaveBeenCalledWith({
-      where: { completedAt: { lt: expect.any(Date) } },
+      where: { completedAt: { lt: expect.any(Date) as Date } },
     });
   });
 
@@ -272,7 +272,11 @@ describe('IdempotencyService', () => {
     idempotencyKey.deleteMany.mockResolvedValue({ count: 1 }); // won the reclaim
     await expect(
       service.reserve('k', 'POST', '/v1/partners', 'h'),
-    ).resolves.toEqual({ replay: true, response: { id: 'xyz' }, httpStatus: 201 });
+    ).resolves.toEqual({
+      replay: true,
+      response: { id: 'xyz' },
+      httpStatus: 201,
+    });
   });
 
   it('inflightTtlMs defaults to 120000 when config returns undefined (line 33)', async () => {
