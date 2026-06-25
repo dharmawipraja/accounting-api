@@ -178,7 +178,7 @@ describe('TaxCodes (e2e)', () => {
     };
     await post(body).expect(201);
     const res = await post(body).expect(409);
-    expect((res.body as { code: string }).code).toBeDefined();
+    expect((res.body as { code: string }).code).toBe('CONFLICT');
   });
 
   it('soft-deletes a tax code (204) then it disappears from the list', async () => {
