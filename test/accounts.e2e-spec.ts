@@ -105,7 +105,7 @@ describe('Accounts (e2e)', () => {
   });
 
   it('rejects posting-account parent (422)', async () => {
-    await request(app.getHttpServer() as App)
+    const res = await request(app.getHttpServer() as App)
       .post('/v1/ledger/accounts')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
@@ -117,10 +117,11 @@ describe('Accounts (e2e)', () => {
         parentCode: '1-1000',
       })
       .expect(422);
+    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
   });
 
   it('rejects incoherent type/subtype pair (422)', async () => {
-    await request(app.getHttpServer() as App)
+    const res = await request(app.getHttpServer() as App)
       .post('/v1/ledger/accounts')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
@@ -131,6 +132,7 @@ describe('Accounts (e2e)', () => {
         normalBalance: 'DEBIT',
       })
       .expect(422);
+    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
   });
 
   it('deactivates an account (200, isActive false)', async () => {
@@ -213,39 +215,6 @@ describe('Accounts (e2e)', () => {
       .expect(409);
   });
 
-  it('rejects incoherent type/subtype and returns VALIDATION_FAILED code', async () => {
-    // L-26: AccountsService.create — type/subtype mismatch
-    const res = await request(app.getHttpServer() as App)
-      .post('/v1/ledger/accounts')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        code: '1-8888',
-        name: 'Bad Subtype',
-        type: 'ASSET',
-        subtype: 'TAX_PAYABLE',
-        normalBalance: 'DEBIT',
-      })
-      .expect(422);
-    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
-  });
-
-  it('rejects a postable-account parent and returns VALIDATION_FAILED code', async () => {
-    // L-27: AccountsService.create — parentCode is a postable account
-    const res = await request(app.getHttpServer() as App)
-      .post('/v1/ledger/accounts')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .send({
-        code: '1-1850',
-        name: 'Bad Parent Postable',
-        type: 'ASSET',
-        subtype: 'CURRENT_ASSET',
-        normalBalance: 'DEBIT',
-        parentCode: '1-1000',
-      })
-      .expect(422);
-    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
-  });
-
   it('rejects deleting an account that has posted journal lines (422 VALIDATION_FAILED)', async () => {
     // L-28: AccountsService.softDelete — account has posted lines
     const created = await request(app.getHttpServer() as App)
@@ -266,11 +235,11 @@ describe('Accounts (e2e)', () => {
     const modalId = accounts.find((a) => a.code === '3-1000')!.id;
 
     await app.get(CompanyService).seedIfEmpty();
-    await app.get(PeriodsService).generatePeriods(2026);
+    await app.get(PeriodsService).generatePeriods(2040);
 
     await app.get(PostingService).post(
       {
-        date: new Date('2026-02-10'),
+        date: new Date('2040-02-10'),
         description: 'L-28 posted line',
         sourceType: 'MANUAL',
         createdBy: 'a',
