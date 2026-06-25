@@ -41,11 +41,31 @@ describe('CashFlowService.generate', () => {
   // The CASH-role movement (9999) must be excluded; the zero-effect row produces no line.
   const movements = [
     row({ code: 'REV', type: 'REVENUE', credit: '1000' }), // P&L → netIncome
-    row({ code: 'AP', type: 'LIABILITY', cashFlowCategory: 'OPERATING', credit: '200' }),
-    row({ code: 'EQUIP', type: 'ASSET', cashFlowCategory: 'INVESTING', debit: '300' }),
-    row({ code: 'LOAN', type: 'LIABILITY', cashFlowCategory: 'FINANCING', credit: '500' }),
+    row({
+      code: 'AP',
+      type: 'LIABILITY',
+      cashFlowCategory: 'OPERATING',
+      credit: '200',
+    }),
+    row({
+      code: 'EQUIP',
+      type: 'ASSET',
+      cashFlowCategory: 'INVESTING',
+      debit: '300',
+    }),
+    row({
+      code: 'LOAN',
+      type: 'LIABILITY',
+      cashFlowCategory: 'FINANCING',
+      credit: '500',
+    }),
     row({ code: 'ZERO', type: 'LIABILITY', cashFlowCategory: 'OPERATING' }), // zero-effect → skipped
-    row({ code: 'OTHER', type: 'LIABILITY', cashFlowCategory: 'NONE', credit: '50' }), // NONE → OPERATING
+    row({
+      code: 'OTHER',
+      type: 'LIABILITY',
+      cashFlowCategory: 'NONE',
+      credit: '50',
+    }), // NONE → OPERATING
     row({ code: 'CASHMOVE', type: 'ASSET', role: 'CASH', debit: '9999' }), // excluded (role CASH)
   ];
 

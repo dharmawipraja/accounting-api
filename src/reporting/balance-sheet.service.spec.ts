@@ -28,9 +28,10 @@ const make = (asOfRows: AccountBalanceRow[], fyRows: AccountBalanceRow[]) =>
     } as unknown as BalancesService,
     {
       fiscalYearFor: jest.fn().mockResolvedValue(2026),
-      fiscalYearBounds: jest
-        .fn()
-        .mockResolvedValue({ start: new Date('2026-01-01'), end: new Date('2026-12-31') }),
+      fiscalYearBounds: jest.fn().mockResolvedValue({
+        start: new Date('2026-01-01'),
+        end: new Date('2026-12-31'),
+      }),
     } as unknown as CompanyService,
   );
 
@@ -43,12 +44,32 @@ describe('BalanceSheetService.generate', () => {
     // cumulative earnings: REV(credit 200) + EXP(debit 100 → -100) = 100 → totalEquity = 600
     // balanced: 1000 === 400 + 600
     const asOfRows = [
-      row({ code: 'KAS', type: 'ASSET', subtype: 'CURRENT_ASSET', debit: '1300' }),
-      row({ code: 'AKUM', type: 'ASSET', subtype: 'FIXED_ASSET', credit: '300' }), // contra → -300
-      row({ code: 'AP', type: 'LIABILITY', subtype: 'CURRENT_LIABILITY', credit: '400' }),
+      row({
+        code: 'KAS',
+        type: 'ASSET',
+        subtype: 'CURRENT_ASSET',
+        debit: '1300',
+      }),
+      row({
+        code: 'AKUM',
+        type: 'ASSET',
+        subtype: 'FIXED_ASSET',
+        credit: '300',
+      }), // contra → -300
+      row({
+        code: 'AP',
+        type: 'LIABILITY',
+        subtype: 'CURRENT_LIABILITY',
+        credit: '400',
+      }),
       row({ code: 'CAP', type: 'EQUITY', subtype: 'CAPITAL', credit: '500' }),
       row({ code: 'REV', type: 'REVENUE', subtype: 'REVENUE', credit: '200' }),
-      row({ code: 'EXP', type: 'EXPENSE', subtype: 'OPERATING_EXPENSE', debit: '100' }),
+      row({
+        code: 'EXP',
+        type: 'EXPENSE',
+        subtype: 'OPERATING_EXPENSE',
+        debit: '100',
+      }),
     ];
     // current-FY earnings is a SEPARATE figure from movementsBetween (credit−debit
     // over P&L only): REV 80 − EXP 30 = 50; the ASSET row is filtered out.
