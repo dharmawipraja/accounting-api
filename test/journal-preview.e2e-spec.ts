@@ -219,8 +219,20 @@ describe('Journal preview (e2e)', () => {
       .post('/v1/sales-invoices')
       .set('Authorization', `Bearer ${acct}`)
       .set('Idempotency-Key', randomUUID())
-      .send({ partnerId: customerId, date: '2026-02-10', description: 'For payment',
-        lines: [{ description: 'Jasa', accountId: acc['4-1000'], quantity: '1', unitPrice: '1000000', taxCodeIds: [] }] })
+      .send({
+        partnerId: customerId,
+        date: '2026-02-10',
+        description: 'For payment',
+        lines: [
+          {
+            description: 'Jasa',
+            accountId: acc['4-1000'],
+            quantity: '1',
+            unitPrice: '1000000',
+            taxCodeIds: [],
+          },
+        ],
+      })
       .expect(201);
     const invId = (inv.body as { id: string }).id;
     await request(server())
@@ -241,8 +253,13 @@ describe('Journal preview (e2e)', () => {
       .post('/v1/payments')
       .set('Authorization', `Bearer ${acct}`)
       .set('Idempotency-Key', randomUUID())
-      .send({ direction: 'RECEIPT', partnerId: customerId, date: '2026-02-15', cashAccountId: acc['1-1000'],
-        allocations: [{ salesInvoiceId: invId, amount: '400000' }] })
+      .send({
+        direction: 'RECEIPT',
+        partnerId: customerId,
+        date: '2026-02-15',
+        cashAccountId: acc['1-1000'],
+        allocations: [{ salesInvoiceId: invId, amount: '400000' }],
+      })
       .expect(201);
     const payId = (pay.body as { id: string }).id;
     const postedPay = await request(server())
@@ -250,9 +267,11 @@ describe('Journal preview (e2e)', () => {
       .set('Authorization', `Bearer ${appr}`)
       .set('Idempotency-Key', randomUUID())
       .expect(200);
-    const journalEntryId = (postedPay.body as { journalEntryId: string }).journalEntryId;
+    const journalEntryId = (postedPay.body as { journalEntryId: string })
+      .journalEntryId;
     const jeLines = await prisma.client.journalLine.findMany({
-      where: { journalEntryId }, orderBy: { lineNo: 'asc' },
+      where: { journalEntryId },
+      orderBy: { lineNo: 'asc' },
     });
 
     const preview = (
@@ -261,7 +280,10 @@ describe('Journal preview (e2e)', () => {
         .set('Authorization', `Bearer ${acct}`)
         .send(paymentBody)
         .expect(200)
-    ).body as { lines: { accountId: string; debit: string; credit: string }[]; balanced: boolean };
+    ).body as {
+      lines: { accountId: string; debit: string; credit: string }[];
+      balanced: boolean;
+    };
 
     expect(preview.balanced).toBe(true);
     expect(preview.lines.length).toBe(jeLines.length); // exactly 2 lines
@@ -272,16 +294,24 @@ describe('Journal preview (e2e)', () => {
       expect(pl.credit).toBe(norm(jl.credit));
     }
     // RECEIPT: cash (1-1000) debited, AR control (1-1200) credited.
-    expect(preview.lines.find((l) => l.accountId === acc['1-1000'])!.debit).toBe('400000.0000');
-    expect(preview.lines.find((l) => l.accountId === acc['1-1200'])!.credit).toBe('400000.0000');
+    expect(
+      preview.lines.find((l) => l.accountId === acc['1-1000'])!.debit,
+    ).toBe('400000.0000');
+    expect(
+      preview.lines.find((l) => l.accountId === acc['1-1200'])!.credit,
+    ).toBe('400000.0000');
   });
 
   it('rejects a RECEIPT allocation that references a purchase bill (422)', async () => {
     await request(server())
       .post('/v1/journal-entries/preview')
       .set('Authorization', `Bearer ${acct}`)
-      .send({ nature: 'PAYMENT', direction: 'RECEIPT', cashAccountId: acc['1-1000'],
-        allocations: [{ purchaseBillId: randomUUID(), amount: '100000' }] })
+      .send({
+        nature: 'PAYMENT',
+        direction: 'RECEIPT',
+        cashAccountId: acc['1-1000'],
+        allocations: [{ purchaseBillId: randomUUID(), amount: '100000' }],
+      })
       .expect(422);
   });
 });

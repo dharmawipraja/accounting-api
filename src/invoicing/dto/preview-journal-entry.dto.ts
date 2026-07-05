@@ -1,5 +1,12 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsIn, IsUUID, ValidateIf, ValidateNested } from 'class-validator';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsIn,
+  IsUUID,
+  ValidateIf,
+  ValidateNested,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TaxableLineDto } from '../../tax/dto/calculate-tax.dto';
 import { AllocationDto } from './create-payment.dto';
@@ -14,12 +21,18 @@ export class PreviewJournalEntryDto {
   nature!: PreviewNature;
 
   // --- SALE | PURCHASE ---
-  @ApiPropertyOptional({ format: 'uuid', description: 'Required for SALE/PURCHASE' })
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Required for SALE/PURCHASE',
+  })
   @ValidateIf((o: PreviewJournalEntryDto) => o.nature !== 'PAYMENT')
   @IsUUID()
   settlementAccountId?: string;
 
-  @ApiPropertyOptional({ type: [TaxableLineDto], description: 'Required for SALE/PURCHASE' })
+  @ApiPropertyOptional({
+    type: [TaxableLineDto],
+    description: 'Required for SALE/PURCHASE',
+  })
   @ValidateIf((o: PreviewJournalEntryDto) => o.nature !== 'PAYMENT')
   @IsArray()
   @ArrayMinSize(1)
@@ -28,7 +41,10 @@ export class PreviewJournalEntryDto {
   lines?: TaxableLineDto[];
 
   // --- PAYMENT ---
-  @ApiPropertyOptional({ enum: ['RECEIPT', 'DISBURSEMENT'], description: 'Required for PAYMENT' })
+  @ApiPropertyOptional({
+    enum: ['RECEIPT', 'DISBURSEMENT'],
+    description: 'Required for PAYMENT',
+  })
   @ValidateIf((o: PreviewJournalEntryDto) => o.nature === 'PAYMENT')
   @IsIn(['RECEIPT', 'DISBURSEMENT'])
   direction?: 'RECEIPT' | 'DISBURSEMENT';
@@ -38,7 +54,10 @@ export class PreviewJournalEntryDto {
   @IsUUID()
   cashAccountId?: string;
 
-  @ApiPropertyOptional({ type: [AllocationDto], description: 'Required for PAYMENT' })
+  @ApiPropertyOptional({
+    type: [AllocationDto],
+    description: 'Required for PAYMENT',
+  })
   @ValidateIf((o: PreviewJournalEntryDto) => o.nature === 'PAYMENT')
   @IsArray()
   @ArrayMinSize(1)
