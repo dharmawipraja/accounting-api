@@ -30,7 +30,7 @@ describe('IdempotencyService', () => {
     const { service, idempotencyKey } = makeService();
     idempotencyKey.create.mockResolvedValue({});
     await expect(
-      service.reserve('k', 'POST', '/v1/partners', 'h'),
+      service.reserve('u1', 'k', 'POST', '/v1/partners', 'h'),
     ).resolves.toEqual({ replay: false });
   });
 
@@ -46,7 +46,7 @@ describe('IdempotencyService', () => {
       httpStatus: 201,
     });
     await expect(
-      service.reserve('k', 'POST', '/v1/partners', 'h'),
+      service.reserve('u1', 'k', 'POST', '/v1/partners', 'h'),
     ).resolves.toEqual({
       replay: true,
       response: { id: 'abc' },
@@ -65,7 +65,7 @@ describe('IdempotencyService', () => {
       httpStatus: 201,
     });
     await expect(
-      service.reserve('k', 'POST', '/v1/partners', 'h'),
+      service.reserve('u1', 'k', 'POST', '/v1/partners', 'h'),
     ).rejects.toBeInstanceOf(ValidationFailedError);
   });
 
@@ -80,7 +80,7 @@ describe('IdempotencyService', () => {
       httpStatus: 201,
     });
     await expect(
-      service.reserve('k', 'POST', '/v1/partners', 'h'),
+      service.reserve('u1', 'k', 'POST', '/v1/partners', 'h'),
     ).rejects.toBeInstanceOf(ValidationFailedError);
   });
 
@@ -95,7 +95,7 @@ describe('IdempotencyService', () => {
       httpStatus: null,
     });
     await expect(
-      service.reserve('k', 'POST', '/v1/partners', 'h'),
+      service.reserve('u1', 'k', 'POST', '/v1/partners', 'h'),
     ).rejects.toBeInstanceOf(ConflictDomainError);
   });
 
@@ -104,7 +104,7 @@ describe('IdempotencyService', () => {
     idempotencyKey.create.mockRejectedValue(P2002);
     idempotencyKey.findUnique.mockResolvedValue(null);
     await expect(
-      service.reserve('k', 'POST', '/v1/partners', 'h'),
+      service.reserve('u1', 'k', 'POST', '/v1/partners', 'h'),
     ).rejects.toBeInstanceOf(ConflictDomainError);
   });
 
@@ -112,12 +112,13 @@ describe('IdempotencyService', () => {
     const { service, idempotencyKey } = makeService();
     idempotencyKey.update.mockResolvedValue({});
     await service.complete(
+      'u1',
       'k',
       { id: 'abc', when: new Date('2026-01-01') },
       201,
     );
     expect(idempotencyKey.update).toHaveBeenCalledWith({
-      where: { key: 'k' },
+      where: { userId_key: { userId: 'u1', key: 'k' } },
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data: expect.objectContaining({
         response: { id: 'abc', when: '2026-01-01T00:00:00.000Z' },
@@ -130,9 +131,9 @@ describe('IdempotencyService', () => {
     // Exercises the `response ?? null` branch in complete().
     const { service, idempotencyKey } = makeService();
     idempotencyKey.update.mockResolvedValue({});
-    await service.complete('k', undefined, 204);
+    await service.complete('u1', 'k', undefined, 204);
     expect(idempotencyKey.update).toHaveBeenCalledWith({
-      where: { key: 'k' },
+      where: { userId_key: { userId: 'u1', key: 'k' } },
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data: expect.objectContaining({ response: null, httpStatus: 204 }),
     });
@@ -141,7 +142,7 @@ describe('IdempotencyService', () => {
   it('release() deletes and swallows errors', async () => {
     const { service, idempotencyKey } = makeService();
     idempotencyKey.delete.mockRejectedValue(new Error('gone'));
-    await expect(service.release('k')).resolves.toBeUndefined();
+    await expect(service.release('u1', 'k')).resolves.toBeUndefined();
   });
 
   it('reclaims a stale in-flight key and re-reserves it', async () => {
@@ -161,7 +162,7 @@ describe('IdempotencyService', () => {
     });
     idempotencyKey.deleteMany.mockResolvedValue({ count: 1 });
     await expect(
-      service.reserve('k', 'POST', '/v1/partners', 'h'),
+      service.reserve('u1', 'k', 'POST', '/v1/partners', 'h'),
     ).resolves.toEqual({ replay: false });
     expect(idempotencyKey.deleteMany).toHaveBeenCalled();
   });
@@ -180,7 +181,7 @@ describe('IdempotencyService', () => {
       createdAt: new Date(), // fresh
     });
     await expect(
-      service.reserve('k', 'POST', '/v1/partners', 'h'),
+      service.reserve('u1', 'k', 'POST', '/v1/partners', 'h'),
     ).rejects.toBeInstanceOf(ConflictDomainError);
     expect(idempotencyKey.deleteMany).not.toHaveBeenCalled();
   });
@@ -195,7 +196,7 @@ describe('IdempotencyService', () => {
     });
     idempotencyKey.create.mockRejectedValue(dbErr);
     await expect(
-      service.reserve('k', 'POST', '/v1/partners', 'h'),
+      service.reserve('u1', 'k', 'POST', '/v1/partners', 'h'),
     ).rejects.toBe(dbErr);
   });
 
@@ -236,7 +237,7 @@ describe('IdempotencyService', () => {
     });
     idempotencyKey.deleteMany.mockResolvedValue({ count: 0 }); // lost the race
     await expect(
-      service.reserve('k', 'POST', '/v1/partners', 'h'),
+      service.reserve('u1', 'k', 'POST', '/v1/partners', 'h'),
     ).rejects.toBeInstanceOf(ConflictDomainError);
   });
 
@@ -271,7 +272,7 @@ describe('IdempotencyService', () => {
       });
     idempotencyKey.deleteMany.mockResolvedValue({ count: 1 }); // won the reclaim
     await expect(
-      service.reserve('k', 'POST', '/v1/partners', 'h'),
+      service.reserve('u1', 'k', 'POST', '/v1/partners', 'h'),
     ).resolves.toEqual({
       replay: true,
       response: { id: 'xyz' },
@@ -295,7 +296,7 @@ describe('IdempotencyService', () => {
       createdAt: new Date(),
     });
     await expect(
-      service.reserve('k', 'POST', '/v1/partners', 'h'),
+      service.reserve('u1', 'k', 'POST', '/v1/partners', 'h'),
     ).rejects.toBeInstanceOf(ConflictDomainError);
     // deleteMany NOT called because the key is not stale under the default TTL
     expect(idempotencyKey.deleteMany).not.toHaveBeenCalled();

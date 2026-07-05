@@ -36,15 +36,17 @@ export class IdempotencyService {
   }
 
   async reserve(
+    userId: string,
     key: string,
     method: string,
     path: string,
     requestHash: string,
   ): Promise<ReserveResult> {
-    return this.reserveOnce(key, method, path, requestHash, true);
+    return this.reserveOnce(userId, key, method, path, requestHash, true);
   }
 
   private async reserveOnce(
+    userId: string,
     key: string,
     method: string,
     path: string,
@@ -53,7 +55,7 @@ export class IdempotencyService {
   ): Promise<ReserveResult> {
     try {
       await this.prisma.client.idempotencyKey.create({
-        data: { key, method, path, requestHash },
+        data: { userId, key, method, path, requestHash },
       });
       return { replay: false };
     } catch (err) {
@@ -62,6 +64,7 @@ export class IdempotencyService {
         err.code === 'P2002'
       ) {
         return this.resolveExisting(
+          userId,
           key,
           method,
           path,
@@ -74,6 +77,7 @@ export class IdempotencyService {
   }
 
   private async resolveExisting(
+    userId: string,
     key: string,
     method: string,
     path: string,
@@ -81,7 +85,7 @@ export class IdempotencyService {
     allowReclaim: boolean,
   ): Promise<ReserveResult> {
     const record = await this.prisma.client.idempotencyKey.findUnique({
-      where: { key },
+      where: { userId_key: { userId, key } },
     });
     if (!record) {
       // The owner errored and released the row between our create and read.
@@ -111,6 +115,7 @@ export class IdempotencyService {
         // below is the authoritative atomic filter so only one racing retry wins.
         const cleared = await this.prisma.client.idempotencyKey.deleteMany({
           where: {
+            userId,
             key,
             // DbNull matches SQL NULL (the real in-flight state — response was
             // never set). JsonNull would match the JSON literal null, not SQL NULL,
@@ -121,7 +126,7 @@ export class IdempotencyService {
           },
         });
         if (cleared.count > 0) {
-          return this.reserveOnce(key, method, path, requestHash, false);
+          return this.reserveOnce(userId, key, method, path, requestHash, false);
         }
       }
       throw new ConflictDomainError(
@@ -142,12 +147,13 @@ export class IdempotencyService {
   }
 
   async complete(
+    userId: string,
     key: string,
     response: unknown,
     httpStatus: number,
   ): Promise<void> {
     await this.prisma.client.idempotencyKey.update({
-      where: { key },
+      where: { userId_key: { userId, key } },
       data: {
         // Round-trip to a pure JSON value so Dates serialize exactly as the HTTP
         // response would, and Prisma accepts it as Json.
@@ -160,9 +166,9 @@ export class IdempotencyService {
     });
   }
 
-  async release(key: string): Promise<void> {
+  async release(userId: string, key: string): Promise<void> {
     await this.prisma.client.idempotencyKey
-      .delete({ where: { key } })
+      .delete({ where: { userId_key: { userId, key } } })
       .catch(() => undefined);
   }
 

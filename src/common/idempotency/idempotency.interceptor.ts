@@ -23,6 +23,8 @@ interface IdempotentRequest {
   url: string;
   headers: Record<string, string | string[] | undefined>;
   body: unknown;
+  /** Set by JwtAuthGuard, which runs before interceptors on every @Idempotent route. */
+  user?: { id: string };
 }
 
 @Injectable()
@@ -51,6 +53,13 @@ export class IdempotencyInterceptor implements NestInterceptor {
         'Idempotency-Key must be 1–128 characters of [A-Za-z0-9._:-]',
       );
     }
+    // Keys are namespaced per user so one caller can never replay another's.
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new ValidationFailedError(
+        'Idempotent requests require an authenticated user',
+      );
+    }
     const method = req.method;
     // Includes the query string intentionally: it scopes the key to the exact
     // request target, so e.g. a draft create and `?post=true` create-and-post
@@ -67,7 +76,9 @@ export class IdempotencyInterceptor implements NestInterceptor {
     );
     const httpStatus = declared ?? (method === 'POST' ? 201 : 200);
 
-    return from(this.idempotency.reserve(key, method, path, requestHash)).pipe(
+    return from(
+      this.idempotency.reserve(userId, key, method, path, requestHash),
+    ).pipe(
       switchMap((reserved) => {
         if (reserved.replay) {
           res.statusCode = reserved.httpStatus;
@@ -75,12 +86,12 @@ export class IdempotencyInterceptor implements NestInterceptor {
         }
         return next.handle().pipe(
           switchMap((data) =>
-            from(this.idempotency.complete(key, data, httpStatus)).pipe(
+            from(this.idempotency.complete(userId, key, data, httpStatus)).pipe(
               switchMap(() => of(data)),
             ),
           ),
           catchError((err: unknown) =>
-            from(this.idempotency.release(key)).pipe(
+            from(this.idempotency.release(userId, key)).pipe(
               switchMap(() => {
                 throw err;
               }),

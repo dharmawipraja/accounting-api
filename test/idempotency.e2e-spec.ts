@@ -93,6 +93,43 @@ describe('Idempotency (e2e)', () => {
     expect(count).toBe(1);
   });
 
+  it('scopes keys per user: a second user reusing the key gets a fresh execution', async () => {
+    await app.get(UsersService).create({
+      email: 'acct2@idem.test',
+      password: 'secret123',
+      name: 'Acct2',
+      role: 'ACCOUNTANT',
+    });
+    const acct2 = (
+      await app.get(AuthService).login('acct2@idem.test', 'secret123')
+    ).accessToken;
+
+    const partnerId = await newCustomer('CUST-IDEM-XUSER');
+    const key = randomUUID();
+    const body = invoiceBody(partnerId);
+    const first = await request(server())
+      .post('/v1/sales-invoices')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', key)
+      .send(body)
+      .expect(201);
+    // Same key + identical body from a DIFFERENT user must not replay the
+    // first user's cached response — keys are namespaced per user.
+    const second = await request(server())
+      .post('/v1/sales-invoices')
+      .set('Authorization', `Bearer ${acct2}`)
+      .set('Idempotency-Key', key)
+      .send(body)
+      .expect(201);
+    expect((second.body as { id: string }).id).not.toBe(
+      (first.body as { id: string }).id,
+    );
+    const count = await prisma.client.salesInvoice.count({
+      where: { partnerId },
+    });
+    expect(count).toBe(2);
+  });
+
   it('rejects the same key with a different body (422)', async () => {
     const partnerId = await newCustomer('CUST-IDEM-2');
     const key = randomUUID();
@@ -161,6 +198,7 @@ describe('Idempotency (e2e)', () => {
     // Old completed key — must be purged.
     await prisma.client.idempotencyKey.create({
       data: {
+        userId: 'u-purge',
         key: 'purge-old',
         method: 'POST',
         path: '/v1/x',
@@ -174,6 +212,7 @@ describe('Idempotency (e2e)', () => {
     // Fresh completed key — must survive.
     await prisma.client.idempotencyKey.create({
       data: {
+        userId: 'u-purge',
         key: 'purge-fresh',
         method: 'POST',
         path: '/v1/y',
@@ -186,6 +225,7 @@ describe('Idempotency (e2e)', () => {
     // In-flight key (completedAt null) — must survive (the FIN-L2 lazy-expiry owns these).
     await prisma.client.idempotencyKey.create({
       data: {
+        userId: 'u-purge',
         key: 'purge-inflight',
         method: 'POST',
         path: '/v1/z',
@@ -197,17 +237,17 @@ describe('Idempotency (e2e)', () => {
     expect(deleted).toBe(1);
     expect(
       await prisma.client.idempotencyKey.findUnique({
-        where: { key: 'purge-old' },
+        where: { userId_key: { userId: 'u-purge', key: 'purge-old' } },
       }),
     ).toBeNull();
     expect(
       await prisma.client.idempotencyKey.findUnique({
-        where: { key: 'purge-fresh' },
+        where: { userId_key: { userId: 'u-purge', key: 'purge-fresh' } },
       }),
     ).not.toBeNull();
     expect(
       await prisma.client.idempotencyKey.findUnique({
-        where: { key: 'purge-inflight' },
+        where: { userId_key: { userId: 'u-purge', key: 'purge-inflight' } },
       }),
     ).not.toBeNull();
   });
@@ -227,18 +267,26 @@ describe('Idempotency (e2e)', () => {
       const key = 'reclaim-stale-' + randomUUID();
       // Insert a reservation without a response value → SQL NULL (the real in-flight state).
       await prisma.client.idempotencyKey.create({
-        data: { key, method: 'POST', path: '/v1/x', requestHash: 'h' },
+        data: {
+          userId: 'u-reclaim',
+          key,
+          method: 'POST',
+          path: '/v1/x',
+          requestHash: 'h',
+        },
       });
       // Back-date createdAt beyond the 120 s TTL so the row is considered stale.
       await prisma.client.idempotencyKey.update({
-        where: { key },
+        where: { userId_key: { userId: 'u-reclaim', key } },
         data: { createdAt: new Date(Date.now() - 200_000) },
       });
 
       // reserve() must delete the stale SQL-NULL row and re-insert → replay:false.
       // If the DbNull predicate were wrong (JsonNull), deleteMany would match 0
       // rows and this would throw ConflictDomainError (409) instead.
-      await expect(idem.reserve(key, 'POST', '/v1/x', 'h')).resolves.toEqual({
+      await expect(
+        idem.reserve('u-reclaim', key, 'POST', '/v1/x', 'h'),
+      ).resolves.toEqual({
         replay: false,
       });
     });
@@ -247,12 +295,18 @@ describe('Idempotency (e2e)', () => {
       const key = 'reclaim-fresh-' + randomUUID();
       // Insert a fresh reservation (createdAt defaults to now()).
       await prisma.client.idempotencyKey.create({
-        data: { key, method: 'POST', path: '/v1/y', requestHash: 'h' },
+        data: {
+          userId: 'u-reclaim',
+          key,
+          method: 'POST',
+          path: '/v1/y',
+          requestHash: 'h',
+        },
       });
 
       // reserve() must NOT reclaim a row that is still within the TTL window.
       await expect(
-        idem.reserve(key, 'POST', '/v1/y', 'h'),
+        idem.reserve('u-reclaim', key, 'POST', '/v1/y', 'h'),
       ).rejects.toBeInstanceOf(ConflictDomainError);
     });
   });

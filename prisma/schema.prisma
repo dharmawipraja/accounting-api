@@ -249,7 +249,10 @@ model JournalLine {
 }
 
 model IdempotencyKey {
-  key         String    @id
+  // Namespaced per user so one caller can never replay (or squat on) another
+  // caller's key. No FK on purpose: this is a short-TTL cache table.
+  userId      String    @map("user_id")
+  key         String
   method      String
   path        String
   requestHash String    @map("request_hash")
@@ -258,6 +261,7 @@ model IdempotencyKey {
   createdAt   DateTime  @default(now()) @map("created_at")
   completedAt DateTime? @map("completed_at")
 
+  @@id([userId, key])
   @@map("idempotency_keys")
 }
 
