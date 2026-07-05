@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { JournalEntry, Prisma } from '@prisma/client';
+import { Account, JournalEntry, Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CompanyService } from '../../company/company.service';
 import { PeriodsService } from '../periods/periods.service';
@@ -476,13 +476,17 @@ export class PostingService {
     });
   }
 
-  private async assertPostableAccounts(lines: PostLineInput[]): Promise<void> {
-    const ids = [...new Set(lines.map((l) => l.accountId))];
+  /** Validate every id is an existing, postable, active account and return the
+   *  accounts keyed by id. The single source of postable-account validation: the
+   *  post path asserts through it; the preview reuses the returned map to enrich
+   *  journal lines with code/name (one fetch, one rule set). */
+  async resolvePostableAccounts(ids: string[]): Promise<Map<string, Account>> {
+    const unique = [...new Set(ids)];
     const accounts = await this.prisma.client.account.findMany({
-      where: { id: { in: ids } },
+      where: { id: { in: unique } },
     });
     const byId = new Map(accounts.map((a) => [a.id, a]));
-    for (const id of ids) {
+    for (const id of unique) {
       const a = byId.get(id);
       if (!a)
         throw new InvalidAccountError('Account not found', { accountId: id });
@@ -496,5 +500,10 @@ export class PostingService {
       if (!a.isActive)
         throw new InvalidAccountError('Account is inactive', { accountId: id });
     }
+    return byId;
+  }
+
+  private async assertPostableAccounts(lines: PostLineInput[]): Promise<void> {
+    await this.resolvePostableAccounts(lines.map((l) => l.accountId));
   }
 }
