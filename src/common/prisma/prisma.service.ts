@@ -1,7 +1,7 @@
 import {
   Injectable,
   Logger,
-  OnModuleDestroy,
+  OnApplicationShutdown,
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -13,7 +13,7 @@ import { applySoftDelete, ExtendedPrismaClient } from './soft-delete.extension';
 @Injectable()
 export class PrismaService
   extends PrismaClient
-  implements OnModuleInit, OnModuleDestroy
+  implements OnModuleInit, OnApplicationShutdown
 {
   /** Soft-delete-extended client. Always use this for data access. */
   readonly client: ExtendedPrismaClient;
@@ -59,7 +59,10 @@ export class PrismaService
     await this.$connect();
   }
 
-  async onModuleDestroy(): Promise<void> {
+  // onApplicationShutdown (NOT onModuleDestroy): Nest closes the HTTP server
+  // between the two, so this is the only hook where in-flight requests have
+  // already drained and it's safe to take the DB away.
+  async onApplicationShutdown(): Promise<void> {
     await this.$disconnect();
     await this.pool.end();
   }

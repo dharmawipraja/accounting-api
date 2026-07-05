@@ -37,7 +37,9 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
-    stop_grace_period: 30s
+    # Must exceed worst-case drain: active requests are bounded by the 30s
+    # request timeout (idle keep-alive sockets are closed at shutdown start).
+    stop_grace_period: 45s
     restart: unless-stopped
     deploy:
       resources:

@@ -3,7 +3,7 @@ import {
   Inject,
   Logger,
   Module,
-  OnModuleDestroy,
+  OnApplicationShutdown,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
@@ -38,10 +38,12 @@ export function redisClientFactory(config: ConfigService): Redis | null {
   ],
   exports: [REDIS_CLIENT],
 })
-export class RedisModule implements OnModuleDestroy {
+export class RedisModule implements OnApplicationShutdown {
   constructor(@Inject(REDIS_CLIENT) private readonly client: Redis | null) {}
 
-  async onModuleDestroy(): Promise<void> {
+  // onApplicationShutdown (NOT onModuleDestroy): runs after the HTTP server
+  // has drained, so throttler lookups for in-flight requests still succeed.
+  async onApplicationShutdown(): Promise<void> {
     await this.client?.quit().catch(() => undefined);
   }
 }

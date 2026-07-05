@@ -28,6 +28,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
 import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout.interceptor';
+import { HttpDrainService } from './common/http/http-drain.service';
 import {
   THROTTLE,
   THROTTLE_TTL_MS,
@@ -91,6 +92,7 @@ import {
   ],
   controllers: [HealthController],
   providers: [
+    HttpDrainService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: UserThrottlerGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
