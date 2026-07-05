@@ -2482,6 +2482,42 @@
         ]
       }
     },
+    "/v1/journal-entries/preview": {
+      "post": {
+        "operationId": "JournalPreviewController_preview_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewJournalEntryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JournalPreviewResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Journal entries"
+        ]
+      }
+    },
     "/v1/reports/balance-sheet": {
       "get": {
         "operationId": "ReportsController_balanceSheet_v1",
@@ -5277,6 +5313,99 @@
           "date",
           "cashAccountId",
           "allocations"
+        ]
+      },
+      "PreviewJournalEntryDto": {
+        "type": "object",
+        "properties": {
+          "nature": {
+            "enum": [
+              "SALE",
+              "PURCHASE"
+            ],
+            "type": "string"
+          },
+          "settlementAccountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lines": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaxableLineDto"
+            }
+          }
+        },
+        "required": [
+          "nature",
+          "settlementAccountId",
+          "lines"
+        ]
+      },
+      "JournalPreviewLineDto": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accountCode": {
+            "type": "string",
+            "example": "1-1210"
+          },
+          "accountName": {
+            "type": "string",
+            "example": "Piutang Usaha"
+          },
+          "debit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Debit, 4dp string (\"0.0000\" if this is a credit line)"
+          },
+          "credit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Credit, 4dp string (\"0.0000\" if this is a debit line)"
+          }
+        },
+        "required": [
+          "accountId",
+          "accountCode",
+          "accountName",
+          "debit",
+          "credit"
+        ]
+      },
+      "JournalPreviewResponseDto": {
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JournalPreviewLineDto"
+            }
+          },
+          "totalDebit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "totalCredit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "balanced": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "lines",
+          "totalDebit",
+          "totalCredit",
+          "balanced"
         ]
       },
       "ReportLineDto": {

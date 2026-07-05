@@ -13,6 +13,8 @@ import { PurchaseBillsService } from './purchase-bills.service';
 import { PurchaseBillsController } from './purchase-bills.controller';
 import { PaymentsService } from './payments.service';
 import { PaymentsController } from './payments.controller';
+import { JournalPreviewService } from './journal-preview.service';
+import { JournalPreviewController } from './journal-preview.controller';
 
 @Module({
   imports: [LedgerModule, TaxModule, CompanyModule],
@@ -24,12 +26,14 @@ import { PaymentsController } from './payments.controller';
     SalesInvoicesService,
     PurchaseBillsService,
     PaymentsService,
+    JournalPreviewService,
   ],
   controllers: [
     BusinessPartnersController,
     SalesInvoicesController,
     PurchaseBillsController,
     PaymentsController,
+    JournalPreviewController,
   ],
   exports: [
     DocumentNumberService,
