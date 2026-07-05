@@ -504,7 +504,7 @@ describe('Journal preview (e2e)', () => {
       .set('Idempotency-Key', randomUUID())
       .expect(200);
     const journalEntryId = (posted.body as { journalEntryId: string }).journalEntryId;
-    const jeLines = await prisma.client.journalEntryLine.findMany({
+    const jeLines = await prisma.client.journalLine.findMany({
       where: { journalEntryId },
       orderBy: { lineNo: 'asc' },
     });
@@ -768,7 +768,7 @@ Append inside the `describe('Journal preview (e2e)', …)` block in `test/journa
       .set('Idempotency-Key', randomUUID())
       .expect(200);
     const journalEntryId = (postedPay.body as { journalEntryId: string }).journalEntryId;
-    const jeLines = await prisma.client.journalEntryLine.findMany({
+    const jeLines = await prisma.client.journalLine.findMany({
       where: { journalEntryId }, orderBy: { lineNo: 'asc' },
     });
 
