@@ -5321,26 +5321,48 @@
           "nature": {
             "enum": [
               "SALE",
-              "PURCHASE"
+              "PURCHASE",
+              "PAYMENT"
             ],
             "type": "string"
           },
           "settlementAccountId": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Required for SALE/PURCHASE"
           },
           "lines": {
             "minItems": 1,
+            "description": "Required for SALE/PURCHASE",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TaxableLineDto"
             }
+          },
+          "direction": {
+            "enum": [
+              "RECEIPT",
+              "DISBURSEMENT"
+            ],
+            "type": "string",
+            "description": "Required for PAYMENT"
+          },
+          "cashAccountId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Required for PAYMENT"
+          },
+          "allocations": {
+            "minItems": 1,
+            "description": "Required for PAYMENT",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AllocationDto"
+            }
           }
         },
         "required": [
-          "nature",
-          "settlementAccountId",
-          "lines"
+          "nature"
         ]
       },
       "JournalPreviewLineDto": {
