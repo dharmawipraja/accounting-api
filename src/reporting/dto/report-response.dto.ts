@@ -74,6 +74,11 @@ export class GeneralLedgerDto {
   @ApiProperty({ type: String, format: 'date' }) to!: string;
   @ApiMoney() openingBalance!: string;
   @ApiProperty({ type: [GeneralLedgerLineDto] }) lines!: GeneralLedgerLineDto[];
+  @ApiProperty({
+    description:
+      'True when lines were cut off at the server-side cap (10,000); narrow the date range to see the rest. closingBalance stays the true as-of balance either way.',
+  })
+  truncated!: boolean;
   @ApiMoney() closingBalance!: string;
 }
 
@@ -112,6 +117,11 @@ export class AgingPartnerDto {
 export class AgingReportDto {
   @ApiProperty({ enum: ['AR', 'AP'] }) kind!: string;
   @ApiProperty({ type: String, format: 'date' }) asOf!: string;
+  @ApiProperty({
+    description:
+      'True when open documents were cut off at the server-side cap (10,000); totals cover only the included documents.',
+  })
+  truncated!: boolean;
   @ApiProperty({ type: [AgingPartnerDto] }) partners!: AgingPartnerDto[];
   @ApiProperty({
     type: 'object',

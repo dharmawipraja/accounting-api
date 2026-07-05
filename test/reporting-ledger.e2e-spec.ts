@@ -5,6 +5,7 @@ import { AccountsService } from '../src/ledger/accounts/accounts.service';
 import { PeriodsService } from '../src/ledger/periods/periods.service';
 import { CompanyService } from '../src/company/company.service';
 import { PostingService } from '../src/ledger/posting/posting.service';
+import { GeneralLedgerService } from '../src/reporting/general-ledger.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
 import { bootstrapTestApp } from './e2e-helpers';
@@ -93,6 +94,7 @@ describe('Reporting general ledger (e2e)', () => {
     const body = res.body as {
       openingBalance: string;
       closingBalance: string;
+      truncated: boolean;
       lines: {
         date: string;
         entryRef: string | null;
@@ -130,6 +132,29 @@ describe('Reporting general ledger (e2e)', () => {
     expect(body.closingBalance).toBe(
       body.lines[body.lines.length - 1].runningBalance,
     );
+
+    // All 3 lines fit under the cap
+    expect(body.truncated).toBe(false);
+  });
+
+  it('caps lines at maxLines and keeps closingBalance correct when truncated', async () => {
+    const gl = app.get(GeneralLedgerService);
+    const report = await gl.generate(
+      kasId,
+      new Date('2026-01-01'),
+      new Date('2026-12-31'),
+      2,
+    );
+    expect(report.truncated).toBe(true);
+    expect(report.lines).toHaveLength(2);
+    // Closing must be the true as-of balance, not the partial running sum.
+    expect(report.closingBalance).toBe('11500000.0000');
+  });
+
+  it('rejects a date span longer than 366 days with 422', async () => {
+    await get(
+      `/v1/reports/general-ledger?accountId=${kasId}&from=2016-01-01&to=2026-12-31`,
+    ).expect(422);
   });
 
   it('rejects from > to with 422', async () => {

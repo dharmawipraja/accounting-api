@@ -24,8 +24,21 @@ export function optionalDateRange(
   return { from: f, to: t };
 }
 
-/** Required [from, to] range (report endpoints). Same from ≤ to invariant; both mandatory. */
-export function dateRange(from: string, to: string): { from: Date; to: Date } {
+/** Required [from, to] range (report endpoints). Same from ≤ to invariant; both mandatory.
+ *  Pass maxDays to also reject spans wider than the endpoint can afford to materialize. */
+export function dateRange(
+  from: string,
+  to: string,
+  maxDays?: number,
+): { from: Date; to: Date } {
   const { from: f, to: t } = optionalDateRange(from, to);
+  if (maxDays !== undefined) {
+    const days = Math.round((t!.getTime() - f!.getTime()) / 86_400_000);
+    if (days > maxDays)
+      throw new ValidationFailedError(
+        `date range must not exceed ${maxDays} days`,
+        { from, to },
+      );
+  }
   return { from: f!, to: t! }; // both required strings → both defined
 }

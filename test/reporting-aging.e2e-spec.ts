@@ -9,6 +9,7 @@ import { TaxCodesService } from '../src/tax/tax-codes.service';
 import { BusinessPartnersService } from '../src/invoicing/business-partners.service';
 import { SalesInvoicesService } from '../src/invoicing/sales-invoices.service';
 import { PurchaseBillsService } from '../src/invoicing/purchase-bills.service';
+import { AgingService } from '../src/reporting/aging.service';
 import { PaymentsService } from '../src/invoicing/payments.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
@@ -389,5 +390,18 @@ describe('Reporting AR/AP aging (e2e)', () => {
       .flatMap((p) => p.documents)
       .find((d) => d.ref === inv.invoiceRef);
     expect(doc).toBeUndefined();
+  });
+
+  it('caps documents at maxDocs and flags truncation', async () => {
+    const aging = app.get(AgingService);
+    // asOf 2026-07-01: both seeded invoices are on the books and outstanding.
+    const full = await aging.aging('AR', new Date('2026-07-01'));
+    expect(full.truncated).toBe(false);
+    const outstandingDocs = full.partners.flatMap((p) => p.documents);
+    expect(outstandingDocs.length).toBeGreaterThanOrEqual(2);
+
+    const capped = await aging.aging('AR', new Date('2026-07-01'), 1);
+    expect(capped.truncated).toBe(true);
+    expect(capped.partners.flatMap((p) => p.documents)).toHaveLength(1);
   });
 });

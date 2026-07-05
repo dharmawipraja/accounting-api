@@ -14,7 +14,10 @@ import {
 } from './dto/report-query.dto';
 import { BalanceSheetService } from './balance-sheet.service';
 import { IncomeStatementService } from './income-statement.service';
-import { GeneralLedgerService } from './general-ledger.service';
+import {
+  GeneralLedgerService,
+  GL_MAX_RANGE_DAYS,
+} from './general-ledger.service';
 import { AgingService } from './aging.service';
 import { CashFlowService } from './cash-flow.service';
 import { asOfOrToday, dateRange } from '../common/dates/query-dates';
@@ -47,7 +50,7 @@ export class ReportsController {
   @ApiOkResponse({ type: GeneralLedgerDto })
   @Get('general-ledger')
   generalLedger(@Query() q: LedgerQueryDto) {
-    const { from, to } = dateRange(q.from, q.to);
+    const { from, to } = dateRange(q.from, q.to, GL_MAX_RANGE_DAYS);
     return this.generalLedgerSvc.generate(q.accountId, from, to);
   }
 

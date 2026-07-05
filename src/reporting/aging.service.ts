@@ -17,6 +17,10 @@ interface DocRow {
 
 const BUCKETS = ['Current', '1-30', '31-60', '61-90', '>90'] as const;
 
+/** Hard per-request document cap — the open-item set is small in practice,
+ *  but the query must not be able to materialize unbounded history. */
+export const AGING_MAX_DOCS = 10_000;
+
 @Injectable()
 export class AgingService {
   constructor(private readonly prisma: PrismaService) {}
@@ -34,7 +38,7 @@ export class AgingService {
   }
 
   /** kind: 'AR' (sales_invoices + sales_invoice_id) | 'AP' (purchase_bills + purchase_bill_id) */
-  async aging(kind: 'AR' | 'AP', asOf: Date) {
+  async aging(kind: 'AR' | 'AP', asOf: Date, maxDocs = AGING_MAX_DOCS) {
     const day = this.day(asOf);
     const docTable =
       kind === 'AR'
@@ -47,18 +51,26 @@ export class AgingService {
     const refCol =
       kind === 'AR' ? Prisma.raw('d.invoice_ref') : Prisma.raw('d.bill_ref');
 
+    // Fully-paid documents are filtered in SQL (not JS) so only genuinely open
+    // items are materialized; the LIMIT is a backstop against unbounded rows.
     const rows = await this.prisma.$queryRaw<DocRow[]>(Prisma.sql`
-      SELECT d.id, ${refCol} AS ref,
-             d.partner_id, bp.name AS partner_name, d.date, d.due_date, d.total,
-             COALESCE((
-               SELECT SUM(pa.amount) FROM payment_allocations pa
-               JOIN payments p ON p.id = pa.payment_id
-               WHERE pa.${allocCol} = d.id AND p.status = 'POSTED' AND p.deleted_at IS NULL AND p.date <= ${day}
-             ), 0) AS paid_as_of
-      FROM ${docTable} d
-      JOIN business_partners bp ON bp.id = d.partner_id
-      WHERE d.status = 'POSTED' AND d.deleted_at IS NULL AND d.date <= ${day}
-      ORDER BY bp.name ASC, d.date ASC`);
+      SELECT * FROM (
+        SELECT d.id, ${refCol} AS ref,
+               d.partner_id, bp.name AS partner_name, d.date, d.due_date, d.total,
+               COALESCE((
+                 SELECT SUM(pa.amount) FROM payment_allocations pa
+                 JOIN payments p ON p.id = pa.payment_id
+                 WHERE pa.${allocCol} = d.id AND p.status = 'POSTED' AND p.deleted_at IS NULL AND p.date <= ${day}
+               ), 0) AS paid_as_of
+        FROM ${docTable} d
+        JOIN business_partners bp ON bp.id = d.partner_id
+        WHERE d.status = 'POSTED' AND d.deleted_at IS NULL AND d.date <= ${day}
+      ) doc
+      WHERE doc.total > doc.paid_as_of
+      ORDER BY doc.partner_name ASC, doc.date ASC
+      LIMIT ${maxDocs + 1}`);
+    const truncated = rows.length > maxDocs;
+    const included = truncated ? rows.slice(0, maxDocs) : rows;
 
     const byPartner = new Map<
       string,
@@ -82,7 +94,7 @@ export class AgingService {
     );
     let grandTotal = Money.zero();
 
-    for (const r of rows) {
+    for (const r of included) {
       const outstanding = Money.of(r.total.toString()).subtract(
         Money.of(r.paid_as_of.toString()),
       );
@@ -116,6 +128,7 @@ export class AgingService {
     return {
       kind,
       asOf: asOf.toISOString().slice(0, 10),
+      truncated,
       partners: [...byPartner.values()].map((g) => ({
         partnerId: g.partnerId,
         partnerName: g.partnerName,

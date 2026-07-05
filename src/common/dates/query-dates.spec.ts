@@ -33,6 +33,19 @@ describe('dateRange', () => {
     expect(from.toISOString()).toBe('2026-01-01T00:00:00.000Z');
     expect(to.toISOString()).toBe('2026-01-01T00:00:00.000Z');
   });
+  it('accepts a span exactly at the maxDays bound', () => {
+    const { from, to } = dateRange('2026-01-01', '2027-01-02', 366);
+    expect(from.toISOString()).toBe('2026-01-01T00:00:00.000Z');
+    expect(to.toISOString()).toBe('2027-01-02T00:00:00.000Z');
+  });
+  it('throws ValidationFailedError when the span exceeds maxDays', () => {
+    expect(() => dateRange('2026-01-01', '2027-01-03', 366)).toThrow(
+      ValidationFailedError,
+    );
+    expect(() => dateRange('2016-01-01', '2026-12-31', 366)).toThrow(
+      '366 days',
+    );
+  });
 });
 
 describe('optionalDateRange', () => {
