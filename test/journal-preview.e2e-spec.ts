@@ -73,6 +73,36 @@ describe('Journal preview (e2e)', () => {
     ],
   });
 
+  it('optional date inside an open period previews normally (200)', async () => {
+    await request(server())
+      .post('/v1/journal-entries/preview')
+      .set('Authorization', `Bearer ${acct}`)
+      .send({ ...saleBody(), date: '2026-03-10' })
+      .expect(200);
+  });
+
+  it('optional date outside any open period previews the 409 a real post would give', async () => {
+    await request(server())
+      .post('/v1/journal-entries/preview')
+      .set('Authorization', `Bearer ${acct}`)
+      .send({ ...saleBody(), date: '2031-05-10' }) // no 2031 periods exist
+      .expect(409);
+  });
+
+  it('rejects more than 100 lines with 400', async () => {
+    const body = saleBody();
+    body.lines = Array.from({ length: 101 }, () => ({
+      accountId: acc['4-1000'],
+      amount: '1000',
+      taxCodeIds: [],
+    }));
+    await request(server())
+      .post('/v1/journal-entries/preview')
+      .set('Authorization', `Bearer ${acct}`)
+      .send(body)
+      .expect(400);
+  });
+
   it('SALE preview: balanced, enriched with code/name, equals /tax/calculate lines', async () => {
     const preview = (
       await request(server())

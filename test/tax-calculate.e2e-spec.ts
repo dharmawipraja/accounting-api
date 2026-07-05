@@ -40,6 +40,22 @@ describe('Tax calculate (e2e)', () => {
     accountId: string,
   ) => lines.find((l) => l.accountId === accountId)!;
 
+  it('rejects more than 100 lines with 400', async () => {
+    await request(app.getHttpServer() as App)
+      .post('/v1/tax/calculate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        nature: 'SALE',
+        settlementAccountId: acc['1-1200'],
+        lines: Array.from({ length: 101 }, () => ({
+          accountId: acc['4-1000'],
+          amount: '1000',
+          taxCodeIds: [],
+        })),
+      })
+      .expect(400);
+  });
+
   it('purchase: DPP 1,000,000 + PPN Masukan 11% + PPh 23 payable 2% → balanced', async () => {
     const res = await request(app.getHttpServer() as App)
       .post('/v1/tax/calculate')

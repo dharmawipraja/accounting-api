@@ -90,6 +90,25 @@ describe('Payments (e2e)', () => {
 
   afterAll(() => cleanup());
 
+  it('rejects more than 100 allocations with 400', async () => {
+    const customerId = await newCustomer('CUST-PAY-CAP');
+    await request(server())
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        direction: 'RECEIPT',
+        partnerId: customerId,
+        date: '2026-02-15',
+        cashAccountId: acc['1-1000'],
+        allocations: Array.from({ length: 101 }, () => ({
+          salesInvoiceId: randomUUID(),
+          amount: '1',
+        })),
+      })
+      .expect(400);
+  });
+
   it('partial then full receipt: PARTIAL→PAID, GL debits Kas / credits AR', async () => {
     const customerId = await newCustomer('CUST-PAY-1');
     const invoiceId = await makePostedInvoice(customerId);

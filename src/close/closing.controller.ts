@@ -39,6 +39,7 @@ export class ClosingController {
 
   @Roles(Role.ADMIN)
   @ApiOkResponse({ type: YearEndClosingResponseDto })
+  @IdempotentWrite()
   @Post(':fiscalYear/reopen')
   @HttpCode(200)
   reopen(

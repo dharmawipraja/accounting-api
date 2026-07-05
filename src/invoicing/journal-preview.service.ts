@@ -26,6 +26,9 @@ export class JournalPreviewService {
   ) {}
 
   async preview(dto: PreviewJournalEntryDto): Promise<JournalPreview> {
+    // Optional date: reproduce the closed-period/closed-year 409 a real post
+    // would give — same read-only check preparePosting runs, no locks taken.
+    if (dto.date) await this.posting.assertPostableDate(new Date(dto.date));
     const lines =
       dto.nature === 'PAYMENT'
         ? await this.paymentLines(dto)

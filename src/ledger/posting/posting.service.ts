@@ -114,15 +114,31 @@ export class PostingService {
     // single-company, low-concurrency phase the TOCTOU window (period closing /
     // account deactivating between check and write) is acceptable; move these
     // inside the $transaction (with FOR SHARE on the period) if concurrency grows.
-    const period = await this.periods.findOpenPeriodForDate(input.date);
+    const { periodId, fiscalYear } = await this.assertPostableDate(input.date);
+    await this.assertPostableAccounts(input.lines);
+    return new PreparedPosting(
+      PROTOCOL_MINT,
+      input,
+      postedBy,
+      periodId,
+      fiscalYear,
+    );
+  }
+
+  /** Read-only date postability check (open period + year not closed), shared by
+   *  preparePosting and the journal preview so the two can never drift. Plain
+   *  reads only — no locks; the in-tx guard remains the authoritative check. */
+  async assertPostableDate(
+    date: Date,
+  ): Promise<{ periodId: string; fiscalYear: number }> {
+    const period = await this.periods.findOpenPeriodForDate(date);
     if (!period) {
       throw new ClosedPeriodError(
         'No open accounting period contains this date',
-        { date: input.date.toISOString().slice(0, 10) },
+        { date: date.toISOString().slice(0, 10) },
       );
     }
-    await this.assertPostableAccounts(input.lines);
-    const fiscalYear = await this.company.fiscalYearFor(input.date);
+    const fiscalYear = await this.company.fiscalYearFor(date);
     const closedYear = await this.prisma.client.yearEndClosing.findFirst({
       where: { fiscalYear, status: 'CLOSED' },
     });
@@ -132,13 +148,7 @@ export class PostingService {
         { fiscalYear },
       );
     }
-    return new PreparedPosting(
-      PROTOCOL_MINT,
-      input,
-      postedBy,
-      period.id,
-      fiscalYear,
-    );
+    return { periodId: period.id, fiscalYear };
   }
 
   /** Assigns the gapless JE number and writes the (already-validated, balanced)

@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsIn,
@@ -7,6 +8,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { IsMoneyString } from '../../common/validators/is-money-string';
+import { MAX_LINE_ITEMS } from '../../common/dto/limits';
 import { TaxNature } from '../tax.service';
 
 export class TaxableLineDto {
@@ -20,6 +22,7 @@ export class CalculateTaxDto {
   @IsUUID() settlementAccountId!: string;
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_LINE_ITEMS)
   @ValidateNested({ each: true })
   @Type(() => TaxableLineDto)
   lines!: TaxableLineDto[];

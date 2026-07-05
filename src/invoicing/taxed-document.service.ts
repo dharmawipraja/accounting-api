@@ -258,7 +258,7 @@ export class TaxedDocumentService {
       notPostedMessage: m.notPosted,
       lock: (tx) => this.lockForVoid(tx, spec, id),
       applyInTx: async (tx, locked) => {
-        if (Number(locked.amount_paid) !== 0)
+        if (!Money.of(locked.amount_paid.toString()).isZero())
           throw new ConflictDomainError(m.voidWithPayments, { id });
         await spec.markVoid(tx, id);
       },

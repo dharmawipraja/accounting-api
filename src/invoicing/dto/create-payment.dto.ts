@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsDateString,
@@ -11,6 +12,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { IsMoneyString } from '../../common/validators/is-money-string';
+import { MAX_LINE_ITEMS } from '../../common/dto/limits';
 
 export class AllocationDto {
   @IsOptional() @IsUUID() salesInvoiceId?: string;
@@ -26,6 +28,7 @@ export class CreatePaymentDto {
   @IsOptional() @IsString() @MaxLength(255) description?: string;
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_LINE_ITEMS)
   @ValidateNested({ each: true })
   @Type(() => AllocationDto)
   allocations!: AllocationDto[];
