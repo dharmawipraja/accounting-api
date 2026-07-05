@@ -263,6 +263,15 @@ describe('PurchaseBills (e2e)', () => {
       expect(body.total).toBeGreaterThanOrEqual(2);
     });
 
+    it("matches by partner code substring, returning that vendor's bills", async () => {
+      const res = await request(app.getHttpServer() as App)
+        .get('/v1/purchase-bills?q=vend-srch')
+        .set('Authorization', `Bearer ${acct}`)
+        .expect(200);
+      const body = res.body as { total: number };
+      expect(body.total).toBeGreaterThanOrEqual(1);
+    });
+
     it('composes ?q= with ?status= filter', async () => {
       const res = await request(app.getHttpServer() as App)
         .get('/v1/purchase-bills?q=sumber&status=DRAFT')

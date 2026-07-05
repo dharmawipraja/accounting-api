@@ -407,6 +407,29 @@ describe('Payments (e2e)', () => {
         ),
       ).toBe(true);
     });
+
+    it('matches a payment by partner code, composing with direction', async () => {
+      const customerId = await newCustomer('PAYCODE-ZED');
+      const invoiceId = await makePostedInvoice(customerId);
+      await request(server())
+        .post('/v1/payments')
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          direction: 'RECEIPT',
+          partnerId: customerId,
+          date: '2026-02-15',
+          cashAccountId: acc['1-1000'],
+          description: 'Pelunasan',
+          allocations: [{ salesInvoiceId: invoiceId, amount: '600000' }],
+        })
+        .expect(201);
+      const res = await request(server())
+        .get('/v1/payments?q=paycode-zed&direction=RECEIPT')
+        .set('Authorization', `Bearer ${acct}`)
+        .expect(200);
+      expect((res.body as { total: number }).total).toBeGreaterThanOrEqual(1);
+    });
   });
 
   it('FIN-M2: rejects post when the allocated document no longer belongs to the payment partner', async () => {

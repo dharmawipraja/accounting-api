@@ -177,7 +177,7 @@ export class TaxedDocumentService {
             table: 'business_partners',
             alias: 'p',
             onColumn: 'partner_id',
-            columns: ['name'],
+            columns: ['name', 'code'],
           },
           filters,
           q: term,

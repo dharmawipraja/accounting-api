@@ -250,6 +250,16 @@ describe('SalesInvoices (e2e)', () => {
       expect(body.total).toBeGreaterThanOrEqual(2);
     });
 
+    it("matches by partner code substring, returning that partner's invoices", async () => {
+      const res = await request(app.getHttpServer() as App)
+        .get('/v1/sales-invoices?q=srch')
+        .set('Authorization', `Bearer ${acct}`)
+        .expect(200);
+      const body = res.body as { total: number };
+      // Both CUST-SRCH invoices match on the partner code (case-insensitive).
+      expect(body.total).toBeGreaterThanOrEqual(2);
+    });
+
     it('composes ?q= with ?status= filter', async () => {
       // DRAFT invoices are searchable — composing with status=DRAFT should still find them
       const res = await request(app.getHttpServer() as App)
