@@ -74,6 +74,21 @@ lifecycles, money), follow the guide.
 10. **Draft → post approval flow.** Documents (journals, invoices, bills, payments) are
     created as drafts by ACCOUNTANT+, then **posted by APPROVER/ADMIN**. Build an
     approval queue (e.g. `GET /v1/ledger/journal-entries?status=DRAFT`).
+11. **Server-side search (`?q=`).** Five lists accept an optional `?q=` (case-insensitive
+    partial + trigram fuzzy, combines with other filters via AND, `total` is the filtered
+    count): `GET /v1/partners` (name/code/npwp/email), `/v1/sales-invoices` &
+    `/v1/purchase-bills` & `/v1/payments` (own ref fields + partner name+code),
+    `/v1/ledger/journal-entries` (entryRef/description). Send `q` to the server — don't
+    filter the current page client-side (search spans the whole dataset). `<2` chars is
+    ignored. Accounts/tax-codes have **no** `?q=` (small sets — filter client-side).
+12. **Journal-entry preview.** `POST /v1/journal-entries/preview` returns the exact
+    balanced debit/credit entry a document *would* post — read-only, **no
+    `Idempotency-Key`**, any authenticated user. Body is discriminated by `nature`:
+    `SALE`/`PURCHASE` use the `/tax/calculate` shape (`settlementAccountId` + `lines`);
+    `PAYMENT` uses `{ direction, cashAccountId, allocations }`. Response is
+    `{ lines:[{accountId,accountCode,accountName,debit,credit}], totalDebit, totalCredit,
+    balanced }` (4dp strings, inactive side `"0.0000"`). Use it for a live preview panel
+    in the document editor; it validates like a real post (same `422`s) but writes nothing.
 
 ## Do / Don't
 

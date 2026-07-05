@@ -223,11 +223,11 @@ Pagination is **not uniform** — check per endpoint:
   `limit` default **50**, **max 200**; `offset` default 0.
 
   The **enveloped** endpoints are:
-  - `GET /v1/ledger/journal-entries` (filters: `status, sourceType, fiscalYear, from, to, limit, offset`)
-  - `GET /v1/partners` (filters: `limit, offset`)
-  - `GET /v1/sales-invoices` (filters: `partnerId, status, limit, offset`)
-  - `GET /v1/purchase-bills` (filters: `partnerId, status, limit, offset`)
-  - `GET /v1/payments` (filters: `partnerId, direction, status, limit, offset`)
+  - `GET /v1/ledger/journal-entries` (filters: `q, status, sourceType, fiscalYear, from, to, limit, offset`)
+  - `GET /v1/partners` (filters: `q, limit, offset`)
+  - `GET /v1/sales-invoices` (filters: `q, partnerId, status, limit, offset`)
+  - `GET /v1/purchase-bills` (filters: `q, partnerId, status, limit, offset`)
+  - `GET /v1/payments` (filters: `q, partnerId, direction, status, limit, offset`)
 
   Read items from the `.data` array on these responses.
 
@@ -246,6 +246,27 @@ Pagination is **not uniform** — check per endpoint:
   — return a **bare JSON array** (no envelope). `GET /v1/audit` still accepts
   `limit`/`offset` query params (limit default 50, max 200), but its response body
   is a bare array.
+
+### Search (`?q=`)
+
+Five list endpoints accept an optional **`?q=`** free-text search — **case-insensitive
+partial match (ILIKE) + trigram fuzzy ranking**. It **combines with the other filters
+(AND)**, and the envelope's `total` reflects the **filtered** count, so it drives
+pagination correctly. Search spans the **whole filtered dataset**, not just the current
+page — send `q` to the server, don't filter the current page client-side. A `q` shorter
+than **2 characters** (after trimming) is ignored (the normal list is returned).
+
+| Endpoint | `q` matches |
+|---|---|
+| `GET /v1/partners` | partner `name`, `code`, `npwp`, `email` |
+| `GET /v1/sales-invoices` | `invoiceRef`, `description`, **customer** `name` + `code` |
+| `GET /v1/purchase-bills` | `billRef`, `vendorInvoiceNo`, `description`, **vendor** `name` + `code` |
+| `GET /v1/payments` | `ref`, `description`, **partner** `name` + `code` |
+| `GET /v1/ledger/journal-entries` | `entryRef`, `description` |
+
+`GET /v1/ledger/accounts`, `GET /v1/tax/codes`, `GET /v1/ledger/periods`, and
+`GET /v1/audit` do **not** support `?q=` (accounts and tax-codes are small bounded sets
+— fetch and filter them client-side).
 
 ### Dates
 
@@ -280,8 +301,9 @@ operators can correlate the client error with server logs.
 Four roles exist: **VIEWER, ACCOUNTANT, APPROVER, ADMIN**.
 
 **All read (`GET`) endpoints are available to any authenticated user**, including
-VIEWER — reads carry no `@Roles` restriction. `POST /v1/tax/calculate` is a pure
-preview and is likewise available to any authenticated user. The table below therefore
+VIEWER — reads carry no `@Roles` restriction. `POST /v1/tax/calculate` and
+`POST /v1/journal-entries/preview` are pure, read-only previews and are likewise
+available to any authenticated user. The table below therefore
 lists only the **mutating / privileged** endpoints, where the role actually gates
 access. All paths below are under `/v1` (e.g. `POST /partners` means
 `POST /v1/partners`).
@@ -404,6 +426,56 @@ POST /tax/calculate     pure preview of PPN/PPh on supplied lines (any authentic
 This computes tax but **posts nothing** — use it to show live tax figures while a
 user is editing an invoice/bill.
 
+### Journal-entry preview
+
+```
+POST /journal-entries/preview   the balanced debit/credit journal a document WOULD post
+                                (read-only; any authenticated user)
+```
+
+A **read-only, non-persisting** dry run that returns the exact balanced journal entry a
+document would generate — use it to show the accountant the debits/credits **before**
+they save/post. It runs the **same posting logic as a real post** (it cannot diverge),
+writes nothing, and needs **no `Idempotency-Key`**. The request is discriminated by
+`nature`:
+
+- **`SALE` / `PURCHASE`** — same body as `POST /tax/calculate`:
+
+  ```jsonc
+  { "nature": "SALE",              // or "PURCHASE"
+    "settlementAccountId": "<uuid>",
+    "lines": [{ "accountId": "<uuid>", "amount": "1000000.0000", "taxCodeIds": ["<uuid>"] }] }
+  ```
+
+- **`PAYMENT`** — its own shape (a payment has no tax lines; its entry is cash ↔ AR/AP
+  control for the allocation total):
+
+  ```jsonc
+  { "nature": "PAYMENT",
+    "direction": "RECEIPT",        // or "DISBURSEMENT"
+    "cashAccountId": "<uuid>",
+    "allocations": [{ "salesInvoiceId": "<uuid>", "amount": "500000.0000" }] }
+    // DISBURSEMENT allocations use "purchaseBillId" instead
+  ```
+
+Response (`JournalPreviewResponseDto`) — each line carries a human-readable
+`accountCode`/`accountName`; the non-active side is `"0.0000"` (never null):
+
+```jsonc
+{ "lines": [
+    { "accountId": "<uuid>", "accountCode": "1-1200", "accountName": "Piutang Usaha", "debit": "1110000.0000", "credit": "0.0000" },
+    { "accountId": "<uuid>", "accountCode": "4-1000", "accountName": "Pendapatan",    "debit": "0.0000",       "credit": "1000000.0000" },
+    { "accountId": "<uuid>", "accountCode": "2-1100", "accountName": "PPN Keluaran",  "debit": "0.0000",       "credit": "110000.0000" } ],
+  "totalDebit": "1110000.0000", "totalCredit": "1110000.0000", "balanced": true }
+```
+
+It validates the same way a real post does, so the user sees problems early: **`422`**
+for a non-postable/unknown account, unknown/inactive tax code, non-positive settlement
+(withholding ≥ gross), a missing AR/AP control account, or a wrong-type / non-positive
+allocation; **`400`** for a malformed body. It does **not** run period-lock,
+segregation-of-duties, or the deeper payment-allocation checks (partner-match /
+target-POSTED / outstanding) — those stay at real post time.
+
 ---
 
 ## 5. Glossary
@@ -477,7 +549,7 @@ no auth.
 - `DELETE /v1/ledger/accounts/:id` · ADMIN · soft-delete account
 
 ### Ledger — journal
-- `GET    /v1/ledger/journal-entries` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `status, sourceType, fiscalYear, from, to, limit, offset`)
+- `GET    /v1/ledger/journal-entries` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `q, status, sourceType, fiscalYear, from, to, limit, offset`)
 - `GET    /v1/ledger/journal-entries/:id` · any · get one entry
 - `POST   /v1/ledger/journal-entries` · ACCOUNTANT+ · create draft (`?post=true` = create+post, APPROVER/ADMIN only) · **requires `Idempotency-Key`**
 - `POST   /v1/ledger/journal-entries/:id/post` · APPROVER/ADMIN · post draft · **requires `Idempotency-Key`**
@@ -501,7 +573,7 @@ no auth.
 - `GET    /v1/reports/cash-flow?from=&to=` · any · Arus Kas
 
 ### Sales invoices
-- `GET    /v1/sales-invoices` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `partnerId, status, limit, offset`)
+- `GET    /v1/sales-invoices` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `q, partnerId, status, limit, offset`)
 - `GET    /v1/sales-invoices/:id` · any · get one
 - `POST   /v1/sales-invoices` · ACCOUNTANT+ · create draft · **requires `Idempotency-Key`**
 - `PATCH  /v1/sales-invoices/:id` · ACCOUNTANT+ · update draft
@@ -510,7 +582,7 @@ no auth.
 - `DELETE /v1/sales-invoices/:id` · ACCOUNTANT+ · delete draft
 
 ### Purchase bills
-- `GET    /v1/purchase-bills` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `partnerId, status, limit, offset`)
+- `GET    /v1/purchase-bills` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `q, partnerId, status, limit, offset`)
 - `GET    /v1/purchase-bills/:id` · any · get one
 - `POST   /v1/purchase-bills` · ACCOUNTANT+ · create draft · **requires `Idempotency-Key`**
 - `PATCH  /v1/purchase-bills/:id` · ACCOUNTANT+ · update draft
@@ -519,7 +591,7 @@ no auth.
 - `DELETE /v1/purchase-bills/:id` · ACCOUNTANT+ · delete draft
 
 ### Payments
-- `GET    /v1/payments` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `partnerId, direction, status, limit, offset`)
+- `GET    /v1/payments` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `q, partnerId, direction, status, limit, offset`)
 - `GET    /v1/payments/:id` · any · get one
 - `POST   /v1/payments` · ACCOUNTANT+ · create draft (RECEIPT/DISBURSEMENT + allocations) · **requires `Idempotency-Key`**
 - `POST   /v1/payments/:id/post` · APPROVER/ADMIN · post · **requires `Idempotency-Key`**
@@ -527,7 +599,7 @@ no auth.
 - `DELETE /v1/payments/:id` · ACCOUNTANT+ · delete draft
 
 ### Business partners
-- `GET    /v1/partners` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `limit, offset`)
+- `GET    /v1/partners` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `q, limit, offset`)
 - `GET    /v1/partners/:id` · any · get one
 - `POST   /v1/partners` · ACCOUNTANT+ · create
 - `PATCH  /v1/partners/:id` · ACCOUNTANT+ · update
@@ -542,6 +614,9 @@ no auth.
 - `POST   /v1/tax/codes/:id/deactivate` · ADMIN · deactivate
 - `DELETE /v1/tax/codes/:id` · ADMIN · delete
 - `POST   /v1/tax/calculate` · any · PPN/PPh preview (posts nothing)
+
+### Journal-entry preview
+- `POST   /v1/journal-entries/preview` · any · read-only balanced-JE dry run for a SALE/PURCHASE/PAYMENT document (posts nothing; **no `Idempotency-Key`**). Distinct from the manual-journal CRUD at `/v1/ledger/journal-entries`.
 
 ### Close
 - `POST   /v1/close/year-end` · ADMIN · run year-end close (`{ fiscalYear }`) · **requires `Idempotency-Key`**
@@ -570,6 +645,7 @@ schema directly in an array.
 | Journal | `JournalEntryResponseDto` (incl. `JournalLineResponseDto[]`) · list → `JournalEntryListResponseDto` (envelope; items `JournalEntryListItemDto`) · opening-balances → `JournalEntryResponseDto` |
 | Periods | `FiscalPeriodResponseDto` (bare array on list) |
 | Tax | list → `TaxCodeListResponseDto` (envelope) · single → `TaxCodeResponseDto` · calculate → `TaxCalculationDto` (`TaxBreakdownRowDto[]` + `CalculatedLineDto[]`) |
+| Journal preview | `JournalPreviewResponseDto` (`JournalPreviewLineDto[]` + `totalDebit`/`totalCredit`/`balanced`) |
 | Partners | `BusinessPartnerResponseDto` (single) · list → `BusinessPartnerListResponseDto` (envelope) |
 | Sales invoices | `SalesInvoiceResponseDto` (single; incl. optional `SalesInvoiceLineResponseDto[]`) · list → `SalesInvoiceListResponseDto` (envelope) |
 | Purchase bills | `PurchaseBillResponseDto` (single; incl. optional `PurchaseBillLineResponseDto[]`) · list → `PurchaseBillListResponseDto` (envelope) |
@@ -595,9 +671,12 @@ Screens → the endpoints they consume:
 - **Journal register** — `/v1/ledger/journal-entries` (enveloped list + filters) with
   create/post/reverse (all requiring `Idempotency-Key`), and a **DRAFT approval queue**
   (`?status=DRAFT`) for APPROVER/ADMIN.
-- **Sales Invoices / Purchase Bills / Payments** — enveloped list + draft editor +
-  post/void (all writes requiring `Idempotency-Key`); payments need an allocation UI
-  against open documents.
+- **Sales Invoices / Purchase Bills / Payments** — enveloped list (with a server-side
+  `?q=` **search box** — matches ref/partner name+code, spans the whole dataset) + draft
+  editor + post/void (all writes requiring `Idempotency-Key`); payments need an
+  allocation UI against open documents. In the editor, show a **live journal-entry
+  preview** panel (debounced `POST /v1/journal-entries/preview`) next to the tax preview,
+  so the accountant sees the balanced debits/credits before saving/posting.
 - **Reports** — `/v1/reports/*` plus `/v1/ledger/trial-balance`; respect the `asOf` vs
   `from/to` parameter split per report.
 - **Periods & Year-end Close** — `/v1/ledger/periods` (generate/close/reopen) and
