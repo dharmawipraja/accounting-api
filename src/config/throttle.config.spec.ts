@@ -13,7 +13,9 @@ describe('throttle.config', () => {
     jest.resetModules();
     const m = await import('./throttle.config');
     expect(m.THROTTLE).toEqual({ global: 300, login: 10, refresh: 30 });
-    expect(m.REQUEST_TIMEOUT_MS).toBe(30_000);
+    // Sits above the 30s DB statement timeout so the DB — which genuinely
+    // aborts the work — times out before the HTTP layer stops watching.
+    expect(m.REQUEST_TIMEOUT_MS).toBe(35_000);
     expect(m.THROTTLE_TTL_MS).toBe(60_000);
   });
 

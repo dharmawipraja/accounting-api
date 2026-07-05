@@ -148,13 +148,18 @@ mechanics, and [`./deploy.md`](./deploy.md) for production deploys.
 ### Request returns 408
 
 - **Symptom:** A request returns `408` ("Request timed out").
-- **Cause:** The handler exceeded `REQUEST_TIMEOUT_MS` (default **30000 ms / 30s**).
+- **Cause:** The handler exceeded `REQUEST_TIMEOUT_MS` (default **35000 ms / 35s**).
   A per-request timeout interceptor caps handler duration and returns a clean `408`
   envelope (probes `/health`, `/ready`, `/metrics` are exempt).
-- **Fix:** Investigate the slow handler (usually a slow query or a lock wait). If
-  you raise `REQUEST_TIMEOUT_MS`, keep it **≤ the 30s server `requestTimeout`** —
-  otherwise the underlying socket is cut before the `408` envelope can be returned,
-  and the client just sees a dropped connection.
+- **Escalation order (deliberate):** DB `statement_timeout` (30s, genuinely aborts
+  the query) → `REQUEST_TIMEOUT_MS` 408 (35s) → server `requestTimeout` socket cut
+  (40s). Keep that ordering if you tune any of them: the RxJS 408 only stops
+  *observing* the handler — the underlying query keeps running unless the DB kills
+  it, so the DB timeout must stay the shortest.
+- **A 408 does NOT mean the write failed.** The handler may still complete after
+  the response. Clients must retry with the **same** `Idempotency-Key` (replay or
+  409-then-replay), never a fresh one — a fresh key can duplicate the write.
+- **Fix:** Investigate the slow handler (usually a slow query or a lock wait).
 
 ---
 

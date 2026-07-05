@@ -197,6 +197,13 @@ recommended). The covered endpoints are:
 Behavior:
 - **Replay** — a repeated call with the same key and identical body returns the
   original response (201/200) without re-executing the write. Safe to retry.
+- **Retry after a timeout (408) or network failure — reuse the SAME key.** A
+  408 does *not* mean the write failed: the server may still finish it after
+  responding. Retrying with the same key is always safe (you get a replay, or
+  a `409` while it's still running — back off and retry the same key). Retrying
+  with a *new* key can create a duplicate invoice/payment.
+- **Keys are scoped per user** — two different users may use the same key
+  independently; a key never replays another user's response.
 - **Body/endpoint mismatch** — same key with a different request body or a different
   endpoint → **`422 VALIDATION_FAILED`**.
 - **In-flight** — same key while the first request is still being processed →

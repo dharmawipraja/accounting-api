@@ -12,7 +12,12 @@ export function IdempotentWrite() {
     ApiHeader({
       name: 'Idempotency-Key',
       required: true,
-      description: 'Unique key to make this write safely retryable.',
+      description:
+        'Unique key to make this write safely retryable. On ANY retry — ' +
+        'including after a 408 timeout or a network failure — reuse the SAME ' +
+        'key: the original request may still have succeeded server-side, and ' +
+        'a fresh key would duplicate the write. Replays return the original ' +
+        'response; a still-running original returns 409.',
     }),
     Idempotent(),
   );

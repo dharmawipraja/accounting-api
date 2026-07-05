@@ -19,6 +19,10 @@ export const THROTTLE = {
   refresh: Number(process.env.THROTTLE_REFRESH_LIMIT) || 30,
 } as const;
 
-/** Per-request timeout (ms) for the RequestTimeoutInterceptor. */
+/** Per-request timeout (ms) for the RequestTimeoutInterceptor.
+ *  Deliberately ABOVE the 30s DB statement timeout: the RxJS timeout can only
+ *  stop observing the handler (the query keeps running server-side), so the
+ *  DB — which genuinely aborts the statement — must get to fire first. Keep
+ *  this between DB_STATEMENT_TIMEOUT_MS and main.ts's server.requestTimeout. */
 export const REQUEST_TIMEOUT_MS =
-  Number(process.env.REQUEST_TIMEOUT_MS) || 30_000;
+  Number(process.env.REQUEST_TIMEOUT_MS) || 35_000;

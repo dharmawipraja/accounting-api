@@ -65,7 +65,9 @@ async function bootstrap(): Promise<void> {
   const server = app.getHttpServer();
   server.keepAliveTimeout = 65_000; // slightly above a typical proxy keep-alive
   server.headersTimeout = 66_000; // must exceed keepAliveTimeout
-  server.requestTimeout = 30_000;
+  // Above REQUEST_TIMEOUT_MS (35s) so the interceptor's clean 408 wins over a
+  // socket reset. Escalation order: DB statement (30s) → 408 (35s) → socket (40s).
+  server.requestTimeout = 40_000;
   // Cap request bodies (financial payloads are small); matches Caddy's edge cap.
   app.useBodyParser('json', { limit: '1mb' });
   app.useBodyParser('urlencoded', { limit: '1mb', extended: true });

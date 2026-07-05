@@ -21,7 +21,7 @@ removed 2026-06-25 once its code backlog was closed).
 ## Deferred by design (deliberate — not gaps)
 
 - **Year-end-close / engine stay e2e-guarded, not unit-mocked** (OPS-TEST-2 deepening). The merged-coverage gate covers them via real-DB e2e; see [testing.md](./testing.md).
-- **Per-request timeout vs socket cut** (OPS-RES-2 follow-up): if you raise `REQUEST_TIMEOUT_MS` above ~30s, also env-drive `server.requestTimeout` so the socket isn't cut before the 408 interceptor responds.
+- **Per-request timeout vs socket cut** (OPS-RES-2 follow-up — defaults now ordered: DB statement 30s → 408 at 35s → socket cut 40s): if you raise `REQUEST_TIMEOUT_MS` above ~35s, also env-drive `server.requestTimeout` so the socket isn't cut before the 408 interceptor responds.
 - SHA-pin the Trivy CI action; `OPS-DB-2` trigram migration is already applied (not editable).
 
 ## Not a bug (recorded for posterity)

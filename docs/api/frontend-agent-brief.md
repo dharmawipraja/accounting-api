@@ -58,6 +58,9 @@ lifecycles, money), follow the guide.
    journal create/post/reverse, and opening-balances. Store the key before sending so
    you can replay the same key on retry without changing the body. A missing key →
    `422`; same key + different body/endpoint → `422`; in-flight → `409`.
+   **Reuse the SAME key when retrying after a 408 timeout or network failure** — the
+   original write may still have succeeded server-side; a new key can duplicate it.
+   Keys are scoped per authenticated user.
    (Partners/accounts/tax-codes creates are NOT covered — their unique `code` handles
    deduplication.)
 8. **Pagination is mixed.** Seven list endpoints return the envelope
