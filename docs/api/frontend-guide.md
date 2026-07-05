@@ -51,6 +51,7 @@ POST /auth/login      { "email": "...", "password": "..." }
 
   This returns a **fresh pair**. Persist both and retry the original request once.
   If refresh itself fails (401), the session is over → send the user back to login.
+
 - `GET /auth/me` → `{ id, email, role }` for the currently authenticated user. Use
   this on app load to hydrate the user and drive role-gated UI.
 - **Server-side logout is supported.** Call `POST /auth/logout { "refreshToken": "..." }` to revoke the current device's refresh token family (public endpoint, throttled). Call `POST /auth/logout-all` (authenticated) to revoke all sessions for the current user. On logout, also discard both tokens client-side.
@@ -60,11 +61,11 @@ POST /auth/login      { "email": "...", "password": "..." }
 The API is rate-limited. Authenticated requests are budgeted **per user**, anonymous
 auth endpoints **per IP**.
 
-| Scope | Limit | Keyed by |
-|---|---|---|
-| `POST /auth/login` | 10 / min | IP |
-| `POST /auth/refresh` | 30 / min | IP |
-| All other endpoints | 300 / min | authenticated user |
+| Scope                | Limit     | Keyed by           |
+| -------------------- | --------- | ------------------ |
+| `POST /auth/login`   | 10 / min  | IP                 |
+| `POST /auth/refresh` | 30 / min  | IP                 |
+| All other endpoints  | 300 / min | authenticated user |
 
 (Defaults; operators can override via `THROTTLE_LOGIN_LIMIT` / `THROTTLE_REFRESH_LIMIT`
 / `THROTTLE_LIMIT`. Health/readiness/metrics probes are not throttled.)
@@ -98,45 +99,45 @@ On a **429**, back off and retry later (respect any `Retry-After`). Never hammer
 
 ### Status taxonomy
 
-| Status | Meaning | Typical `code` values |
-|---|---|---|
-| 200 / 201 | Success | — |
-| **400** | **Input shape / validation** — malformed body, query, or path param (`ValidationPipe`, `ParseUUIDPipe`, `ParseIntPipe`, bad JSON) | `HTTP_400`, `INVALID_INPUT` |
-| **401** | Missing / expired / invalid token | `UNAUTHORIZED`, `HTTP_401` |
-| **403** | Wrong role, or Segregation-of-Duties block | `FORBIDDEN`, `SEGREGATION_OF_DUTIES` |
-| **404** | Resource not found (incl. soft-deleted) | `NOT_FOUND` |
-| **409** | Conflict / closed period / closed year / unique violation | `CONFLICT`, `CLOSED_PERIOD`, `CLOSED_YEAR` |
-| **422** | **Domain-rule violation** — request was well-formed but breaks an accounting rule | `VALIDATION_FAILED`, `UNBALANCED_ENTRY`, `INVALID_ACCOUNT` |
-| **429** | Rate-limited | (throttler) |
-| 500 | Unexpected server error | `INTERNAL_ERROR` |
+| Status    | Meaning                                                                                                                           | Typical `code` values                                      |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| 200 / 201 | Success                                                                                                                           | —                                                          |
+| **400**   | **Input shape / validation** — malformed body, query, or path param (`ValidationPipe`, `ParseUUIDPipe`, `ParseIntPipe`, bad JSON) | `HTTP_400`, `INVALID_INPUT`                                |
+| **401**   | Missing / expired / invalid token                                                                                                 | `UNAUTHORIZED`, `HTTP_401`                                 |
+| **403**   | Wrong role, or Segregation-of-Duties block                                                                                        | `FORBIDDEN`, `SEGREGATION_OF_DUTIES`                       |
+| **404**   | Resource not found (incl. soft-deleted)                                                                                           | `NOT_FOUND`                                                |
+| **409**   | Conflict / closed period / closed year / unique violation                                                                         | `CONFLICT`, `CLOSED_PERIOD`, `CLOSED_YEAR`                 |
+| **422**   | **Domain-rule violation** — request was well-formed but breaks an accounting rule                                                 | `VALIDATION_FAILED`, `UNBALANCED_ENTRY`, `INVALID_ACCOUNT` |
+| **429**   | Rate-limited                                                                                                                      | (throttler)                                                |
+| 500       | Unexpected server error                                                                                                           | `INTERNAL_ERROR`                                           |
 
 #### 400 vs 422 — the important split
 
-- **400** = the request is *shaped* wrong. A field is missing, the wrong type, a
+- **400** = the request is _shaped_ wrong. A field is missing, the wrong type, a
   malformed UUID, a non-numeric `fiscalYear`, etc. Fix the payload and the same
   request will be accepted. The frontend should usually have caught these client-side.
-- **422** = the request is *well-formed* but breaks an **accounting rule**. Examples:
+- **422** = the request is _well-formed_ but breaks an **accounting rule**. Examples:
   a journal entry whose debits ≠ credits (`UNBALANCED_ENTRY`), posting to a
   non-postable / invalid account (`INVALID_ACCOUNT`), a report range where
   `from > to` (`VALIDATION_FAILED`). These are domain errors the user must resolve
-  by changing *what* they are doing, not the request format.
+  by changing _what_ they are doing, not the request format.
 
 #### Domain error codes (from the source)
 
 These are the typed domain errors the API raises (`src/common/errors/domain-errors.ts`):
 
-| `code` | HTTP | When |
-|---|---|---|
-| `VALIDATION_FAILED` | 422 | Generic domain-rule violation (e.g. report `from > to`) |
-| `UNBALANCED_ENTRY` | 422 | Journal debits ≠ credits |
-| `INVALID_ACCOUNT` | 422 | Account missing / non-postable / wrong type for the operation |
-| `NOT_FOUND` | 404 | Entity does not exist (or is soft-deleted) |
-| `CONFLICT` | 409 | Generic conflict / unique violation |
-| `CLOSED_PERIOD` | 409 | Posting into a closed monthly period |
-| `CLOSED_YEAR` | 409 | Posting into a closed fiscal year |
-| `UNAUTHORIZED` | 401 | Auth failure raised in the domain layer |
-| `FORBIDDEN` | 403 | Role not permitted for the operation |
-| `SEGREGATION_OF_DUTIES` | 403 | Same user tried to both create and approve/post (see SoD) |
+| `code`                  | HTTP | When                                                          |
+| ----------------------- | ---- | ------------------------------------------------------------- |
+| `VALIDATION_FAILED`     | 422  | Generic domain-rule violation (e.g. report `from > to`)       |
+| `UNBALANCED_ENTRY`      | 422  | Journal debits ≠ credits                                      |
+| `INVALID_ACCOUNT`       | 422  | Account missing / non-postable / wrong type for the operation |
+| `NOT_FOUND`             | 404  | Entity does not exist (or is soft-deleted)                    |
+| `CONFLICT`              | 409  | Generic conflict / unique violation                           |
+| `CLOSED_PERIOD`         | 409  | Posting into a closed monthly period                          |
+| `CLOSED_YEAR`           | 409  | Posting into a closed fiscal year                             |
+| `UNAUTHORIZED`          | 401  | Auth failure raised in the domain layer                       |
+| `FORBIDDEN`             | 403  | Role not permitted for the operation                          |
+| `SEGREGATION_OF_DUTIES` | 403  | Same user tried to both create and approve/post (see SoD)     |
 
 Prisma-level failures are normalized too: a unique conflict surfaces as `409 CONFLICT`,
 a missing row as `404 NOT_FOUND`, malformed input as `400 INVALID_INPUT`.
@@ -192,16 +193,18 @@ recommended). The covered endpoints are:
   `POST /v1/ledger/journal-entries/:id/post`,
   `POST /v1/ledger/journal-entries/:id/reverse`,
   `POST /v1/ledger/opening-balances`.
-- **Year-end close:** `POST /v1/close/year-end`.
+- **Year-end close:** `POST /v1/close/year-end`,
+  `POST /v1/close/year-end/:fiscalYear/reopen`.
 
 Behavior:
+
 - **Replay** — a repeated call with the same key and identical body returns the
   original response (201/200) without re-executing the write. Safe to retry.
 - **Retry after a timeout (408) or network failure — reuse the SAME key.** A
-  408 does *not* mean the write failed: the server may still finish it after
+  408 does _not_ mean the write failed: the server may still finish it after
   responding. Retrying with the same key is always safe (you get a replay, or
   a `409` while it's still running — back off and retry the same key). Retrying
-  with a *new* key can create a duplicate invoice/payment.
+  with a _new_ key can create a duplicate invoice/payment.
 - **Keys are scoped per user** — two different users may use the same key
   independently; a key never replays another user's response.
 - **Body/endpoint mismatch** — same key with a different request body or a different
@@ -214,8 +217,8 @@ Behavior:
 > **Not covered:** `POST /v1/partners`, `POST /v1/ledger/accounts`,
 > `POST /v1/tax/codes` — these are already idempotent by virtue of their unique
 > `code` constraint (duplicate → `409 CONFLICT`). `POST /v1/ledger/periods/generate`
-> and non-create mutations (`PATCH`, `DELETE`, `*/deactivate`, `*/reopen`) are also
-> not covered.
+> and non-create mutations (`PATCH`, `DELETE`, `*/deactivate`, period `*/reopen`) are
+> also not covered. (Year-end close reopen **is** covered — see above.)
 
 ### Pagination
 
@@ -263,13 +266,13 @@ pagination correctly. Search spans the **whole filtered dataset**, not just the 
 page — send `q` to the server, don't filter the current page client-side. A `q` shorter
 than **2 characters** (after trimming) is ignored (the normal list is returned).
 
-| Endpoint | `q` matches |
-|---|---|
-| `GET /v1/partners` | partner `name`, `code`, `npwp`, `email` |
-| `GET /v1/sales-invoices` | `invoiceRef`, `description`, **customer** `name` + `code` |
-| `GET /v1/purchase-bills` | `billRef`, `vendorInvoiceNo`, `description`, **vendor** `name` + `code` |
-| `GET /v1/payments` | `ref`, `description`, **partner** `name` + `code` |
-| `GET /v1/ledger/journal-entries` | `entryRef`, `description` |
+| Endpoint                         | `q` matches                                                             |
+| -------------------------------- | ----------------------------------------------------------------------- |
+| `GET /v1/partners`               | partner `name`, `code`, `npwp`, `email`                                 |
+| `GET /v1/sales-invoices`         | `invoiceRef`, `description`, **customer** `name` + `code`               |
+| `GET /v1/purchase-bills`         | `billRef`, `vendorInvoiceNo`, `description`, **vendor** `name` + `code` |
+| `GET /v1/payments`               | `ref`, `description`, **partner** `name` + `code`                       |
+| `GET /v1/ledger/journal-entries` | `entryRef`, `description`                                               |
 
 `GET /v1/ledger/accounts`, `GET /v1/tax/codes`, `GET /v1/ledger/periods`, and
 `GET /v1/audit` do **not** support `?q=` (accounts and tax-codes are small bounded sets
@@ -317,33 +320,33 @@ access. All paths below are under `/v1` (e.g. `POST /partners` means
 
 A "✓" means that role is allowed. `403 FORBIDDEN` is returned otherwise.
 
-| Endpoint (mutation) | VIEWER | ACCOUNTANT | APPROVER | ADMIN |
-|---|:--:|:--:|:--:|:--:|
-| Create / update **accounts** (`POST /ledger/accounts`, `PATCH /ledger/accounts/:id`) | | ✓ | ✓ | ✓ |
-| Deactivate / delete **account** (`POST /ledger/accounts/:id/deactivate`, `DELETE /ledger/accounts/:id`) | | | | ✓ |
-| Create / update **partners** (`POST /partners`, `PATCH /partners/:id`) | | ✓ | ✓ | ✓ |
-| Deactivate / delete **partner** (`POST /partners/:id/deactivate`, `DELETE /partners/:id`) | | | | ✓ |
-| Create / update **tax codes** (`POST /tax/codes`, `PATCH /tax/codes/:id`) | | ✓ | ✓ | ✓ |
-| Deactivate / delete **tax code** (`POST /tax/codes/:id/deactivate`, `DELETE /tax/codes/:id`) | | | | ✓ |
-| Create / update **sales invoice** (`POST /sales-invoices`, `PATCH /sales-invoices/:id`) | | ✓ | ✓ | ✓ |
-| Delete draft **sales invoice** (`DELETE /sales-invoices/:id`) | | ✓ | ✓ | ✓ |
-| Post / void **sales invoice** (`POST /sales-invoices/:id/post`, `POST /sales-invoices/:id/void`) | | | ✓ | ✓ |
-| Create / update **purchase bill** (`POST /purchase-bills`, `PATCH /purchase-bills/:id`) | | ✓ | ✓ | ✓ |
-| Delete draft **purchase bill** (`DELETE /purchase-bills/:id`) | | ✓ | ✓ | ✓ |
-| Post / void **purchase bill** (`POST /purchase-bills/:id/post`, `POST /purchase-bills/:id/void`) | | | ✓ | ✓ |
-| Create **payment** (`POST /payments`) | | ✓ | ✓ | ✓ |
-| Delete draft **payment** (`DELETE /payments/:id`) | | ✓ | ✓ | ✓ |
-| Post / void **payment** (`POST /payments/:id/post`, `POST /payments/:id/void`) | | | ✓ | ✓ |
-| Create draft / delete draft **journal** (`POST /ledger/journal-entries`, `DELETE /ledger/journal-entries/:id`) | | ✓ | ✓ | ✓ |
-| Post / reverse **journal** (`POST /ledger/journal-entries/:id/post`, `POST /ledger/journal-entries/:id/reverse`) | | | ✓ | ✓ |
-| Generate **periods** (`POST /ledger/periods/generate`) | | | ✓ | ✓ |
-| Close **period** (`POST /ledger/periods/:id/close`) | | | ✓ | ✓ |
-| Reopen **period** (`POST /ledger/periods/:id/reopen`) | | | | ✓ |
-| Post **opening balances** (`POST /ledger/opening-balances`) | | | | ✓ |
-| Run / reopen **year-end close** (`POST /close/year-end`, `POST /close/year-end/:fy/reopen`) | | | | ✓ |
-| Update **company settings** (`PATCH /company/settings`) | | | | ✓ |
-| Read **audit log** (`GET /audit`) | | | | ✓ |
-| `GET /auth/admin-only` (RBAC smoke) | | | | ✓ |
+| Endpoint (mutation)                                                                                              | VIEWER | ACCOUNTANT | APPROVER | ADMIN |
+| ---------------------------------------------------------------------------------------------------------------- | :----: | :--------: | :------: | :---: |
+| Create / update **accounts** (`POST /ledger/accounts`, `PATCH /ledger/accounts/:id`)                             |        |     ✓      |    ✓     |   ✓   |
+| Deactivate / delete **account** (`POST /ledger/accounts/:id/deactivate`, `DELETE /ledger/accounts/:id`)          |        |            |          |   ✓   |
+| Create / update **partners** (`POST /partners`, `PATCH /partners/:id`)                                           |        |     ✓      |    ✓     |   ✓   |
+| Deactivate / delete **partner** (`POST /partners/:id/deactivate`, `DELETE /partners/:id`)                        |        |            |          |   ✓   |
+| Create / update **tax codes** (`POST /tax/codes`, `PATCH /tax/codes/:id`)                                        |        |     ✓      |    ✓     |   ✓   |
+| Deactivate / delete **tax code** (`POST /tax/codes/:id/deactivate`, `DELETE /tax/codes/:id`)                     |        |            |          |   ✓   |
+| Create / update **sales invoice** (`POST /sales-invoices`, `PATCH /sales-invoices/:id`)                          |        |     ✓      |    ✓     |   ✓   |
+| Delete draft **sales invoice** (`DELETE /sales-invoices/:id`)                                                    |        |     ✓      |    ✓     |   ✓   |
+| Post / void **sales invoice** (`POST /sales-invoices/:id/post`, `POST /sales-invoices/:id/void`)                 |        |            |    ✓     |   ✓   |
+| Create / update **purchase bill** (`POST /purchase-bills`, `PATCH /purchase-bills/:id`)                          |        |     ✓      |    ✓     |   ✓   |
+| Delete draft **purchase bill** (`DELETE /purchase-bills/:id`)                                                    |        |     ✓      |    ✓     |   ✓   |
+| Post / void **purchase bill** (`POST /purchase-bills/:id/post`, `POST /purchase-bills/:id/void`)                 |        |            |    ✓     |   ✓   |
+| Create **payment** (`POST /payments`)                                                                            |        |     ✓      |    ✓     |   ✓   |
+| Delete draft **payment** (`DELETE /payments/:id`)                                                                |        |     ✓      |    ✓     |   ✓   |
+| Post / void **payment** (`POST /payments/:id/post`, `POST /payments/:id/void`)                                   |        |            |    ✓     |   ✓   |
+| Create draft / delete draft **journal** (`POST /ledger/journal-entries`, `DELETE /ledger/journal-entries/:id`)   |        |     ✓      |    ✓     |   ✓   |
+| Post / reverse **journal** (`POST /ledger/journal-entries/:id/post`, `POST /ledger/journal-entries/:id/reverse`) |        |            |    ✓     |   ✓   |
+| Generate **periods** (`POST /ledger/periods/generate`)                                                           |        |            |    ✓     |   ✓   |
+| Close **period** (`POST /ledger/periods/:id/close`)                                                              |        |            |    ✓     |   ✓   |
+| Reopen **period** (`POST /ledger/periods/:id/reopen`)                                                            |        |            |          |   ✓   |
+| Post **opening balances** (`POST /ledger/opening-balances`)                                                      |        |            |          |   ✓   |
+| Run / reopen **year-end close** (`POST /close/year-end`, `POST /close/year-end/:fy/reopen`)                      |        |            |          |   ✓   |
+| Update **company settings** (`PATCH /company/settings`)                                                          |        |            |          |   ✓   |
+| Read **audit log** (`GET /audit`)                                                                                |        |            |          |   ✓   |
+| `GET /auth/admin-only` (RBAC smoke)                                                                              |        |            |          |   ✓   |
 
 > **Note on `POST /ledger/journal-entries?post=true`:** ACCOUNTANT may create drafts
 > but **cannot create-and-post in one call** — passing `?post=true` as an ACCOUNTANT
@@ -354,7 +357,7 @@ A "✓" means that role is allowed. `403 FORBIDDEN` is returned otherwise.
 When SoD enforcement is enabled, **the user who created a document cannot be the same
 user who posts/approves it**. Such an attempt returns **`403 SEGREGATION_OF_DUTIES`**.
 In the UI, a creator should hand off to a different APPROVER/ADMIN for posting; handle
-this 403 distinctly from a plain role error (it is *not* fixed by elevating the role).
+this 403 distinctly from a plain role error (it is _not_ fixed by elevating the role).
 
 ---
 
@@ -443,37 +446,73 @@ POST /journal-entries/preview   the balanced debit/credit journal a document WOU
 A **read-only, non-persisting** dry run that returns the exact balanced journal entry a
 document would generate — use it to show the accountant the debits/credits **before**
 they save/post. It runs the **same posting logic as a real post** (it cannot diverge),
-writes nothing, and needs **no `Idempotency-Key`**. The request is discriminated by
-`nature`:
+writes nothing, and needs **no `Idempotency-Key`**. An optional **`date`**
+(`YYYY-MM-DD`) makes the preview also reproduce the **`409`** a real post would give
+when that date falls in a closed period or closed fiscal year — send the document's
+date to catch that error at preview time instead of at post time. The request is
+discriminated by `nature`:
 
 - **`SALE` / `PURCHASE`** — same body as `POST /tax/calculate`:
 
   ```jsonc
-  { "nature": "SALE",              // or "PURCHASE"
+  {
+    "nature": "SALE", // or "PURCHASE"
     "settlementAccountId": "<uuid>",
-    "lines": [{ "accountId": "<uuid>", "amount": "1000000.0000", "taxCodeIds": ["<uuid>"] }] }
+    "lines": [
+      {
+        "accountId": "<uuid>",
+        "amount": "1000000.0000",
+        "taxCodeIds": ["<uuid>"],
+      },
+    ],
+  }
   ```
 
 - **`PAYMENT`** — its own shape (a payment has no tax lines; its entry is cash ↔ AR/AP
   control for the allocation total):
 
   ```jsonc
-  { "nature": "PAYMENT",
-    "direction": "RECEIPT",        // or "DISBURSEMENT"
+  {
+    "nature": "PAYMENT",
+    "direction": "RECEIPT", // or "DISBURSEMENT"
     "cashAccountId": "<uuid>",
-    "allocations": [{ "salesInvoiceId": "<uuid>", "amount": "500000.0000" }] }
-    // DISBURSEMENT allocations use "purchaseBillId" instead
+    "allocations": [{ "salesInvoiceId": "<uuid>", "amount": "500000.0000" }],
+  }
+  // DISBURSEMENT allocations use "purchaseBillId" instead
   ```
 
 Response (`JournalPreviewResponseDto`) — each line carries a human-readable
 `accountCode`/`accountName`; the non-active side is `"0.0000"` (never null):
 
 ```jsonc
-{ "lines": [
-    { "accountId": "<uuid>", "accountCode": "1-1200", "accountName": "Piutang Usaha", "debit": "1110000.0000", "credit": "0.0000" },
-    { "accountId": "<uuid>", "accountCode": "4-1000", "accountName": "Pendapatan",    "debit": "0.0000",       "credit": "1000000.0000" },
-    { "accountId": "<uuid>", "accountCode": "2-1100", "accountName": "PPN Keluaran",  "debit": "0.0000",       "credit": "110000.0000" } ],
-  "totalDebit": "1110000.0000", "totalCredit": "1110000.0000", "balanced": true }
+{
+  "lines": [
+    {
+      "accountId": "<uuid>",
+      "accountCode": "1-1200",
+      "accountName": "Piutang Usaha",
+      "debit": "1110000.0000",
+      "credit": "0.0000",
+    },
+    {
+      "accountId": "<uuid>",
+      "accountCode": "4-1000",
+      "accountName": "Pendapatan",
+      "debit": "0.0000",
+      "credit": "1000000.0000",
+    },
+    {
+      "accountId": "<uuid>",
+      "accountCode": "2-1100",
+      "accountName": "PPN Keluaran",
+      "debit": "0.0000",
+      "credit": "110000.0000",
+    },
+  ],
+  "totalDebit": "1110000.0000",
+  "totalCredit": "1110000.0000",
+  "balanced": true,
+}
 ```
 
 It validates the same way a real post does, so the user sees problems early: **`422`**
@@ -491,22 +530,22 @@ target-POSTED / outstanding) — those stay at real post time.
 
 Codes are `N-NNNN`; the `N-0000` rows are non-postable headers. Seeded leaves include:
 
-| Code | Name (ID) | English |
-|---|---|---|
-| `1-1000` | Kas | Cash |
-| `1-1100` | Bank | Bank |
-| `1-1200` | Piutang Usaha | Accounts receivable (AR control) |
-| `1-1300` | Persediaan | Inventory |
-| `1-1400` | PPN Masukan | Input VAT |
-| `1-1500` | Uang Muka PPh | Prepaid withholding tax |
-| `2-1000` | Utang Usaha | Accounts payable (AP control) |
-| `2-1100` | PPN Keluaran | Output VAT |
-| `2-1200` | Utang PPh | Withholding tax payable |
-| `3-1000` | Modal | Capital / equity |
-| `3-2000` | Laba Ditahan | Retained earnings |
-| `3-9000` | Saldo Awal | Opening-balance equity (plug) |
-| `4-1000` | Pendapatan Penjualan | Sales revenue |
-| `5-1000` | Harga Pokok Penjualan | Cost of goods sold (HPP / COGS) |
+| Code     | Name (ID)             | English                          |
+| -------- | --------------------- | -------------------------------- |
+| `1-1000` | Kas                   | Cash                             |
+| `1-1100` | Bank                  | Bank                             |
+| `1-1200` | Piutang Usaha         | Accounts receivable (AR control) |
+| `1-1300` | Persediaan            | Inventory                        |
+| `1-1400` | PPN Masukan           | Input VAT                        |
+| `1-1500` | Uang Muka PPh         | Prepaid withholding tax          |
+| `2-1000` | Utang Usaha           | Accounts payable (AP control)    |
+| `2-1100` | PPN Keluaran          | Output VAT                       |
+| `2-1200` | Utang PPh             | Withholding tax payable          |
+| `3-1000` | Modal                 | Capital / equity                 |
+| `3-2000` | Laba Ditahan          | Retained earnings                |
+| `3-9000` | Saldo Awal            | Opening-balance equity (plug)    |
+| `4-1000` | Pendapatan Penjualan  | Sales revenue                    |
+| `5-1000` | Harga Pokok Penjualan | Cost of goods sold (HPP / COGS)  |
 
 Header ranges: **1 = Aset (assets), 2 = Liabilitas (liabilities), 3 = Ekuitas
 (equity), 4 = Pendapatan (revenue), 5 = Beban (expenses).**
@@ -534,6 +573,7 @@ Grouped by domain. Format: `METHOD · path · role · purpose`. Schemas are in
 no auth.
 
 ### Auth
+
 - `POST   /auth/login` · public · obtain a token pair
 - `POST   /auth/refresh` · public · exchange a refresh token for a new pair
 - `POST   /auth/logout` · public (throttled) · revoke the current device's refresh token family `{ "refreshToken": "..." }`
@@ -542,11 +582,13 @@ no auth.
 - `GET    /auth/admin-only` · ADMIN · RBAC smoke endpoint
 
 ### Health / ops (public, unauthenticated, version-neutral — no `/v1` prefix)
+
 - `GET    /health` · public · liveness
 - `GET    /ready` · public · readiness (503 if DB down)
 - `GET    /metrics` · public · Prometheus metrics (may be token-gated by ops)
 
 ### Ledger — accounts
+
 - `GET    /v1/ledger/accounts` · any · list chart of accounts (**envelope** `{data,total,limit,offset}`; supports `?limit`/`?offset`)
 - `GET    /v1/ledger/accounts/:id` · any · get one account
 - `GET    /v1/ledger/accounts/:id/balance` · any · account balance (`?asOf=`)
@@ -556,6 +598,7 @@ no auth.
 - `DELETE /v1/ledger/accounts/:id` · ADMIN · soft-delete account
 
 ### Ledger — journal
+
 - `GET    /v1/ledger/journal-entries` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `q, status, sourceType, fiscalYear, from, to, limit, offset`)
 - `GET    /v1/ledger/journal-entries/:id` · any · get one entry
 - `POST   /v1/ledger/journal-entries` · ACCOUNTANT+ · create draft (`?post=true` = create+post, APPROVER/ADMIN only) · **requires `Idempotency-Key`**
@@ -565,6 +608,7 @@ no auth.
 - `POST   /v1/ledger/opening-balances` · ADMIN · post opening balances · **requires `Idempotency-Key`**
 
 ### Ledger — periods & trial balance
+
 - `GET    /v1/ledger/periods?fiscalYear=` · any · list monthly periods (bare array)
 - `POST   /v1/ledger/periods/generate` · APPROVER/ADMIN · generate a year's periods
 - `POST   /v1/ledger/periods/:id/close` · APPROVER/ADMIN · close a period
@@ -572,14 +616,20 @@ no auth.
 - `GET    /v1/ledger/trial-balance?asOf=` · any · trial balance
 
 ### Reports (all read, any auth)
+
 - `GET    /v1/reports/balance-sheet?asOf=` · any · Neraca
 - `GET    /v1/reports/income-statement?from=&to=` · any · Laba Rugi
-- `GET    /v1/reports/general-ledger?accountId=&from=&to=` · any · Buku Besar
-- `GET    /v1/reports/ar-aging?asOf=` · any · AR aging
-- `GET    /v1/reports/ap-aging?asOf=` · any · AP aging
+- `GET    /v1/reports/general-ledger?accountId=&from=&to=` · any · Buku Besar —
+  span capped at **366 days** (`422` beyond); response carries `truncated: true`
+  when the 10,000-line cap cut the list (narrow the range; `closingBalance` stays
+  correct either way)
+- `GET    /v1/reports/ar-aging?asOf=` · any · AR aging — response carries a
+  `truncated` flag (10,000 open-document cap)
+- `GET    /v1/reports/ap-aging?asOf=` · any · AP aging — same `truncated` flag
 - `GET    /v1/reports/cash-flow?from=&to=` · any · Arus Kas
 
 ### Sales invoices
+
 - `GET    /v1/sales-invoices` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `q, partnerId, status, limit, offset`)
 - `GET    /v1/sales-invoices/:id` · any · get one
 - `POST   /v1/sales-invoices` · ACCOUNTANT+ · create draft · **requires `Idempotency-Key`**
@@ -589,6 +639,7 @@ no auth.
 - `DELETE /v1/sales-invoices/:id` · ACCOUNTANT+ · delete draft
 
 ### Purchase bills
+
 - `GET    /v1/purchase-bills` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `q, partnerId, status, limit, offset`)
 - `GET    /v1/purchase-bills/:id` · any · get one
 - `POST   /v1/purchase-bills` · ACCOUNTANT+ · create draft · **requires `Idempotency-Key`**
@@ -598,6 +649,7 @@ no auth.
 - `DELETE /v1/purchase-bills/:id` · ACCOUNTANT+ · delete draft
 
 ### Payments
+
 - `GET    /v1/payments` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `q, partnerId, direction, status, limit, offset`)
 - `GET    /v1/payments/:id` · any · get one
 - `POST   /v1/payments` · ACCOUNTANT+ · create draft (RECEIPT/DISBURSEMENT + allocations) · **requires `Idempotency-Key`**
@@ -606,6 +658,7 @@ no auth.
 - `DELETE /v1/payments/:id` · ACCOUNTANT+ · delete draft
 
 ### Business partners
+
 - `GET    /v1/partners` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `q, limit, offset`)
 - `GET    /v1/partners/:id` · any · get one
 - `POST   /v1/partners` · ACCOUNTANT+ · create
@@ -614,6 +667,7 @@ no auth.
 - `DELETE /v1/partners/:id` · ADMIN · delete
 
 ### Tax
+
 - `GET    /v1/tax/codes` · any · list tax codes (**envelope** `{data,total,limit,offset}`; supports `?limit`/`?offset`)
 - `GET    /v1/tax/codes/:id` · any · get one
 - `POST   /v1/tax/codes` · ACCOUNTANT+ · create
@@ -623,18 +677,22 @@ no auth.
 - `POST   /v1/tax/calculate` · any · PPN/PPh preview (posts nothing)
 
 ### Journal-entry preview
+
 - `POST   /v1/journal-entries/preview` · any · read-only balanced-JE dry run for a SALE/PURCHASE/PAYMENT document (posts nothing; **no `Idempotency-Key`**). Distinct from the manual-journal CRUD at `/v1/ledger/journal-entries`.
 
 ### Close
+
 - `POST   /v1/close/year-end` · ADMIN · run year-end close (`{ fiscalYear }`) · **requires `Idempotency-Key`**
-- `POST   /v1/close/year-end/:fy/reopen` · ADMIN · reopen a closed year
+- `POST   /v1/close/year-end/:fy/reopen` · ADMIN · reopen a closed year · **requires `Idempotency-Key`**
 - `GET    /v1/close/year-end/:fy` · any · close status (404 if none)
 
 ### Company
+
 - `GET    /v1/company/settings` · any · company settings
 - `PATCH  /v1/company/settings` · ADMIN · update company settings
 
 ### Audit
+
 - `GET    /v1/audit` · ADMIN · audit log — **bare array** (no envelope) (filters: `userId, method, from, to, limit, offset`; `limit` default 50, **max 200**; `method` ∈ POST/PATCH/PUT/DELETE)
 
 ### Response schema quick-map
@@ -644,24 +702,24 @@ fields there; this is just the name to find. The seven enveloped list endpoints 
 their items in `{ data, total, limit, offset }`; bare-array endpoints return the item
 schema directly in an array.
 
-| Domain | Response schema(s) |
-|---|---|
-| Auth | `TokenPairDto` (login/refresh) · `AuthenticatedUserDto` (`/auth/me`) · `OkFlagDto` (`/auth/admin-only`) |
-| Health / ops | `HealthStatusDto` · `ReadinessStatusDto` · `/metrics` → `text/plain` (not JSON) |
-| Accounts | list → `AccountListResponseDto` (envelope) · single → `AccountResponseDto` · balance → `AccountBalanceDto` · trial balance → `TrialBalanceDto` |
-| Journal | `JournalEntryResponseDto` (incl. `JournalLineResponseDto[]`) · list → `JournalEntryListResponseDto` (envelope; items `JournalEntryListItemDto`) · opening-balances → `JournalEntryResponseDto` |
-| Periods | `FiscalPeriodResponseDto` (bare array on list) |
-| Tax | list → `TaxCodeListResponseDto` (envelope) · single → `TaxCodeResponseDto` · calculate → `TaxCalculationDto` (`TaxBreakdownRowDto[]` + `CalculatedLineDto[]`) |
-| Journal preview | `JournalPreviewResponseDto` (`JournalPreviewLineDto[]` + `totalDebit`/`totalCredit`/`balanced`) |
-| Partners | `BusinessPartnerResponseDto` (single) · list → `BusinessPartnerListResponseDto` (envelope) |
-| Sales invoices | `SalesInvoiceResponseDto` (single; incl. optional `SalesInvoiceLineResponseDto[]`) · list → `SalesInvoiceListResponseDto` (envelope) |
-| Purchase bills | `PurchaseBillResponseDto` (single; incl. optional `PurchaseBillLineResponseDto[]`) · list → `PurchaseBillListResponseDto` (envelope) |
-| Payments | `PaymentResponseDto` (single; incl. optional `PaymentAllocationResponseDto[]`) · list → `PaymentListResponseDto` (envelope) |
-| Reports | `BalanceSheetDto` · `IncomeStatementDto` · `GeneralLedgerDto` · `AgingReportDto` (AR & AP) · `CashFlowDto` |
-| Close | `YearEndClosingResponseDto` |
-| Company | `CompanySettingsDto` |
-| Audit | `AuditEntryDto` (bare array) |
-| Errors (4xx/5xx) | `ErrorEnvelopeDto` |
+| Domain           | Response schema(s)                                                                                                                                                                             |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Auth             | `TokenPairDto` (login/refresh) · `AuthenticatedUserDto` (`/auth/me`) · `OkFlagDto` (`/auth/admin-only`)                                                                                        |
+| Health / ops     | `HealthStatusDto` · `ReadinessStatusDto` · `/metrics` → `text/plain` (not JSON)                                                                                                                |
+| Accounts         | list → `AccountListResponseDto` (envelope) · single → `AccountResponseDto` · balance → `AccountBalanceDto` · trial balance → `TrialBalanceDto`                                                 |
+| Journal          | `JournalEntryResponseDto` (incl. `JournalLineResponseDto[]`) · list → `JournalEntryListResponseDto` (envelope; items `JournalEntryListItemDto`) · opening-balances → `JournalEntryResponseDto` |
+| Periods          | `FiscalPeriodResponseDto` (bare array on list)                                                                                                                                                 |
+| Tax              | list → `TaxCodeListResponseDto` (envelope) · single → `TaxCodeResponseDto` · calculate → `TaxCalculationDto` (`TaxBreakdownRowDto[]` + `CalculatedLineDto[]`)                                  |
+| Journal preview  | `JournalPreviewResponseDto` (`JournalPreviewLineDto[]` + `totalDebit`/`totalCredit`/`balanced`)                                                                                                |
+| Partners         | `BusinessPartnerResponseDto` (single) · list → `BusinessPartnerListResponseDto` (envelope)                                                                                                     |
+| Sales invoices   | `SalesInvoiceResponseDto` (single; incl. optional `SalesInvoiceLineResponseDto[]`) · list → `SalesInvoiceListResponseDto` (envelope)                                                           |
+| Purchase bills   | `PurchaseBillResponseDto` (single; incl. optional `PurchaseBillLineResponseDto[]`) · list → `PurchaseBillListResponseDto` (envelope)                                                           |
+| Payments         | `PaymentResponseDto` (single; incl. optional `PaymentAllocationResponseDto[]`) · list → `PaymentListResponseDto` (envelope)                                                                    |
+| Reports          | `BalanceSheetDto` · `IncomeStatementDto` · `GeneralLedgerDto` · `AgingReportDto` (AR & AP) · `CashFlowDto`                                                                                     |
+| Close            | `YearEndClosingResponseDto`                                                                                                                                                                    |
+| Company          | `CompanySettingsDto`                                                                                                                                                                           |
+| Audit            | `AuditEntryDto` (bare array)                                                                                                                                                                   |
+| Errors (4xx/5xx) | `ErrorEnvelopeDto`                                                                                                                                                                             |
 
 ---
 

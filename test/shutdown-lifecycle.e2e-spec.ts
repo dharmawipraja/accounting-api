@@ -17,18 +17,18 @@ describe('graceful shutdown ordering (e2e)', () => {
 
     const server = h.app.getHttpServer() as Server;
     const origClose = server.close.bind(server);
-    jest.spyOn(server, 'close').mockImplementation(((
-      cb?: (err?: Error) => void,
-    ) => {
-      events.push('server.close');
-      return origClose(cb);
-    }) as Server['close']);
     jest
-      .spyOn(server, 'closeIdleConnections')
-      .mockImplementation(function (this: Server) {
-        events.push('server.closeIdleConnections');
-        return Server.prototype.closeIdleConnections.call(this);
+      .spyOn(server, 'close')
+      .mockImplementation((cb?: (err?: Error) => void) => {
+        events.push('server.close');
+        return origClose(cb);
       });
+    jest.spyOn(server, 'closeIdleConnections').mockImplementation(function (
+      this: Server,
+    ) {
+      events.push('server.closeIdleConnections');
+      return Server.prototype.closeIdleConnections.call(this);
+    });
     const origDisconnect = h.prisma.$disconnect.bind(h.prisma);
     jest.spyOn(h.prisma, '$disconnect').mockImplementation(async () => {
       events.push('prisma.$disconnect');

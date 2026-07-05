@@ -126,7 +126,14 @@ export class IdempotencyService {
           },
         });
         if (cleared.count > 0) {
-          return this.reserveOnce(userId, key, method, path, requestHash, false);
+          return this.reserveOnce(
+            userId,
+            key,
+            method,
+            path,
+            requestHash,
+            false,
+          );
         }
       }
       throw new ConflictDomainError(

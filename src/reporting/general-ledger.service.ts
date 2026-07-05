@@ -75,10 +75,7 @@ export class GeneralLedgerService {
 
     // Closing comes from the balance aggregate, not the running sum, so it
     // stays the true as-of balance even when the line list is truncated.
-    const closing = await this.balances.accountBalance(
-      accountId,
-      this.day(to),
-    );
+    const closing = await this.balances.accountBalance(accountId, this.day(to));
 
     return {
       account: {

@@ -23,7 +23,7 @@ period / year-end close.
    and glossary**. Read it before writing client code; it explains the things OpenAPI
    can't (auth/refresh, money format, error envelope, soft-delete, draft→post flow).
 
-When the two disagree about a *shape*, OpenAPI wins. For *behavior* (auth, roles,
+When the two disagree about a _shape_, OpenAPI wins. For _behavior_ (auth, roles,
 lifecycles, money), follow the guide.
 
 ## Non-negotiable rules
@@ -85,23 +85,31 @@ lifecycles, money), follow the guide.
     filter the current page client-side (search spans the whole dataset). `<2` chars is
     ignored. Accounts/tax-codes have **no** `?q=` (small sets — filter client-side).
 12. **Journal-entry preview.** `POST /v1/journal-entries/preview` returns the exact
-    balanced debit/credit entry a document *would* post — read-only, **no
+    balanced debit/credit entry a document _would_ post — read-only, **no
     `Idempotency-Key`**, any authenticated user. Body is discriminated by `nature`:
     `SALE`/`PURCHASE` use the `/tax/calculate` shape (`settlementAccountId` + `lines`);
     `PAYMENT` uses `{ direction, cashAccountId, allocations }`. Response is
     `{ lines:[{accountId,accountCode,accountName,debit,credit}], totalDebit, totalCredit,
-    balanced }` (4dp strings, inactive side `"0.0000"`). Use it for a live preview panel
+balanced }` (4dp strings, inactive side `"0.0000"`). Use it for a live preview panel
     in the document editor; it validates like a real post (same `422`s) but writes nothing.
+    Pass the document's `date` (optional) to also get the `409` a real post would give
+    for a closed period/year.
+13. **Line-count cap.** All `lines`/`allocations` arrays (invoices, bills, payments,
+    tax calc, journal preview) accept at most **100 items** → `400` beyond. GL report
+    spans are capped at **366 days** (`422`); GL/aging responses carry a `truncated`
+    flag when the 10,000-row cap fired.
 
 ## Do / Don't
 
 **Do**
+
 - Generate and commit a typed client from `openapi.json`; regenerate when the API changes.
 - Centralize fetch in one wrapper (auth header, 401-refresh, 429 backoff, envelope parsing).
 - Keep money as decimal strings end-to-end; format only at the view layer.
 - Gate UI by role from `GET /auth/me`, and still handle server 403s.
 
 **Don't**
+
 - Don't `parseFloat` money. Don't do float math on amounts.
 - Don't call business endpoints without the `/v1` prefix — they 404.
 - Don't assume `/docs` (Swagger UI) exists in production — it's gated behind
