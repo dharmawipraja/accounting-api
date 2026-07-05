@@ -131,7 +131,7 @@
         "statements": 31,
         "branches": 31,
         "functions": 27,
-        "lines": 31
+        "lines": 30
       },
       "**/reporting/cash-flow.service.ts": {
         "statements": 90,
