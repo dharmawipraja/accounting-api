@@ -24,7 +24,7 @@ starts `api` (gated on `migrate` succeeding), `caddy`, and `backup`. `migrate` r
 **before** the app and never in-process.
 
 ## Health & shutdown
-- `api` is healthy when `/health` returns 200; Caddy proxies only a started app.
+- `api` is healthy when `/ready` returns 200 (DB + Redis reachable — a dependency outage now marks the container unhealthy); `/health` stays a bare liveness probe. Caddy proxies only a started app.
 - `SIGTERM` (e.g. `docker compose ... stop api`) triggers a graceful Nest shutdown
   (in-flight requests finish within `stop_grace_period` = 30s; Prisma disconnects).
 

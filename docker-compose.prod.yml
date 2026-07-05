@@ -32,13 +32,13 @@ services:
       DB_POOL_MAX: 15
       DB_STATEMENT_TIMEOUT_MS: 30000
     healthcheck:
-      test: ['CMD', 'node', '-e', "require('http').get('http://127.0.0.1:3000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      test: ['CMD', 'node', '-e', "require('http').get('http://127.0.0.1:3000/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 3
       start_period: 20s
-    # Must exceed worst-case drain: active requests are bounded by the 30s
-    # request timeout (idle keep-alive sockets are closed at shutdown start).
+    # Must exceed worst-case drain: active requests are bounded by the 40s
+    # socket requestTimeout (idle keep-alive sockets close at shutdown start).
     stop_grace_period: 45s
     restart: unless-stopped
     deploy:
