@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -15,9 +16,12 @@ import {
 } from '@nestjs/swagger';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../auth/role.enum';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { UserAdminService } from './user-admin.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import {
   CreateUserResponseDto,
   PaginatedUsersResponseDto,
@@ -47,5 +51,15 @@ export class UserAdminController {
   @ApiOkResponse({ type: UserResponseDto })
   get(@Param('id', ParseUUIDPipe) id: string): Promise<UserResponseDto> {
     return this.admin.getById(id);
+  }
+
+  @Patch(':id')
+  @ApiOkResponse({ type: UserResponseDto })
+  update(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateUserDto,
+  ): Promise<UserResponseDto> {
+    return this.admin.update(actor.id, id, dto);
   }
 }

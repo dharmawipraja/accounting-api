@@ -5,6 +5,7 @@ import { PrismaService } from '../src/common/prisma/prisma.service';
 import { AccountsService } from '../src/ledger/accounts/accounts.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
+import { UserAdminService } from '../src/users/user-admin.service';
 import { bootstrapTestApp } from './e2e-helpers';
 
 describe('User management (e2e)', () => {
@@ -252,6 +253,76 @@ describe('User management (e2e)', () => {
         .get('/v1/users/00000000-0000-0000-0000-000000000000')
         .set('Authorization', `Bearer ${adminToken}`)
         .expect(404);
+    });
+
+    it('PATCH updates name/role/isActive; role change revokes refresh tokens', async () => {
+      const created = await request(server())
+        .post('/v1/users')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ email: 'patch@um.test', name: 'P', role: 'VIEWER' })
+        .expect(201);
+      const { user, tempPassword } = created.body as {
+        user: { id: string };
+        tempPassword: string;
+      };
+      const pair = await app
+        .get(AuthService)
+        .login('patch@um.test', tempPassword);
+      const res = await request(server())
+        .patch(`/v1/users/${user.id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ role: 'ACCOUNTANT', name: 'Patched' })
+        .expect(200);
+      expect((res.body as { role: string; name: string }).role).toBe(
+        'ACCOUNTANT',
+      );
+      // Refresh family revoked by the role change:
+      await request(server())
+        .post('/v1/auth/refresh')
+        .send({ refreshToken: pair.refreshToken })
+        .expect(401);
+    });
+
+    it('self-guards: cannot change own role or deactivate self (422)', async () => {
+      await request(server())
+        .patch(`/v1/users/${adminId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ role: 'VIEWER' })
+        .expect(422);
+      await request(server())
+        .patch(`/v1/users/${adminId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ isActive: false })
+        .expect(422);
+      // Changing own NAME is allowed.
+      await request(server())
+        .patch(`/v1/users/${adminId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ name: 'Root Admin' })
+        .expect(200);
+    });
+
+    it('last-admin guard: an update that would leave zero active ADMINs is refused', async () => {
+      // The HTTP self-guard fires before the last-admin count when an admin
+      // targets themselves, so exercise the last-admin branch at the service
+      // layer with a DIFFERENT actor id (roles are enforced at HTTP, not in
+      // the service — this is the exact code path a second admin would hit).
+      const svc = app.get(UserAdminService);
+      const other = await app.get(UsersService).create({
+        email: 'actor@um.test',
+        password: 'secret123',
+        name: 'Actor',
+        role: 'ADMIN',
+      });
+      // Demote the extra admin back down so exactly one active ADMIN remains…
+      await svc.update(adminId, other.id, { role: 'VIEWER' });
+      // …then any non-self attempt to demote or deactivate the last one → 422.
+      await expect(
+        svc.update(other.id, adminId, { role: 'VIEWER' }),
+      ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+      await expect(
+        svc.update(other.id, adminId, { isActive: false }),
+      ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
     });
   });
 });
