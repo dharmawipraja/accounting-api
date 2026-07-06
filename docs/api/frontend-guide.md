@@ -284,9 +284,12 @@ than **2 characters** (after trimming) is ignored (the normal list is returned).
   `YYYY-MM-DD` strings.
 - Report query parameters:
   - `?asOf=YYYY-MM-DD` — **balance sheet**, **AR/AP aging**, **trial balance**,
-    account balance. Defaults to "today" if omitted.
+    account balance. Defaults to **today in WIB** (UTC+7; server-configurable via
+    `REPORT_UTC_OFFSET_MINUTES`) if omitted — still, prefer sending an explicit
+    `asOf` computed client-side so the user's own clock wins.
   - `?from=YYYY-MM-DD&to=YYYY-MM-DD` — **income statement**, **cash flow**,
-    **general ledger**. `from` must be on or before `to` (else `422 VALIDATION_FAILED`).
+    **general ledger**. `from` must be on or before `to` (else `422 VALIDATION_FAILED`);
+    the general-ledger span is capped at 366 days.
 - Periods are **monthly**, grouped by fiscal year (an integer like `2026`).
 
 ### traceId

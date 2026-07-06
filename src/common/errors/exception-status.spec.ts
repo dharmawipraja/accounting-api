@@ -14,6 +14,16 @@ describe('statusFromException', () => {
     expect(statusFromException(new HttpException('teapot', 418))).toBe(418);
   });
 
+  it('maps P2020 (value out of range, e.g. numeric overflow) to 400', () => {
+    // A >16-integer-digit money value that slips past DTO validation must
+    // degrade to a client error, not a 500 + Sentry incident.
+    expect(PRISMA_STATUS.P2020).toEqual({
+      status: 400,
+      code: 'INVALID_INPUT',
+      message: 'Value out of range',
+    });
+  });
+
   it('maps each known Prisma code per PRISMA_STATUS', () => {
     for (const [code, { status }] of Object.entries(PRISMA_STATUS)) {
       const err = new Prisma.PrismaClientKnownRequestError('m', {

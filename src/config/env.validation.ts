@@ -124,6 +124,13 @@ export class EnvVars {
   @IsInt()
   @Min(1000)
   REQUEST_TIMEOUT_MS?: number;
+
+  /** Minutes east of UTC for defaulted report "today" (WIB = 420). */
+  @IsOptional()
+  @IsInt()
+  @Min(-720)
+  @Max(840)
+  REPORT_UTC_OFFSET_MINUTES?: number;
 }
 
 export function validate(config: Record<string, unknown>): EnvVars {

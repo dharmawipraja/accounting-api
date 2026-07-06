@@ -12,6 +12,21 @@ describe('asOfOrToday', () => {
     expect(d).toBeInstanceOf(Date);
     expect(Number.isNaN(d.getTime())).toBe(false);
   });
+  it('resolves "today" in the report timezone (WIB), not the UTC day', () => {
+    // 2026-06-30T21:00Z is 2026-07-01 04:00 in WIB (UTC+7): the report day
+    // must be July 1 even though the UTC calendar still says June 30.
+    const d = asOfOrToday(undefined, new Date('2026-06-30T21:00:00Z'));
+    expect(d.toISOString().slice(0, 10)).toBe('2026-07-01');
+  });
+  it('rolls to the next WIB day during the late-UTC evening', () => {
+    // 2026-07-01T18:00Z is 2026-07-02 01:00 WIB.
+    const d = asOfOrToday(undefined, new Date('2026-07-01T18:00:00Z'));
+    expect(d.toISOString().slice(0, 10)).toBe('2026-07-02');
+  });
+  it('an explicit asOf is untouched by the timezone default', () => {
+    const d = asOfOrToday('2026-03-15', new Date('2026-07-01T18:00:00Z'));
+    expect(d.toISOString()).toBe('2026-03-15T00:00:00.000Z');
+  });
 });
 
 describe('dateRange', () => {

@@ -22,6 +22,9 @@ export const PRISMA_STATUS: Record<
   P2023: { status: 400, code: 'INVALID_INPUT', message: 'Invalid input' },
   P2000: { status: 400, code: 'INVALID_INPUT', message: 'Invalid input' },
   P2006: { status: 400, code: 'INVALID_INPUT', message: 'Invalid input' },
+  // Numeric overflow (e.g. a computed line amount exceeding Decimal(20,4)) is a
+  // client-input problem, not a system incident.
+  P2020: { status: 400, code: 'INVALID_INPUT', message: 'Value out of range' },
 };
 
 /**

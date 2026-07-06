@@ -26,4 +26,9 @@ describe('IsMoneyString', () => {
     expect(await check(' 5 ')).toBe(false); // no surrounding whitespace
     expect(await check('')).toBe(false);
   });
+  it('caps integer digits at 16 (the Decimal(20,4) column maximum)', async () => {
+    expect(await check('9999999999999999')).toBe(true); // 16 digits — max storable
+    expect(await check('9999999999999999.9999')).toBe(true);
+    expect(await check('10000000000000000')).toBe(false); // 17 digits — would overflow
+  });
 });
