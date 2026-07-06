@@ -115,6 +115,21 @@ describe('BusinessPartners (e2e)', () => {
       expect(body.data.every((p) => p.name !== 'CV Sinar Abadi')).toBe(true);
     });
 
+    it('finds a code containing a literal underscore (ILIKE metachars are escaped)', async () => {
+      const partners = app.get(BusinessPartnersService);
+      await partners.create({
+        code: 'CUST_UND',
+        name: 'PT Garis Bawah',
+        isCustomer: true,
+      });
+      const res = await request(app.getHttpServer() as App)
+        .get('/v1/partners?q=CUST_UND')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      const body = res.body as { data: { code: string }[] };
+      expect(body.data.some((p) => p.code === 'CUST_UND')).toBe(true);
+    });
+
     it('ignores a sub-min-length q (returns the normal list)', async () => {
       const res = await request(app.getHttpServer() as App)
         .get('/v1/partners?q=a&limit=5')

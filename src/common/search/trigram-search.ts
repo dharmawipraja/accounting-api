@@ -6,6 +6,14 @@ export const MIN_QUERY_LENGTH = 2;
 /** Trigram similarity cutoff for a fuzzy (non-substring) match. */
 const SIMILARITY_THRESHOLD = 0.3;
 
+/** Escape ILIKE metacharacters (\ % _) so a search term matches them literally
+ *  — 'CUST_001' must not also match 'CUST-001'. Postgres's default LIKE escape
+ *  character is backslash, so no ESCAPE clause is needed. Only the ILIKE arm
+ *  uses the escaped form; similarity() has no wildcards and keeps the raw q. */
+export function escapeLikePattern(q: string): string {
+  return q.replace(/[\\%_]/g, '\\$&');
+}
+
 export interface TrigramJoin {
   /** Joined table (constant), e.g. 'business_partners'. */
   table: string;
@@ -58,10 +66,11 @@ function buildSharedClauses(input: TrigramSearchInput): {
   match: Prisma.Sql;
 } {
   const refs = columnRefs(input);
+  const likePattern = escapeLikePattern(input.q);
   const match = Prisma.join(
     refs.map(
       (ref) =>
-        Prisma.sql`(${ref} ILIKE ('%' || ${input.q} || '%') OR similarity(${ref}, ${input.q}) > ${SIMILARITY_THRESHOLD})`,
+        Prisma.sql`(${ref} ILIKE ('%' || ${likePattern} || '%') OR similarity(${ref}, ${input.q}) > ${SIMILARITY_THRESHOLD})`,
     ),
     ' OR ',
   );

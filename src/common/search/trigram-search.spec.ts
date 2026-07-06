@@ -1,5 +1,9 @@
 import { Prisma } from '@prisma/client';
-import { MIN_QUERY_LENGTH, trigramSearch } from './trigram-search';
+import {
+  escapeLikePattern,
+  MIN_QUERY_LENGTH,
+  trigramSearch,
+} from './trigram-search';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** Capture Prisma.Sql objects passed to $queryRaw by trigramSearch. */
@@ -25,6 +29,34 @@ function makePrismaMock(): {
 describe('trigramSearch constants', () => {
   it('exposes sane MIN_QUERY_LENGTH', () => {
     expect(MIN_QUERY_LENGTH).toBe(2);
+  });
+});
+
+describe('escapeLikePattern', () => {
+  it('escapes ILIKE metacharacters so they match literally', () => {
+    expect(escapeLikePattern('CUST_001')).toBe('CUST\\_001');
+    expect(escapeLikePattern('50% off')).toBe('50\\% off');
+    expect(escapeLikePattern('a\\b')).toBe('a\\\\b');
+    expect(escapeLikePattern('plain')).toBe('plain');
+  });
+});
+
+describe('trigramSearch — ILIKE wildcard escaping', () => {
+  it('binds the escaped q for the ILIKE arm and the raw q for similarity()', async () => {
+    const { prisma, getCaptured } = makePrismaMock();
+    await trigramSearch(prisma, {
+      table: 'business_partners',
+      alias: 't',
+      ownColumns: ['code'],
+      filters: [],
+      q: 'CUST_001',
+      limit: 20,
+      offset: 0,
+    });
+    const idQuery = getCaptured()[0];
+    // The ILIKE bound value must be the escaped form; similarity() keeps raw q.
+    expect(idQuery.values).toContain('CUST\\_001');
+    expect(idQuery.values).toContain('CUST_001');
   });
 });
 
