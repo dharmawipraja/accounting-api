@@ -76,10 +76,53 @@ from one source while rotating a forged `X-Forwarded-For`; it should still 429
 ## Monitoring (optional)
 
 An optional observability overlay ships in `docker-compose.monitoring.yml`
-(Prometheus + Grafana + alertmanager + **Loki/Alloy log aggregation**). Enable it
-by adding `-f docker-compose.monitoring.yml` to the compose command and setting
-`GRAFANA_ADMIN_PASSWORD` in `.env`. Alert *delivery* activates via one env var
-(see below).
+(Prometheus + Grafana + alertmanager + **Loki/Alloy log aggregation**).
+The subsections below explain each piece; this checklist is the whole
+activation, in order:
+
+### Bring the stack up (checklist)
+
+1. **On the VM, add to the `.env`** next to the compose files:
+
+   ```bash
+   GRAFANA_ADMIN_PASSWORD=<strong password>        # required
+   ALERT_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...   # or ALERT_WEBHOOK_URL (see below)
+   # ALERT_SLACK_CHANNEL=#alerts                   # optional override
+   # ALERT_HEARTBEAT_URL=https://hc-ping.com/<uuid>  # optional dead-man's switch
+   ```
+
+2. **Deploy with the overlay added** (same command as always, one more `-f`):
+
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+     -f docker-compose.monitoring.yml up -d --build
+   ```
+
+3. **Confirm delivery is armed:** `docker compose logs alertmanager | head`
+   must show `alert delivery ACTIVE (...)` — a `WARN: no ALERT_*_URL set`
+   means step 1's variable didn't reach the container.
+
+4. **Open Grafana — via SSH tunnel.** Grafana (3001) and Prometheus (9090)
+   bind to `127.0.0.1` on the VM on purpose (not exposed through Caddy):
+
+   ```bash
+   ssh -L 3001:127.0.0.1:3001 -L 9090:127.0.0.1:9090 <user>@<vm>
+   ```
+
+   Then browse `http://localhost:3001` (admin / `GRAFANA_ADMIN_PASSWORD`).
+   The accounting dashboard and both datasources (Prometheus, Loki) are
+   auto-provisioned; logs live under **Explore → Loki**.
+
+5. **Fire-drill the alerting** (do this once — an alert channel you've never
+   seen a message in is not activated): `docker compose stop api`, wait ~3
+   minutes, confirm `ApiDown` lands in the channel, then
+   `docker compose start api` and confirm the resolved notice.
+
+6. **Create the external uptime check** (OPS-OBS-5): a free UptimeRobot /
+   healthchecks.io / Better Stack probe on `https://$DOMAIN/health`, 1-minute
+   interval — see the failure-domain note at the end of this section.
+
+Steps 1–5 are one sitting on the VM; step 6 is a two-minute signup anywhere.
 
 ### Logs (Loki + Alloy)
 
