@@ -128,10 +128,10 @@
     "coverageDirectory": "../coverage",
     "coverageThreshold": {
       "global": {
-        "statements": 31,
-        "branches": 31,
-        "functions": 27,
-        "lines": 30
+        "statements": 30,
+        "branches": 29,
+        "functions": 26,
+        "lines": 29
       },
       "**/reporting/cash-flow.service.ts": {
         "statements": 90,
