@@ -174,4 +174,84 @@ describe('User management (e2e)', () => {
       token = await login('temp@um.test', 'brand-new-pw-9');
     });
   });
+
+  describe('ADMIN user management', () => {
+    it('non-ADMIN gets 403 on /v1/users', async () => {
+      const t = await (async () => {
+        await app.get(UsersService).create({
+          email: 'acct@um.test',
+          password: 'secret123',
+          name: 'A',
+          role: 'ACCOUNTANT',
+        });
+        return login('acct@um.test', 'secret123');
+      })();
+      await request(server())
+        .get('/v1/users')
+        .set('Authorization', `Bearer ${t}`)
+        .expect(403);
+    });
+
+    it('creates a user, returns the temp password once, and forces change on first login', async () => {
+      const res = await request(server())
+        .post('/v1/users')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ email: 'new@um.test', name: 'New', role: 'APPROVER' })
+        .expect(201);
+      const body = res.body as {
+        user: {
+          id: string;
+          email: string;
+          role: string;
+          mustChangePassword: boolean;
+        };
+        tempPassword: string;
+      };
+      expect(body.user.email).toBe('new@um.test');
+      expect(body.user.mustChangePassword).toBe(true);
+      expect(body.tempPassword).toHaveLength(16);
+      expect(JSON.stringify(body)).not.toContain('passwordHash');
+      // Temp password logs in but is immediately gated.
+      const t = await login('new@um.test', body.tempPassword);
+      const gated = await request(server())
+        .get('/v1/ledger/accounts')
+        .set('Authorization', `Bearer ${t}`)
+        .expect(403);
+      expect((gated.body as { code: string }).code).toBe(
+        'PASSWORD_CHANGE_REQUIRED',
+      );
+    });
+
+    it('duplicate email → 409; lists come enveloped with filters', async () => {
+      await request(server())
+        .post('/v1/users')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ email: 'new@um.test', name: 'Dup', role: 'VIEWER' })
+        .expect(409);
+      const list = await request(server())
+        .get('/v1/users?role=APPROVER&isActive=true')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      const body = list.body as {
+        data: { role: string }[];
+        total: number;
+        limit: number;
+        offset: number;
+      };
+      expect(body.limit).toBe(50);
+      expect(body.data.every((u) => u.role === 'APPROVER')).toBe(true);
+      expect(body.total).toBeGreaterThanOrEqual(1);
+    });
+
+    it('gets one user by id; 404 for unknown', async () => {
+      await request(server())
+        .get(`/v1/users/${adminId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      await request(server())
+        .get('/v1/users/00000000-0000-0000-0000-000000000000')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(404);
+    });
+  });
 });

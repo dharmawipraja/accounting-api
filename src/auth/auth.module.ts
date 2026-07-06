@@ -17,6 +17,6 @@ import { RefreshTokenPurgeService } from './refresh-token-purge.service';
     RefreshTokenPurgeService,
   ],
   controllers: [AuthController],
-  exports: [AuthService],
+  exports: [AuthService, RefreshTokenService],
 })
 export class AuthModule {}

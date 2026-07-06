@@ -14,6 +14,7 @@ export interface CreateUserInput {
   password: string;
   name: string;
   role: Role;
+  mustChangePassword?: boolean;
 }
 
 export type SafeUser = Omit<User, 'passwordHash'>;
@@ -44,6 +45,7 @@ export class UsersService {
           passwordHash,
           name: input.name,
           role: input.role,
+          mustChangePassword: input.mustChangePassword ?? false,
         },
       });
       return stripHash(created);

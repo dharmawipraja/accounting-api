@@ -14,6 +14,7 @@ import { resolveEnvFilePaths } from './config/env-file-paths';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
+import { UserAdminModule } from './users/user-admin.module';
 import { CompanyModule } from './company/company.module';
 import { LedgerModule } from './ledger/ledger.module';
 import { TaxModule } from './tax/tax.module';
@@ -81,6 +82,7 @@ import {
     PrismaModule,
     UsersModule,
     AuthModule,
+    UserAdminModule,
     CompanyModule,
     LedgerModule,
     TaxModule,
