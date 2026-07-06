@@ -23,4 +23,11 @@ describe('DB runtime config (integration)', () => {
     >`SHOW statement_timeout`;
     expect(rows[0].statement_timeout).toBe('30s');
   });
+
+  it('enforces the payment_allocations amount > 0 CHECK at the DB layer', async () => {
+    const rows = await prisma.$queryRaw<{ conname: string }[]>`
+      SELECT conname FROM pg_constraint
+      WHERE conname = 'payment_allocations_amount_positive'`;
+    expect(rows).toHaveLength(1);
+  });
 });
