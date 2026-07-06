@@ -52,8 +52,10 @@ POST /auth/login      { "email": "...", "password": "..." }
   This returns a **fresh pair**. Persist both and retry the original request once.
   If refresh itself fails (401), the session is over → send the user back to login.
 
-- `GET /auth/me` → `{ id, email, role }` for the currently authenticated user. Use
-  this on app load to hydrate the user and drive role-gated UI.
+- `GET /auth/me` → `{ id, email, role, mustChangePassword }` for the currently
+  authenticated user. Use this on app load to hydrate the user, drive role-gated UI,
+  and route a pending-password user straight to the change-password screen (see
+  [Forced password change](#forced-password-change)).
 - **Server-side logout is supported.** Call `POST /auth/logout { "refreshToken": "..." }` to revoke the current device's refresh token family (public endpoint, throttled). Call `POST /auth/logout-all` (authenticated) to revoke all sessions for the current user. On logout, also discard both tokens client-side.
 
 ### Rate limiting (throttle)
@@ -238,6 +240,7 @@ Pagination is **not uniform** — check per endpoint:
   - `GET /v1/sales-invoices` (filters: `q, partnerId, status, limit, offset`)
   - `GET /v1/purchase-bills` (filters: `q, partnerId, status, limit, offset`)
   - `GET /v1/payments` (filters: `q, partnerId, direction, status, limit, offset`)
+  - `GET /v1/users` (ADMIN-only)
 
   Read items from the `.data` array on these responses.
 
@@ -307,6 +310,27 @@ operators can correlate the client error with server logs.
   reusable** — you can create a new record with the same code afterward.
 - Treat a 404 on a previously-known id as "it was deleted", not necessarily a bug.
 
+### Forced password change
+
+Admin `POST /v1/users` (create) and `POST /v1/users/:id/reset-password` return
+`{ user, tempPassword }` — the **`tempPassword` is visible exactly once**, in that
+response. Store it nowhere; show it to the operator once (e.g. a copy-to-clipboard
+field) and let it go. That user is created/reset with `mustChangePassword: true`.
+
+- While `mustChangePassword` is `true`, **every** endpoint returns
+  **`403` with code `PASSWORD_CHANGE_REQUIRED`** except `POST /v1/auth/change-password`,
+  `GET /auth/me`, `POST /auth/logout`, and `POST /auth/logout-all`.
+- Handle this 403 globally (same place you handle 401-refresh): redirect to a
+  change-password screen. Submit `POST /v1/auth/change-password
+  { "currentPassword": "<the temp password>", "newPassword": "..." }`
+  (`newPassword` 8–128 chars). A wrong `currentPassword` is `401`.
+- Success revokes **all** of the user's refresh sessions — other devices are signed
+  out immediately; the tab that just changed the password keeps working until its
+  current access token expires (≤15 min), since the access token itself isn't a
+  refresh family.
+- `GET /auth/me` includes `mustChangePassword` — check it on app load so you can
+  route straight to the change-password screen instead of waiting for the first 403.
+
 ---
 
 ## 3. Role matrix
@@ -314,12 +338,13 @@ operators can correlate the client error with server logs.
 Four roles exist: **VIEWER, ACCOUNTANT, APPROVER, ADMIN**.
 
 **All read (`GET`) endpoints are available to any authenticated user**, including
-VIEWER — reads carry no `@Roles` restriction. `POST /v1/tax/calculate` and
-`POST /v1/journal-entries/preview` are pure, read-only previews and are likewise
+VIEWER — reads carry no `@Roles` restriction — **except `/v1/users/*`, which is
+ADMIN-only end-to-end, reads included** (see the table below). `POST /v1/tax/calculate`
+and `POST /v1/journal-entries/preview` are pure, read-only previews and are likewise
 available to any authenticated user. The table below therefore
-lists only the **mutating / privileged** endpoints, where the role actually gates
-access. All paths below are under `/v1` (e.g. `POST /partners` means
-`POST /v1/partners`).
+lists the **mutating / privileged** endpoints — plus `/v1/users/*` reads, the one
+place a `GET` is role-gated — where the role actually gates access. All paths below
+are under `/v1` (e.g. `POST /partners` means `POST /v1/partners`).
 
 A "✓" means that role is allowed. `403 FORBIDDEN` is returned otherwise.
 
@@ -348,6 +373,7 @@ A "✓" means that role is allowed. `403 FORBIDDEN` is returned otherwise.
 | Post **opening balances** (`POST /ledger/opening-balances`)                                                      |        |            |          |   ✓   |
 | Run / reopen **year-end close** (`POST /close/year-end`, `POST /close/year-end/:fy/reopen`)                      |        |            |          |   ✓   |
 | Update **company settings** (`PATCH /company/settings`)                                                          |        |            |          |   ✓   |
+| Manage **users** — all of `/users` (`GET`/`POST`/`PATCH`/`DELETE`, incl. `:id/reset-password`)                    |        |            |          |   ✓   |
 | Read **audit log** (`GET /audit`)                                                                                |        |            |          |   ✓   |
 | `GET /auth/admin-only` (RBAC smoke)                                                                              |        |            |          |   ✓   |
 
@@ -581,8 +607,18 @@ no auth.
 - `POST   /auth/refresh` · public · exchange a refresh token for a new pair
 - `POST   /auth/logout` · public (throttled) · revoke the current device's refresh token family `{ "refreshToken": "..." }`
 - `POST   /auth/logout-all` · any (authenticated) · revoke all sessions for the current user
-- `GET    /auth/me` · any · current user `{ id, email, role }`
+- `GET    /auth/me` · any · current user `{ id, email, role, mustChangePassword }`
 - `GET    /auth/admin-only` · ADMIN · RBAC smoke endpoint
+- `POST   /auth/change-password` · any (authenticated) · self-service `{currentPassword, newPassword}`; revokes **all** the caller's refresh sessions (see [Forced password change](#forced-password-change))
+
+### Users (ADMIN)
+
+- `POST   /v1/users` · ADMIN · create `{email, name, role}` → `201 { user, tempPassword }` (temp password shown once)
+- `GET    /v1/users` · ADMIN · **enveloped** list `{ data, total, limit, offset }` (filters: `role, isActive, limit, offset`; no `?q=`)
+- `GET    /v1/users/:id` · ADMIN · get one user
+- `PATCH  /v1/users/:id` · ADMIN · update `{name?, role?, isActive?}` — role change / deactivation revokes the target's refresh sessions and takes effect on the target's **next request**
+- `POST   /v1/users/:id/reset-password` · ADMIN · issue a new temp password → `200 { user, tempPassword }` (temp password shown once); revokes the target's refresh sessions
+- `DELETE /v1/users/:id` · ADMIN · soft-delete (204); revokes the target's refresh sessions
 
 ### Health / ops (public, unauthenticated, version-neutral — no `/v1` prefix)
 
@@ -707,7 +743,8 @@ schema directly in an array.
 
 | Domain           | Response schema(s)                                                                                                                                                                             |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Auth             | `TokenPairDto` (login/refresh) · `AuthenticatedUserDto` (`/auth/me`) · `OkFlagDto` (`/auth/admin-only`)                                                                                        |
+| Auth             | `TokenPairDto` (login/refresh) · `AuthenticatedUserDto` (`/auth/me`, now incl. `mustChangePassword`) · `OkFlagDto` (`/auth/admin-only`, `/auth/change-password`)                                |
+| Users            | single → `UserResponseDto` · list → `PaginatedUsersResponseDto` (envelope) · create / reset-password → `CreateUserResponseDto` (`{ user, tempPassword }`)                                      |
 | Health / ops     | `HealthStatusDto` · `ReadinessStatusDto` · `/metrics` → `text/plain` (not JSON)                                                                                                                |
 | Accounts         | list → `AccountListResponseDto` (envelope) · single → `AccountResponseDto` · balance → `AccountBalanceDto` · trial balance → `TrialBalanceDto`                                                 |
 | Journal          | `JournalEntryResponseDto` (incl. `JournalLineResponseDto[]`) · list → `JournalEntryListResponseDto` (envelope; items `JournalEntryListItemDto`) · opening-balances → `JournalEntryResponseDto` |
@@ -753,6 +790,7 @@ Screens → the endpoints they consume:
 - **Tax** — `/v1/tax/codes` management + live `/v1/tax/calculate` preview inside invoice/bill editors.
 - **Audit log** — `/v1/audit` (ADMIN only; bare-array response, filterable, `limit`/`offset` paging).
 - **Company settings** — `/v1/company/settings` (read any, edit ADMIN).
+- **User admin** — `/v1/users/*` CRUD + reset-password, ADMIN-only screen; surface the one-time temp password with a copy button.
 
 ### Cross-cutting work to build once
 
@@ -769,8 +807,8 @@ Screens → the endpoints they consume:
   every call to a covered write endpoint (invoice/bill/payment create/post/void,
   year-end close, journal/opening-balances). Store the key before the call so you
   can replay it on retry without changing the body.
-- **Pagination helpers** — build one reusable envelope reader for the seven enveloped
+- **Pagination helpers** — build one reusable envelope reader for the eight enveloped
   lists (`accounts`, `tax-codes`, `journal-entries`, `partners`, `sales-invoices`,
-  `purchase-bills`, `payments`); treat remaining bare-array lists (`periods`, `audit`)
+  `purchase-bills`, `payments`, `users`); treat remaining bare-array lists (`periods`, `audit`)
   as plain arrays. **BREAKING (from prior guide):** `accounts` and `tax-codes` now
   return the envelope — unwrap `.data` instead of using the response directly as an array.

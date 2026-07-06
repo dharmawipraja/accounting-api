@@ -132,6 +132,13 @@ npm run create-admin -- admin@acme.co 's3cret-pw' "Budi Admin"
 This hashes the password with argon2 and upserts an `ADMIN`; it loads `DATABASE_URL`
 from `.env.development`. Run it after the DB is migrated.
 
+> **`create-admin` is bootstrap-only** — use it once to seed the first ADMIN on a
+> fresh database. Day-to-day user administration (creating ACCOUNTANT/APPROVER/
+> VIEWER accounts, resetting passwords, deactivating/deleting users, changing
+> roles) goes through the API itself: `POST/GET /v1/users`, `GET/PATCH
+> /v1/users/:id`, `POST /v1/users/:id/reset-password`, `DELETE /v1/users/:id`
+> (all ADMIN-only). See [`../api/frontend-guide.md`](../api/frontend-guide.md).
+
 ## 4. Run it
 
 ```bash

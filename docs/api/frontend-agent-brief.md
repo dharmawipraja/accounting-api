@@ -98,6 +98,16 @@ balanced }` (4dp strings, inactive side `"0.0000"`). Use it for a live preview p
     tax calc, journal preview) accept at most **100 items** → `400` beyond. GL report
     spans are capped at **366 days** (`422`); GL/aging responses carry a `truncated`
     flag when the 10,000-row cap fired.
+14. **Handle `403 PASSWORD_CHANGE_REQUIRED` globally.** Any authenticated call can
+    return it once a user has `mustChangePassword: true` (fresh admin-created/reset
+    accounts). Catch it in the same central place as 401-refresh and redirect to a
+    change-password screen (`POST /v1/auth/change-password { currentPassword,
+    newPassword }`); the allowlist that still works while pending is that endpoint
+    plus `GET /auth/me`, `POST /auth/logout`, `POST /auth/logout-all`. When you create
+    or reset-password a user, the response's `tempPassword` is shown **exactly once**
+    — display it with a copy button and **never store it** (state, storage, or logs);
+    it can't be retrieved again. `/v1/users/*` is **ADMIN-only**, including its `GET`s
+    (the one place a read isn't open to every authenticated role).
 
 ## Do / Don't
 

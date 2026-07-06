@@ -67,8 +67,11 @@ idempotency response cache (`idempotency_keys.response` stores raw JSON).
 
 Body `{currentPassword, newPassword}` (`newPassword`: `@MinLength(8)`,
 `@MaxLength(128)`). Re-verifies the current password (argon2), re-hashes,
-clears `mustChangePassword`, and revokes the user's **other** refresh families
-(current session continues). Wrong current password → 401-family domain error.
+clears `mustChangePassword`, and revokes **all** the user's refresh families
+(the current access token stays valid ≤15 min; other devices die immediately).
+Revoking only *other* families is impossible here — change-password carries
+the access token, which has no refresh-family identity. Wrong current
+password → 401-family domain error.
 
 ### Forced-change enforcement
 
