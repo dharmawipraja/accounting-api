@@ -26,6 +26,7 @@ import { IdempotencyModule } from './common/idempotency/idempotency.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
+import { PasswordChangeGuard } from './auth/guards/password-change.guard';
 import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
 import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout.interceptor';
 import { HttpDrainService } from './common/http/http-drain.service';
@@ -96,6 +97,7 @@ import {
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: UserThrottlerGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: PasswordChangeGuard },
     {
       provide: APP_INTERCEPTOR,
       useFactory: () => new RequestTimeoutInterceptor(REQUEST_TIMEOUT_MS),

@@ -77,6 +77,18 @@ export class AuthService {
     return { ok: true };
   }
 
+  /** Change own password, then revoke ALL refresh families: other devices die
+   *  now; the current access token stays valid ≤15m, after which the user
+   *  logs in with the new password. */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    await this.users.changePassword(userId, currentPassword, newPassword);
+    await this.refreshTokens.revokeAllForUser(userId);
+  }
+
   private async issueTokens(
     user: Pick<AuthenticatedUser, 'id' | 'email' | 'role'>,
     jti: string,

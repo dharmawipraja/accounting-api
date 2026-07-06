@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import * as argon2 from 'argon2';
 import { randomBytes } from 'crypto';
 import { Role, User } from '@prisma/client';
@@ -94,6 +94,28 @@ export class UsersService {
     if (user) return argon2.verify(user.passwordHash, password);
     await argon2.verify(await this.decoyHash(), password);
     return false;
+  }
+
+  /** Self-service password change: verifies the current password, re-hashes,
+   *  clears mustChangePassword. Caller is responsible for session revocation. */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const user = await this.prisma.client.user.findFirst({
+      where: { id: userId },
+    });
+    if (!user || !(await argon2.verify(user.passwordHash, currentPassword))) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+    await this.prisma.client.user.update({
+      where: { id: userId },
+      data: {
+        passwordHash: await argon2.hash(newPassword),
+        mustChangePassword: false,
+      },
+    });
   }
 
   async softDelete(id: string, deletedBy: string): Promise<void> {

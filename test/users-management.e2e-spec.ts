@@ -91,4 +91,87 @@ describe('User management (e2e)', () => {
         .expect(201);
     });
   });
+
+  describe('forced password change', () => {
+    let uid: string;
+    let token: string;
+
+    beforeAll(async () => {
+      const u = await app.get(UsersService).create({
+        email: 'temp@um.test',
+        password: 'temp-pass-123',
+        name: 'T',
+        role: 'ACCOUNTANT',
+      });
+      uid = u.id;
+      await prisma.client.user.update({
+        where: { id: uid },
+        data: { mustChangePassword: true },
+      });
+      token = await login('temp@um.test', 'temp-pass-123');
+    });
+
+    it('blocks business endpoints with 403 PASSWORD_CHANGE_REQUIRED', async () => {
+      const res = await request(server())
+        .get('/v1/ledger/accounts')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+      expect((res.body as { code: string }).code).toBe(
+        'PASSWORD_CHANGE_REQUIRED',
+      );
+    });
+
+    it('still allows /auth/me while pending', async () => {
+      const res = await request(server())
+        .get('/v1/auth/me')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(
+        (res.body as { mustChangePassword: boolean }).mustChangePassword,
+      ).toBe(true);
+    });
+
+    it('rejects a wrong current password (401) and a short new one (400)', async () => {
+      await request(server())
+        .post('/v1/auth/change-password')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ currentPassword: 'wrong', newPassword: 'long-enough-pw' })
+        .expect(401);
+      await request(server())
+        .post('/v1/auth/change-password')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ currentPassword: 'temp-pass-123', newPassword: 'short' })
+        .expect(400);
+    });
+
+    it('change-password unblocks the user and revokes refresh tokens', async () => {
+      const pair = await app
+        .get(AuthService)
+        .login('temp@um.test', 'temp-pass-123');
+      await request(server())
+        .post('/v1/auth/change-password')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          currentPassword: 'temp-pass-123',
+          newPassword: 'brand-new-pw-9',
+        })
+        .expect(200);
+      // Unblocked on the next request (flag cleared, fresh read per request).
+      await request(server())
+        .get('/v1/ledger/accounts')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      // Old refresh token is revoked.
+      await request(server())
+        .post('/v1/auth/refresh')
+        .send({ refreshToken: pair.refreshToken })
+        .expect(401);
+      // New password works; old one doesn't.
+      await request(server())
+        .post('/v1/auth/login')
+        .send({ email: 'temp@um.test', password: 'temp-pass-123' })
+        .expect(401);
+      token = await login('temp@um.test', 'brand-new-pw-9');
+    });
+  });
 });
