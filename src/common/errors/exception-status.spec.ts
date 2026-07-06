@@ -1,12 +1,22 @@
 import { HttpException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { statusFromException, PRISMA_STATUS } from './exception-status';
-import { ConflictDomainError, ValidationFailedError } from './domain-errors';
+import {
+  ConflictDomainError,
+  ValidationFailedError,
+  PasswordChangeRequiredError,
+} from './domain-errors';
 
 describe('statusFromException', () => {
   it('maps a DomainError to its own .status', () => {
     expect(statusFromException(new ConflictDomainError('dup'))).toBe(409);
     expect(statusFromException(new ValidationFailedError('bad'))).toBe(422);
+  });
+
+  it('maps PasswordChangeRequiredError to 403', () => {
+    expect(
+      statusFromException(new PasswordChangeRequiredError('change it')),
+    ).toBe(403);
   });
 
   it('maps an HttpException to its getStatus()', () => {

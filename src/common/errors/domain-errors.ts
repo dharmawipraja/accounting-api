@@ -42,6 +42,13 @@ export class ForbiddenDomainError extends DomainError {
   readonly status = 403;
 }
 
+/** Thrown while a user's mustChangePassword flag is set — the frontend
+ *  redirects to the change-password screen on this code. */
+export class PasswordChangeRequiredError extends DomainError {
+  readonly code = 'PASSWORD_CHANGE_REQUIRED';
+  readonly status = 403;
+}
+
 export class UnbalancedEntryError extends DomainError {
   readonly code = 'UNBALANCED_ENTRY';
   readonly status = 422;
