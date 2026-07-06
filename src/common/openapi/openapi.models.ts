@@ -36,6 +36,7 @@ export class AuthenticatedUserDto {
   @ApiProperty({ example: 'admin@x.com' }) email!: string;
   @ApiProperty({ enum: ['ADMIN', 'ACCOUNTANT', 'APPROVER', 'VIEWER'] })
   role!: string;
+  @ApiProperty() mustChangePassword!: boolean;
 }
 
 /** GET /auth/admin-only — RBAC smoke surface. */

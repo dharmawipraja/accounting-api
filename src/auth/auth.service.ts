@@ -78,7 +78,7 @@ export class AuthService {
   }
 
   private async issueTokens(
-    user: AuthenticatedUser,
+    user: Pick<AuthenticatedUser, 'id' | 'email' | 'role'>,
     jti: string,
   ): Promise<TokenPair> {
     const accessToken = await this.jwt.signAsync(
