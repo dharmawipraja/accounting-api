@@ -1,0 +1,15 @@
+# ACTIVE-delivery template (generic webhook — a custom handler, or Discord with
+# a `/slack`-suffixed URL; for Slack use alertmanager-slack.yml instead: Slack
+# incoming webhooks reject Alertmanager's generic JSON). The alertmanager
+# entrypoint (docker-compose.monitoring.yml) substitutes __ALERT_WEBHOOK_URL__
+# from $ALERT_WEBHOOK_URL at startup; alertmanager.yml is the inert fallback.
+route:
+  receiver: default
+  group_by: ['alertname']
+  # Re-notify unresolved alerts so one dropped delivery isn't forever silent.
+  repeat_interval: 4h
+receivers:
+  - name: default
+    webhook_configs:
+      - url: '__ALERT_WEBHOOK_URL__'
+        send_resolved: true

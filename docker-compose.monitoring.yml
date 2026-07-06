@@ -1,6 +1,14 @@
+# Same rotation caps as the prod compose: bounded disk, recent history survives.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: '50m'
+    max-file: '5'
+
 services:
   prometheus:
     image: prom/prometheus@sha256:c6b27ea434f8389bfe233fbc7be381cf50587c286e871bc842008f5a1b1908a7 # was :latest, pinned 2026-07-06
+    logging: *default-logging
     restart: unless-stopped
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -10,12 +18,45 @@ services:
 
   alertmanager:
     image: prom/alertmanager@sha256:9e082985f56f4c8c9f724e18f2288c6708f472e56a5286b8863d080434ea065d # was :latest, pinned 2026-07-06
+    logging: *default-logging
     restart: unless-stopped
+    # One-var alert-delivery activation (set in .env next to the compose files):
+    #   ALERT_SLACK_WEBHOOK_URL  → native Slack receiver (+ ALERT_SLACK_CHANNEL,
+    #                              default '#alerts')
+    #   ALERT_WEBHOOK_URL        → generic webhook receiver (custom handler, or
+    #                              Discord with a `/slack`-suffixed URL)
+    # Neither set → the committed inert config: alerts evaluate, reach no one.
+    environment:
+      ALERT_SLACK_WEBHOOK_URL: ${ALERT_SLACK_WEBHOOK_URL:-}
+      ALERT_SLACK_CHANNEL: ${ALERT_SLACK_CHANNEL:-#alerts}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - |
+        if [ -n "$$ALERT_SLACK_WEBHOOK_URL" ]; then
+          echo "alert delivery ACTIVE (slack receiver)"
+          sed -e "s|__ALERT_SLACK_WEBHOOK_URL__|$$ALERT_SLACK_WEBHOOK_URL|g" \
+              -e "s|__ALERT_SLACK_CHANNEL__|$$ALERT_SLACK_CHANNEL|g" \
+              /etc/alertmanager/alertmanager-slack.yml > /tmp/alertmanager.yml
+        elif [ -n "$$ALERT_WEBHOOK_URL" ]; then
+          echo "alert delivery ACTIVE (generic webhook receiver)"
+          sed "s|__ALERT_WEBHOOK_URL__|$$ALERT_WEBHOOK_URL|g" \
+              /etc/alertmanager/alertmanager-webhook.yml > /tmp/alertmanager.yml
+        else
+          echo "WARN: no ALERT_*_URL set — alerts will evaluate but reach no one" >&2
+          cp /etc/alertmanager/alertmanager.yml /tmp/alertmanager.yml
+        fi
+        exec /bin/alertmanager --config.file=/tmp/alertmanager.yml --storage.path=/alertmanager
     volumes:
       - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./monitoring/alertmanager-slack.yml:/etc/alertmanager/alertmanager-slack.yml:ro
+      - ./monitoring/alertmanager-webhook.yml:/etc/alertmanager/alertmanager-webhook.yml:ro
+      # Persist silences/notification state across restarts.
+      - alertmanager_data:/alertmanager
 
   node-exporter:
     image: prom/node-exporter@sha256:e9cff4fc67b1818f8c97adb115b9f12c9a54b533de86765d4a0effc01b357205 # was :latest, pinned 2026-07-06
+    logging: *default-logging
     restart: unless-stopped
     command: ['--collector.textfile.directory=/backup-metrics']
     volumes:
@@ -23,6 +64,7 @@ services:
 
   grafana:
     image: grafana/grafana@sha256:121a7a9ece6dc10b969f1f96eed64b4f07dfac0d0b8abc070f7cb83bbde86f63 # was :latest, pinned 2026-07-06
+    logging: *default-logging
     restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
@@ -34,6 +76,7 @@ services:
 
 volumes:
   prometheus_data:
+  alertmanager_data:
   grafana_data:
   backup_metrics:
     external: true

@@ -1,0 +1,17 @@
+# ACTIVE-delivery template (native Slack). The alertmanager entrypoint
+# (docker-compose.monitoring.yml) substitutes __ALERT_SLACK_WEBHOOK_URL__ /
+# __ALERT_SLACK_CHANNEL__ from $ALERT_SLACK_WEBHOOK_URL / $ALERT_SLACK_CHANNEL
+# at startup; alertmanager.yml is the inert fallback.
+route:
+  receiver: default
+  group_by: ['alertname']
+  # Re-notify unresolved alerts so one dropped delivery isn't forever silent.
+  repeat_interval: 4h
+receivers:
+  - name: default
+    slack_configs:
+      - api_url: '__ALERT_SLACK_WEBHOOK_URL__'
+        channel: '__ALERT_SLACK_CHANNEL__'
+        send_resolved: true
+        title: '{{ .Status | toUpper }} {{ .CommonLabels.alertname }}'
+        text: '{{ range .Alerts }}{{ .Annotations.summary }}{{ "\n" }}{{ end }}'

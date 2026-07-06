@@ -1,17 +1,14 @@
+# INERT fallback config — alerts evaluate but reach no one. To activate
+# delivery, set ONE env var in `.env` next to the compose files (no YAML
+# editing needed — the alertmanager entrypoint in docker-compose.monitoring.yml
+# substitutes it into the matching template at startup):
+#   ALERT_SLACK_WEBHOOK_URL  → monitoring/alertmanager-slack.yml (native Slack;
+#                              optional ALERT_SLACK_CHANNEL, default '#alerts')
+#   ALERT_WEBHOOK_URL        → monitoring/alertmanager-webhook.yml (generic
+#                              webhook: custom handler, or Discord with a
+#                              `/slack`-suffixed URL)
 route:
   receiver: default
   group_by: ['alertname']
 receivers:
   - name: default
-    # ALERTS REACH NO ONE until you configure a receiver below. To activate,
-    # uncomment ONE block below and set its URL — `route.receiver` already points here.
-    #
-    # webhook_configs:        # generic — works for a custom handler, or Slack/Discord
-    #   - url: 'https://hooks.slack.com/services/XXX/YYY/ZZZ'
-    #     send_resolved: true
-    #
-    # For native Slack formatting instead of a raw webhook:
-    # slack_configs:
-    #   - api_url: 'https://hooks.slack.com/services/XXX/YYY/ZZZ'
-    #     channel: '#alerts'
-    #     send_resolved: true

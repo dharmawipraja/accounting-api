@@ -86,12 +86,22 @@ needs a real receiver wired in `monitoring/alertmanager.yml` (see the ops backlo
 
 ### Activate alert delivery (OPS-OBS-1)
 
-By default `monitoring/alertmanager.yml` has an inert `default` receiver — rules in
-`monitoring/alerts.yml` fire but reach no one. To deliver alerts, edit
-`monitoring/alertmanager.yml`: uncomment the `webhook_configs` (generic; point at a
-Slack incoming webhook, Discord, or your handler) **or** `slack_configs`, set the URL,
-and ensure `route.receiver` names it. Restart alertmanager. Send a test by triggering a
-rule (e.g. stop the api so `ApiDown` fires) and confirm it lands in the channel.
+Delivery is **env-driven** — no YAML editing. Set ONE variable in the `.env` next
+to the compose files and restart alertmanager:
+
+- `ALERT_SLACK_WEBHOOK_URL` — native Slack receiver (optional
+  `ALERT_SLACK_CHANNEL`, default `#alerts`). Use this for Slack: incoming
+  webhooks reject Alertmanager's generic JSON, so a Slack URL in the generic
+  var would 400 and drop every alert.
+- `ALERT_WEBHOOK_URL` — generic webhook receiver (a custom handler, or Discord
+  with a `/slack`-suffixed URL).
+
+The alertmanager entrypoint substitutes the URL into
+`monitoring/alertmanager-slack.yml` / `alertmanager-webhook.yml` at startup and
+logs `alert delivery ACTIVE (...)`; with neither var set it falls back to the
+inert `monitoring/alertmanager.yml` and logs a WARN. Unresolved alerts re-notify
+every 4h. Send a test by triggering a rule (e.g. stop the api so `ApiDown`
+fires) and confirm it lands in the channel.
 
 ## Staging without a public domain
 Don't edit the committed `Caddyfile` (it would dirty the repo and risk shipping a

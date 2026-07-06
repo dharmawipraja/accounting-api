@@ -1,5 +1,15 @@
+# Rotated json-file logging on every long-running service: without caps the
+# log file grows unbounded, and recent history should survive until rotation
+# even across `up -d --build` (which discards the previous container's logs).
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: '50m'
+    max-file: '5'
+
 services:
   migrate:
+    logging: *default-logging
     build:
       context: .
       target: build
@@ -17,6 +27,7 @@ services:
       - /tmp
 
   api:
+    logging: *default-logging
     init: true
     read_only: true
     cap_drop:
@@ -50,6 +61,7 @@ services:
           memory: 256M
 
   caddy:
+    logging: *default-logging
     image: caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
     restart: unless-stopped
     depends_on:
@@ -66,6 +78,7 @@ services:
       - caddy_config:/config
 
   db:
+    logging: *default-logging
     restart: unless-stopped
     command:
       - postgres
@@ -85,6 +98,7 @@ services:
           memory: 1536M
 
   backup:
+    logging: *default-logging
     image: postgres:16@sha256:fe03a7605299a34ddf5e4f285dff78c3d7190a576b3c6b46f2fcff69f4bffd54
     restart: unless-stopped
     depends_on:
@@ -104,6 +118,7 @@ services:
       - backup_metrics:/backup-metrics
 
   redis:
+    logging: *default-logging
     restart: unless-stopped
     deploy:
       resources:
