@@ -95,7 +95,7 @@ Guards run in registration order:
 - **`MetricsInterceptor`** (`src/metrics/metrics.module.ts`) — HTTP-duration
   histogram labelled by method/route/status.
 - **`RequestTimeoutInterceptor`** (`src/common/interceptors/request-timeout.interceptor.ts`,
-  registered in `AppModule`) — caps handler duration (default 30s) → clean 408;
+  registered in `AppModule`) — caps handler duration (default 35s, above the 30s DB statement timeout) → clean 408;
   exempts probe paths.
 
 > NestJS does not guarantee a strict cross-module ordering of multiple

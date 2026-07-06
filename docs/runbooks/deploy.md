@@ -26,7 +26,7 @@ starts `api` (gated on `migrate` succeeding), `caddy`, and `backup`. `migrate` r
 ## Health & shutdown
 - `api` is healthy when `/ready` returns 200 (DB + Redis reachable — a dependency outage now marks the container unhealthy); `/health` stays a bare liveness probe. Caddy proxies only a started app.
 - `SIGTERM` (e.g. `docker compose ... stop api`) triggers a graceful Nest shutdown
-  (in-flight requests finish within `stop_grace_period` = 30s; Prisma disconnects).
+  (idle keep-alive sockets close, in-flight requests finish within `stop_grace_period` = 45s, THEN Prisma/Redis disconnect).
 
 ## X-Forwarded-For / client IP trust (SEC-3)
 Caddy (the TLS edge) **ignores any client-supplied `X-Forwarded-For` by default**

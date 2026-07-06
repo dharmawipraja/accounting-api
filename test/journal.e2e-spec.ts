@@ -77,6 +77,41 @@ describe('JournalEntries (e2e)', () => {
     ],
   });
 
+  it('rejects a journal entry with more than 100 lines (400)', async () => {
+    const body = balancedBody();
+    body.lines = [
+      ...Array.from({ length: 51 }, () => ({
+        accountId: kasId,
+        debit: '1000',
+      })),
+      ...Array.from({ length: 51 }, () => ({
+        accountId: modalId,
+        credit: '1000',
+      })),
+    ] as typeof body.lines;
+    await request(app.getHttpServer() as App)
+      .post('/v1/ledger/journal-entries')
+      .set('Authorization', `Bearer ${accountantToken}`)
+      .set('Idempotency-Key', randomUUID())
+      .send(body)
+      .expect(400);
+  });
+
+  it('rejects opening balances with more than 100 rows (400)', async () => {
+    await request(app.getHttpServer() as App)
+      .post('/v1/ledger/opening-balances')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        date: '2026-01-01',
+        balances: Array.from({ length: 101 }, () => ({
+          accountId: kasId,
+          debit: '1000',
+        })),
+      })
+      .expect(400);
+  });
+
   it('ACCOUNTANT creates a DRAFT journal entry (201, status=DRAFT, entryNumber=null)', async () => {
     const res = await request(app.getHttpServer() as App)
       .post('/v1/ledger/journal-entries')
