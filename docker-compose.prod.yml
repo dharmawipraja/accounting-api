@@ -50,7 +50,7 @@ services:
           memory: 256M
 
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
     restart: unless-stopped
     depends_on:
       api:
@@ -85,7 +85,7 @@ services:
           memory: 1536M
 
   backup:
-    image: postgres:16
+    image: postgres:16@sha256:fe03a7605299a34ddf5e4f285dff78c3d7190a576b3c6b46f2fcff69f4bffd54
     restart: unless-stopped
     depends_on:
       db:

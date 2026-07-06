@@ -1,5 +1,5 @@
 # --- Build stage ---
-FROM node:22-bookworm-slim AS build
+FROM node:22-bookworm-slim@sha256:813a7480f28fdadac1f7f5c824bcdad435b5bc1322a5968bbbdef8d058f9dff4 AS build
 WORKDIR /app
 # openssl so Prisma's engines detect libssl cleanly (this stage also runs the
 # one-shot `prisma migrate deploy` migrate service — keeps its deploy logs clean).
@@ -12,7 +12,7 @@ COPY . .
 RUN DATABASE_URL="postgresql://build:build@localhost:5432/build?schema=public" npx prisma generate && npm run build
 
 # --- Production stage ---
-FROM node:22-bookworm-slim AS production
+FROM node:22-bookworm-slim@sha256:813a7480f28fdadac1f7f5c824bcdad435b5bc1322a5968bbbdef8d058f9dff4 AS production
 ENV NODE_ENV=production
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*

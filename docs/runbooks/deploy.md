@@ -25,6 +25,11 @@ starts `api` (gated on `migrate` succeeding), `caddy`, and `backup`. `migrate` r
 
 ## Health & shutdown
 - `api` is healthy when `/ready` returns 200 (DB + Redis reachable — a dependency outage now marks the container unhealthy); `/health` stays a bare liveness probe. Caddy proxies only a started app.
+- One-time caveat: migration `20260705163429_scope_idempotency_keys_by_user`
+  clears the `idempotency_keys` cache to add the NOT NULL `user_id` column. On
+  the deploy that first applies it, a client retrying a write completed in the
+  previous ~24h with the same `Idempotency-Key` re-executes instead of
+  replaying — apply it in a low-traffic window.
 - `SIGTERM` (e.g. `docker compose ... stop api`) triggers a graceful Nest shutdown
   (idle keep-alive sockets close, in-flight requests finish within `stop_grace_period` = 45s, THEN Prisma/Redis disconnect).
 

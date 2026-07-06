@@ -1,6 +1,6 @@
 services:
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus@sha256:c6b27ea434f8389bfe233fbc7be381cf50587c286e871bc842008f5a1b1908a7 # was :latest, pinned 2026-07-06
     restart: unless-stopped
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -9,20 +9,20 @@ services:
     ports: ['127.0.0.1:9090:9090']
 
   alertmanager:
-    image: prom/alertmanager:latest
+    image: prom/alertmanager@sha256:9e082985f56f4c8c9f724e18f2288c6708f472e56a5286b8863d080434ea065d # was :latest, pinned 2026-07-06
     restart: unless-stopped
     volumes:
       - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
 
   node-exporter:
-    image: prom/node-exporter:latest
+    image: prom/node-exporter@sha256:e9cff4fc67b1818f8c97adb115b9f12c9a54b533de86765d4a0effc01b357205 # was :latest, pinned 2026-07-06
     restart: unless-stopped
     command: ['--collector.textfile.directory=/backup-metrics']
     volumes:
       - backup_metrics:/backup-metrics:ro
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana@sha256:121a7a9ece6dc10b969f1f96eed64b4f07dfac0d0b8abc070f7cb83bbde86f63 # was :latest, pinned 2026-07-06
     restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}

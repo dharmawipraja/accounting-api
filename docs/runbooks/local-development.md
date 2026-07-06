@@ -37,6 +37,10 @@ npm install
 > `package.json` has an `overrides` block pinning patched transitive deps (`multer`,
 > `form-data`, `@hono/node-server`, `js-yaml`). Leave it as-is — it keeps
 > `npm audit` clean.
+> ⚠️ The `js-yaml` override forces v4 onto `@istanbuljs/load-nyc-config` (which
+> declares v3 and uses the removed `safeLoad` API). Harmless while the coverage
+> config is `.nycrc.json` — but switching to a `.nycrc.yml` would break
+> `npm run test:cov:all` with `yaml.safeLoad is not a function`.
 
 ### Environment files
 
