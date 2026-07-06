@@ -1,0 +1,10 @@
+apiVersion: 1
+datasources:
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      # Paste a traceId (= X-Request-Id) into Explore to pull the request story.
+      derivedFields: []

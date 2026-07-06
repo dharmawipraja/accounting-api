@@ -75,10 +75,30 @@ from one source while rotating a forged `X-Forwarded-For`; it should still 429
 
 ## Monitoring (optional)
 
-An optional observability overlay ships in `docker-compose.monitoring.yml` (Prometheus
-+ Grafana + alertmanager). Enable it by adding `-f docker-compose.monitoring.yml` to the
-compose command and setting `GRAFANA_ADMIN_PASSWORD` in `.env`. Alert *delivery* still
-needs a real receiver wired in `monitoring/alertmanager.yml` (see the ops backlog).
+An optional observability overlay ships in `docker-compose.monitoring.yml`
+(Prometheus + Grafana + alertmanager + **Loki/Alloy log aggregation**). Enable it
+by adding `-f docker-compose.monitoring.yml` to the compose command and setting
+`GRAFANA_ADMIN_PASSWORD` in `.env`. Alert *delivery* activates via one env var
+(see below).
+
+### Logs (Loki + Alloy)
+
+Alloy tails every compose container via the Docker socket and pushes to Loki
+(single-binary, filesystem storage, **30-day retention**, internal-only — no
+published port). Grafana auto-provisions the Loki datasource: **Explore →
+Loki**, query by compose service, then filter pino JSON at query time, e.g.
+
+```logql
+{service="api"} | json | req_id="<traceId>"     # full story of one request
+{service="api"} | json | level >= 40             # warn+error only
+```
+
+Keep labels minimal (only `service`/`container` are indexed — that's
+deliberate; don't promote traceId or route to labels). Backfill note: on first
+start Alloy reads existing log files; entries older than Loki's 7-day ingest
+window are dropped with a one-time burst of `400 timestamp too old` in alloy
+logs — harmless. Positions persist in the `alloy_data` volume, so restarts
+resume instead of re-reading.
 
 > **Metrics auth coupling (OPS-OBS-4):** if you set `METRICS_TOKEN` on the api, you MUST
 > uncomment the `authorization.credentials` block in `monitoring/prometheus.yml` with the

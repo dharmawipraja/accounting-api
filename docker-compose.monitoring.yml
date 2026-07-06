@@ -62,6 +62,33 @@ services:
     volumes:
       - backup_metrics:/backup-metrics:ro
 
+  loki:
+    image: grafana/loki:3@sha256:70b9f699fc9bb868b62f1cfd4f787dfa50242f1fd92e6089787d5d7daea75fe8 # pinned 2026-07-06
+    logging: *default-logging
+    restart: unless-stopped
+    command: ['-config.file=/etc/loki/loki.yml']
+    volumes:
+      - ./monitoring/loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/loki
+    # Internal-only: Grafana reaches it via service DNS; nothing is published.
+
+  alloy:
+    image: grafana/alloy@sha256:4f6ddc56ffdcf8a6316748fc5162972e20cb301523cac1bb4a31957df733ae9b # was :latest, pinned 2026-07-06
+    logging: *default-logging
+    restart: unless-stopped
+    command: ['run', '/etc/alloy/config.alloy']
+    depends_on:
+      - loki
+    volumes:
+      - ./monitoring/alloy.alloy:/etc/alloy/config.alloy:ro
+      # Read-only Docker socket: required to discover + tail container logs.
+      # This grants broad host visibility — acceptable on a single-operator VM;
+      # revisit (e.g. a socket proxy) if the host ever becomes multi-tenant.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Persist tail positions so a restart resumes instead of re-reading
+      # every container's log file from the top.
+      - alloy_data:/var/lib/alloy/data
+
   grafana:
     image: grafana/grafana@sha256:121a7a9ece6dc10b969f1f96eed64b4f07dfac0d0b8abc070f7cb83bbde86f63 # was :latest, pinned 2026-07-06
     logging: *default-logging
@@ -77,6 +104,8 @@ services:
 volumes:
   prometheus_data:
   alertmanager_data:
+  loki_data:
+  alloy_data:
   grafana_data:
   backup_metrics:
     external: true

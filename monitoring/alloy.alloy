@@ -1,0 +1,37 @@
+// Grafana Alloy: tail every compose container via the Docker socket and push
+// to Loki. Labels are deliberately minimal (service + container) — pino's JSON
+// fields (level, req.id/traceId, route, status) stay in the log line and are
+// filtered at query time; promoting them to labels would explode cardinality.
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+
+  // compose service name (api, db, caddy, ...) — the label you'll query by.
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+
+  // full container name as a tiebreaker (strip the leading slash).
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.containers.output
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
