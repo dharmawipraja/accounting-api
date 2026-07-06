@@ -7,6 +7,7 @@ import {
 } from '../common/errors/domain-errors';
 import { listPaginated } from '../common/pagination/paginated';
 import { RefreshTokenService } from '../auth/refresh-token.service';
+import { tombstoneValue } from '../common/prisma/tombstone';
 import { UsersService, SafeUser } from './users.service';
 import { generateTempPassword } from './temp-password';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -186,8 +187,22 @@ export class UserAdminService {
             { id },
           );
       }
+      // The tombstone write MUST commit under the same advisory lock as the
+      // admin-pool count above — releasing the lock before writing would open
+      // a window where a concurrent update() demotion, whose own count still
+      // sees this row as an active admin, could drain the pool to zero.
+      // Replicates UsersService.softDelete()'s tombstoneDelete() semantics
+      // (email suffixed via tombstoneValue, deletedAt/deletedBy set) since
+      // the extension's model-level helper isn't available on `tx`.
+      await tx.user.update({
+        where: { id },
+        data: {
+          email: tombstoneValue(target.email, id),
+          deletedAt: new Date(),
+          deletedBy: actorId,
+        },
+      });
     });
-    await this.users.softDelete(id, actorId);
     await this.refreshTokens.revokeAllForUser(id);
   }
 }
