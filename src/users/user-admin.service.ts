@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import * as argon2 from 'argon2';
 import { PrismaService } from '../common/prisma/prisma.service';
 import {
   NotFoundDomainError,
@@ -141,5 +142,52 @@ export class UserAdminService {
       await this.refreshTokens.revokeAllForUser(id);
     }
     return toUserResponse(updated);
+  }
+
+  /** New one-time password; all sessions die; user must change on next login. */
+  async resetPassword(id: string) {
+    const target = await this.users.findById(id);
+    if (!target) throw new NotFoundDomainError('User not found', { id });
+    const tempPassword = generateTempPassword();
+    await this.prisma.client.user.update({
+      where: { id },
+      data: {
+        passwordHash: await argon2.hash(tempPassword),
+        mustChangePassword: true,
+      },
+    });
+    await this.refreshTokens.revokeAllForUser(id);
+    const updated = await this.users.findById(id);
+    return { user: toUserResponse(updated!), tempPassword };
+  }
+
+  /** Soft-delete via tombstone; email becomes reusable. Same rails as update. */
+  async remove(actorId: string, id: string): Promise<void> {
+    if (id === actorId)
+      throw new ValidationFailedError('You cannot delete yourself', { id });
+    await this.prisma.client.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${USER_ADMIN_LOCK_KEY})`;
+      const target = await tx.user.findFirst({
+        where: { id, deletedAt: null },
+      });
+      if (!target) throw new NotFoundDomainError('User not found', { id });
+      if (target.role === 'ADMIN' && target.isActive) {
+        const otherAdmins = await tx.user.count({
+          where: {
+            role: 'ADMIN',
+            isActive: true,
+            deletedAt: null,
+            id: { not: id },
+          },
+        });
+        if (otherAdmins === 0)
+          throw new ValidationFailedError(
+            'Cannot remove the last active ADMIN',
+            { id },
+          );
+      }
+    });
+    await this.users.softDelete(id, actorId);
+    await this.refreshTokens.revokeAllForUser(id);
   }
 }

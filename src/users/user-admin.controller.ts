@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -11,6 +13,7 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -61,5 +64,24 @@ export class UserAdminController {
     @Body() dto: UpdateUserDto,
   ): Promise<UserResponseDto> {
     return this.admin.update(actor.id, id, dto);
+  }
+
+  @Post(':id/reset-password')
+  @HttpCode(200)
+  @ApiOkResponse({ type: CreateUserResponseDto })
+  resetPassword(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<CreateUserResponseDto> {
+    return this.admin.resetPassword(id);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  @ApiNoContentResponse()
+  async remove(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.admin.remove(actor.id, id);
   }
 }

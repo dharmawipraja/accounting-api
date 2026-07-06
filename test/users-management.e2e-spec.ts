@@ -324,5 +324,76 @@ describe('User management (e2e)', () => {
         svc.update(other.id, adminId, { isActive: false }),
       ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
     });
+
+    it('reset-password returns a new temp password, forces change, revokes sessions', async () => {
+      const created = await request(server())
+        .post('/v1/users')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ email: 'reset@um.test', name: 'R', role: 'VIEWER' })
+        .expect(201);
+      const id = (created.body as { user: { id: string } }).user.id;
+      const oldTemp = (created.body as { tempPassword: string }).tempPassword;
+      const pair = await app.get(AuthService).login('reset@um.test', oldTemp);
+
+      const reset = await request(server())
+        .post(`/v1/users/${id}/reset-password`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      const newTemp = (reset.body as { tempPassword: string }).tempPassword;
+      expect(newTemp).toHaveLength(16);
+      expect(newTemp).not.toBe(oldTemp);
+      await request(server())
+        .post('/v1/auth/refresh')
+        .send({ refreshToken: pair.refreshToken })
+        .expect(401); // sessions revoked
+      await request(server())
+        .post('/v1/auth/login')
+        .send({ email: 'reset@um.test', password: oldTemp })
+        .expect(401); // old password dead
+      await app.get(AuthService).login('reset@um.test', newTemp); // new one works
+    });
+
+    it('DELETE soft-deletes (404 afterwards, email reusable), self/last-admin refused', async () => {
+      const created = await request(server())
+        .post('/v1/users')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ email: 'del@um.test', name: 'D', role: 'VIEWER' })
+        .expect(201);
+      const id = (created.body as { user: { id: string } }).user.id;
+      await request(server())
+        .delete(`/v1/users/${id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(204);
+      await request(server())
+        .get(`/v1/users/${id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(404);
+      // Email reusable after tombstone:
+      await request(server())
+        .post('/v1/users')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ email: 'del@um.test', name: 'D2', role: 'VIEWER' })
+        .expect(201);
+      // Self-delete refused:
+      await request(server())
+        .delete(`/v1/users/${adminId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(422);
+    });
+
+    it('last-admin guard: deleting the only active ADMIN is refused (422)', async () => {
+      // Service-level with a second actor id (roles are enforced at HTTP):
+      // by this point in the suite adminId is the sole active ADMIN.
+      const svc = app.get(UserAdminService);
+      const viewer = await app.get(UsersService).create({
+        email: 'delactor@um.test',
+        password: 'secret123',
+        name: 'DelActor',
+        role: 'VIEWER',
+      });
+      await expect(svc.remove(viewer.id, adminId)).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+      });
+    });
   });
 });
