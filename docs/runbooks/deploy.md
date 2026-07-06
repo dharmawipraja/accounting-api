@@ -123,6 +123,18 @@ inert `monitoring/alertmanager.yml` and logs a WARN. Unresolved alerts re-notify
 every 4h. Send a test by triggering a rule (e.g. stop the api so `ApiDown`
 fires) and confirm it lands in the channel.
 
+Optionally also set `ALERT_HEARTBEAT_URL` (e.g. a [healthchecks.io](https://healthchecks.io)
+ping URL with a ~15-minute grace period): the always-firing `Watchdog` alert
+POSTs there every ~10 minutes and **never** reaches the notification channel.
+If the heartbeat goes silent, the Prometheus→Alertmanager pipeline itself is
+down — the failure mode no in-VM alert can report.
+
+> **The VM is one failure domain.** Prometheus and the API share the machine,
+> so whole-VM death silences everything above. Pair the heartbeat with an
+> **external uptime check** (UptimeRobot / healthchecks.io / Better Stack)
+> probing `https://$DOMAIN/health` from outside — that is the only monitor
+> that catches the VM itself dying.
+
 ## Staging without a public domain
 Don't edit the committed `Caddyfile` (it would dirty the repo and risk shipping a
 non-prod TLS setting). Instead either:

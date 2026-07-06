@@ -30,6 +30,9 @@ services:
       ALERT_SLACK_WEBHOOK_URL: ${ALERT_SLACK_WEBHOOK_URL:-}
       ALERT_SLACK_CHANNEL: ${ALERT_SLACK_CHANNEL:-#alerts}
       ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      # Optional dead-man's switch: the always-firing Watchdog alert POSTs here
+      # (e.g. a healthchecks.io ping URL); silence there = pipeline down.
+      ALERT_HEARTBEAT_URL: ${ALERT_HEARTBEAT_URL:-}
     entrypoint: ['/bin/sh', '-c']
     command:
       - |
@@ -46,6 +49,12 @@ services:
           echo "WARN: no ALERT_*_URL set — alerts will evaluate but reach no one" >&2
           cp /etc/alertmanager/alertmanager.yml /tmp/alertmanager.yml
         fi
+        if [ -n "$$ALERT_HEARTBEAT_URL" ] && [ -n "$$ALERT_SLACK_WEBHOOK_URL$$ALERT_WEBHOOK_URL" ]; then
+          echo "watchdog heartbeat ACTIVE"
+          sed -e "s|^\(\s*\)#HEARTBEAT |\1|" \
+              -e "s|__ALERT_HEARTBEAT_URL__|$$ALERT_HEARTBEAT_URL|g" \
+              /tmp/alertmanager.yml > /tmp/alertmanager2.yml && mv /tmp/alertmanager2.yml /tmp/alertmanager.yml
+        fi
         exec /bin/alertmanager --config.file=/tmp/alertmanager.yml --storage.path=/alertmanager
     volumes:
       - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
@@ -58,8 +67,14 @@ services:
     image: prom/node-exporter@sha256:e9cff4fc67b1818f8c97adb115b9f12c9a54b533de86765d4a0effc01b357205 # was :latest, pinned 2026-07-06
     logging: *default-logging
     restart: unless-stopped
-    command: ['--collector.textfile.directory=/backup-metrics']
+    # Host mounts so filesystem/memory metrics describe the VM, not this
+    # container — the DiskSpaceLow/MemoryPressureHigh rules depend on that.
+    pid: host
+    command:
+      - '--path.rootfs=/host'
+      - '--collector.textfile.directory=/backup-metrics'
     volumes:
+      - /:/host:ro,rslave
       - backup_metrics:/backup-metrics:ro
 
   loki:

@@ -7,6 +7,8 @@
 #   ALERT_WEBHOOK_URL        → monitoring/alertmanager-webhook.yml (generic
 #                              webhook: custom handler, or Discord with a
 #                              `/slack`-suffixed URL)
+# Optional in both active modes: ALERT_HEARTBEAT_URL routes the always-firing
+# Watchdog alert to a dead-man's-switch service (e.g. healthchecks.io).
 route:
   receiver: default
   group_by: ['alertname']

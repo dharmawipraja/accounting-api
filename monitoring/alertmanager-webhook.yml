@@ -8,8 +8,21 @@ route:
   group_by: ['alertname']
   # Re-notify unresolved alerts so one dropped delivery isn't forever silent.
   repeat_interval: 4h
+  routes:
+    # The always-firing Watchdog goes ONLY to the heartbeat receiver — never
+    # to the notification channel (it would ping every repeat_interval).
+    - matchers: ['alertname="Watchdog"']
+      receiver: heartbeat
+      group_interval: 1m
+      repeat_interval: 10m
 receivers:
   - name: default
     webhook_configs:
       - url: '__ALERT_WEBHOOK_URL__'
         send_resolved: true
+  - name: heartbeat
+    # Blackhole unless activated: the entrypoint uncomments this when
+    # $ALERT_HEARTBEAT_URL is set (e.g. a healthchecks.io ping URL).
+    #HEARTBEAT webhook_configs:
+    #HEARTBEAT   - url: '__ALERT_HEARTBEAT_URL__'
+    #HEARTBEAT     send_resolved: false

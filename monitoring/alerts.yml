@@ -26,3 +26,23 @@ groups:
         for: 10m
         labels: { severity: critical }
         annotations: { summary: 'No successful DB backup in >26h' }
+      - alert: DiskSpaceLow
+        # Real filesystems only; the VM disk hosts Postgres + backups +
+        # Prometheus + Loki, so a full disk takes everything down at once.
+        expr: min by (mountpoint) (node_filesystem_avail_bytes{fstype!~"tmpfs|ramfs|overlay|squashfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|ramfs|overlay|squashfs"}) < 0.10
+        for: 10m
+        labels: { severity: critical }
+        annotations: { summary: 'Disk {{ $labels.mountpoint }} under 10% free for 10m' }
+      - alert: MemoryPressureHigh
+        expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) < 0.10
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: 'VM available memory under 10% for 10m' }
+      - alert: Watchdog
+        # Dead-man's switch: ALWAYS firing by design. Routed to the heartbeat
+        # receiver (ALERT_HEARTBEAT_URL, e.g. a healthchecks.io ping), never to
+        # the notification channel. Silence at the heartbeat service means the
+        # Prometheus→Alertmanager pipeline itself is down.
+        expr: vector(1)
+        labels: { severity: none }
+        annotations: { summary: 'Alerting pipeline heartbeat (always firing)' }
