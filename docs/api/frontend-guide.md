@@ -63,14 +63,16 @@ POST /auth/login      { "email": "...", "password": "..." }
 The API is rate-limited. Authenticated requests are budgeted **per user**, anonymous
 auth endpoints **per IP**.
 
-| Scope                | Limit     | Keyed by           |
-| -------------------- | --------- | ------------------ |
-| `POST /auth/login`   | 10 / min  | IP                 |
-| `POST /auth/refresh` | 30 / min  | IP                 |
-| All other endpoints  | 300 / min | authenticated user |
+| Scope                        | Limit     | Keyed by           |
+| ---------------------------- | --------- | ------------------ |
+| `POST /auth/login`           | 10 / min  | IP                 |
+| `POST /auth/refresh`         | 30 / min  | IP                 |
+| `POST /auth/change-password` | 10 / min  | authenticated user |
+| All other endpoints          | 300 / min | authenticated user |
 
 (Defaults; operators can override via `THROTTLE_LOGIN_LIMIT` / `THROTTLE_REFRESH_LIMIT`
-/ `THROTTLE_LIMIT`. Health/readiness/metrics probes are not throttled.)
+/ `THROTTLE_CHANGE_PASSWORD_LIMIT` / `THROTTLE_LIMIT`. Health/readiness/metrics probes
+are not throttled.)
 
 On a **429**, back off and retry later (respect any `Retry-After`). Never hammer
 `/auth/login` — it has the tightest budget.
@@ -373,7 +375,7 @@ A "✓" means that role is allowed. `403 FORBIDDEN` is returned otherwise.
 | Post **opening balances** (`POST /ledger/opening-balances`)                                                      |        |            |          |   ✓   |
 | Run / reopen **year-end close** (`POST /close/year-end`, `POST /close/year-end/:fy/reopen`)                      |        |            |          |   ✓   |
 | Update **company settings** (`PATCH /company/settings`)                                                          |        |            |          |   ✓   |
-| Manage **users** — all of `/users` (`GET`/`POST`/`PATCH`/`DELETE`, incl. `:id/reset-password`)                    |        |            |          |   ✓   |
+| Manage **users** — all of `/users` (`GET`/`POST`/`PATCH`/`DELETE`, incl. `:id/reset-password`)                   |        |            |          |   ✓   |
 | Read **audit log** (`GET /audit`)                                                                                |        |            |          |   ✓   |
 | `GET /auth/admin-only` (RBAC smoke)                                                                              |        |            |          |   ✓   |
 

@@ -103,6 +103,11 @@ export class EnvVars {
   @Min(1)
   THROTTLE_REFRESH_LIMIT?: number;
 
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  THROTTLE_CHANGE_PASSWORD_LIMIT?: number;
+
   @ValidateIf((o: EnvVars) => o.NODE_ENV !== NodeEnv.Test)
   @IsString()
   @IsNotEmpty()

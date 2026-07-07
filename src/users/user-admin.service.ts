@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import * as argon2 from 'argon2';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import {
   NotFoundDomainError,
@@ -147,19 +148,28 @@ export class UserAdminService {
 
   /** New one-time password; all sessions die; user must change on next login. */
   async resetPassword(id: string) {
-    const target = await this.users.findById(id);
-    if (!target) throw new NotFoundDomainError('User not found', { id });
     const tempPassword = generateTempPassword();
-    await this.prisma.client.user.update({
-      where: { id },
-      data: {
-        passwordHash: await argon2.hash(tempPassword),
-        mustChangePassword: true,
-      },
-    });
+    const passwordHash = await argon2.hash(tempPassword);
+    let updated;
+    try {
+      // Single guarded write: the soft-delete extension injects deletedAt:null
+      // into the update's where, so an unknown or tombstoned id throws P2025 —
+      // no separate read-then-write window for a concurrent delete to hit.
+      updated = await this.prisma.client.user.update({
+        where: { id },
+        data: { passwordHash, mustChangePassword: true },
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2025'
+      ) {
+        throw new NotFoundDomainError('User not found', { id });
+      }
+      throw err;
+    }
     await this.refreshTokens.revokeAllForUser(id);
-    const updated = await this.users.findById(id);
-    return { user: toUserResponse(updated!), tempPassword };
+    return { user: toUserResponse(updated), tempPassword };
   }
 
   /** Soft-delete via tombstone; email becomes reusable. Same rails as update. */

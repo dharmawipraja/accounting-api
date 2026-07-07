@@ -4,6 +4,7 @@ import {
   ApiExtraModels,
   ApiOkResponse,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { THROTTLE, THROTTLE_TTL_MS } from '../config/throttle.config';
@@ -74,9 +75,16 @@ export class AuthController {
   }
 
   @AllowWithPendingPassword()
+  @Throttle({
+    default: { ttl: THROTTLE_TTL_MS, limit: THROTTLE.changePassword },
+  })
   @Post('change-password')
   @HttpCode(200)
   @ApiOkResponse({ type: OkFlagDto })
+  @ApiUnauthorizedResponse({
+    type: ErrorEnvelopeDto,
+    description: 'Current password is incorrect',
+  })
   async changePassword(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: ChangePasswordDto,

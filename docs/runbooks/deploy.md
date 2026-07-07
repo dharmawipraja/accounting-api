@@ -8,7 +8,8 @@
   `DOMAIN`. Optional: `DB_POOL_MAX`, `DB_STATEMENT_TIMEOUT_MS`, `RETENTION_DAYS`,
   `BACKUP_INTERVAL`, `THROTTLE_LIMIT` (per-user requests/min, default 300),
   `THROTTLE_LOGIN_LIMIT` (per-IP login attempts/min, default 10),
-  `THROTTLE_REFRESH_LIMIT` (per-IP refresh attempts/min, default 30).
+  `THROTTLE_REFRESH_LIMIT` (per-IP refresh attempts/min, default 30),
+  `THROTTLE_CHANGE_PASSWORD_LIMIT` (per-user change-password attempts/min, default 10).
 - **Redis** must be running and reachable at `REDIS_URL` before the API starts. The
   rate limiter is **fail-closed**: without Redis the API returns `503` on every
   throttled route, so a deploy can come up "running" (container healthy) yet 503 all

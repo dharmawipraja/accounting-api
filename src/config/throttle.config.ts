@@ -17,6 +17,8 @@ export const THROTTLE = {
   global: Number(process.env.THROTTLE_LIMIT) || 300,
   login: Number(process.env.THROTTLE_LOGIN_LIMIT) || 10,
   refresh: Number(process.env.THROTTLE_REFRESH_LIMIT) || 30,
+  // Bounds stolen-token password guessing AND per-request argon2 work.
+  changePassword: Number(process.env.THROTTLE_CHANGE_PASSWORD_LIMIT) || 10,
 } as const;
 
 /** Per-request timeout (ms) for the RequestTimeoutInterceptor.

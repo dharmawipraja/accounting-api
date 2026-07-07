@@ -12,11 +12,15 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiConflictResponse,
   ApiCreatedResponse,
   ApiNoContentResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiTags,
+  ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
+import { ErrorEnvelopeDto } from '../common/openapi/openapi.models';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../auth/role.enum';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -40,6 +44,10 @@ export class UserAdminController {
 
   @Post()
   @ApiCreatedResponse({ type: CreateUserResponseDto })
+  @ApiConflictResponse({
+    type: ErrorEnvelopeDto,
+    description: 'A user with this email already exists',
+  })
   create(@Body() dto: CreateUserDto): Promise<CreateUserResponseDto> {
     return this.admin.createWithTempPassword(dto);
   }
@@ -52,12 +60,18 @@ export class UserAdminController {
 
   @Get(':id')
   @ApiOkResponse({ type: UserResponseDto })
+  @ApiNotFoundResponse({ type: ErrorEnvelopeDto })
   get(@Param('id', ParseUUIDPipe) id: string): Promise<UserResponseDto> {
     return this.admin.getById(id);
   }
 
   @Patch(':id')
   @ApiOkResponse({ type: UserResponseDto })
+  @ApiNotFoundResponse({ type: ErrorEnvelopeDto })
+  @ApiUnprocessableEntityResponse({
+    type: ErrorEnvelopeDto,
+    description: 'Self role-change/deactivation, or last active ADMIN',
+  })
   update(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -69,6 +83,7 @@ export class UserAdminController {
   @Post(':id/reset-password')
   @HttpCode(200)
   @ApiOkResponse({ type: CreateUserResponseDto })
+  @ApiNotFoundResponse({ type: ErrorEnvelopeDto })
   resetPassword(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<CreateUserResponseDto> {
@@ -78,6 +93,11 @@ export class UserAdminController {
   @Delete(':id')
   @HttpCode(204)
   @ApiNoContentResponse()
+  @ApiNotFoundResponse({ type: ErrorEnvelopeDto })
+  @ApiUnprocessableEntityResponse({
+    type: ErrorEnvelopeDto,
+    description: 'Self-delete, or last active ADMIN',
+  })
   async remove(
     @CurrentUser() actor: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,

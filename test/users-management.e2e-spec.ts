@@ -395,5 +395,54 @@ describe('User management (e2e)', () => {
         code: 'VALIDATION_FAILED',
       });
     });
+
+    it('reset-password on a soft-deleted user is 404 (guarded write, no read-then-write race)', async () => {
+      const created = await request(server())
+        .post('/v1/users')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ email: 'gone@um.test', name: 'G', role: 'VIEWER' })
+        .expect(201);
+      const id = (created.body as { user: { id: string } }).user.id;
+      await request(server())
+        .delete(`/v1/users/${id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(204);
+      await request(server())
+        .post(`/v1/users/${id}/reset-password`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(404);
+    });
+  });
+
+  describe('change-password throttle', () => {
+    it('rate-limits change-password attempts (429 after the per-route budget)', async () => {
+      await app.get(UsersService).create({
+        email: 'brute@um.test',
+        password: 'secret123',
+        name: 'B',
+        role: 'VIEWER',
+      });
+      const token = await login('brute@um.test', 'secret123');
+      // Per-route budget is 10/min per user: 10 wrong-password attempts pass
+      // through (401), the 11th is throttled (429) before reaching argon2.
+      for (let i = 0; i < 10; i++) {
+        await request(server())
+          .post('/v1/auth/change-password')
+          .set('Authorization', `Bearer ${token}`)
+          .send({
+            currentPassword: 'wrong-guess',
+            newPassword: 'long-enough-pw',
+          })
+          .expect(401);
+      }
+      await request(server())
+        .post('/v1/auth/change-password')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          currentPassword: 'wrong-guess',
+          newPassword: 'long-enough-pw',
+        })
+        .expect(429);
+    });
   });
 });
