@@ -324,7 +324,7 @@ than **2 characters** (after trimming) is ignored (the normal list is returned).
   document, due, payment, void/reverse date, report `asOf`/`from`/`to`), the server takes
   the **calendar day from its first 10 characters** and ignores the time and offset —
   `2026-07-01T00:30+07:00` is **July 1** (never shifted to June 30 by UTC conversion).
-  An impossible day (e.g. `2026-02-30`) → `422 VALIDATION_FAILED`. (Audit-log
+  An impossible day (e.g. `2026-02-30`) → `400`, like any malformed date. (Audit-log
   `from`/`to` filters are timestamps and keep their time.)
 - Report query parameters:
   - `?asOf=YYYY-MM-DD` — **balance sheet**, **AR/AP aging**, **trial balance**,
@@ -578,10 +578,12 @@ GET  /close/year-end/:fy          close status for a fiscal year (any auth; 404 
 - Posting into a **closed period** → `409 CLOSED_PERIOD`; into a **closed year** →
   `409 CLOSED_YEAR`. After year-end close, the year is locked against new posting.
 - Periods for the **current and next** fiscal year (judged on today's WIB date) exist
-  from server start. Posting (or previewing with a `date`) into a fiscal year that has no
-  periods yet, if that year is **≤ current + 1**, generates its 12 periods automatically
-  and proceeds; a date further in the future still gets `409 CLOSED_PERIOD`. A date in an
-  existing but closed period is never regenerated.
+  from server start. Posting (or previewing with a `date` — the preview may create them
+  too) into the **current or next** fiscal year when it has no periods generates its 12
+  periods automatically and proceeds. An **earlier** year without periods, or a date
+  further in the future, still gets `409 CLOSED_PERIOD` (backfill earlier years with
+  `POST /ledger/periods/generate`). A date in an existing but closed period is never
+  regenerated.
 - Year-end close zeroes the cumulative P&L into Laba Ditahan (retained earnings).
 
 ### Tax preview
@@ -865,7 +867,7 @@ no auth.
 ### Company
 
 - `GET    /v1/company/settings` · any · company settings
-- `PATCH  /v1/company/settings` · ADMIN · update company settings (changing `fiscalYearStartMonth` once any period or journal entry exists → `422`)
+- `PATCH  /v1/company/settings` · ADMIN · update company settings (changing `fiscalYearStartMonth` → `422` once any journal entry — even a draft —, closed period or year-end close exists; otherwise the OPEN periods are replaced by the current + next fiscal year for the new month)
 
 ### Audit
 

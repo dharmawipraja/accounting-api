@@ -1,3 +1,4 @@
+import { IsBusinessDate } from '../../common/validators/is-business-date';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -33,6 +34,7 @@ export class PreviewJournalEntryDto {
   })
   @IsOptional()
   @IsDateString()
+  @IsBusinessDate()
   date?: string;
 
   // --- SALE | PURCHASE ---

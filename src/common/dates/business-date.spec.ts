@@ -1,5 +1,9 @@
 import { ValidationFailedError } from '../errors/domain-errors';
-import { businessDate, optionalBusinessDate } from './business-date';
+import {
+  businessDate,
+  isBusinessDateString,
+  optionalBusinessDate,
+} from './business-date';
 
 describe('businessDate', () => {
   it('takes the calendar date from the first 10 chars, ignoring the offset', () => {
@@ -37,5 +41,17 @@ describe('optionalBusinessDate', () => {
     expect(optionalBusinessDate('2026-03-15T22:00:00Z')?.toISOString()).toBe(
       '2026-03-15T00:00:00.000Z',
     );
+  });
+});
+
+describe('isBusinessDateString (DTO boundary)', () => {
+  it('accepts a real day with or without a time/offset', () => {
+    expect(isBusinessDateString('2026-02-28')).toBe(true);
+    expect(isBusinessDateString('2026-07-01T00:30+07:00')).toBe(true);
+  });
+  it('rejects an ISO-shaped impossible day and non-strings', () => {
+    expect(isBusinessDateString('2026-02-30')).toBe(false);
+    expect(isBusinessDateString('2026-13-01')).toBe(false);
+    expect(isBusinessDateString(20260228)).toBe(false);
   });
 });

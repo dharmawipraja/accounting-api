@@ -134,9 +134,12 @@ export class PostingService {
     );
   }
 
-  /** Read-only date postability check (open period + year not closed), shared by
-   *  preparePosting and the journal preview so the two can never drift. Plain
-   *  reads only — no locks; the in-tx guard remains the authoritative check. */
+  /** Date postability check (open period + year not closed), shared by
+   *  preparePosting and the journal preview so the two can never drift. No
+   *  locks; the in-tx guard remains the authoritative check. Not strictly
+   *  read-only: resolving the period may auto-generate the CURRENT or NEXT
+   *  fiscal year's periods (idempotent) when none exist — so a preview with a
+   *  `date` can create them too, exactly as the real post would. */
   async assertPostableDate(
     date: Date,
   ): Promise<{ periodId: string; fiscalYear: number }> {
@@ -217,8 +220,11 @@ export class PostingService {
    *  the tx; a rare rollback after this point over-counts by 1 — acceptable for a
    *  throughput metric. `accounts` (fresh posts and draft promotions; reversals
    *  mirror an already-posted entry and skip it) re-validates the line accounts
-   *  under FOR SHARE. Lock order: year advisory lock → period row → accounts
-   *  (sorted by id) → journal sequence. */
+   *  under FOR SHARE. Lock order here: year advisory lock → period row → accounts
+   *  (sorted by id) → journal sequence. Document and payment posts take their own
+   *  locks BEFORE calling in: the document row FOR UPDATE, the document sequence
+   *  (document_sequences) and, for payments, each allocated target document FOR
+   *  UPDATE (id order) — all ahead of the year advisory lock. */
   private async stampPostedInTx(
     tx: LedgerTx,
     periodId: string,

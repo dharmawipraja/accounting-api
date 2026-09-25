@@ -141,16 +141,17 @@ A monthly bucket with a status of `OPEN` or `CLOSED`. You can only post into the
 period whose date range contains the entry date; closing a month freezes it.
 - `AccountingPeriod` model (`fiscalYear`, `sequence`, `startDate`, `endDate`, `status`),
   `PeriodStatus` enum; open-period lookup via `PeriodsService.resolveOpenPeriodForDate`
-  (auto-generates a missing fiscal year ≤ current + 1; boot pre-generates current and
-  next).
+  (auto-generates a missing CURRENT or NEXT fiscal year only; boot pre-generates both;
+  generation serialized by advisory lock 71_002_001).
 
 ### Fiscal year (tahun buku / tahun fiskal)
 The 12-month reporting year. It need not start in January: `fiscalYearStartMonth`
 configures the start. A date's fiscal year is the calendar year if the month is ≥ the
 start month, else the prior year.
 - `CompanySettings.fiscalYearStartMonth`; `fiscalYearForDate()` in
-  `src/common/dates/fiscal-year.ts`. Locked (422) once any accounting period or journal
-  entry exists.
+  `src/common/dates/fiscal-year.ts`. Changeable only while no journal entry, CLOSED
+  period or year-end close exists; a change regenerates the OPEN periods (current + next
+  fiscal year).
 
 ---
 

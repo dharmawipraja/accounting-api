@@ -112,7 +112,9 @@ One stable error envelope, no leaked internals.
   `businessDate(value)` / `optionalBusinessDate(value)`
   (`src/common/dates/business-date.ts`): the calendar day from the first 10 chars,
   offset ignored, at UTC midnight — never `new Date(value)`, which shifts
-  `2026-07-01T00:30+07:00` to June 30. `parseDate` (full instant) is only for
+  `2026-07-01T00:30+07:00` to June 30. In DTOs pair `@IsDateString()` with
+  `@IsBusinessDate()` (`src/common/validators/is-business-date.ts`) so an impossible
+  day like `2026-02-30` is a 400. `parseDate` (full instant) is only for
   timestamp filters (audit log). For the common cases use the higher-level helpers in
   `src/common/dates/query-dates.ts`:
   `asOfOrToday(asOf?)` (defaults to today), `dateRange(from, to)` (required pair,

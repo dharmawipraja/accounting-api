@@ -158,10 +158,15 @@ no separate seed command for the core reference data:
   chart from `src/ledger/accounts/chart-of-accounts.seed.ts` if the table is empty.
 - **Accounting periods** — `PeriodsService.onModuleInit()` ensures the current AND
   next fiscal year's 12 monthly periods exist ("current" = today's WIB date via
-  `REPORT_UTC_OFFSET_MINUTES`; `fiscalYearStartMonth` from company settings, which is
-  locked once any period or journal entry exists). Posting into a fiscal year with no
-  periods that is ≤ current + 1 generates it on demand
-  (`PeriodsService.resolveOpenPeriodForDate`, idempotent `createMany skipDuplicates`).
+  `REPORT_UTC_OFFSET_MINUTES`; `fiscalYearStartMonth` from company settings). Posting
+  (or a dated journal preview) into the current or next fiscal year when it has no
+  periods generates it on demand (`PeriodsService.resolveOpenPeriodForDate`); earlier
+  years need an explicit `POST /ledger/periods/generate`. Every period generator takes
+  `pg_advisory_xact_lock(71_002_001)` (`PERIOD_GENERATION_LOCK_KEY`,
+  `src/ledger/periods/period-generation.ts`). A `fiscalYearStartMonth` change is
+  refused (422) once any journal entry, CLOSED period or `year_end_closings` row
+  exists; otherwise, under that lock, it deletes the OPEN periods and regenerates the
+  current + next fiscal year for the new month.
 - **Company settings** (`CompanyService.seedIfEmpty`) and **tax codes**
   (`TaxCodesService.seedIfEmpty`) seed on boot the same way.
 - **First ADMIN user** — there is no registration endpoint; bootstrap it explicitly:

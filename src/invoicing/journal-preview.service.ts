@@ -32,7 +32,8 @@ export class JournalPreviewService {
 
   async preview(dto: PreviewJournalEntryDto): Promise<JournalPreview> {
     // Optional date: reproduce the closed-period/closed-year 409 a real post
-    // would give — same read-only check preparePosting runs, no locks taken.
+    // would give — same check preparePosting runs, no locks taken. Like the
+    // post, it may auto-generate the current/next fiscal year's periods.
     if (dto.date) await this.posting.assertPostableDate(businessDate(dto.date));
     const lines =
       dto.nature === 'PAYMENT'

@@ -196,13 +196,12 @@ describe('Periods (e2e)', () => {
       expect(await periodsService.list(current + 1)).toHaveLength(12);
     });
 
-    it('posting into an earlier year with no periods generates it too', async () => {
+    it('posting into an EARLIER year with no periods is rejected and generates nothing', async () => {
       expect(await periodsService.list(current - 1)).toHaveLength(0);
-      const je = await app
-        .get(PostingService)
-        .post(entry(`${current - 1}-05-10`), 'poster');
-      expect(je.fiscalYear).toBe(current - 1);
-      expect(await periodsService.list(current - 1)).toHaveLength(12);
+      await expect(
+        app.get(PostingService).post(entry(`${current - 1}-05-10`), 'poster'),
+      ).rejects.toMatchObject({ code: 'CLOSED_PERIOD' });
+      expect(await periodsService.list(current - 1)).toHaveLength(0);
     });
 
     it('a date beyond next year is still rejected (CLOSED_PERIOD) and generates nothing', async () => {
@@ -212,7 +211,37 @@ describe('Periods (e2e)', () => {
       expect(await periodsService.list(current + 2)).toHaveLength(0);
     });
 
+    it('reversal and draft-post use the same bound (earlier year → CLOSED_PERIOD)', async () => {
+      const posted = await app
+        .get(PostingService)
+        .post(entry(`${current}-03-10`), 'poster');
+      await expect(
+        app
+          .get(PostingService)
+          .reverse(posted.id, 'poster', new Date(`${current + 2}-01-10`)),
+      ).rejects.toMatchObject({ code: 'CLOSED_PERIOD' });
+      const draft = await prisma.client.journalEntry.create({
+        data: {
+          date: new Date(`${current - 1}-06-10`),
+          description: 'old draft',
+          sourceType: 'MANUAL',
+          createdBy: 'creator',
+          lines: {
+            create: [
+              { lineNo: 1, accountId: acc['1-1000'], debit: '10' },
+              { lineNo: 2, accountId: acc['4-1000'], credit: '10' },
+            ],
+          },
+        },
+      });
+      await expect(
+        app.get(PostingService).postDraft(draft.id, 'poster'),
+      ).rejects.toMatchObject({ code: 'CLOSED_PERIOD' });
+      expect(await periodsService.list(current - 1)).toHaveLength(0);
+    });
+
     it('a CLOSED period is not regenerated: posting there stays rejected', async () => {
+      await periodsService.generatePeriods(current - 1); // explicit backfill
       const p = (await periodsService.list(current - 1))[4]; // month 5
       await periodsService.close(p.id, 'closer');
       await expect(

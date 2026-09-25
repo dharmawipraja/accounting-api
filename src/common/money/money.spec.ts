@@ -25,8 +25,10 @@ describe('Money', () => {
   });
 
   it('rejects a JS number factor at the type level', () => {
-    // @ts-expect-error — a float factor must not reach decimal math
-    expect(() => Money.of('1').multiply(0.1)).not.toThrow();
+    type Factor = Parameters<Money['multiply']>[0];
+    // @ts-expect-error — a float factor must not reach decimal math (compile-time only)
+    const bad: Factor = 0.1;
+    void bad;
   });
 
   it('rounds to whole rupiah (half-up)', () => {

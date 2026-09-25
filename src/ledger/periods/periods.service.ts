@@ -8,9 +8,11 @@ import {
 } from '../../common/errors/domain-errors';
 import { truncateToUtcDay } from '../../common/dates/utc-day';
 import { asOfOrToday } from '../../common/dates/query-dates';
-
-/** Lowest fiscal year periods may be generated for (matches GeneratePeriodsDto). */
-const MIN_FISCAL_YEAR = 2000;
+import { idempotencyContext } from '../../common/idempotency/idempotency-context';
+import {
+  insertFiscalYearPeriodsInTx,
+  lockPeriodGeneration,
+} from './period-generation';
 
 @Injectable()
 export class PeriodsService implements OnModuleInit {
@@ -34,33 +36,30 @@ export class PeriodsService implements OnModuleInit {
     return this.company.fiscalYearFor(asOfOrToday());
   }
 
-  /** Idempotent: generates the 12 monthly periods for a fiscal year if absent. */
+  /** Idempotent: generates the 12 monthly periods for a fiscal year if absent.
+   *  Runs in its own short transaction under the period-generation advisory
+   *  lock (serialized with a fiscalYearStartMonth change, which regenerates
+   *  periods) and reads the start month under that lock. Deliberately run
+   *  OUTSIDE any request idempotency context: auto-generation happens during a
+   *  post, and this metadata tx must not mark the request's key committed. */
   async generatePeriods(fiscalYear: number): Promise<AccountingPeriod[]> {
     const existing = await this.list(fiscalYear);
     if (existing.length === 12) return existing;
-    const { start } = await this.company.fiscalYearBounds(fiscalYear);
-    const startMonth = start.getUTCMonth() + 1; // 1..12
-    const data = Array.from({ length: 12 }, (_, i) => {
-      const monthIndex = startMonth - 1 + i; // 0-based from Jan of fiscalYear
-      const year = fiscalYear + Math.floor(monthIndex / 12);
-      const month = monthIndex % 12; // 0..11
-      const start = new Date(Date.UTC(year, month, 1));
-      const end = new Date(Date.UTC(year, month + 1, 0));
-      // name is {fiscalYear}-{sequence}, NOT {calendarYear}-{calendarMonth};
-      // for a non-January fiscal start, sequence 1 is the start month.
-      const name = `${fiscalYear}-${String(i + 1).padStart(2, '0')}`;
-      return {
-        fiscalYear,
-        sequence: i + 1,
-        name,
-        startDate: start,
-        endDate: end,
-      };
-    });
-    await this.prisma.client.accountingPeriod.createMany({
-      data,
-      skipDuplicates: true,
-    });
+    await idempotencyContext.exit(() =>
+      this.prisma.transaction(async (tx) => {
+        await lockPeriodGeneration(tx);
+        const settings = await tx.companySettings.findFirst({
+          select: { fiscalYearStartMonth: true },
+        });
+        if (!settings)
+          throw new NotFoundDomainError('Company settings not initialized');
+        await insertFiscalYearPeriodsInTx(
+          tx,
+          fiscalYear,
+          settings.fiscalYearStartMonth,
+        );
+      }),
+    );
     return this.list(fiscalYear);
   }
 
@@ -87,7 +86,10 @@ export class PeriodsService implements OnModuleInit {
 
   /** The posting-path resolver: the OPEN period containing the date, first
    *  auto-generating that date's fiscal year when NO period (open or closed)
-   *  covers it and the year is ≤ current + 1. Generation is idempotent and
+   *  covers it and the year is the CURRENT (WIB) or the NEXT fiscal year —
+   *  never an earlier year (backdating needs an explicit POST
+   *  /ledger/periods/generate). Shared by preparePosting/assertPostableDate
+   *  (and so the journal preview), prepareReversal and postDraft. Generation is idempotent and
    *  concurrency-safe (createMany skipDuplicates → ON CONFLICT DO NOTHING on
    *  the (fiscal_year, sequence) / name uniques). A date further out, or one
    *  inside an existing CLOSED period, still resolves to null (→ 409). */
@@ -101,11 +103,8 @@ export class PeriodsService implements OnModuleInit {
     });
     if (covering) return null; // exists but CLOSED
     const fiscalYear = await this.company.fiscalYearFor(d);
-    if (
-      fiscalYear < MIN_FISCAL_YEAR ||
-      fiscalYear > (await this.currentFiscalYear()) + 1
-    )
-      return null;
+    const current = await this.currentFiscalYear();
+    if (fiscalYear < current || fiscalYear > current + 1) return null;
     await this.generatePeriods(fiscalYear);
     return this.findOpenPeriodForDate(d);
   }

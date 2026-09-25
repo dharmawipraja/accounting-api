@@ -5,6 +5,8 @@ import { PrismaService } from '../src/common/prisma/prisma.service';
 import { CompanyService } from '../src/company/company.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
+import { fiscalYearForDate } from '../src/common/dates/fiscal-year';
+import { asOfOrToday } from '../src/common/dates/query-dates';
 import { bootstrapTestApp } from './e2e-helpers';
 
 describe('Company settings (e2e)', () => {
@@ -93,34 +95,63 @@ describe('Company settings (e2e)', () => {
       .expect(403);
   });
 
-  describe('fiscalYearStartMonth lock', () => {
+  describe('fiscalYearStartMonth change', () => {
     const patchMonth = (m: number) =>
       request(app.getHttpServer() as App)
         .patch('/v1/company/settings')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ fiscalYearStartMonth: m });
+    const periods = () =>
+      prisma.client.accountingPeriod.findMany({
+        orderBy: [{ fiscalYear: 'asc' }, { sequence: 'asc' }],
+      });
 
-    it('rejects changing the start month once accounting periods exist (422)', async () => {
-      expect(await prisma.client.accountingPeriod.count()).toBeGreaterThan(0);
-      const res = await patchMonth(4).expect(422);
-      expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
-    });
-
-    it('allows re-sending the unchanged start month (200)', async () => {
-      await patchMonth(1).expect(200);
-    });
-
-    it('allows a change when no period and no journal entry exists (200)', async () => {
-      await prisma.client.accountingPeriod.deleteMany({});
+    it('on a fresh deployment (boot periods, no JEs) is allowed and regenerates current + next FY for the new month', async () => {
+      expect((await periods()).length).toBeGreaterThan(0); // boot generated them
       const res = await patchMonth(4).expect(200);
       expect(
         (res.body as { fiscalYearStartMonth: number }).fiscalYearStartMonth,
       ).toBe(4);
-      await patchMonth(1).expect(200);
+      const fy = fiscalYearForDate(asOfOrToday(), 4);
+      const after = await periods();
+      expect(after).toHaveLength(24);
+      expect(after.map((p) => p.fiscalYear)).toEqual([
+        ...Array<number>(12).fill(fy),
+        ...Array<number>(12).fill(fy + 1),
+      ]);
+      expect(after[0].startDate.toISOString().slice(0, 10)).toBe(`${fy}-04-01`);
+      expect(after[23].endDate.toISOString().slice(0, 10)).toBe(
+        `${fy + 2}-03-31`,
+      );
     });
 
-    it('rejects a change when a journal entry exists even without periods (422)', async () => {
-      expect(await prisma.client.accountingPeriod.count()).toBe(0);
+    it('re-sending the unchanged month is a no-op (200, periods untouched)', async () => {
+      const before = (await periods()).map((p) => p.id);
+      await patchMonth(4).expect(200);
+      expect((await periods()).map((p) => p.id)).toEqual(before);
+    });
+
+    it('rejects a change while any period is CLOSED (422)', async () => {
+      const first = (await periods())[0];
+      await prisma.client.accountingPeriod.update({
+        where: { id: first.id },
+        data: { status: 'CLOSED' },
+      });
+      const res = await patchMonth(1).expect(422);
+      expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+      await prisma.client.accountingPeriod.update({
+        where: { id: first.id },
+        data: { status: 'OPEN' },
+      });
+    });
+
+    it('can be changed back while still unused (200)', async () => {
+      await patchMonth(1).expect(200);
+      const fy = fiscalYearForDate(asOfOrToday(), 1);
+      expect((await periods())[0].name).toBe(`${fy}-01`);
+    });
+
+    it('rejects a change once a journal entry exists, even a draft (422)', async () => {
       await prisma.client.journalEntry.create({
         data: {
           date: new Date('2026-01-05'),
@@ -131,6 +162,10 @@ describe('Company settings (e2e)', () => {
       });
       const res = await patchMonth(7).expect(422);
       expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+      expect(
+        (res.body as { details: { journalEntriesExist: boolean } }).details
+          .journalEntriesExist,
+      ).toBe(true);
     });
   });
 });

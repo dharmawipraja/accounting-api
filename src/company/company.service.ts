@@ -10,6 +10,11 @@ import {
   fiscalYearStartDate,
   fiscalYearEndDate,
 } from '../common/dates/fiscal-year';
+import { asOfOrToday } from '../common/dates/query-dates';
+import {
+  insertFiscalYearPeriodsInTx,
+  lockPeriodGeneration,
+} from '../ledger/periods/period-generation';
 
 export interface UpdateCompanyInput {
   legalName?: string;
@@ -87,33 +92,58 @@ export class CompanyService implements OnModuleInit {
     );
   }
 
+  /** Update the settings. A fiscalYearStartMonth change re-slices every fiscal
+   *  year, so it is only allowed while nothing depends on the current slicing:
+   *  no journal entry (any status, soft-deleted included), no CLOSED period and
+   *  no year_end_closings row → else 422. When allowed, in the same tx (under
+   *  the period-generation lock, serialized with PeriodsService.generatePeriods)
+   *  the OPEN periods — unreferenced, as only journal_entries.period_id points at
+   *  periods — are deleted and the current + next fiscal year (WIB today, new
+   *  start month) are regenerated. */
   async update(input: UpdateCompanyInput): Promise<CompanySettings> {
     const current = await this.get();
-    return this.prisma.transaction(async (tx) => {
-      const changesStartMonth =
-        input.fiscalYearStartMonth !== undefined &&
-        input.fiscalYearStartMonth !== current.fiscalYearStartMonth;
-      if (changesStartMonth) {
-        // The start month defines every fiscal year, period boundary and
-        // JE/document number series. Once any period or journal entry exists
-        // (soft-deleted rows included — they still carry a fiscal year),
-        // re-slicing the years would orphan them, so the month is locked.
-        const [{ used }] = await tx.$queryRaw<{ used: boolean }[]>`
-          SELECT EXISTS (SELECT 1 FROM accounting_periods)
-              OR EXISTS (SELECT 1 FROM journal_entries) AS used`;
-        if (used)
-          throw new ValidationFailedError(
-            'fiscalYearStartMonth cannot change once accounting periods or journal entries exist',
-            {
-              fiscalYearStartMonth: current.fiscalYearStartMonth,
-              requested: input.fiscalYearStartMonth,
-            },
-          );
-      }
-      return tx.companySettings.update({
+    const newMonth = input.fiscalYearStartMonth;
+    if (newMonth === undefined || newMonth === current.fiscalYearStartMonth) {
+      return this.prisma.client.companySettings.update({
         where: { id: current.id },
         data: input,
       });
+    }
+    return this.prisma.transaction(async (tx) => {
+      await lockPeriodGeneration(tx);
+      // Freeze the checked tables until commit: SHARE ROW EXCLUSIVE blocks
+      // concurrent INSERT/UPDATE/DELETE (a new draft JE, a period close, a
+      // year close) but not reads, so the checks below stay true while the
+      // periods are replaced. A rare admin action — the brief stall is fine.
+      await tx.$executeRaw`
+        LOCK TABLE journal_entries, accounting_periods, year_end_closings
+        IN SHARE ROW EXCLUSIVE MODE`;
+      const [blockers] = await tx.$queryRaw<
+        { journal: boolean; closed_period: boolean; closing: boolean }[]
+      >`
+        SELECT EXISTS (SELECT 1 FROM journal_entries) AS journal,
+               EXISTS (SELECT 1 FROM accounting_periods WHERE status = 'CLOSED') AS closed_period,
+               EXISTS (SELECT 1 FROM year_end_closings) AS closing`;
+      if (blockers.journal || blockers.closed_period || blockers.closing)
+        throw new ValidationFailedError(
+          'fiscalYearStartMonth cannot change once a journal entry, a closed period or a year-end close exists',
+          {
+            fiscalYearStartMonth: current.fiscalYearStartMonth,
+            requested: newMonth,
+            journalEntriesExist: blockers.journal,
+            closedPeriodsExist: blockers.closed_period,
+            yearEndClosingsExist: blockers.closing,
+          },
+        );
+      const updated = await tx.companySettings.update({
+        where: { id: current.id },
+        data: input,
+      });
+      await tx.accountingPeriod.deleteMany({ where: { status: 'OPEN' } });
+      const fy = fiscalYearForDate(asOfOrToday(), newMonth);
+      await insertFiscalYearPeriodsInTx(tx, fy, newMonth);
+      await insertFiscalYearPeriodsInTx(tx, fy + 1, newMonth);
+      return updated;
     });
   }
 }

@@ -116,6 +116,11 @@ describe('Invoicing rules (e2e)', () => {
     send('post', `/v1/${path}/${id}/post`, appr);
 
   describe('business date transformer', () => {
+    it('rejects an ISO-shaped impossible day at the DTO boundary (400)', async () => {
+      await createInvoice({ date: '2026-02-30' }).expect(400);
+      await createInvoice({ dueDate: '2026-04-31' }).expect(400);
+    });
+
     it('stores the calendar day of an offset timestamp, not the UTC-shifted day', async () => {
       const res = await createInvoice({
         date: '2026-07-01T00:30+07:00',

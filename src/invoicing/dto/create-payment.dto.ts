@@ -1,3 +1,4 @@
+import { IsBusinessDate } from '../../common/validators/is-business-date';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -23,7 +24,7 @@ export class AllocationDto {
 export class CreatePaymentDto {
   @IsIn(['RECEIPT', 'DISBURSEMENT']) direction!: 'RECEIPT' | 'DISBURSEMENT';
   @IsUUID() partnerId!: string;
-  @IsDateString() date!: string;
+  @IsDateString() @IsBusinessDate() date!: string;
   @IsUUID() cashAccountId!: string;
   @IsOptional() @IsString() @MaxLength(255) description?: string;
   @IsArray()

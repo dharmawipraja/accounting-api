@@ -1,3 +1,4 @@
+import { IsBusinessDate } from '../../../common/validators/is-business-date';
 import {
   IsDateString,
   IsEnum,
@@ -19,6 +20,6 @@ export class JournalListQueryDto extends SearchQueryDto {
   @Min(2000)
   @Max(2100)
   fiscalYear?: number;
-  @IsOptional() @IsDateString() from?: string;
-  @IsOptional() @IsDateString() to?: string;
+  @IsOptional() @IsDateString() @IsBusinessDate() from?: string;
+  @IsOptional() @IsDateString() @IsBusinessDate() to?: string;
 }

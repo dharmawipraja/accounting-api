@@ -1,3 +1,4 @@
+import { IsBusinessDate } from '../../common/validators/is-business-date';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -16,8 +17,8 @@ import { MAX_LINE_ITEMS } from '../../common/dto/limits';
 export class CreatePurchaseBillDto {
   @IsUUID() partnerId!: string;
   @IsOptional() @IsString() @MaxLength(64) vendorInvoiceNo?: string;
-  @IsDateString() date!: string;
-  @IsOptional() @IsDateString() dueDate?: string;
+  @IsDateString() @IsBusinessDate() date!: string;
+  @IsOptional() @IsDateString() @IsBusinessDate() dueDate?: string;
   @IsOptional() @IsString() @MaxLength(255) description?: string;
   @IsArray()
   @ArrayMinSize(1)
