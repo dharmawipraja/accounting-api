@@ -219,13 +219,17 @@ describe('PostingService TOCTOU guard (e2e)', () => {
     ).rejects.toBeInstanceOf(ClosedPeriodError);
   });
 
-  /** Poll pg_locks until some session is WAITING on an advisory lock (the close
-   *  blocked behind an in-flight post), or fail after ~10s. */
-  const waitForAdvisoryWaiter = async () => {
+  /** Poll pg_locks until some session is WAITING on the advisory lock for
+   *  `fiscalYear` (the close blocked behind an in-flight post), or fail after
+   *  ~10s. pg_advisory_xact_lock(bigint) shows as classid = high 32 bits,
+   *  objid = low 32 bits, objsubid = 1 — so an unrelated advisory waiter (e.g.
+   *  the admin-pool or period-generation key) can't satisfy the wait. */
+  const waitForAdvisoryWaiter = async (fiscalYear: number) => {
     for (let i = 0; i < 200; i++) {
       const rows = await prisma.client.$queryRaw<{ n: number }[]>`
         SELECT count(*)::int AS n FROM pg_locks
-        WHERE locktype = 'advisory' AND NOT granted`;
+        WHERE locktype = 'advisory' AND NOT granted
+          AND classid = 0 AND objid = ${fiscalYear}::int::oid AND objsubid = 1`;
       if (rows[0].n > 0) return;
       await new Promise((r) => setTimeout(r, 50));
     }
@@ -264,7 +268,7 @@ describe('PostingService TOCTOU guard (e2e)', () => {
     );
     await insertedP;
     const closeP = close.close(2032, 'admin');
-    await waitForAdvisoryWaiter();
+    await waitForAdvisoryWaiter(2032);
     release();
     await postTx;
     const rec = await closeP;
@@ -303,9 +307,13 @@ describe('PostingService TOCTOU guard (e2e)', () => {
 
   it('concurrent reopens of an entry-less closed year: exactly one wins, the other is rejected', async () => {
     const close = app.get(YearEndCloseService);
+    // Own fixture: an empty year closed here, independent of the test above.
+    await app.get(PeriodsService).generatePeriods(2034);
+    await close.close(2034, 'admin');
+    expect((await close.getStatus(2034))?.status).toBe('CLOSED');
     const results = await Promise.allSettled([
-      close.reopen(2033, 'a'),
-      close.reopen(2033, 'b'),
+      close.reopen(2034, 'a'),
+      close.reopen(2034, 'b'),
     ]);
     const ok = results.filter((r) => r.status === 'fulfilled');
     const bad = results.filter(
@@ -314,6 +322,6 @@ describe('PostingService TOCTOU guard (e2e)', () => {
     expect(ok).toHaveLength(1);
     expect(bad).toHaveLength(1);
     expect(bad[0].reason).toBeInstanceOf(ValidationFailedError);
-    expect((await close.getStatus(2033))?.status).toBe('OPEN');
+    expect((await close.getStatus(2034))?.status).toBe('OPEN');
   });
 });

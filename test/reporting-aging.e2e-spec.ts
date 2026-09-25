@@ -462,7 +462,20 @@ describe('Reporting AR/AP aging (e2e)', () => {
     const early = await post(`/v1/sales-invoices/${inv.id}/void`, {
       date: '2026-02-01',
     }).expect(422);
-    expect((early.body as { code: string }).code).toBe('VALIDATION_FAILED');
+    const earlyBody = early.body as {
+      code: string;
+      message: string;
+      details: { paymentVoidedOn: string; date: string };
+    };
+    expect(earlyBody.code).toBe('VALIDATION_FAILED');
+    // The specific guard (not e.g. the "before the document date" one).
+    expect(earlyBody.message).toBe(
+      'Void date cannot be before the void date of a payment allocated to this document',
+    );
+    expect(earlyBody.details).toMatchObject({
+      date: '2026-02-01',
+      paymentVoidedOn: '2026-02-05',
+    });
     await post(`/v1/sales-invoices/${inv.id}/void`, {
       date: '2026-02-10',
     }).expect(200);
@@ -495,6 +508,81 @@ describe('Reporting AR/AP aging (e2e)', () => {
       expect({ asOf, total: body.totalOutstanding }).toEqual({
         asOf,
         total: Number(arControl.balance).toFixed(4),
+      });
+    }
+  });
+  // AP mirror of the test above: a bill voided into a later open period keeps
+  // AP aging == AP control for as-of dates before, between and after.
+  it('AP aging honours a later-dated bill void and ties to AP control for every as-of date', async () => {
+    const apprToken = (
+      await app.get(AuthService).login('appr@aging.test', 'secret123')
+    ).accessToken;
+    const vendor = await app.get(BusinessPartnersService).create({
+      code: 'VEND-AGING-VOIDDATE',
+      name: 'Pemasok Void Date',
+      isVendor: true,
+    });
+    const bills = app.get(PurchaseBillsService);
+    const draft = await bills.createDraft({
+      partnerId: vendor.id,
+      date: new Date('2026-01-22'),
+      dueDate: new Date('2026-02-21'),
+      description: 'Bill void-dated later',
+      lines: [
+        {
+          description: 'Jasa vendor',
+          accountId: acc['5-2000'],
+          quantity: '1',
+          unitPrice: '800000',
+          taxCodeIds: [],
+        },
+      ],
+      createdBy: acctUserId,
+    });
+    const bill = await bills.post(draft.id, apprUserId);
+    // January is closed first, so the void must land in a later open period.
+    const periods = app.get(PeriodsService);
+    const jan = (await periods.list(2026)).find((p) => p.name === '2026-01')!;
+    await periods.close(jan.id, 'admin');
+    try {
+      await request(app.getHttpServer() as App)
+        .post(`/v1/purchase-bills/${bill.id}/void`)
+        .set('Authorization', `Bearer ${apprToken}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({ date: '2026-02-12' })
+        .expect(200);
+    } finally {
+      await periods.reopen(jan.id);
+    }
+
+    type AgingBody = {
+      partners: {
+        documents: { ref: string | null; outstanding: string }[];
+      }[];
+      totalOutstanding: string;
+    };
+    const expectations: [string, string | undefined][] = [
+      ['2026-01-21', undefined], // before the bill
+      ['2026-01-31', '800000.0000'], // bill live (voided later)
+      ['2026-02-11', '800000.0000'], // the day before the void
+      ['2026-02-28', undefined], // voided on 2026-02-12
+    ];
+    for (const [asOf, outstanding] of expectations) {
+      const res = await get(`/v1/reports/ap-aging?asOf=${asOf}`).expect(200);
+      const body = res.body as AgingBody;
+      const doc = body.partners
+        .flatMap((p) => p.documents)
+        .find((d) => d.ref === bill.billRef);
+      expect({ asOf, outstanding: doc?.outstanding }).toEqual({
+        asOf,
+        outstanding,
+      });
+      const apControl = await app
+        .get(BalancesService)
+        .accountBalance(acc['2-1000'], new Date(asOf));
+      expect({ asOf, total: body.totalOutstanding }).toEqual({
+        asOf,
+        total: Number(apControl.balance).toFixed(4),
       });
     }
   });

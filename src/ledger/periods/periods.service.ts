@@ -41,7 +41,12 @@ export class PeriodsService implements OnModuleInit {
    *  lock (serialized with a fiscalYearStartMonth change, which regenerates
    *  periods) and reads the start month under that lock. Deliberately run
    *  OUTSIDE any request idempotency context: auto-generation happens during a
-   *  post, and this metadata tx must not mark the request's key committed. */
+   *  post, and this metadata tx must not mark the request's key committed.
+   *  ⚠️ Never call with journal-entry writes pending in the caller's
+   *  transaction: this runs on a SEPARATE pool connection, and a
+   *  fiscalYearStartMonth change holding the generation lock waits on a
+   *  journal_entries table lock the caller's open tx holds — a cross-connection
+   *  wait Postgres cannot detect as a deadlock (it only times out). */
   async generatePeriods(fiscalYear: number): Promise<AccountingPeriod[]> {
     const existing = await this.list(fiscalYear);
     if (existing.length === 12) return existing;

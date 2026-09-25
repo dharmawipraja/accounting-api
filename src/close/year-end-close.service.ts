@@ -27,6 +27,8 @@ export class YearEndCloseService {
   }
 
   async close(fiscalYear: number, closedBy: string): Promise<YearEndClosing> {
+    // Fast path only: a friendly early 409 without opening a tx. The
+    // authoritative check is the re-read under the exclusive year lock below.
     const existing = await this.getStatus(fiscalYear);
     if (existing?.status === 'CLOSED') {
       throw new ConflictDomainError('Fiscal year is already closed', {
@@ -64,6 +66,10 @@ export class YearEndCloseService {
           // client; its period/year status is re-asserted in-tx by the posting
           // guard. The guard's SHARED year lock is re-entrant for this session,
           // which already holds the EXCLUSIVE one.
+          // Trade-off (accepted): those base-client reads borrow a SECOND pool
+          // connection while this tx holds one. Close is a rare ADMIN-only
+          // action, so the extra connection can't exhaust the pool in practice,
+          // and they are plain reads that never wait on this tx's locks.
           const prepared = await this.posting.preparePosting(
             {
               date: yearEnd,

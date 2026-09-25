@@ -151,6 +151,36 @@ describe('Company settings (e2e)', () => {
       expect((await periods())[0].name).toBe(`${fy}-01`);
     });
 
+    it('rejects a change while a year_end_closings row exists (422)', async () => {
+      // An entry-less (empty-year) close: no journal entry, no closed period.
+      await prisma.client.yearEndClosing.create({
+        data: {
+          fiscalYear: 2020,
+          status: 'OPEN',
+          closedAt: new Date(),
+          closedBy: 'admin',
+        },
+      });
+      const res = await patchMonth(7).expect(422);
+      const body = res.body as {
+        code: string;
+        details: {
+          journalEntriesExist: boolean;
+          closedPeriodsExist: boolean;
+          yearEndClosingsExist: boolean;
+        };
+      };
+      expect(body.code).toBe('VALIDATION_FAILED');
+      expect(body.details).toMatchObject({
+        journalEntriesExist: false,
+        closedPeriodsExist: false,
+        yearEndClosingsExist: true,
+      });
+      await prisma.client.yearEndClosing.delete({
+        where: { fiscalYear: 2020 },
+      });
+    });
+
     it('rejects a change once a journal entry exists, even a draft (422)', async () => {
       await prisma.client.journalEntry.create({
         data: {
