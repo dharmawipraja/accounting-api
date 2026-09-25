@@ -467,8 +467,10 @@ DELETE /ledger/journal-entries/:id      delete a DRAFT          (ACCOUNTANT+)
 - **Reverse** accepts an optional body `{ "date": "YYYY-MM-DD" }` — the reversal date.
   Omit the body (or `date`) to reverse on the original entry's date (unchanged
   behaviour). The date must be **on/after** the original date (`422 VALIDATION_FAILED`
-  otherwise) and fall in an OPEN period of a non-closed year (`409 CLOSED_PERIOD` /
-  `409 CLOSED_YEAR`); a non `YYYY-MM-DD` value is `400`.
+  otherwise, `details: { entryId, date, originalDate }`) and fall in an OPEN period of a
+  non-closed year (`409 CLOSED_PERIOD` / `409 CLOSED_YEAR`); a non `YYYY-MM-DD` value is
+  `400`. ⚠️ The document **void** endpoints use a *different* detail shape for the same
+  kind of error — see [Void date](#sales-invoice--purchase-bill).
 - Only `MANUAL` and `OPENING` entries can be reversed here. Reversing a document-owned
   entry (`SALES_INVOICE`, `PURCHASE_BILL`, `PAYMENT`) — or a `REVERSAL`/`CLOSING`
   entry — returns `422 VALIDATION_FAILED` with message
@@ -530,11 +532,15 @@ violations return `422 VALIDATION_FAILED`:
 own date (unchanged behaviour). Pass a later date to void a document whose own period is
 already closed: the reversal entry is posted on that date. Rules:
 
-- `date` before the document date → `422 VALIDATION_FAILED`; not `YYYY-MM-DD` → `400`.
+- `date` before the document date → `422 VALIDATION_FAILED`
+  `details: { id, date, documentDate }`; not `YYYY-MM-DD` → `400`. (Journal **reverse**
+  reports the same rule as `details: { entryId, date, originalDate }` — two shapes, so
+  key your UI off `code` + the field names, not one shared parser.)
 - `date` must fall in an OPEN period of a non-closed year → else `409 CLOSED_PERIOD` /
   `409 CLOSED_YEAR` (this is also what a body-less void of a closed-period document gets).
 - Invoice/bill only: `date` before the void date of a payment that was allocated to the
-  document and voided on a later date than its own → `422 VALIDATION_FAILED`.
+  document and voided on a later date than its own → `422 VALIDATION_FAILED`
+  `details: { id, date, paymentRef, paymentVoidedOn }` — void on/after `paymentVoidedOn`.
 - The response carries `voidedOn` (the void date; `null` unless `status` is `VOID`).
   AR/AP aging honours it: a voided document/payment still counts for `asOf` dates before
   its `voidedOn`.

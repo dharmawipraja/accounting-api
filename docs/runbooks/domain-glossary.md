@@ -175,9 +175,24 @@ Reopening is allowed to write into a year that is still flagged CLOSED (it passe
 ### Advisory-lock serialization
 Both close and reopen take a Postgres transaction-level advisory lock keyed on the
 fiscal year, then re-check status under the lock, so two concurrent closes (or reopens)
-can't post duplicate / orphaned closing entries.
+can't post duplicate / orphaned closing entries. Close computes the year's net income
+(the P&L movement it sweeps to Laba Ditahan) **inside that tx, under the exclusive
+lock**: every in-flight post holds the *shared* lock, so close waits them out, sees each
+committed entry, and no new post can land in the year until close commits — nothing is
+left unclosed. The pre-tx "already CLOSED" read is only a fast path; the locked re-check
+is authoritative.
 - `pg_advisory_xact_lock(fiscalYear)` in `close()` / `reopen()`; posting takes the
   *shared* form `pg_advisory_xact_lock_shared` in `assertPostablePeriodInTx`.
+
+All advisory keys in use (all transaction-scoped, auto-released at commit/rollback;
+keep new keys out of these ranges):
+
+| Key | Mode | Taken by | Serializes |
+| --- | --- | --- | --- |
+| fiscal year int (e.g. `2026`) | **shared** | `assertPostablePeriodInTx` (every posted write) | posts vs close/reopen |
+| fiscal year int | **exclusive** | `YearEndCloseService.close()` / `reopen()` | close/reopen vs each other and vs posts |
+| `71_001_001` (`USER_ADMIN_LOCK_KEY`) | exclusive | `UserAdminService` update/remove | admin-pool mutations (last-admin rail) |
+| `71_002_001` (`PERIOD_GENERATION_LOCK_KEY`) | exclusive | `generatePeriods`, `CompanyService.update` (start-month change) | period generation vs start-month change |
 
 ### Closed-year guard
 A closed fiscal year rejects new posts, draft-posts, reversals, and document voids until

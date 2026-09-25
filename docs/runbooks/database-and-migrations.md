@@ -116,8 +116,22 @@ the Prisma schema cannot express:
     `tax_codes.tax_account_id` (modelled as Prisma relations). Accounts and
     partners are only soft-deleted, so these never block the app.
     `tax_code_ids` arrays carry no FK.
+  - **Journal-link FKs** (`20260927000000_journal_link_fks`) —
+    `year_end_closings.closing_entry_id`, `journal_entries.reversal_of_id` and
+    `journal_entries.reversed_by_id` → `journal_entries(id)`, `ON DELETE RESTRICT`
+    (named self-relations `JournalEntryReversal` / `JournalEntryReversedBy` in
+    Prisma). Non-deferred: a reversal inserts the reversal entry first and then
+    links the original; close inserts the closing entry before upserting
+    `year_end_closings`. Same loud orphan pre-check as below.
   - The migration **pre-checks existing data** and aborts with a list of the
     offending rows/counts rather than repairing anything.
+  - ⚠️ **Local dev DBs that applied an earlier draft of
+    `20260926300000_ledger_integrity`** (before the `posted_xid` line guard was
+    folded into it) have a recorded checksum that no longer matches the file:
+    `migrate dev`/`deploy` will complain about a modified migration. Such a DB
+    is dev-only — run `npm run db:reset` (`prisma migrate reset`, **destroys
+    data**) to replay the final history. Never edit an applied migration in a
+    shared/prod DB.
   - **Restore**: `pg_dump` places triggers and FKs in post-data, so a full
     `pg_restore` works; a `--data-only` restore into an existing schema needs
     `--disable-triggers`. Tests that must manufacture an "impossible" state

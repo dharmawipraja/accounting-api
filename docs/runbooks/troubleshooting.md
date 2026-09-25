@@ -269,3 +269,26 @@ mechanics, and [`./deploy.md`](./deploy.md) for production deploys.
   Testcontainers (no `.env.test`); prod env is injected by docker compose (no
   `.env.production`). See [`./database-and-migrations.md`](./database-and-migrations.md)
   and the loader notes in [`.env.example`](../../.env.example).
+
+### A migration aborts: "… migration aborted — existing data violates new invariants / references missing journal entries"
+
+- **Symptom:** `prisma migrate deploy` (or the `migrate` container) fails on
+  `20260926300000_ledger_integrity` or `20260927000000_journal_link_fks` with a
+  `RAISE EXCEPTION` listing counts/ids (unbalanced posted entries, orphaned
+  `closing_entry_id` / `reversal_of_id` / `reversed_by_id`, …).
+- **Cause:** The migration's pre-check found rows that the new CHECK/FK/trigger
+  would reject. It deliberately repairs nothing.
+- **Fix:** Correct the listed rows by hand (as the DB owner). The pre-check is
+  the migration's first statement, so nothing was applied, but Prisma records the
+  migration as failed: mark it with
+  `npx prisma migrate resolve --rolled-back <migration_name>`, then re-run
+  `prisma migrate deploy`.
+
+### `migrate dev` says `20260926300000_ledger_integrity` "was modified after it was applied"
+
+- **Symptom:** A local dev DB refuses to migrate, reporting a checksum mismatch
+  on `20260926300000_ledger_integrity`.
+- **Cause:** That DB applied an earlier draft of the migration (before the
+  `posted_xid` line guard was folded in).
+- **Fix:** Dev only: `npm run db:reset` (**destroys the dev DB**) and re-seed. See
+  [`./database-and-migrations.md`](./database-and-migrations.md).
