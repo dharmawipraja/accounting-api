@@ -36,6 +36,17 @@ describe('Money', () => {
     expect(Money.of('110000.4').roundToRupiah().toString()).toBe('110000.0000');
   });
 
+  it('multiplyToRupiah rounds the raw product once (half-up), not at 4dp first', () => {
+    // 100004.5450 * 0.11 = 11000.49995 → 11000 (4dp-then-0dp would give 11001)
+    expect(Money.of('100004.5450').multiplyToRupiah('0.11').toString()).toBe(
+      '11000.0000',
+    );
+    expect(Money.of('333333').multiplyToRupiah('0.11').toString()).toBe(
+      '36667.0000',
+    );
+    expect(Money.of('100').multiplyToRupiah('0.005').toString()).toBe('1.0000');
+  });
+
   it('compares amounts', () => {
     expect(Money.of('5').equals(Money.of('5.0000'))).toBe(true);
     expect(Money.of('5').greaterThan(Money.of('4'))).toBe(true);

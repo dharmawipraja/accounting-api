@@ -16,6 +16,7 @@ describe('TaxCodes (e2e)', () => {
   let ppnMasukanId: string; // 1-1400 DEBIT-normal (suits PPN_INPUT / PPH_PREPAID)
   let kasId: string; // 1-1000 DEBIT-normal (wrong side for PPN_OUTPUT)
   let headerAccountId: string; // 1-0000 non-postable header account
+  let utangBankId: string; // 2-2000 CREDIT-normal NON_CURRENT_LIABILITY (not a tax subtype)
 
   const post = (body: object) =>
     request(app.getHttpServer() as App)
@@ -40,6 +41,7 @@ describe('TaxCodes (e2e)', () => {
     ppnMasukanId = accountsPage.data.find((a) => a.code === '1-1400')!.id;
     kasId = accountsPage.data.find((a) => a.code === '1-1000')!.id;
     headerAccountId = accountsPage.data.find((a) => a.code === '1-0000')!.id;
+    utangBankId = accountsPage.data.find((a) => a.code === '2-2000')!.id;
   }, 120_000);
 
   afterAll(() => cleanup());
@@ -91,9 +93,76 @@ describe('TaxCodes (e2e)', () => {
       name: 'Wrong side',
       kind: 'PPN_OUTPUT',
       rate: '0.11',
+      taxAccountId: ppnMasukanId,
+    }).expect(422);
+    expect(res.body).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      details: { reason: 'NORMAL_BALANCE' },
+    });
+  });
+
+  it('rejects a tax code pointed at a system-role (CASH) account (422 SYSTEM_ROLE)', async () => {
+    const res = await post({
+      code: 'BAD-ROLE',
+      name: 'On cash',
+      kind: 'PPN_INPUT',
+      rate: '0.11',
       taxAccountId: kasId,
     }).expect(422);
-    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+    expect(res.body).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      details: { reason: 'SYSTEM_ROLE', role: 'CASH' },
+    });
+  });
+
+  it('rejects a tax code pointed at a non-tax subtype (e.g. bank loan) (422 SUBTYPE)', async () => {
+    const res = await post({
+      code: 'BAD-SUBTYPE',
+      name: 'On bank loan',
+      kind: 'PPH_PAYABLE',
+      rate: '0.02',
+      taxAccountId: utangBankId,
+    }).expect(422);
+    expect(res.body).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      details: { reason: 'SUBTYPE', required: 'TAX_PAYABLE' },
+    });
+  });
+
+  it('refuses the CASH role on an account used by a soft-deleted tax code (422 TAX_ACCOUNT)', async () => {
+    const acct = await request(app.getHttpServer() as App)
+      .post('/v1/ledger/accounts')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: '1-1450',
+        name: 'PPN Masukan Lain',
+        type: 'ASSET',
+        subtype: 'TAX_RECEIVABLE',
+        normalBalance: 'DEBIT',
+        parentCode: '1-0000',
+      })
+      .expect(201);
+    const accountId = (acct.body as { id: string }).id;
+    const code = await post({
+      code: 'PPN-IN-X',
+      name: 'Temp input',
+      kind: 'PPN_INPUT',
+      rate: '0.11',
+      taxAccountId: accountId,
+    }).expect(201);
+    await request(app.getHttpServer() as App)
+      .delete(`/v1/tax/codes/${(code.body as { id: string }).id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(204);
+    const res = await request(app.getHttpServer() as App)
+      .patch(`/v1/ledger/accounts/${accountId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ role: 'CASH' })
+      .expect(422);
+    expect(res.body).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      details: { reason: 'TAX_ACCOUNT' },
+    });
   });
 
   // T-1 (CREDIT arm positive path): PPN_INPUT requires DEBIT-normal; PPN_OUTPUT + CREDIT-normal succeeds — already tested above.

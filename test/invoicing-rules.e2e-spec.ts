@@ -379,4 +379,254 @@ describe('Invoicing rules (e2e)', () => {
       await createBill({ lines: [line('1-2000', '1000')] }).expect(201);
     });
   });
+
+  /** Audit3 iteration-2 Task 13: invoicing & tax fixes. */
+  describe('iteration-2 invoicing/tax fixes', () => {
+    let admin: string;
+    const idOf = (r: request.Response) => (r.body as { id: string }).id;
+    const newPartner = async (flags: object) =>
+      (
+        await app.get(BusinessPartnersService).create({
+          code: `P-${randomUUID().slice(0, 8)}`,
+          name: 'X',
+          ...flags,
+        })
+      ).id;
+    const deletePartner = (id: string) =>
+      request(server())
+        .delete(`/v1/partners/${id}`)
+        .set('Authorization', `Bearer ${admin}`);
+
+    beforeAll(async () => {
+      await app.get(UsersService).create({
+        email: 'admin@rules.test',
+        password: 'secret123',
+        name: 'Admin',
+        role: 'ADMIN',
+      });
+      admin = (
+        await app.get(AuthService).login('admin@rules.test', 'secret123')
+      ).accessToken;
+    });
+
+    describe('tax-line accounts re-validated inside the post tx', () => {
+      it('rejects posting a draft whose tax account drifted to a non-tax subtype (422)', async () => {
+        const draft = await createInvoice().expect(201);
+        await prisma.client.account.update({
+          where: { id: acc['2-1100'] },
+          data: { subtype: 'CURRENT_LIABILITY' },
+        });
+        try {
+          const res = await postDoc('sales-invoices', idOf(draft)).expect(422);
+          expect(detailsOf(res)).toMatchObject({
+            taxAccountId: acc['2-1100'],
+            reason: 'SUBTYPE',
+          });
+        } finally {
+          await prisma.client.account.update({
+            where: { id: acc['2-1100'] },
+            data: { subtype: 'TAX_PAYABLE' },
+          });
+        }
+      });
+    });
+
+    describe('tax-account detection includes soft-deleted tax codes', () => {
+      it('rejects a bill line on the account of a soft-deleted tax code (422 TAX_ACCOUNT)', async () => {
+        const a = await app.get(AccountsService).create({
+          code: '1-1460',
+          name: 'PPN Masukan Lama',
+          type: 'ASSET',
+          subtype: 'TAX_RECEIVABLE',
+          normalBalance: 'DEBIT',
+          parentCode: '1-0000',
+        });
+        const tc = await app.get(TaxCodesService).create({
+          code: 'PPN-IN-OLD',
+          name: 'Old input',
+          kind: 'PPN_INPUT',
+          rate: '0.1',
+          taxAccountId: a.id,
+        });
+        await app.get(TaxCodesService).softDelete(tc.id, 'test');
+        const res = await createBill({
+          lines: [
+            {
+              description: 'x',
+              accountId: a.id,
+              quantity: '1',
+              unitPrice: '1000',
+              taxCodeIds: [],
+            },
+          ],
+        }).expect(422);
+        expect(detailsOf(res)).toEqual({
+          accountId: a.id,
+          reason: 'TAX_ACCOUNT',
+        });
+      });
+    });
+
+    describe('partner soft-delete refuses open items', () => {
+      it('refuses a partner with a draft document (422)', async () => {
+        const pid = await newPartner({ isCustomer: true });
+        await createInvoice({ partnerId: pid }).expect(201);
+        const res = await deletePartner(pid).expect(422);
+        expect(codeOf(res)).toBe('VALIDATION_FAILED');
+        expect(detailsOf(res)).toMatchObject({ id: pid, reason: 'OPEN_ITEMS' });
+      });
+
+      it('refuses a partner with a POSTED document still outstanding (422)', async () => {
+        const pid = await newPartner({ isCustomer: true });
+        const d = await createInvoice({ partnerId: pid }).expect(201);
+        await postDoc('sales-invoices', idOf(d)).expect(200);
+        await deletePartner(pid).expect(422);
+      });
+
+      it('refuses a partner with a draft payment (422)', async () => {
+        const pid = await newPartner({ isCustomer: true });
+        const d = await createInvoice({ partnerId: pid }).expect(201);
+        await postDoc('sales-invoices', idOf(d)).expect(200);
+        await send('post', '/v1/payments', acct, {
+          direction: 'RECEIPT',
+          partnerId: pid,
+          date: '2026-03-10',
+          cashAccountId: acc['1-1000'],
+          allocations: [{ salesInvoiceId: idOf(d), amount: '1000' }],
+        }).expect(201);
+        // Void the invoice (a draft payment does not count as paid): only
+        // the draft payment is left open.
+        await send('post', `/v1/sales-invoices/${idOf(d)}/void`, appr).expect(
+          200,
+        );
+        await deletePartner(pid).expect(422);
+      });
+
+      it('deletes a partner whose documents are all voided (204)', async () => {
+        const pid = await newPartner({ isCustomer: true });
+        const d = await createInvoice({ partnerId: pid }).expect(201);
+        await postDoc('sales-invoices', idOf(d)).expect(200);
+        await send('post', `/v1/sales-invoices/${idOf(d)}/void`, appr).expect(
+          200,
+        );
+        await deletePartner(pid).expect(204);
+      });
+    });
+
+    describe('DTO caps', () => {
+      it('rejects a PATCH with more than MAX_LINE_ITEMS lines (400)', async () => {
+        const d = await createBill().expect(201);
+        await send('patch', `/v1/purchase-bills/${idOf(d)}`, acct, {
+          lines: Array.from({ length: 101 }, () => line('5-2000', '1')),
+        }).expect(400);
+      });
+
+      it('rejects a line with more than 10 taxCodeIds on create and update (400)', async () => {
+        const many = Array.from({ length: 11 }, () => randomUUID());
+        const bad = { ...line('4-1000', '1000'), taxCodeIds: many };
+        await createInvoice({ lines: [bad] }).expect(400);
+        const d = await createInvoice().expect(201);
+        await send('patch', `/v1/sales-invoices/${idOf(d)}`, acct, {
+          lines: [bad],
+        }).expect(400);
+      });
+    });
+
+    describe('payment post re-checks the partner in-tx', () => {
+      const draftReceipt = async (pid: string) => {
+        const d = await createInvoice({ partnerId: pid }).expect(201);
+        await postDoc('sales-invoices', idOf(d)).expect(200);
+        const p = await send('post', '/v1/payments', acct, {
+          direction: 'RECEIPT',
+          partnerId: pid,
+          date: '2026-03-10',
+          cashAccountId: acc['1-1000'],
+          allocations: [{ salesInvoiceId: idOf(d), amount: '1000' }],
+        }).expect(201);
+        return idOf(p);
+      };
+
+      it('rejects posting a payment whose partner was deactivated (422)', async () => {
+        const pid = await newPartner({ isCustomer: true });
+        const payId = await draftReceipt(pid);
+        await app.get(BusinessPartnersService).deactivate(pid);
+        const res = await postDoc('payments', payId).expect(422);
+        expect(detailsOf(res)).toMatchObject({ partnerId: pid });
+      });
+
+      it('rejects posting a receipt whose partner is no longer a customer (422)', async () => {
+        const pid = await newPartner({ isCustomer: true, isVendor: true });
+        const payId = await draftReceipt(pid);
+        await app
+          .get(BusinessPartnersService)
+          .update(pid, { isCustomer: false });
+        const res = await postDoc('payments', payId).expect(422);
+        expect(detailsOf(res)).toMatchObject({ partnerId: pid });
+      });
+    });
+
+    describe('vendor invoice number is normalized', () => {
+      it('trims on write and treats case/whitespace variants as the same number (409)', async () => {
+        const a = await createBill({ vendorInvoiceNo: '  NV-900 ' }).expect(
+          201,
+        );
+        expect((a.body as { vendorInvoiceNo: string }).vendorInvoiceNo).toBe(
+          'NV-900',
+        );
+        const res = await createBill({ vendorInvoiceNo: 'nv-900' }).expect(409);
+        expect(codeOf(res)).toBe('CONFLICT');
+      });
+    });
+
+    describe('non-PKP company cannot credit PPN Input', () => {
+      afterEach(() => app.get(CompanyService).update({ isPkp: true }));
+
+      it('rejects a purchase bill with PPN Input when the company is not PKP (422)', async () => {
+        await app.get(CompanyService).update({ isPkp: false });
+        const res = await createBill({
+          lines: [line('5-2000', '1000', ['PPN-IN-11'])],
+        }).expect(422);
+        expect(detailsOf(res)).toMatchObject({
+          taxCodeId: code['PPN-IN-11'],
+          kind: 'PPN_INPUT',
+        });
+      });
+    });
+
+    describe('PATCH clears nullable fields with explicit null', () => {
+      it('clears dueDate and vendorInvoiceNo on a bill (200)', async () => {
+        const d = await createBill({
+          dueDate: '2026-03-31',
+          vendorInvoiceNo: 'NV-CLR',
+        }).expect(201);
+        const res = await send('patch', `/v1/purchase-bills/${idOf(d)}`, acct, {
+          dueDate: null,
+          vendorInvoiceNo: null,
+        }).expect(200);
+        expect(res.body).toMatchObject({
+          dueDate: null,
+          vendorInvoiceNo: null,
+        });
+      });
+
+      it('clears dueDate on an invoice and keeps it when omitted (200)', async () => {
+        const d = await createInvoice({ dueDate: '2026-03-31' }).expect(201);
+        const kept = await send(
+          'patch',
+          `/v1/sales-invoices/${idOf(d)}`,
+          acct,
+          {
+            description: 'still due',
+          },
+        ).expect(200);
+        expect((kept.body as { dueDate: string }).dueDate).toContain(
+          '2026-03-31',
+        );
+        const res = await send('patch', `/v1/sales-invoices/${idOf(d)}`, acct, {
+          dueDate: null,
+        }).expect(200);
+        expect((res.body as { dueDate: unknown }).dueDate).toBeNull();
+      });
+    });
+  });
 });

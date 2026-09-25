@@ -8,7 +8,11 @@ import {
 import { PrismaService } from '../common/prisma/prisma.service';
 import { trigramSearch } from '../common/search/trigram-search';
 import { Money } from '../common/money/money';
-import { PostingService } from '../ledger/posting/posting.service';
+import {
+  LedgerTx,
+  POSTING_TX_OPTIONS,
+  PostingService,
+} from '../ledger/posting/posting.service';
 import {
   NotFoundDomainError,
   ValidationFailedError,
@@ -262,63 +266,83 @@ export class PaymentsService {
     };
     const prepared = await this.posting.preparePosting(journalInput, postedBy);
 
-    await this.prisma.transaction(
-      async (tx) => {
-        // Lock + re-check the payment is still a draft.
-        const lockedP = await tx.$queryRaw<{ status: string }[]>`
+    await this.prisma.transaction(async (tx) => {
+      // Lock + re-check the payment is still a draft.
+      const lockedP = await tx.$queryRaw<{ status: string }[]>`
         SELECT status FROM payments WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
-        if (lockedP.length === 0 || lockedP[0].status !== 'DRAFT')
-          throw new ValidationFailedError('Payment is no longer a draft', {
-            id,
-          });
-        // A draft payment has no edit path (create / delete / post only), so
-        // the cashAccountId, amount and allocations read before this tx are
-        // the locked row's; a concurrent delete fails the re-check above.
-        // Post-time re-validation: the cash side must still be a CASH-role
-        // account (catches drafts written before the rule existed).
-        await assertCashAccount(tx, payment.cashAccountId);
-
-        // Lock each target document FOR UPDATE and re-verify outstanding (the
-        // real over-allocation guard) and payment date >= document date — in
-        // id order, so concurrent payments over overlapping documents can't
-        // deadlock.
-        for (const a of inLockOrder(target, allocations)) {
-          await settleInTx(tx, target, a, payment.partnerId, payment.date);
-        }
-
-        const number = await this.docNumber.next(
-          tx,
-          target.numberPrefix,
-          prepared.fiscalYear,
-        );
-        const ref = this.docNumber.buildRef(
-          target.numberPrefix,
-          prepared.fiscalYear,
-          number,
-        );
-        const entry = await this.posting.createPostedEntryInTx(tx, prepared);
-        await tx.payment.update({
-          where: { id },
-          data: {
-            status: 'POSTED',
-            number,
-            ref,
-            fiscalYear: prepared.fiscalYear,
-            journalEntryId: entry.id,
-            postedBy,
-            postedAt: new Date(),
-          },
+      if (lockedP.length === 0 || lockedP[0].status !== 'DRAFT')
+        throw new ValidationFailedError('Payment is no longer a draft', {
+          id,
         });
-        // A concurrent post of the same invoice blocks here on the FOR UPDATE locks
-        // above. Give it room to wait out the winner and reach its clean 409 instead
-        // of hitting Prisma's 5s default and surfacing as a 500 under load.
-      },
-      {
-        maxWait: 5000,
-        timeout: 20000,
-      },
-    );
+      // A draft payment has no edit path (create / delete / post only), so
+      // the cashAccountId, amount and allocations read before this tx are
+      // the locked row's; a concurrent delete fails the re-check above.
+      // Post-time re-validation: the cash side must still be a CASH-role
+      // account (catches drafts written before the rule existed).
+      await assertCashAccount(tx, payment.cashAccountId);
+      // The partner must still be live, active and carry the direction's
+      // flag (customer for receipts, vendor for disbursements). FOR SHARE
+      // serializes with a partner soft-delete (FOR UPDATE) / deactivation.
+      await this.assertPartnerInTx(tx, payment.partnerId, target);
+
+      // Lock each target document FOR UPDATE and re-verify outstanding (the
+      // real over-allocation guard) and payment date >= document date — in
+      // id order, so concurrent payments over overlapping documents can't
+      // deadlock.
+      for (const a of inLockOrder(target, allocations)) {
+        await settleInTx(tx, target, a, payment.partnerId, payment.date);
+      }
+
+      const number = await this.docNumber.next(
+        tx,
+        target.numberPrefix,
+        prepared.fiscalYear,
+      );
+      const ref = this.docNumber.buildRef(
+        target.numberPrefix,
+        prepared.fiscalYear,
+        number,
+      );
+      const entry = await this.posting.createPostedEntryInTx(tx, prepared);
+      await tx.payment.update({
+        where: { id },
+        data: {
+          status: 'POSTED',
+          number,
+          ref,
+          fiscalYear: prepared.fiscalYear,
+          journalEntryId: entry.id,
+          postedBy,
+          postedAt: new Date(),
+        },
+      });
+      // A concurrent post of the same invoice blocks here on the FOR UPDATE locks
+      // above. Give it room to wait out the winner and reach its clean 409 instead
+      // of hitting Prisma's 5s default and surfacing as a 500 under load.
+    }, POSTING_TX_OPTIONS);
     return this.getById(id);
+  }
+
+  /** In-tx partner re-check for payment post (422 on failure). */
+  private async assertPartnerInTx(
+    tx: LedgerTx,
+    partnerId: string,
+    target: (typeof PAYMENT_TARGETS)[PaymentDirection],
+  ): Promise<void> {
+    const rows = await tx.$queryRaw<
+      { is_active: boolean; is_customer: boolean; is_vendor: boolean }[]
+    >`
+      SELECT is_active, is_customer, is_vendor FROM business_partners
+      WHERE id = ${partnerId} AND deleted_at IS NULL FOR SHARE`;
+    const p = rows[0];
+    if (!p || !p.is_active)
+      throw new ValidationFailedError('Partner is inactive', { partnerId });
+    const hasFlag =
+      target.partnerFlag === 'isCustomer' ? p.is_customer : p.is_vendor;
+    if (!hasFlag)
+      throw new ValidationFailedError(target.partnerRequiredMessage, {
+        partnerId,
+      });
   }
 
   async void(id: string, voidedBy: string, date?: Date): Promise<Payment> {

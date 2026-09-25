@@ -1,4 +1,11 @@
-import { IsArray, IsString, IsUUID, MaxLength } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsString,
+  IsUUID,
+  MaxLength,
+} from 'class-validator';
+import { MAX_TAX_CODES_PER_LINE } from '../../common/dto/limits';
 import { IsMoneyString } from '../../common/validators/is-money-string';
 
 /**
@@ -11,5 +18,8 @@ export class DocumentLineDto {
   @IsUUID() accountId!: string;
   @IsMoneyString() quantity!: string;
   @IsMoneyString() unitPrice!: string;
-  @IsArray() @IsUUID('all', { each: true }) taxCodeIds!: string[];
+  @IsArray()
+  @ArrayMaxSize(MAX_TAX_CODES_PER_LINE)
+  @IsUUID('all', { each: true })
+  taxCodeIds!: string[];
 }

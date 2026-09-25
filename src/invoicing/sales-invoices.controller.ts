@@ -13,6 +13,7 @@ import {
 import {
   businessDate,
   optionalBusinessDate,
+  patchBusinessDate,
 } from '../common/dates/business-date';
 import {
   ApiBearerAuth,
@@ -83,7 +84,7 @@ export class SalesInvoicesController {
   ) {
     const inv = await this.invoices.update(id, {
       date: optionalBusinessDate(dto.date),
-      dueDate: optionalBusinessDate(dto.dueDate),
+      dueDate: patchBusinessDate(dto.dueDate),
       description: dto.description,
       lines: dto.lines,
     });

@@ -111,19 +111,25 @@ export class TaxService {
       }
     }
 
-    // Only a PKP (VAT-registered) company may charge PPN Output. Checked here
-    // so every sales path — create, update, post, preview, /tax/calculate —
-    // enforces it identically. Settings are read only when it matters.
-    const ppnOutput = [...byId.values()].find((c) => c.kind === 'PPN_OUTPUT');
-    if (input.nature === 'SALE' && ppnOutput) {
+    // Only a PKP (VAT-registered) company may charge PPN Output or credit PPN
+    // Input. Checked here so every document path — create, update, post,
+    // preview, /tax/calculate — enforces it identically. (The kind filter
+    // above already ties PPN_OUTPUT to SALE and PPN_INPUT to PURCHASE.)
+    // Settings are read only when it matters.
+    const ppn = [...byId.values()].find(
+      (c) => c.kind === 'PPN_OUTPUT' || c.kind === 'PPN_INPUT',
+    );
+    if (ppn) {
       // Through `db` so an in-tx caller reads settings on its own connection.
       const settings = await db.companySettings.findFirst({
         select: { isPkp: true },
       });
       if (settings && !settings.isPkp)
         throw new ValidationFailedError(
-          'PPN Output can only be charged by a PKP company (companySettings.isPkp is false)',
-          { taxCodeId: ppnOutput.id, kind: ppnOutput.kind },
+          ppn.kind === 'PPN_OUTPUT'
+            ? 'PPN Output can only be charged by a PKP company (companySettings.isPkp is false)'
+            : 'PPN Input can only be credited by a PKP company (companySettings.isPkp is false)',
+          { taxCodeId: ppn.id, kind: ppn.kind },
         );
     }
 
@@ -145,7 +151,8 @@ export class TaxService {
     const taxes: TaxBreakdownRow[] = [...baseByCode.entries()]
       .map(([id, base]) => {
         const c = byId.get(id)!;
-        const amount = base.multiply(c.rate).roundToRupiah();
+        // Exact base × rate, rounded once (no intermediate 4dp rounding).
+        const amount = base.multiplyToRupiah(c.rate);
         return {
           taxCodeId: id,
           code: c.code,

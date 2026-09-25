@@ -111,3 +111,16 @@ export function samePostableContent(
     );
   });
 }
+
+/** Normalize a vendor invoice number for storage: trimmed; a blank value or an
+ *  explicit `null` clears it (null); `undefined` (omitted) stays undefined.
+ *  Uniqueness is enforced case-insensitively on the trimmed value by the
+ *  `(partner_id, lower(btrim(vendor_invoice_no)))` partial unique index. */
+export function normalizeVendorInvoiceNo(
+  value: string | null | undefined,
+): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}

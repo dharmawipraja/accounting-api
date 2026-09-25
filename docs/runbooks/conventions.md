@@ -37,10 +37,12 @@ bug, not a style nit.
   on both sales-invoice and purchase-bill lines; `AllocationDto.amount` likewise.
   **Exception:** tax-code `rate` fields stay `@Matches` at 6 dp (they are rates,
   not money amounts).
-- **Do math through `Money`** (`add`, `subtract`, `multiply`, `roundToRupiah`,
-  `equals`, `greaterThan`, `isZero`, `isNegative`), never by unwrapping to a
-  Decimal/number and back. `roundToRupiah()` is for the final whole-rupiah
-  rounding step only.
+- **Do math through `Money`** (`add`, `subtract`, `multiply`, `multiplyToRupiah`,
+  `roundToRupiah`, `equals`, `greaterThan`, `isZero`, `isNegative`), never by
+  unwrapping to a Decimal/number and back. `roundToRupiah()` is for the final
+  whole-rupiah rounding step only. For a tax amount use `multiplyToRupiah(rate)`:
+  `multiply()` rounds its product to 4dp first, so `multiply(r).roundToRupiah()`
+  double-rounds (`11000.49995 → 11000.5000 → 11001`).
 
 ## 2. Error model
 

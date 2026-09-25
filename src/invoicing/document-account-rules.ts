@@ -3,9 +3,12 @@ import {
   AccountSubtype,
   AccountType,
   NormalBalance,
+  Prisma,
+  TaxKind,
 } from '@prisma/client';
 import { ValidationFailedError } from '../common/errors/domain-errors';
 import { LedgerTx } from '../ledger/posting/posting.service';
+import { taxAccountViolation } from '../tax/tax-account-rule';
 
 /** Account fields the document account rules look at. */
 export interface RuleAccount {
@@ -126,17 +129,46 @@ export async function assertDocumentLineAccounts(
         normalBalance: true,
       },
     }),
-    db.taxCode.findMany({
-      where: { taxAccountId: { in: unique } },
-      select: { taxAccountId: true },
-    }),
+    // Raw on purpose: a soft-deleted tax code still marks its account as a
+    // tax account (the soft-delete extension would hide it).
+    db.$queryRaw<{ tax_account_id: string }[]>`
+      SELECT DISTINCT tax_account_id FROM tax_codes
+      WHERE tax_account_id IN (${Prisma.join(unique)})`,
   ]);
   const byId = new Map(accounts.map((a) => [a.id, a]));
-  const taxAccountIds = new Set(taxCodes.map((t) => t.taxAccountId));
+  const taxAccountIds = new Set(taxCodes.map((t) => t.tax_account_id));
   for (const id of unique) {
     const a = byId.get(id);
     if (a)
       throwIf(documentLineAccountViolation(nature, a, taxAccountIds.has(id)));
+  }
+}
+
+/** Re-validate, inside the document post tx, the accounts the computed tax
+ *  lines post to against the tax-account rule (a tax code's account may have
+ *  been re-shaped since the code was created). 422 on the first violation.
+ *  A missing account is skipped — the postable-account check reports it. */
+export async function assertTaxLineAccounts(
+  db: LedgerTx,
+  taxes: { kind: TaxKind; accountId: string }[],
+): Promise<void> {
+  if (taxes.length === 0) return;
+  const accounts = await db.account.findMany({
+    where: { id: { in: [...new Set(taxes.map((t) => t.accountId))] } },
+    select: {
+      id: true,
+      role: true,
+      subtype: true,
+      normalBalance: true,
+      isPostable: true,
+    },
+  });
+  const byId = new Map(accounts.map((a) => [a.id, a]));
+  for (const t of taxes) {
+    const a = byId.get(t.accountId);
+    if (!a) continue;
+    const v = taxAccountViolation(t.kind, a);
+    if (v) throw new ValidationFailedError(v.message, v.details);
   }
 }
 

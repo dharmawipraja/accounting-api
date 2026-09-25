@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import {
   assertDueDateNotBefore,
   assertVoidDateNotBefore,
+  normalizeVendorInvoiceNo,
   samePostableContent,
   taxableLines,
 } from './document-helpers';
@@ -129,5 +130,18 @@ describe('assertDueDateNotBefore', () => {
         dueDate: '2026-03-09',
       });
     }
+  });
+});
+
+describe('normalizeVendorInvoiceNo', () => {
+  it('trims surrounding whitespace', () => {
+    expect(normalizeVendorInvoiceNo('  INV-9 \t')).toBe('INV-9');
+  });
+  it('maps a blank value and an explicit null to null (cleared)', () => {
+    expect(normalizeVendorInvoiceNo('   ')).toBeNull();
+    expect(normalizeVendorInvoiceNo(null)).toBeNull();
+  });
+  it('keeps undefined (field omitted)', () => {
+    expect(normalizeVendorInvoiceNo(undefined)).toBeUndefined();
   });
 });

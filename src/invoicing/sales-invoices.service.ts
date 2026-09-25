@@ -24,7 +24,8 @@ export interface CreateInvoiceInput {
 }
 export interface UpdateInvoiceInput {
   date?: Date;
-  dueDate?: Date;
+  /** `null` clears the stored due date; `undefined` keeps it. */
+  dueDate?: Date | null;
   description?: string;
   lines?: InvoiceLineInput[];
 }

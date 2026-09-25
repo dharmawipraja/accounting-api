@@ -316,7 +316,11 @@ purchases only `PPN_INPUT` / `PPH_PAYABLE`.
 Value-added tax. On a sale you collect **output VAT** (`PPN_OUTPUT`, a credit to a
 tax-payable account); on a purchase you pay **input VAT** (`PPN_INPUT`, a debit to a
 tax-receivable account). Computed as base × rate, rounded once to whole rupiah per code.
-- `TaxService.calculate`: output → credit, input → debit; `base.multiply(rate).roundToRupiah()`.
+- `TaxService.calculate`: output → credit, input → debit; `base.multiplyToRupiah(rate)`.
+- A tax code's account must be postable, carry no system role, and match the kind:
+  input/prepaid → DEBIT-normal `TAX_RECEIVABLE`, output/payable → CREDIT-normal
+  `TAX_PAYABLE` (`src/tax/tax-account-rule.ts`; checked on tax-code create and re-checked
+  inside the document post transaction).
 
 ### PPh — Pajak Penghasilan (withholding income tax)
 Tax withheld on income. On a sale your customer withholds from you → `PPH_PREPAID`
@@ -336,15 +340,16 @@ one-sided line.
 ### Per-code rupiah rounding
 Each tax code's total is rounded **once** to whole rupiah (`ROUND_HALF_UP`), matching
 Indonesian Faktur Pajak (tax-invoice) rounding — not per-line, which would accumulate
-rounding error.
-- `Money.roundToRupiah()` applied to each code's aggregated base in `TaxService.calculate`.
+rounding error. The product `base × rate` is kept exact and rounded a single time (no
+intermediate 4dp rounding: `100004.5450 × 0.11 = 11000.49995 → 11000`, not `11001`).
+- `Money.multiplyToRupiah(rate)` applied to each code's aggregated base in `TaxService.calculate`.
 
 ### PKP status (`isPkp`)
 A *Pengusaha Kena Pajak* is a VAT-registered business obligated to charge PPN. Modeled as
 a company-level flag.
-- `CompanySettings.isPkp` in `prisma/schema.prisma`. **Note:** `isPkp` is currently a stored
-  setting only — `TaxService.calculate` does not branch on it (PPN is driven by the tax codes
-  attached to each line). *Flagged: the "PKP gates PPN" rule is not enforced in code.*
+- `CompanySettings.isPkp` in `prisma/schema.prisma`. Enforced in `TaxService.calculate`: a
+  non-PKP company may neither charge PPN Output (sales) nor credit PPN Input (purchases) →
+  422. PPh withholding is unaffected.
 
 ---
 

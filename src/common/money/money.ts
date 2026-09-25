@@ -46,6 +46,17 @@ export class Money {
     return new Money(this.value.times(f));
   }
 
+  /** `this × factor` rounded ONCE to whole rupiah (half-up) from the exact
+   *  product. Unlike `multiply(f).roundToRupiah()`, the product is not first
+   *  rounded to 4dp (which can flip a .49995 up to .5000 → +1 rupiah). */
+  multiplyToRupiah(factor: string | Money | Prisma.Decimal): Money {
+    const f =
+      factor instanceof Money ? factor.value : new Decimal(factor.toString());
+    return new Money(
+      this.value.times(f).toDecimalPlaces(0, Decimal.ROUND_HALF_UP),
+    );
+  }
+
   roundToRupiah(): Money {
     return new Money(this.value.toDecimalPlaces(0, Decimal.ROUND_HALF_UP));
   }

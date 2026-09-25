@@ -5,9 +5,11 @@ import { TaxedDocumentService } from './taxed-document.service';
 import { presentDocument } from './document-presenter';
 import { DocumentDescriptor } from './document-descriptor';
 import { mapUniqueViolation } from '../common/errors/map-unique-violation';
+import { normalizeVendorInvoiceNo } from './document-helpers';
 
 /** The only unique a bill create/update can hit is the live (partner,
- *  vendor_invoice_no) partial index → 409; anything else rethrows unchanged. */
+ *  lower(btrim(vendor_invoice_no))) partial index → 409; anything else
+ *  rethrows unchanged. */
 function duplicateVendorInvoice(
   err: unknown,
   partnerId: string,
@@ -39,9 +41,11 @@ export interface CreateBillInput {
   createdBy: string;
 }
 export interface UpdateBillInput {
-  vendorInvoiceNo?: string;
+  /** `null` clears it; `undefined` keeps it. Normalized (trimmed) on write. */
+  vendorInvoiceNo?: string | null;
   date?: Date;
-  dueDate?: Date;
+  /** `null` clears the stored due date; `undefined` keeps it. */
+  dueDate?: Date | null;
   description?: string;
   lines?: BillLineInput[];
 }
@@ -97,7 +101,7 @@ export class PurchaseBillsService {
           .create({
             data: {
               ...scalars,
-              vendorInvoiceNo: input.vendorInvoiceNo,
+              vendorInvoiceNo: normalizeVendorInvoiceNo(input.vendorInvoiceNo),
               lines: { create: lines.create },
             },
             include: { lines: { orderBy: { lineNo: 'asc' } } },
@@ -106,13 +110,15 @@ export class PurchaseBillsService {
             duplicateVendorInvoice(
               err,
               scalars.partnerId,
-              input.vendorInvoiceNo,
+              normalizeVendorInvoiceNo(input.vendorInvoiceNo),
             ),
           ),
       updateRow: async (tx, id, { lines, ...scalars }, input, existing) => {
         await tx.purchaseBillLine.deleteMany({ where: { purchaseBillId: id } });
+        // Explicit null clears; omitted (undefined) keeps the stored value.
+        const normalized = normalizeVendorInvoiceNo(input.vendorInvoiceNo);
         const vendorInvoiceNo =
-          input.vendorInvoiceNo ?? existing.vendorInvoiceNo;
+          normalized === undefined ? existing.vendorInvoiceNo : normalized;
         await tx.purchaseBill
           .update({
             where: { id },

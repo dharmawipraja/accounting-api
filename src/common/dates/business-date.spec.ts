@@ -3,6 +3,7 @@ import {
   businessDate,
   isBusinessDateString,
   optionalBusinessDate,
+  patchBusinessDate,
 } from './business-date';
 
 describe('businessDate', () => {
@@ -53,5 +54,19 @@ describe('isBusinessDateString (DTO boundary)', () => {
     expect(isBusinessDateString('2026-02-30')).toBe(false);
     expect(isBusinessDateString('2026-13-01')).toBe(false);
     expect(isBusinessDateString(20260228)).toBe(false);
+  });
+});
+
+describe('patchBusinessDate (PATCH tri-state)', () => {
+  it('keeps undefined (field omitted → unchanged)', () => {
+    expect(patchBusinessDate(undefined)).toBeUndefined();
+  });
+  it('keeps an explicit null (field cleared)', () => {
+    expect(patchBusinessDate(null)).toBeNull();
+  });
+  it('parses a present value as a business date', () => {
+    expect(patchBusinessDate('2026-03-15T22:00:00Z')?.toISOString()).toBe(
+      '2026-03-15T00:00:00.000Z',
+    );
   });
 });

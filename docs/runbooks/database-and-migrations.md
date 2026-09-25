@@ -255,10 +255,13 @@ no separate seed command for the core reference data:
   `scripts/create-admin.ts` argon2-hashes the password and upserts the user via the
   adapter-pg client. In prod, run it once against the deployed DB.
 
-> **Hand-authored partial unique** `purchase_bills_partner_vendor_invoice_live_key`
-> (`20260926200000`): `(partner_id, vendor_invoice_no)` unique among live bills
-> (`deleted_at IS NULL AND status <> 'VOID'`). Its migration aborts with a clear
-> error listing any existing duplicate pairs — void/delete/correct them first.
+> **Hand-authored partial unique** `purchase_bills_partner_vendor_invoice_norm_live_key`
+> (`20260930000000`, replacing the exact-match `purchase_bills_partner_vendor_invoice_live_key`
+> of `20260926200000`): `(partner_id, lower(btrim(vendor_invoice_no)))` unique among
+> live bills (`deleted_at IS NULL AND status <> 'VOID'`, blank numbers excluded), so
+> `INV-1` / `inv-1` / ` INV-1 ` are one number. The API trims on write (blank → NULL).
+> Both migrations abort with a clear error listing any existing duplicate pairs —
+> void/delete/correct them first.
 
 > **System accounts are identified by `account.role`, not by hardcoded codes.** The
 > seeded chart assigns the `AccountRole` enum (`CASH`, `AR_CONTROL`, `AP_CONTROL`,

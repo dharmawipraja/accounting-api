@@ -63,7 +63,8 @@ export interface CreateDocumentInput {
 
 export interface UpdateDocumentInput {
   date?: Date;
-  dueDate?: Date;
+  /** `null` clears the stored due date; `undefined` keeps it. */
+  dueDate?: Date | null;
   description?: string;
   lines?: DocumentLineInput[];
 }

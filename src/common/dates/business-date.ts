@@ -42,3 +42,12 @@ function leadingCalendarDay(value: string): Date | null {
 export function optionalBusinessDate(value?: string | null): Date | undefined {
   return value ? businessDate(value) : undefined;
 }
+
+/** PATCH tri-state for a nullable business date: `undefined` (omitted → keep
+ *  the stored value), `null` (explicitly cleared), or the parsed date. */
+export function patchBusinessDate(
+  value?: string | null,
+): Date | null | undefined {
+  if (value === null) return null;
+  return optionalBusinessDate(value);
+}

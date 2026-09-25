@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { JournalEntry, Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
-import { PostingService, LedgerTx } from '../ledger/posting/posting.service';
+import {
+  PostingService,
+  LedgerTx,
+  POSTING_TX_OPTIONS,
+} from '../ledger/posting/posting.service';
 import {
   TaxService,
   TaxableLineInput,
@@ -9,7 +13,11 @@ import {
 } from '../tax/tax.service';
 import { DocumentNumberService } from './document-number.service';
 import { ValidationFailedError } from '../common/errors/domain-errors';
-import { assertDocumentLineAccounts } from './document-account-rules';
+import { Money } from '../common/money/money';
+import {
+  assertDocumentLineAccounts,
+  assertTaxLineAccounts,
+} from './document-account-rules';
 
 export interface PostTaxedDocParams {
   nature: 'SALE' | 'PURCHASE';
@@ -141,6 +149,12 @@ export class DocumentPostingService {
         params.nature,
         params.lines.map((l) => l.accountId),
       );
+      // ...and every account a (non-zero) tax line posts to must still pass
+      // the tax-account rule for its code's kind.
+      await assertTaxLineAccounts(
+        tx,
+        calc.taxes.filter((t) => !Money.of(t.amount).isZero()),
+      );
       const number = await this.docNumber.next(
         tx,
         params.documentType,
@@ -160,7 +174,9 @@ export class DocumentPostingService {
         fiscalYear: prepared.fiscalYear,
         totals: this.summarize(calc),
       });
-    });
+      // Same bounded wait as direct posting: a post racing a draft edit /
+      // another post waits out the row lock instead of Prisma's 5s default.
+    }, POSTING_TX_OPTIONS);
   }
 
   /** FOR UPDATE the source row and re-check it is still DRAFT, before a number is

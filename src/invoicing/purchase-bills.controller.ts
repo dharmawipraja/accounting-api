@@ -35,6 +35,7 @@ import { VoidDocumentDto } from './dto/void-document.dto';
 import {
   businessDate,
   optionalBusinessDate,
+  patchBusinessDate,
 } from '../common/dates/business-date';
 
 @ApiTags('Purchase Bills')
@@ -85,7 +86,7 @@ export class PurchaseBillsController {
     const bill = await this.bills.update(id, {
       vendorInvoiceNo: dto.vendorInvoiceNo,
       date: optionalBusinessDate(dto.date),
-      dueDate: optionalBusinessDate(dto.dueDate),
+      dueDate: patchBusinessDate(dto.dueDate),
       description: dto.description,
       lines: dto.lines,
     });

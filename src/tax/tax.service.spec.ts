@@ -107,6 +107,54 @@ describe('TaxService.calculate', () => {
     expect(r.taxes[0].amount).toBe('36667.0000');
   });
 
+  it('rounds base x rate ONCE to rupiah (no intermediate 4dp rounding)', async () => {
+    const r = await make().calculate({
+      nature: 'SALE',
+      settlementAccountId: 'ar',
+      lines: [
+        { accountId: 'rev', amount: '100004.5450', taxCodeIds: ['ppn-out'] },
+      ],
+    });
+    // 100,004.5450 * 0.11 = 11,000.49995 → 11,000 (a 4dp pre-round would
+    // give 11,000.5000 → 11,001).
+    expect(r.taxes[0].amount).toBe('11000.0000');
+  });
+
+  it('rejects PPN Input on a PURCHASE for a non-PKP company (422)', async () => {
+    const svc = new TaxService({
+      client: {
+        companySettings: {
+          findFirst: jest.fn().mockResolvedValue({ isPkp: false }),
+        },
+        taxCode: { findMany: jest.fn().mockResolvedValue([CODES[1]]) },
+      },
+    } as never);
+    await expect(
+      svc.calculate({
+        nature: 'PURCHASE',
+        settlementAccountId: 'ap',
+        lines: [{ accountId: 'exp', amount: '1000', taxCodeIds: ['ppn-in'] }],
+      }),
+    ).rejects.toThrow(/PPN Input can only be credited by a PKP company/);
+  });
+
+  it('allows PPh withholding on a PURCHASE for a non-PKP company', async () => {
+    const svc = new TaxService({
+      client: {
+        companySettings: {
+          findFirst: jest.fn().mockResolvedValue({ isPkp: false }),
+        },
+        taxCode: { findMany: jest.fn().mockResolvedValue([CODES[2]]) },
+      },
+    } as never);
+    const r = await svc.calculate({
+      nature: 'PURCHASE',
+      settlementAccountId: 'ap',
+      lines: [{ accountId: 'exp', amount: '1000', taxCodeIds: ['pph-pay'] }],
+    });
+    expect(r.withholdingTotal).toBe('20.0000');
+  });
+
   it('rejects a duplicate tax code within one line (422)', async () => {
     await expect(
       make().calculate({

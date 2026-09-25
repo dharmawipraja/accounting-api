@@ -33,6 +33,12 @@ describe('assertCashAssignable (CASH role shape rule)', () => {
     );
   });
 
+  it('rejects an account used by a tax code, even a soft-deleted one (422)', () => {
+    expect(() =>
+      assertCashAssignable({ ...ok, id: 'a1', usedByTaxCode: true }),
+    ).toThrow(/tax account/);
+  });
+
   it('carries the offending shape in details', () => {
     try {
       assertCashAssignable({ ...ok, id: 'a1', isPostable: false });

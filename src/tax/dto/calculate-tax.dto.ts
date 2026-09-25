@@ -8,13 +8,19 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { IsMoneyString } from '../../common/validators/is-money-string';
-import { MAX_LINE_ITEMS } from '../../common/dto/limits';
+import {
+  MAX_LINE_ITEMS,
+  MAX_TAX_CODES_PER_LINE,
+} from '../../common/dto/limits';
 import { TaxNature } from '../tax.service';
 
 export class TaxableLineDto {
   @IsUUID() accountId!: string;
   @IsMoneyString() amount!: string;
-  @IsArray() @IsUUID('all', { each: true }) taxCodeIds!: string[];
+  @IsArray()
+  @ArrayMaxSize(MAX_TAX_CODES_PER_LINE)
+  @IsUUID('all', { each: true })
+  taxCodeIds!: string[];
 }
 
 export class CalculateTaxDto {

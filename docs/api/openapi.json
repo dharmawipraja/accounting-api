@@ -5374,10 +5374,13 @@
       "UpdateSalesInvoiceDto": {
         "type": "object",
         "properties": {
-          "date": {
-            "type": "string"
-          },
           "dueDate": {
+            "type": "string",
+            "nullable": true,
+            "format": "date",
+            "description": "Send `null` to clear the due date; omit to keep it."
+          },
+          "date": {
             "type": "string"
           },
           "description": {
@@ -5685,12 +5688,17 @@
         "properties": {
           "vendorInvoiceNo": {
             "type": "string",
-            "maxLength": 64
-          },
-          "date": {
-            "type": "string"
+            "nullable": true,
+            "maxLength": 64,
+            "description": "Trimmed on write. Send `null` to clear it; omit to keep it."
           },
           "dueDate": {
+            "type": "string",
+            "nullable": true,
+            "format": "date",
+            "description": "Send `null` to clear the due date; omit to keep it."
+          },
+          "date": {
             "type": "string"
           },
           "description": {

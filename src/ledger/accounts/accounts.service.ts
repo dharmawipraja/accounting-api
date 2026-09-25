@@ -275,12 +275,18 @@ export class AccountsService implements OnModuleInit {
     if (rows.length === 0)
       throw new NotFoundDomainError('Account not found', { id });
     const a = rows[0];
+    // Raw on purpose: soft-deleted tax codes count too (their posted history
+    // still sits on the account). Serializes with tax-code create, which
+    // reads the account FOR SHARE before inserting.
+    const [{ used }] = await tx.$queryRaw<{ used: boolean }[]>`
+      SELECT EXISTS (SELECT 1 FROM tax_codes WHERE tax_account_id = ${id}) AS used`;
     assertCashAssignable({
       id,
       type: a.type,
       normalBalance: a.normal_balance,
       isPostable: a.is_postable,
       role: a.role,
+      usedByTaxCode: used,
     });
   }
 

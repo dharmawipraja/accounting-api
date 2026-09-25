@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
-import { PostingService, LedgerTx } from './posting/posting.service';
+import {
+  PostingService,
+  LedgerTx,
+  POSTING_TX_OPTIONS,
+} from './posting/posting.service';
 import { ValidationFailedError } from '../common/errors/domain-errors';
 
 export type SoftDeletableModel = {
@@ -82,7 +86,7 @@ export class DocumentLifecycleService {
         }
         await opts.applyInTx(ltx, locked);
         await this.posting.reverseInTx(ltx, prepared);
-      });
+      }, POSTING_TX_OPTIONS);
     } catch (err) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&

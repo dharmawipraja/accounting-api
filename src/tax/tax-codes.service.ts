@@ -1,7 +1,15 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import { Prisma, TaxCode, TaxKind } from '@prisma/client';
+import {
+  AccountRole,
+  AccountSubtype,
+  NormalBalance,
+  Prisma,
+  TaxCode,
+  TaxKind,
+} from '@prisma/client';
 import { Decimal } from 'decimal.js';
-import { PrismaService } from '../common/prisma/prisma.service';
+import { LedgerTx, PrismaService } from '../common/prisma/prisma.service';
+import { taxAccountViolation } from './tax-account-rule';
 import { listPaginated, Paginated } from '../common/pagination/paginated';
 import { AccountsService } from '../ledger/accounts/accounts.service';
 import {
@@ -37,10 +45,6 @@ export class TaxCodesService implements OnModuleInit {
     await this.seedIfEmpty();
   }
 
-  private requiredNormalBalance(kind: TaxKind): 'DEBIT' | 'CREDIT' {
-    return kind === 'PPN_INPUT' || kind === 'PPH_PREPAID' ? 'DEBIT' : 'CREDIT';
-  }
-
   private validateRate(rate: string): void {
     let r: Decimal;
     try {
@@ -62,45 +66,60 @@ export class TaxCodesService implements OnModuleInit {
     }
   }
 
-  private async validateAccountForKind(
+  /** Read the tax account FOR SHARE inside `tx` (so a concurrent PATCH
+   *  role=CASH, which locks it FOR UPDATE and checks tax-code usage, serializes
+   *  with this insert) and apply the pure tax-account rule. 404 if missing. */
+  private async lockAndValidateAccount(
+    tx: LedgerTx,
     taxAccountId: string,
     kind: TaxKind,
   ): Promise<void> {
-    const account = await this.accounts.findById(taxAccountId);
-    if (!account.isPostable) {
-      throw new ValidationFailedError('Tax account must be postable', {
-        taxAccountId,
-      });
-    }
-    const required = this.requiredNormalBalance(kind);
-    if (account.normalBalance !== required) {
-      throw new ValidationFailedError(
-        `Tax kind ${kind} requires a ${required}-normal account`,
-        { taxAccountId, kind, normalBalance: account.normalBalance },
-      );
-    }
+    const rows = await tx.$queryRaw<
+      {
+        role: AccountRole | null;
+        subtype: AccountSubtype;
+        normal_balance: NormalBalance;
+        is_postable: boolean;
+      }[]
+    >`
+      SELECT role::text AS role, subtype::text AS subtype,
+             normal_balance::text AS normal_balance, is_postable
+      FROM accounts WHERE id = ${taxAccountId} AND deleted_at IS NULL FOR SHARE`;
+    if (rows.length === 0)
+      throw new NotFoundDomainError('Account not found', { id: taxAccountId });
+    const a = rows[0];
+    const v = taxAccountViolation(kind, {
+      id: taxAccountId,
+      role: a.role,
+      subtype: a.subtype,
+      normalBalance: a.normal_balance,
+      isPostable: a.is_postable,
+    });
+    if (v) throw new ValidationFailedError(v.message, v.details);
   }
 
   async create(input: CreateTaxCodeInput): Promise<TaxCode> {
     this.validateRate(input.rate);
-    await this.validateAccountForKind(input.taxAccountId, input.kind);
-    const existing = await this.prisma.client.taxCode.findFirst({
-      where: { code: input.code },
-    });
-    if (existing) {
-      throw new ConflictDomainError('Tax code already exists', {
-        code: input.code,
-      });
-    }
     try {
-      return await this.prisma.client.taxCode.create({
-        data: {
-          code: input.code,
-          name: input.name,
-          kind: input.kind,
-          rate: input.rate,
-          taxAccountId: input.taxAccountId,
-        },
+      return await this.prisma.transaction(async (tx) => {
+        await this.lockAndValidateAccount(tx, input.taxAccountId, input.kind);
+        const existing = await tx.taxCode.findFirst({
+          where: { code: input.code },
+        });
+        if (existing) {
+          throw new ConflictDomainError('Tax code already exists', {
+            code: input.code,
+          });
+        }
+        return tx.taxCode.create({
+          data: {
+            code: input.code,
+            name: input.name,
+            kind: input.kind,
+            rate: input.rate,
+            taxAccountId: input.taxAccountId,
+          },
+        });
       });
     } catch (err) {
       // A concurrent create with the same code lost the race past the pre-check.

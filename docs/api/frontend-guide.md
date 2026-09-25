@@ -539,14 +539,27 @@ violations return `422 VALIDATION_FAILED`:
 - **Due date.** `dueDate` must be on/after `date` → else `422 VALIDATION_FAILED`
   `{ date, dueDate }`. On `PATCH` the effective (merged) values are checked, so moving
   only `date` past the stored `dueDate` is rejected too.
-- **PPN Output needs a PKP company.** A sales invoice using a `PPN_OUTPUT` tax code when
-  company settings `isPkp` is `false` → `422 VALIDATION_FAILED` `{ taxCodeId, kind }`
-  (create, `PATCH`, `/post`, `POST /tax/calculate` and the journal preview with
-  `nature: SALE`).
-- **Vendor invoice number (bills).** A `vendorInvoiceNo` may appear on at most one
-  **live** bill per vendor (not deleted, not `VOID`) → a duplicate on create or `PATCH`
-  is `409 CONFLICT` `{ partnerId, vendorInvoiceNo }`. Voiding or deleting the bill frees
-  the number; another vendor may use the same number.
+- **Clearing fields on `PATCH`.** `dueDate` (invoice + bill) and `vendorInvoiceNo` (bill)
+  are nullable: send `null` to clear the stored value; omit the field to keep it.
+- **Size caps.** `lines` holds at most **100** items on create *and* `PATCH`; each line's
+  `taxCodeIds` at most **10** (also on `POST /tax/calculate` and the journal preview) →
+  else `400`.
+- **PPN needs a PKP company.** When company settings `isPkp` is `false`, a sales invoice
+  using a `PPN_OUTPUT` code **and a purchase bill using a `PPN_INPUT` code** (a non-PKP
+  company cannot credit input VAT) → `422 VALIDATION_FAILED` `{ taxCodeId, kind }`
+  (create, `PATCH`, `/post`, `POST /tax/calculate` and the journal preview). PPh codes
+  are unaffected.
+- **Tax accounts re-checked at `/post`.** Each account a tax line posts to must still
+  satisfy the tax-code account rule (see *Tax codes* below) → else `422
+  VALIDATION_FAILED` `{ taxAccountId, reason, … }`.
+- **Tax rounding.** Each tax code's amount is `DPP × rate` computed exactly and rounded
+  **once** to whole rupiah (half-up), e.g. `100004.5450 × 0.11 = 11000.49995 → 11000`.
+- **Vendor invoice number (bills).** Trimmed on write (a blank value is stored as
+  `null`). A `vendorInvoiceNo` may appear on at most one **live** bill per vendor (not
+  deleted, not `VOID`), compared **case-insensitively and ignoring surrounding spaces**
+  (`INV-1` = `inv-1` = ` INV-1 `) → a duplicate on create or `PATCH` is `409 CONFLICT`
+  `{ partnerId, vendorInvoiceNo }`. Voiding or deleting the bill frees the number;
+  another vendor may use the same number.
 
 **Void date.** Every void endpoint (invoice, bill, payment) accepts an optional body
 `{ "date": "YYYY-MM-DD" }` — the void (reversal) date. Omit it to void on the document's
@@ -589,6 +602,11 @@ account's actual role, possibly `null`).
 The payment `date` must be **on/after the date of every invoice/bill it allocates to** —
 otherwise, on create (and re-checked on `/post`), `422 VALIDATION_FAILED` with
 `details: { paymentDate, documentId, documentDate }`.
+
+The partner is re-checked on `/post` too: it must still exist, be active and carry the
+direction's flag (customer for RECEIPT, vendor for DISBURSEMENT) → else `422
+VALIDATION_FAILED` `details: { partnerId }` ("Partner is inactive" / "Receipt requires a
+customer" / "Disbursement requires a vendor").
 
 ### Periods & year-end close
 
@@ -801,7 +819,7 @@ no auth.
 - `GET    /v1/ledger/accounts/:id` · any · get one account
 - `GET    /v1/ledger/accounts/:id/balance` · any · account balance (`?asOf=`)
 - `POST   /v1/ledger/accounts` · ACCOUNTANT+ · create account. With `role: 'CASH'` the same rule as PATCH applies: the account must be a postable (`isPostable` not `false`), debit-normal `ASSET` → otherwise `422 VALIDATION_FAILED`
-- `PATCH  /v1/ledger/accounts/:id` · ACCOUNTANT+ · update account `{name?, cashFlowCategory?, isActive?, role?}` (`isActive: false` follows the deactivate rules). `role` accepts **only `'CASH'`**: it marks an existing postable, debit-normal `ASSET` account with no role as a cash/bank account so payments can use it; any other role value — including `null` (a role cannot be cleared) — → `400`, a credit-normal/non-ASSET/header account or one that already holds a singleton role → `422 VALIDATION_FAILED`. Singleton roles (AR/AP control, retained earnings, opening-balance equity, tax expense) are create-only.
+- `PATCH  /v1/ledger/accounts/:id` · ACCOUNTANT+ · update account `{name?, cashFlowCategory?, isActive?, role?}` (`isActive: false` follows the deactivate rules). `role` accepts **only `'CASH'`**: it marks an existing postable, debit-normal `ASSET` account with no role as a cash/bank account so payments can use it; any other role value — including `null` (a role cannot be cleared) — → `400`, a credit-normal/non-ASSET/header account or one that already holds a singleton role → `422 VALIDATION_FAILED`; an account used by any tax code (including a deleted one) → `422 VALIDATION_FAILED` `{ id, reason: "TAX_ACCOUNT" }`. Singleton roles (AR/AP control, retained earnings, opening-balance equity, tax expense) are create-only.
 - `POST   /v1/ledger/accounts/:id/deactivate` · ADMIN · soft-deactivate account. Singleton system accounts (non-null `role` other than `CASH`) → `422`. A `CASH` account → `422` unless its balance is zero (`details.balance`) **and** another active, postable `CASH` account remains (`details.otherActiveCashAccounts: 0`). A reversal or document void may still post to an already-deactivated `CASH` account (it only undoes an earlier movement), which can leave it with a non-zero balance; move that balance with a manual entry after reactivating it (`PATCH { isActive: true }`)
 - `DELETE /v1/ledger/accounts/:id` · ADMIN · soft-delete account (same system-account / `CASH` rules as deactivate; accounts with posted lines → `422`)
 
@@ -879,13 +897,22 @@ no auth.
 - `POST   /v1/partners` · ACCOUNTANT+ · create
 - `PATCH  /v1/partners/:id` · ACCOUNTANT+ · update
 - `POST   /v1/partners/:id/deactivate` · ADMIN · deactivate
-- `DELETE /v1/partners/:id` · ADMIN · delete
+- `DELETE /v1/partners/:id` · ADMIN · delete. Refused while the partner has **open items** — a
+  draft invoice/bill, a draft payment, or a `POSTED` invoice/bill with an outstanding balance
+  → `422 VALIDATION_FAILED` `details: { id, reason: "OPEN_ITEMS", draftDocuments,
+  outstandingDocuments, draftPayments }`. Settle/void/delete those first, or deactivate the
+  partner instead.
 
 ### Tax
 
 - `GET    /v1/tax/codes` · any · list tax codes (**envelope** `{data,total,limit,offset}`; supports `?limit`/`?offset`)
 - `GET    /v1/tax/codes/:id` · any · get one
-- `POST   /v1/tax/codes` · ACCOUNTANT+ · create
+- `POST   /v1/tax/codes` · ACCOUNTANT+ · create. The `taxAccountId` must be a postable account
+  with **no system role**, shaped for the `kind`: `PPN_INPUT`/`PPH_PREPAID` → a DEBIT-normal
+  `TAX_RECEIVABLE` account; `PPN_OUTPUT`/`PPH_PAYABLE` → a CREDIT-normal `TAX_PAYABLE`
+  account → else `422 VALIDATION_FAILED` `details: { taxAccountId, reason }` with `reason`
+  `NOT_POSTABLE` | `SYSTEM_ROLE` (+`role`) | `NORMAL_BALANCE` (+`kind`, `normalBalance`) |
+  `SUBTYPE` (+`kind`, `subtype`, `required`)
 - `PATCH  /v1/tax/codes/:id` · ACCOUNTANT+ · update
 - `POST   /v1/tax/codes/:id/deactivate` · ADMIN · deactivate
 - `DELETE /v1/tax/codes/:id` · ADMIN · delete

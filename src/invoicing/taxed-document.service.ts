@@ -171,7 +171,8 @@ export class TaxedDocumentService {
         );
         const common = {
           date: input.date ?? row.date,
-          dueDate: input.dueDate ?? row.dueDate,
+          // Explicit null clears; omitted (undefined) keeps the stored value.
+          dueDate: input.dueDate === undefined ? row.dueDate : input.dueDate,
           description: input.description ?? row.description,
           subtotal: totals.subtotal,
           taxTotal: totals.taxTotal,

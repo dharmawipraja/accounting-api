@@ -467,9 +467,11 @@ model PurchaseBill {
 
   // + hand-authored CHECK purchase_bills_amount_paid_range (0 <= amount_paid <= total)
   @@unique([fiscalYear, billNumber], name: "purchase_bills_fy_number_unique")
-  // + hand-authored partial UNIQUE INDEX purchase_bills_partner_vendor_invoice_live_key
-  //   ON (partner_id, vendor_invoice_no) WHERE deleted_at IS NULL AND status <> 'VOID'
-  //   AND vendor_invoice_no IS NOT NULL (20260926200000) — duplicate → 409.
+  // + hand-authored partial UNIQUE INDEX purchase_bills_partner_vendor_invoice_norm_live_key
+  //   ON (partner_id, lower(btrim(vendor_invoice_no))) WHERE deleted_at IS NULL
+  //   AND status <> 'VOID' AND vendor_invoice_no IS NOT NULL
+  //   AND btrim(vendor_invoice_no) <> '' (20260930000000, replaces the exact-match
+  //   index of 20260926200000) — duplicate → 409.
   @@index([deletedAt])
   @@index([partnerId])
   @@index([status, date])

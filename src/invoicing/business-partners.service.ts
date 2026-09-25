@@ -9,6 +9,7 @@ import {
 import { mapUniqueViolation } from '../common/errors/map-unique-violation';
 import { trigramSearch } from '../common/search/trigram-search';
 import { listPaginated, Paginated } from '../common/pagination/paginated';
+import { tombstoneValue } from '../common/prisma/tombstone';
 
 export interface CreatePartnerInput {
   code: string;
@@ -133,13 +134,59 @@ export class BusinessPartnersService {
     });
   }
 
+  /** Soft-delete (tombstone) a partner that has no open items: no live draft
+   *  invoice/bill/payment and no POSTED invoice/bill with an outstanding
+   *  balance — deleting it would orphan receivables/payables (aging, payment
+   *  allocation) behind a partner nobody can select any more. The partner row
+   *  is locked FOR UPDATE first; payment post re-reads it FOR SHARE, so a
+   *  post and a delete serialize. 422 `{ id, reason: 'OPEN_ITEMS' }`. */
   async softDelete(id: string, deletedBy: string): Promise<void> {
-    const p = await this.findById(id);
-    await this.prisma.client.businessPartner.tombstoneDelete(
-      id,
-      'code',
-      p.code,
-      deletedBy,
-    );
+    await this.prisma.transaction(async (tx) => {
+      const rows = await tx.$queryRaw<{ code: string }[]>`
+        SELECT code FROM business_partners
+        WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
+      if (rows.length === 0)
+        throw new NotFoundDomainError('Partner not found', { id });
+      const [open] = await tx.$queryRaw<
+        { drafts: number; outstanding: number; draft_payments: number }[]
+      >`
+        SELECT
+          (SELECT count(*)::int FROM sales_invoices
+             WHERE partner_id = ${id} AND deleted_at IS NULL AND status = 'DRAFT')
+          + (SELECT count(*)::int FROM purchase_bills
+             WHERE partner_id = ${id} AND deleted_at IS NULL AND status = 'DRAFT')
+            AS drafts,
+          (SELECT count(*)::int FROM sales_invoices
+             WHERE partner_id = ${id} AND deleted_at IS NULL AND status = 'POSTED'
+               AND total > amount_paid)
+          + (SELECT count(*)::int FROM purchase_bills
+             WHERE partner_id = ${id} AND deleted_at IS NULL AND status = 'POSTED'
+               AND total > amount_paid)
+            AS outstanding,
+          (SELECT count(*)::int FROM payments
+             WHERE partner_id = ${id} AND deleted_at IS NULL AND status = 'DRAFT')
+            AS draft_payments`;
+      if (open.drafts + open.outstanding + open.draft_payments > 0)
+        throw new ValidationFailedError(
+          'Cannot delete a partner with open items (draft documents or payments, or posted documents with an outstanding balance); settle, void or delete them first, or deactivate the partner',
+          {
+            id,
+            reason: 'OPEN_ITEMS',
+            draftDocuments: open.drafts,
+            outstandingDocuments: open.outstanding,
+            draftPayments: open.draft_payments,
+          },
+        );
+      // Same tombstone semantics as the extension's tombstoneDelete() (not
+      // available on `tx`): free the unique code, stamp deletedAt/By.
+      await tx.businessPartner.update({
+        where: { id },
+        data: {
+          code: tombstoneValue(rows[0].code, id),
+          deletedAt: new Date(),
+          deletedBy,
+        },
+      });
+    });
   }
 }
