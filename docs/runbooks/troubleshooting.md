@@ -205,7 +205,9 @@ mechanics, and [`./deploy.md`](./deploy.md) for production deploys.
   proposes breaking changes such as downgrading `@nestjs/testing`.
 - **Cause:** The affected packages are **transitive** deps. They're already pinned
   to patched versions via the `overrides` block in `package.json`
-  (`multer`, `form-data`, `@hono/node-server`, `js-yaml`). `--force` ignores that
+  (`multer`, `form-data`, `@hono/node-server`, `hono`, `deepmerge-ts`, `mysql2`,
+  `valibot`, `fast-uri`, `qs`, `body-parser` — mostly the `prisma` CLI's tree, which
+  counts as prod because `@prisma/client` peers on it). `--force` ignores that
   intent and tries to "fix" by yanking direct deps to older majors.
 - **Fix:** Do **not** run `--force`. Resolve advisories by adding/adjusting an
   entry in the `package.json` `overrides` block, then re-check with `npm audit`

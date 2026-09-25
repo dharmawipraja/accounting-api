@@ -35,12 +35,11 @@ npm install
 ```
 
 > `package.json` has an `overrides` block pinning patched transitive deps (`multer`,
-> `form-data`, `@hono/node-server`, `js-yaml`). Leave it as-is — it keeps
-> `npm audit` clean.
-> ⚠️ The `js-yaml` override forces v4 onto `@istanbuljs/load-nyc-config` (which
-> declares v3 and uses the removed `safeLoad` API). Harmless while the coverage
-> config is `.nycrc.json` — but switching to a `.nycrc.yml` would break
-> `npm run test:cov:all` with `yaml.safeLoad is not a function`.
+> `form-data`, `@hono/node-server`, `hono`, `deepmerge-ts`, `mysql2`, `valibot`,
+> `fast-uri`, `qs`, `body-parser`). Leave it as-is — it keeps `npm audit` clean.
+> (The former global `js-yaml` override was dropped 2026-09-26: `@nestjs/swagger`
+> now ships js-yaml 5, dev tooling resolves a patched 4.3.x, and nyc's loader keeps
+> the v3 it declares.)
 
 ### Environment files
 
