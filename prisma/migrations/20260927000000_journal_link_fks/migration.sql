@@ -17,26 +17,42 @@ DECLARE
   n bigint;
   ids text;
 BEGIN
-  SELECT count(*), string_agg(fiscal_year::text, ', ') INTO n, ids FROM (
-    SELECT y.fiscal_year FROM year_end_closings y
-    WHERE y.closing_entry_id IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM journal_entries j WHERE j.id = y.closing_entry_id)
-    LIMIT 20) x;
-  IF n > 0 THEN problems := problems || format('%s year_end_closings.closing_entry_id orphans (fiscal years: %s)', n, ids); END IF;
+  -- True counts; the id lists are capped at 20 for readability.
+  SELECT count(*) INTO n FROM year_end_closings y
+  WHERE y.closing_entry_id IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM journal_entries j WHERE j.id = y.closing_entry_id);
+  IF n > 0 THEN
+    SELECT string_agg(fiscal_year::text, ', ') INTO ids FROM (
+      SELECT y.fiscal_year FROM year_end_closings y
+      WHERE y.closing_entry_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM journal_entries j WHERE j.id = y.closing_entry_id)
+      ORDER BY y.fiscal_year LIMIT 20) x;
+    problems := problems || format('%s year_end_closings.closing_entry_id orphans (fiscal years: %s)', n, ids);
+  END IF;
 
-  SELECT count(*), string_agg(id, ', ') INTO n, ids FROM (
-    SELECT je.id FROM journal_entries je
-    WHERE je.reversal_of_id IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM journal_entries o WHERE o.id = je.reversal_of_id)
-    LIMIT 20) x;
-  IF n > 0 THEN problems := problems || format('%s journal_entries.reversal_of_id orphans (entries: %s)', n, ids); END IF;
+  SELECT count(*) INTO n FROM journal_entries je
+  WHERE je.reversal_of_id IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM journal_entries o WHERE o.id = je.reversal_of_id);
+  IF n > 0 THEN
+    SELECT string_agg(id, ', ') INTO ids FROM (
+      SELECT je.id FROM journal_entries je
+      WHERE je.reversal_of_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM journal_entries o WHERE o.id = je.reversal_of_id)
+      ORDER BY je.id LIMIT 20) x;
+    problems := problems || format('%s journal_entries.reversal_of_id orphans (entries: %s)', n, ids);
+  END IF;
 
-  SELECT count(*), string_agg(id, ', ') INTO n, ids FROM (
-    SELECT je.id FROM journal_entries je
-    WHERE je.reversed_by_id IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM journal_entries r WHERE r.id = je.reversed_by_id)
-    LIMIT 20) x;
-  IF n > 0 THEN problems := problems || format('%s journal_entries.reversed_by_id orphans (entries: %s)', n, ids); END IF;
+  SELECT count(*) INTO n FROM journal_entries je
+  WHERE je.reversed_by_id IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM journal_entries r WHERE r.id = je.reversed_by_id);
+  IF n > 0 THEN
+    SELECT string_agg(id, ', ') INTO ids FROM (
+      SELECT je.id FROM journal_entries je
+      WHERE je.reversed_by_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM journal_entries r WHERE r.id = je.reversed_by_id)
+      ORDER BY je.id LIMIT 20) x;
+    problems := problems || format('%s journal_entries.reversed_by_id orphans (entries: %s)', n, ids);
+  END IF;
 
   IF array_length(problems, 1) > 0 THEN
     RAISE EXCEPTION 'journal_link_fks migration aborted — existing rows reference missing journal entries: %. Correct the rows, then re-run the migration.',

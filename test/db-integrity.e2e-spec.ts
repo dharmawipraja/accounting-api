@@ -599,8 +599,10 @@ describe('DB integrity — ledger invariants enforced by Postgres (e2e)', () => 
             'SET LOCAL session_replication_role = replica',
           );
           await tx.$executeRawUnsafe(
+            // 21 rows: the reported count must be the true count, not the
+            // 20-id display cap.
             `INSERT INTO year_end_closings (fiscal_year, status, closing_entry_id, net_income, closed_at, closed_by, updated_at)
-             VALUES (2096, 'CLOSED', '${ghost}', 0, now(), 'x', now())`,
+             SELECT 2000 + g, 'CLOSED', '${ghost}', 0, now(), 'x', now() FROM generate_series(1, 21) g`,
           );
           await tx.$executeRawUnsafe(
             `INSERT INTO journal_entries (id, date, description, source_type, status, reversal_of_id, reversed_by_id, created_by, updated_at)
@@ -609,7 +611,7 @@ describe('DB integrity — ledger invariants enforced by Postgres (e2e)', () => 
           await tx.$executeRawUnsafe(precheck);
         }),
       ).rejects.toThrow(
-        /journal_link_fks migration aborted.*1 year_end_closings\.closing_entry_id orphans.*1 journal_entries\.reversal_of_id orphans.*1 journal_entries\.reversed_by_id orphans/,
+        /journal_link_fks migration aborted.*21 year_end_closings\.closing_entry_id orphans.*1 journal_entries\.reversal_of_id orphans.*1 journal_entries\.reversed_by_id orphans/,
       );
     });
 

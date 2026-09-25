@@ -156,15 +156,10 @@ describe('Concurrency races (e2e)', () => {
         allocations: [{ salesInvoiceId: inv.id, amount: '400000' }],
         createdBy: 'creator',
       });
-      // The void path is shorter than the payment post, so stagger the void
-      // start across iterations to land on both sides of the race.
-      const stagger = (i % 5) * 10;
+      // Genuinely concurrent; which side wins is up to the scheduler. The two
+      // ordered tests below pin down each loser's specific guard.
       const [voidRes, postRes] = await Promise.all([
-        settle(
-          new Promise((r) => setTimeout(r, stagger)).then(() =>
-            invoices.void(inv.id, 'voider', new Date('2026-05-08')),
-          ),
-        ),
+        settle(invoices.void(inv.id, 'voider', new Date('2026-05-08'))),
         settle(payments.post(pay.id, 'poster')),
       ]);
       // Exactly one wins: a void after the payment is refused (payments
@@ -190,6 +185,84 @@ describe('Concurrency races (e2e)', () => {
       });
     }
   }, 180_000);
+
+  const expectArTiesToAging = async (dates: string[]) => {
+    const aging = app.get(AgingService);
+    const balances = app.get(BalancesService);
+    for (const asOf of dates) {
+      const report = await aging.aging('AR', new Date(asOf));
+      const control = await balances.accountBalance(
+        arControlId,
+        new Date(asOf),
+      );
+      expect({ asOf, total: report.totalOutstanding }).toEqual({
+        asOf,
+        total: Number(control.balance).toFixed(4),
+      });
+    }
+  };
+
+  it('ordered: payment posted first → invoice void is refused (void the payments first)', async () => {
+    const draft = await invoiceDraft('2026-06-02');
+    const inv = await invoices.post(draft.id, 'poster');
+    const pay = await payments.createDraft({
+      direction: 'RECEIPT',
+      partnerId: customerId,
+      date: new Date('2026-06-03'),
+      cashAccountId: acc['1-1000'],
+      allocations: [{ salesInvoiceId: inv.id, amount: '250000' }],
+      createdBy: 'creator',
+    });
+    await payments.post(pay.id, 'poster');
+    const res = await settle(
+      invoices.void(inv.id, 'voider', new Date('2026-06-05')),
+    );
+    expect(res.ok).toBe(false);
+    const err = (res as { ok: false; err: ConflictDomainError }).err;
+    expect(err).toBeInstanceOf(ConflictDomainError);
+    expect(err).toMatchObject({
+      code: 'CONFLICT',
+      message: 'Cannot void an invoice with payments; void the payments first',
+      details: { id: inv.id },
+    });
+    const after = await invoices.getById(inv.id);
+    expect(after.status).toBe('POSTED');
+    expect(Money.of(after.amountPaid.toString()).toPersistence()).toBe(
+      '250000.0000',
+    );
+    await expectArTiesToAging(['2026-06-02', '2026-06-04', '2026-06-30']);
+  });
+
+  it('ordered: invoice voided first → posting a payment allocated to it is refused (not posted)', async () => {
+    const draft = await invoiceDraft('2026-06-10');
+    const inv = await invoices.post(draft.id, 'poster');
+    // Draft created while the invoice is still POSTED, posted after the void.
+    const pay = await payments.createDraft({
+      direction: 'RECEIPT',
+      partnerId: customerId,
+      date: new Date('2026-06-11'),
+      cashAccountId: acc['1-1000'],
+      allocations: [{ salesInvoiceId: inv.id, amount: '250000' }],
+      createdBy: 'creator',
+    });
+    await invoices.void(inv.id, 'voider', new Date('2026-06-12'));
+    const res = await settle(payments.post(pay.id, 'poster'));
+    expect(res.ok).toBe(false);
+    const err = (res as { ok: false; err: ValidationFailedError }).err;
+    expect(err).toBeInstanceOf(ValidationFailedError);
+    expect(err).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      message: 'Allocated invoice is not posted',
+      details: { id: inv.id },
+    });
+    expect((await payments.getById(pay.id)).status).toBe('DRAFT');
+    const after = await invoices.getById(inv.id);
+    expect(after.status).toBe('VOID');
+    expect(Money.of(after.amountPaid.toString()).toPersistence()).toBe(
+      '0.0000',
+    );
+    await expectArTiesToAging(['2026-06-10', '2026-06-11', '2026-06-30']);
+  });
 
   it('concurrent posting of N invoice drafts: gapless invoice and entry numbers 1..N', async () => {
     const N = 10;
