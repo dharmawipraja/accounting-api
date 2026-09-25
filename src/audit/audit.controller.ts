@@ -5,6 +5,7 @@ import { AuditService } from './audit.service';
 import { AuditQueryDto } from './dto/audit-query.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { optionalDateRange } from '../common/dates/query-dates';
+import { parseDate } from '../common/dates/parse-date';
 import { Role } from '../auth/role.enum';
 
 @ApiTags('Audit')
@@ -17,7 +18,8 @@ export class AuditController {
   @ApiOkResponse({ type: AuditEntryDto, isArray: true })
   @Get()
   list(@Query() q: AuditQueryDto) {
-    const { from, to } = optionalDateRange(q.from, q.to);
+    // Audit rows are instants: keep the full timestamp (not a business date).
+    const { from, to } = optionalDateRange(q.from, q.to, parseDate);
     return this.audit.list({
       userId: q.userId,
       method: q.method,

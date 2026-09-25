@@ -1,5 +1,6 @@
 import { ValidationFailedError } from '../errors/domain-errors';
 import { asOfOrToday, dateRange, optionalDateRange } from './query-dates';
+import { parseDate } from './parse-date';
 
 describe('asOfOrToday', () => {
   it('parses a provided as-of string', () => {
@@ -23,6 +24,11 @@ describe('asOfOrToday', () => {
     const d = asOfOrToday(undefined, new Date('2026-07-01T18:00:00Z'));
     expect(d.toISOString().slice(0, 10)).toBe('2026-07-02');
   });
+  it('an explicit asOf with an offset keeps its own calendar day (no UTC shift)', () => {
+    expect(asOfOrToday('2026-07-01T00:30+07:00').toISOString()).toBe(
+      '2026-07-01T00:00:00.000Z',
+    );
+  });
   it('an explicit asOf is untouched by the timezone default', () => {
     const d = asOfOrToday('2026-03-15', new Date('2026-07-01T18:00:00Z'));
     expect(d.toISOString()).toBe('2026-03-15T00:00:00.000Z');
@@ -42,6 +48,14 @@ describe('dateRange', () => {
     expect(() => dateRange('2026-12-31', '2026-01-01')).toThrow(
       '`from` must be on or before `to`',
     );
+  });
+  it("takes each bound's calendar day from its first 10 chars", () => {
+    const { from, to } = dateRange(
+      '2026-07-01T00:30+07:00',
+      '2026-07-31T23:59:59-05:00',
+    );
+    expect(from.toISOString()).toBe('2026-07-01T00:00:00.000Z');
+    expect(to.toISOString()).toBe('2026-07-31T00:00:00.000Z');
   });
   it('allows from === to (equal boundary)', () => {
     const { from, to } = dateRange('2026-01-01', '2026-01-01');
@@ -82,5 +96,16 @@ describe('optionalDateRange', () => {
     expect(() => optionalDateRange('2026-12-31', '2026-01-01')).toThrow(
       ValidationFailedError,
     );
+  });
+});
+
+describe('optionalDateRange with a custom parser', () => {
+  it('keeps full timestamps when given parseDate (audit filters)', () => {
+    const { from } = optionalDateRange(
+      '2026-06-25T10:00:00.000Z',
+      undefined,
+      parseDate,
+    );
+    expect(from?.toISOString()).toBe('2026-06-25T10:00:00.000Z');
   });
 });

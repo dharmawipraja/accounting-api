@@ -9,6 +9,7 @@ import { Role } from '../../auth/role.enum';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { IdempotentWrite } from '../../common/idempotency/idempotent-write.decorator';
+import { businessDate } from '../../common/dates/business-date';
 
 @ApiTags('Journal')
 @ApiBearerAuth()
@@ -26,7 +27,7 @@ export class OpeningBalancesController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<JournalEntry> {
     return this.journal.postOpeningBalances(
-      new Date(dto.date),
+      businessDate(dto.date),
       dto.balances,
       user.id,
     );

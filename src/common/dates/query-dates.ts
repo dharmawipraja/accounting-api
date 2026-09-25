@@ -1,5 +1,5 @@
 import { ValidationFailedError } from '../errors/domain-errors';
-import { parseDate } from './parse-date';
+import { optionalBusinessDate, businessDate } from './business-date';
 
 /** Minutes east of UTC used to resolve a defaulted "today". 420 = WIB (UTC+7):
  *  this is a single-company Indonesian API, so an omitted asOf must mean the
@@ -9,25 +9,26 @@ export const REPORT_UTC_OFFSET_MINUTES = Number(
   process.env.REPORT_UTC_OFFSET_MINUTES ?? 420,
 );
 
-/** A validated as-of query string → Date; missing means *today in the report
+/** A validated as-of query string → its business date (calendar day from the
+ *  first 10 chars, see businessDate); missing means *today in the report
  *  timezone* (see REPORT_UTC_OFFSET_MINUTES). The offset-shifted instant
- *  truncates downstream (truncateToUtcDay) to the local calendar day.
- *  Intentionally uses `new Date(asOf)` (not `parseDate`): the default is *today*, not
- *  `undefined`, and `asOf` is already `@IsDateString`-validated at the controller boundary. */
+ *  truncates downstream (truncateToUtcDay) to the local calendar day. */
 export function asOfOrToday(asOf?: string, now: Date = new Date()): Date {
   return asOf
-    ? new Date(asOf)
+    ? businessDate(asOf)
     : new Date(now.getTime() + REPORT_UTC_OFFSET_MINUTES * 60_000);
 }
 
-/** Optional [from, to] filter bounds. Converts each via parseDate; enforces from ≤ to
- *  ONLY when both are present. */
+/** Optional [from, to] filter bounds. Converts each via `parse` (default: the
+ *  business-date transformer; the audit log passes `parseDate` to keep full
+ *  timestamps); enforces from ≤ to ONLY when both are present. */
 export function optionalDateRange(
   from?: string,
   to?: string,
+  parse: (v?: string) => Date | undefined = optionalBusinessDate,
 ): { from?: Date; to?: Date } {
-  const f = parseDate(from);
-  const t = parseDate(to);
+  const f = parse(from);
+  const t = parse(to);
   if (f && t && f.getTime() > t.getTime())
     throw new ValidationFailedError('`from` must be on or before `to`', {
       from,

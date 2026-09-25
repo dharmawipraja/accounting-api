@@ -30,7 +30,10 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { IdempotentWrite } from '../common/idempotency/idempotent-write.decorator';
 import { VoidDocumentDto } from './dto/void-document.dto';
-import { parseDate } from '../common/dates/parse-date';
+import {
+  businessDate,
+  optionalBusinessDate,
+} from '../common/dates/business-date';
 
 @ApiTags('Payments')
 @ApiBearerAuth()
@@ -61,7 +64,7 @@ export class PaymentsController {
     const payment = await this.payments.createDraft({
       direction: dto.direction,
       partnerId: dto.partnerId,
-      date: new Date(dto.date),
+      date: businessDate(dto.date),
       cashAccountId: dto.cashAccountId,
       description: dto.description,
       allocations: dto.allocations,
@@ -94,7 +97,7 @@ export class PaymentsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.payments.present(
-      await this.payments.void(id, user.id, parseDate(dto?.date)),
+      await this.payments.void(id, user.id, optionalBusinessDate(dto?.date)),
     );
   }
 

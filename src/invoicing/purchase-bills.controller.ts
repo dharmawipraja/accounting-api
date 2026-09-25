@@ -32,7 +32,10 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { IdempotentWrite } from '../common/idempotency/idempotent-write.decorator';
 import { VoidDocumentDto } from './dto/void-document.dto';
-import { parseDate } from '../common/dates/parse-date';
+import {
+  businessDate,
+  optionalBusinessDate,
+} from '../common/dates/business-date';
 
 @ApiTags('Purchase Bills')
 @ApiBearerAuth()
@@ -63,8 +66,8 @@ export class PurchaseBillsController {
     const bill = await this.bills.createDraft({
       partnerId: dto.partnerId,
       vendorInvoiceNo: dto.vendorInvoiceNo,
-      date: new Date(dto.date),
-      dueDate: parseDate(dto.dueDate),
+      date: businessDate(dto.date),
+      dueDate: optionalBusinessDate(dto.dueDate),
       description: dto.description,
       lines: dto.lines,
       createdBy: user.id,
@@ -81,8 +84,8 @@ export class PurchaseBillsController {
   ) {
     const bill = await this.bills.update(id, {
       vendorInvoiceNo: dto.vendorInvoiceNo,
-      date: parseDate(dto.date),
-      dueDate: parseDate(dto.dueDate),
+      date: optionalBusinessDate(dto.date),
+      dueDate: optionalBusinessDate(dto.dueDate),
       description: dto.description,
       lines: dto.lines,
     });
@@ -113,7 +116,7 @@ export class PurchaseBillsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.bills.present(
-      await this.bills.void(id, user.id, parseDate(dto?.date)),
+      await this.bills.void(id, user.id, optionalBusinessDate(dto?.date)),
     );
   }
 

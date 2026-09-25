@@ -10,7 +10,10 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { parseDate } from '../common/dates/parse-date';
+import {
+  businessDate,
+  optionalBusinessDate,
+} from '../common/dates/business-date';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -62,8 +65,8 @@ export class SalesInvoicesController {
   ) {
     const inv = await this.invoices.createDraft({
       partnerId: dto.partnerId,
-      date: new Date(dto.date),
-      dueDate: parseDate(dto.dueDate),
+      date: businessDate(dto.date),
+      dueDate: optionalBusinessDate(dto.dueDate),
       description: dto.description,
       lines: dto.lines,
       createdBy: user.id,
@@ -79,8 +82,8 @@ export class SalesInvoicesController {
     @Body() dto: UpdateSalesInvoiceDto,
   ) {
     const inv = await this.invoices.update(id, {
-      date: parseDate(dto.date),
-      dueDate: parseDate(dto.dueDate),
+      date: optionalBusinessDate(dto.date),
+      dueDate: optionalBusinessDate(dto.dueDate),
       description: dto.description,
       lines: dto.lines,
     });
@@ -111,7 +114,7 @@ export class SalesInvoicesController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.invoices.present(
-      await this.invoices.void(id, user.id, parseDate(dto?.date)),
+      await this.invoices.void(id, user.id, optionalBusinessDate(dto?.date)),
     );
   }
 

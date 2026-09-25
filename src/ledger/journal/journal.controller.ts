@@ -33,7 +33,10 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../auth/strategies/jwt.strategy';
 import { ForbiddenDomainError } from '../../common/errors/domain-errors';
 import { IdempotentWrite } from '../../common/idempotency/idempotent-write.decorator';
-import { parseDate } from '../../common/dates/parse-date';
+import {
+  businessDate,
+  optionalBusinessDate,
+} from '../../common/dates/business-date';
 
 @ApiTags('Journal')
 @ApiBearerAuth()
@@ -49,8 +52,8 @@ export class JournalController {
       status: q.status,
       sourceType: q.sourceType,
       fiscalYear: q.fiscalYear,
-      from: parseDate(q.from),
-      to: parseDate(q.to),
+      from: optionalBusinessDate(q.from),
+      to: optionalBusinessDate(q.to),
       limit: q.limit ?? 50,
       offset: q.offset ?? 0,
     });
@@ -72,7 +75,7 @@ export class JournalController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<JournalEntry> {
     const input = {
-      date: new Date(dto.date),
+      date: businessDate(dto.date),
       description: dto.description,
       lines: dto.lines,
       createdBy: user.id,
@@ -116,7 +119,7 @@ export class JournalController {
     @Body() dto: ReverseJournalEntryDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<JournalEntry> {
-    return this.journal.reverse(id, user.id, parseDate(dto?.date));
+    return this.journal.reverse(id, user.id, optionalBusinessDate(dto?.date));
   }
 
   @ApiNoContentResponse()

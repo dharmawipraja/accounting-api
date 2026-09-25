@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { businessDate } from '../common/dates/business-date';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { TaxService } from '../tax/tax.service';
 import { PostingService } from '../ledger/posting/posting.service';
@@ -32,7 +33,7 @@ export class JournalPreviewService {
   async preview(dto: PreviewJournalEntryDto): Promise<JournalPreview> {
     // Optional date: reproduce the closed-period/closed-year 409 a real post
     // would give — same read-only check preparePosting runs, no locks taken.
-    if (dto.date) await this.posting.assertPostableDate(new Date(dto.date));
+    if (dto.date) await this.posting.assertPostableDate(businessDate(dto.date));
     const lines =
       dto.nature === 'PAYMENT'
         ? await this.paymentLines(dto)
