@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiBody,
   ApiCreatedResponse,
   ApiNoContentResponse,
   ApiOkResponse,
@@ -28,6 +29,8 @@ import { Role } from '../auth/role.enum';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { IdempotentWrite } from '../common/idempotency/idempotent-write.decorator';
+import { VoidDocumentDto } from './dto/void-document.dto';
+import { parseDate } from '../common/dates/parse-date';
 
 @ApiTags('Payments')
 @ApiBearerAuth()
@@ -82,13 +85,17 @@ export class PaymentsController {
   @Roles(Role.APPROVER, Role.ADMIN)
   @ApiOkResponse({ type: PaymentResponseDto })
   @IdempotentWrite()
+  @ApiBody({ type: VoidDocumentDto, required: false })
   @Post(':id/void')
   @HttpCode(200)
   async void(
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: VoidDocumentDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.payments.present(await this.payments.void(id, user.id));
+    return this.payments.present(
+      await this.payments.void(id, user.id, parseDate(dto?.date)),
+    );
   }
 
   @Roles(Role.ACCOUNTANT, Role.APPROVER, Role.ADMIN)

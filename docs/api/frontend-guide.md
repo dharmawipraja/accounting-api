@@ -415,6 +415,17 @@ DELETE /ledger/journal-entries/:id      delete a DRAFT          (ACCOUNTANT+)
   `POST /v1/ledger/opening-balances` all **require an `Idempotency-Key` header** —
   pass a unique UUID on each new request; retries with the same key replay the original
   response safely (see [§2 Idempotency](#idempotency)).
+- **Reverse** accepts an optional body `{ "date": "YYYY-MM-DD" }` — the reversal date.
+  Omit the body (or `date`) to reverse on the original entry's date (unchanged
+  behaviour). The date must be **on/after** the original date (`422 VALIDATION_FAILED`
+  otherwise) and fall in an OPEN period of a non-closed year (`409 CLOSED_PERIOD` /
+  `409 CLOSED_YEAR`); a non `YYYY-MM-DD` value is `400`.
+- Only `MANUAL` and `OPENING` entries can be reversed here. Reversing a document-owned
+  entry (`SALES_INVOICE`, `PURCHASE_BILL`, `PAYMENT`) — or a `REVERSAL`/`CLOSING`
+  entry — returns `422 VALIDATION_FAILED` with message
+  `"Only MANUAL or OPENING entries can be reversed here; void the source document instead"`
+  and `details: { entryId, sourceType }`. Void the invoice/bill/payment instead (a year-end
+  closing entry is undone by reopening the year).
 
 ### Sales invoice / Purchase bill
 
@@ -429,6 +440,20 @@ DELETE .../:id                                        delete a DRAFT        (ACC
 Posting an invoice/bill updates the AR/AP subledger and the corresponding control
 account; voiding reverses it.
 
+**Void date.** Every void endpoint (invoice, bill, payment) accepts an optional body
+`{ "date": "YYYY-MM-DD" }` — the void (reversal) date. Omit it to void on the document's
+own date (unchanged behaviour). Pass a later date to void a document whose own period is
+already closed: the reversal entry is posted on that date. Rules:
+
+- `date` before the document date → `422 VALIDATION_FAILED`; not `YYYY-MM-DD` → `400`.
+- `date` must fall in an OPEN period of a non-closed year → else `409 CLOSED_PERIOD` /
+  `409 CLOSED_YEAR` (this is also what a body-less void of a closed-period document gets).
+- Invoice/bill only: `date` before the void date of a payment that was allocated to the
+  document and voided on a later date than its own → `422 VALIDATION_FAILED`.
+- The response carries `voidedOn` (the void date; `null` unless `status` is `VOID`).
+  AR/AP aging honours it: a voided document/payment still counts for `asOf` dates before
+  its `voidedOn`.
+
 ### Payment
 
 ```
@@ -438,6 +463,9 @@ POST /payments/:id/post   post the payment                            (APPROVER/
 POST /payments/:id/void   void a posted payment                       (APPROVER/ADMIN)
 DELETE /payments/:id      delete a DRAFT                               (ACCOUNTANT+)
 ```
+
+Payment void takes the same optional `{ "date" }` body and rules as invoice/bill void
+(above); allocations are unwound and `voidedOn` is returned.
 
 A payment must allocate its full amount against open documents. RECEIPT = money in
 (against AR), DISBURSEMENT = money out (against AP).
@@ -644,7 +672,7 @@ no auth.
 - `GET    /v1/ledger/journal-entries/:id` · any · get one entry
 - `POST   /v1/ledger/journal-entries` · ACCOUNTANT+ · create draft (`?post=true` = create+post, APPROVER/ADMIN only) · **requires `Idempotency-Key`**
 - `POST   /v1/ledger/journal-entries/:id/post` · APPROVER/ADMIN · post draft · **requires `Idempotency-Key`**
-- `POST   /v1/ledger/journal-entries/:id/reverse` · APPROVER/ADMIN · reverse posted entry · **requires `Idempotency-Key`**
+- `POST   /v1/ledger/journal-entries/:id/reverse` · APPROVER/ADMIN · reverse a posted MANUAL/OPENING entry (optional body `{ date }`; document-owned entries → `422`) · **requires `Idempotency-Key`**
 - `DELETE /v1/ledger/journal-entries/:id` · ACCOUNTANT+ · delete draft
 - `POST   /v1/ledger/opening-balances` · ADMIN · post opening balances · **requires `Idempotency-Key`**
 
@@ -683,7 +711,7 @@ no auth.
 - `POST   /v1/sales-invoices` · ACCOUNTANT+ · create draft · **requires `Idempotency-Key`**
 - `PATCH  /v1/sales-invoices/:id` · ACCOUNTANT+ · update draft
 - `POST   /v1/sales-invoices/:id/post` · APPROVER/ADMIN · post · **requires `Idempotency-Key`**
-- `POST   /v1/sales-invoices/:id/void` · APPROVER/ADMIN · void · **requires `Idempotency-Key`**
+- `POST   /v1/sales-invoices/:id/void` · APPROVER/ADMIN · void (optional body `{ date }` ≥ document date) · **requires `Idempotency-Key`**
 - `DELETE /v1/sales-invoices/:id` · ACCOUNTANT+ · delete draft
 
 ### Purchase bills
@@ -693,7 +721,7 @@ no auth.
 - `POST   /v1/purchase-bills` · ACCOUNTANT+ · create draft · **requires `Idempotency-Key`**
 - `PATCH  /v1/purchase-bills/:id` · ACCOUNTANT+ · update draft
 - `POST   /v1/purchase-bills/:id/post` · APPROVER/ADMIN · post · **requires `Idempotency-Key`**
-- `POST   /v1/purchase-bills/:id/void` · APPROVER/ADMIN · void · **requires `Idempotency-Key`**
+- `POST   /v1/purchase-bills/:id/void` · APPROVER/ADMIN · void (optional body `{ date }` ≥ document date) · **requires `Idempotency-Key`**
 - `DELETE /v1/purchase-bills/:id` · ACCOUNTANT+ · delete draft
 
 ### Payments
@@ -702,7 +730,7 @@ no auth.
 - `GET    /v1/payments/:id` · any · get one
 - `POST   /v1/payments` · ACCOUNTANT+ · create draft (RECEIPT/DISBURSEMENT + allocations) · **requires `Idempotency-Key`**
 - `POST   /v1/payments/:id/post` · APPROVER/ADMIN · post · **requires `Idempotency-Key`**
-- `POST   /v1/payments/:id/void` · APPROVER/ADMIN · void · **requires `Idempotency-Key`**
+- `POST   /v1/payments/:id/void` · APPROVER/ADMIN · void (optional body `{ date }` ≥ document date) · **requires `Idempotency-Key`**
 - `DELETE /v1/payments/:id` · ACCOUNTANT+ · delete draft
 
 ### Business partners

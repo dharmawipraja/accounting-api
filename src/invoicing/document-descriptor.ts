@@ -117,6 +117,8 @@ export interface DocumentDescriptor<
   sourceType: 'SALES_INVOICE' | 'PURCHASE_BILL';
   documentType: string; // 'INV' | 'BILL'
   table: 'sales_invoices' | 'purchase_bills';
+  /** This document type's FK column on payment_allocations. */
+  allocationColumn: 'sales_invoice_id' | 'purchase_bill_id';
   /** Own searched columns for fuzzy ?q= search — a non-empty tuple (trigramSearch requires ≥1). */
   trigramColumns: [string, ...string[]];
   model: SoftDeletableModel;
@@ -141,5 +143,5 @@ export interface DocumentDescriptor<
     ctx: PostedDocContext,
     postedBy: string,
   ): Promise<void>;
-  markVoid(tx: LedgerTx, id: string): Promise<void>;
+  markVoid(tx: LedgerTx, id: string, voidedOn: Date): Promise<void>;
 }

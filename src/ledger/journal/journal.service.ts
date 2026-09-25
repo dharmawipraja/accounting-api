@@ -17,6 +17,12 @@ import {
   ValidationFailedError,
 } from '../../common/errors/domain-errors';
 
+/** Source types the generic `/journal-entries/:id/reverse` endpoint may reverse. */
+const REVERSIBLE_HERE: ReadonlySet<JournalSourceType> = new Set([
+  'MANUAL',
+  'OPENING',
+]);
+
 export interface DraftInput {
   date: Date;
   description: string;
@@ -101,8 +107,28 @@ export class JournalService {
     return this.posting.postDraft(id, postedBy);
   }
 
-  async reverse(id: string, reversedBy: string): Promise<JournalEntry> {
-    return this.posting.reverse(id, reversedBy);
+  /** Generic reversal endpoint. Only free-standing entries (MANUAL, OPENING)
+   *  may be reversed here: document-owned entries (invoice/bill/payment) must be
+   *  voided through their document so the AR/AP subledger stays in step with
+   *  the control account, and CLOSING entries are undone by reopening the year. */
+  async reverse(
+    id: string,
+    reversedBy: string,
+    date?: Date,
+  ): Promise<JournalEntry> {
+    const entry = await this.prisma.client.journalEntry.findFirst({
+      where: { id },
+      select: { sourceType: true },
+    });
+    if (!entry)
+      throw new NotFoundDomainError('Journal entry not found', { entryId: id });
+    if (!REVERSIBLE_HERE.has(entry.sourceType)) {
+      throw new ValidationFailedError(
+        'Only MANUAL or OPENING entries can be reversed here; void the source document instead',
+        { entryId: id, sourceType: entry.sourceType },
+      );
+    }
+    return this.posting.reverse(id, reversedBy, date);
   }
 
   /** Direct create-and-post (used when Segregation of Duties is off). */

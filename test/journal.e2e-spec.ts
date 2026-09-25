@@ -8,6 +8,7 @@ import { PeriodsService } from '../src/ledger/periods/periods.service';
 import { CompanyService } from '../src/company/company.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
+import { PostingService } from '../src/ledger/posting/posting.service';
 import { bootstrapTestApp } from './e2e-helpers';
 
 describe('JournalEntries (e2e)', () => {
@@ -365,5 +366,102 @@ describe('JournalEntries (e2e)', () => {
     });
     const plug = lines.find((l) => l.accountId === saldoAwalId);
     expect(plug).toBeUndefined(); // balanced input → no OBE plug
+  });
+  describe('POST /:id/reverse — source guard + optional reversal date', () => {
+    const postManual = async (date = '2026-03-10') => {
+      await app
+        .get(CompanyService)
+        .update({ segregationOfDutiesEnabled: false });
+      const res = await request(app.getHttpServer() as App)
+        .post('/v1/ledger/journal-entries?post=true')
+        .set('Authorization', `Bearer ${approverToken}`)
+        .set('Idempotency-Key', randomUUID())
+        .send(balancedBody(date))
+        .expect(201);
+      return (res.body as { id: string }).id;
+    };
+    const reverse = (id: string) =>
+      request(app.getHttpServer() as App)
+        .post(`/v1/ledger/journal-entries/${id}/reverse`)
+        .set('Authorization', `Bearer ${approverToken}`)
+        .set('Idempotency-Key', randomUUID());
+
+    it('rejects reversing a document-owned (SALES_INVOICE) entry with 422', async () => {
+      const entry = await app.get(PostingService).post(
+        {
+          date: new Date('2026-03-10'),
+          description: 'Invoice-owned entry',
+          sourceType: 'SALES_INVOICE',
+          sourceId: randomUUID(),
+          createdBy: 'creator',
+          lines: [
+            { accountId: kasId, debit: '1000' },
+            { accountId: modalId, credit: '1000' },
+          ],
+        },
+        'poster',
+      );
+      const res = await reverse(entry.id).expect(422);
+      const body = res.body as {
+        code: string;
+        message: string;
+        details: { entryId: string; sourceType: string };
+      };
+      expect(body.code).toBe('VALIDATION_FAILED');
+      expect(body.message).toBe(
+        'Only MANUAL or OPENING entries can be reversed here; void the source document instead',
+      );
+      expect(body.details).toEqual({
+        entryId: entry.id,
+        sourceType: 'SALES_INVOICE',
+      });
+      const still = await prisma.client.journalEntry.findUnique({
+        where: { id: entry.id },
+      });
+      expect(still!.status).toBe('POSTED');
+    });
+
+    it('reverses a MANUAL entry with no body on the original date (200)', async () => {
+      const id = await postManual('2026-03-10');
+      const res = await reverse(id).expect(200);
+      const body = res.body as { sourceType: string; date: string };
+      expect(body.sourceType).toBe('REVERSAL');
+      expect(body.date.slice(0, 10)).toBe('2026-03-10');
+    });
+
+    it('reverses a MANUAL entry on a later body date (200)', async () => {
+      const id = await postManual('2026-03-10');
+      const res = await reverse(id).send({ date: '2026-04-05' }).expect(200);
+      const body = res.body as { date: string; reversalOfId: string };
+      expect(body.date.slice(0, 10)).toBe('2026-04-05');
+      expect(body.reversalOfId).toBe(id);
+    });
+
+    it('rejects a reversal date before the original date (422)', async () => {
+      const id = await postManual('2026-03-10');
+      const res = await reverse(id).send({ date: '2026-03-09' }).expect(422);
+      expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+    });
+
+    it('rejects a non date-only reversal date (400)', async () => {
+      const id = await postManual('2026-03-10');
+      await reverse(id).send({ date: '2026-04-05T10:00:00Z' }).expect(400);
+    });
+
+    it('reverses an OPENING entry via the journal endpoint (200)', async () => {
+      const ob = await request(app.getHttpServer() as App)
+        .post('/v1/ledger/opening-balances')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          date: '2026-01-03',
+          balances: [
+            { accountId: kasId, debit: '700' },
+            { accountId: modalId, credit: '700' },
+          ],
+        })
+        .expect(200);
+      await reverse((ob.body as { id: string }).id).expect(200);
+    });
   });
 });

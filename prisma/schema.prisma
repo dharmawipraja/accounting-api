@@ -346,6 +346,7 @@ model SalesInvoice {
   createdBy        String             @map("created_by")
   postedBy         String?            @map("posted_by")
   postedAt         DateTime?          @map("posted_at")
+  voidedOn         DateTime?          @map("voided_on") @db.Date
   createdAt        DateTime           @default(now()) @map("created_at")
   updatedAt        DateTime           @updatedAt @map("updated_at")
   deletedAt        DateTime?          @map("deleted_at")
@@ -396,6 +397,7 @@ model PurchaseBill {
   createdBy        String             @map("created_by")
   postedBy         String?            @map("posted_by")
   postedAt         DateTime?          @map("posted_at")
+  voidedOn         DateTime?          @map("voided_on") @db.Date
   createdAt        DateTime           @default(now()) @map("created_at")
   updatedAt        DateTime           @updatedAt @map("updated_at")
   deletedAt        DateTime?          @map("deleted_at")
@@ -443,6 +445,7 @@ model Payment {
   createdBy      String              @map("created_by")
   postedBy       String?             @map("posted_by")
   postedAt       DateTime?           @map("posted_at")
+  voidedOn       DateTime?           @map("voided_on") @db.Date
   createdAt      DateTime            @default(now()) @map("created_at")
   updatedAt      DateTime            @updatedAt @map("updated_at")
   deletedAt      DateTime?           @map("deleted_at")

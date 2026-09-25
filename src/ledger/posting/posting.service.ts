@@ -277,8 +277,10 @@ export class PostingService {
 
   /** Pre-transaction validation for a reversal: loads the original (with lines),
    *  asserts it is POSTED, resolves the open period + fiscal year for the
-   *  reversal date (defaults to the original's date). All reads stay out of the
-   *  write transaction. */
+   *  reversal date (defaults to the original's date; must not precede it). All
+   *  reads stay out of the write transaction. No sourceType guard here: the
+   *  year-end reopen reverses CLOSING entries through this method — the
+   *  MANUAL/OPENING restriction lives in JournalService.reverse. */
   async prepareReversal(
     entryId: string,
     reversedBy: string,
@@ -298,6 +300,18 @@ export class PostingService {
       });
     }
     const reversalDate = date ?? original.date;
+    // A reversal can be dated later (e.g. into an open period when the
+    // original's is closed) but never before the entry it reverses.
+    if (reversalDate.getTime() < original.date.getTime()) {
+      throw new ValidationFailedError(
+        'Reversal date cannot be before the original entry date',
+        {
+          entryId,
+          date: reversalDate.toISOString().slice(0, 10),
+          originalDate: original.date.toISOString().slice(0, 10),
+        },
+      );
+    }
     const period = await this.periods.findOpenPeriodForDate(reversalDate);
     if (!period) {
       throw new ClosedPeriodError('No open period for the reversal date', {

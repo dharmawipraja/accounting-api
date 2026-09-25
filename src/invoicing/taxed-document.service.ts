@@ -13,7 +13,11 @@ import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
 import { LedgerTx } from '../ledger/posting/posting.service';
 import { trigramSearch } from '../common/search/trigram-search';
 import { listPaginated } from '../common/pagination/paginated';
-import { taxableLines, findControlAccountId } from './document-helpers';
+import {
+  taxableLines,
+  findControlAccountId,
+  assertVoidDateNotBefore,
+} from './document-helpers';
 import {
   DocumentDescriptor,
   DocumentRow,
@@ -240,7 +244,12 @@ export class TaxedDocumentService {
     R extends DocumentRow,
     C extends CreateDocumentInput,
     U extends UpdateDocumentInput,
-  >(spec: Spec<R, C, U>, id: string, voidedBy: string): Promise<R> {
+  >(
+    spec: Spec<R, C, U>,
+    id: string,
+    voidedBy: string,
+    date?: Date,
+  ): Promise<R> {
     const m = documentMessages(spec);
     const row = await this.getById(spec, id);
     if (row.status !== 'POSTED')
@@ -248,22 +257,67 @@ export class TaxedDocumentService {
         id,
         status: row.status,
       });
+    // The void (reversal) date defaults to the document date; a later date lets
+    // a document be voided after its own period has closed.
+    const voidedOn = date ?? row.date;
+    assertVoidDateNotBefore(voidedOn, row.date, id);
     if (!Money.of(row.amountPaid.toString()).isZero())
       throw new ConflictDomainError(m.voidWithPaymentsFirst, { id });
     await this.lifecycle.reverseWithGuard({
       id,
       journalEntryId: row.journalEntryId!,
       reversedBy: voidedBy,
+      reversalDate: voidedOn,
       alreadyReversedMessage: m.alreadyReversed,
       notPostedMessage: m.notPosted,
       lock: (tx) => this.lockForVoid(tx, spec, id),
       applyInTx: async (tx, locked) => {
         if (!Money.of(locked.amount_paid.toString()).isZero())
           throw new ConflictDomainError(m.voidWithPayments, { id });
-        await spec.markVoid(tx, id);
+        await this.assertNoLaterVoidedPayment(tx, spec, id, voidedOn);
+        await spec.markVoid(tx, id, voidedOn);
       },
     });
     return this.getById(spec, id);
+  }
+
+  /** A payment allocated to this document that was voided on a LATER date than
+   *  its own date still credits the control account until its void date. If the
+   *  document were voided before that, AR/AP control would carry the payment
+   *  with no live document to age it against (aging ≠ control for the dates in
+   *  between). Require the document void date to be on/after such a payment's
+   *  void date. Runs under the document FOR UPDATE lock, which the payment void
+   *  (unwindInTx) also takes, so the read sees every committed payment void. */
+  private async assertNoLaterVoidedPayment<
+    R extends DocumentRow,
+    C extends CreateDocumentInput,
+    U extends UpdateDocumentInput,
+  >(
+    tx: LedgerTx,
+    spec: Spec<R, C, U>,
+    id: string,
+    voidedOn: Date,
+  ): Promise<void> {
+    const rows = await tx.$queryRaw<{ ref: string | null; voided_on: Date }[]>(
+      Prisma.sql`
+        SELECT p.ref, p.voided_on FROM payment_allocations pa
+        JOIN payments p ON p.id = pa.payment_id
+        WHERE pa.${Prisma.raw(spec.allocationColumn)} = ${id}
+          AND p.status = 'VOID' AND p.deleted_at IS NULL
+          AND p.voided_on > p.date AND p.voided_on > ${voidedOn}
+        ORDER BY p.voided_on DESC
+        LIMIT 1`,
+    );
+    if (rows.length > 0)
+      throw new ValidationFailedError(
+        'Void date cannot be before the void date of a payment allocated to this document',
+        {
+          id,
+          date: voidedOn.toISOString().slice(0, 10),
+          paymentRef: rows[0].ref,
+          paymentVoidedOn: rows[0].voided_on.toISOString().slice(0, 10),
+        },
+      );
   }
 
   /** FOR UPDATE lock for void: returns status + amount_paid for the in-tx re-check. */

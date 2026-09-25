@@ -51,6 +51,7 @@ export class SalesInvoicesService {
       sourceType: 'SALES_INVOICE',
       documentType: 'INV',
       table: 'sales_invoices',
+      allocationColumn: 'sales_invoice_id',
       trigramColumns: ['invoice_ref', 'description'],
       model: this.prisma.client.salesInvoice,
       findById: (id) =>
@@ -104,10 +105,10 @@ export class SalesInvoicesService {
           },
         });
       },
-      markVoid: async (tx, id) => {
+      markVoid: async (tx, id, voidedOn) => {
         await tx.salesInvoice.update({
           where: { id },
-          data: { status: 'VOID' },
+          data: { status: 'VOID', voidedOn },
         });
       },
     };
@@ -137,8 +138,8 @@ export class SalesInvoicesService {
   post(id: string, postedBy: string): Promise<SalesInvoiceRow> {
     return this.docs.post(this.spec, id, postedBy);
   }
-  void(id: string, voidedBy: string): Promise<SalesInvoiceRow> {
-    return this.docs.void(this.spec, id, voidedBy);
+  void(id: string, voidedBy: string, date?: Date): Promise<SalesInvoiceRow> {
+    return this.docs.void(this.spec, id, voidedBy, date);
   }
   present(row: SalesInvoiceRow) {
     return presentDocument(row);

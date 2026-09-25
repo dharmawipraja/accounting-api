@@ -17,7 +17,10 @@ import { BusinessPartnersService } from './business-partners.service';
 import { DocumentNumberService } from './document-number.service';
 import { listPaginated } from '../common/pagination/paginated';
 import { serializeMoney } from '../common/money/serialize-money';
-import { findControlAccountId } from './document-helpers';
+import {
+  assertVoidDateNotBefore,
+  findControlAccountId,
+} from './document-helpers';
 import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
 import {
   AllocationInput,
@@ -300,13 +303,17 @@ export class PaymentsService {
     return this.getById(id);
   }
 
-  async void(id: string, voidedBy: string): Promise<Payment> {
+  async void(id: string, voidedBy: string, date?: Date): Promise<Payment> {
     const payment = await this.getById(id);
     if (payment.status !== 'POSTED')
       throw new ValidationFailedError('Only a POSTED payment can be voided', {
         id,
         status: payment.status,
       });
+    // Void (reversal) date defaults to the payment date; a later date lets a
+    // payment be voided after its own period has closed.
+    const voidedOn = date ?? payment.date;
+    assertVoidDateNotBefore(voidedOn, payment.date, id);
     const allocations = payment.allocations.map(
       (a): AllocationInput => ({
         salesInvoiceId: a.salesInvoiceId ?? undefined,
@@ -318,6 +325,7 @@ export class PaymentsService {
       id,
       journalEntryId: payment.journalEntryId!,
       reversedBy: voidedBy,
+      reversalDate: voidedOn,
       alreadyReversedMessage: 'Payment journal entry was already reversed',
       notPostedMessage: 'Payment is not posted',
       lock: async (tx) => {
@@ -332,7 +340,7 @@ export class PaymentsService {
         }
         await tx.payment.update({
           where: { id },
-          data: { status: 'VOID' },
+          data: { status: 'VOID', voidedOn },
         });
       },
     });

@@ -53,6 +53,7 @@ export class PurchaseBillsService {
       sourceType: 'PURCHASE_BILL',
       documentType: 'BILL',
       table: 'purchase_bills',
+      allocationColumn: 'purchase_bill_id',
       trigramColumns: ['bill_ref', 'vendor_invoice_no', 'description'],
       model: this.prisma.client.purchaseBill,
       findById: (id) =>
@@ -114,10 +115,10 @@ export class PurchaseBillsService {
           },
         });
       },
-      markVoid: async (tx, id) => {
+      markVoid: async (tx, id, voidedOn) => {
         await tx.purchaseBill.update({
           where: { id },
-          data: { status: 'VOID' },
+          data: { status: 'VOID', voidedOn },
         });
       },
     };
@@ -147,8 +148,8 @@ export class PurchaseBillsService {
   post(id: string, postedBy: string): Promise<PurchaseBillRow> {
     return this.docs.post(this.spec, id, postedBy);
   }
-  void(id: string, voidedBy: string): Promise<PurchaseBillRow> {
-    return this.docs.void(this.spec, id, voidedBy);
+  void(id: string, voidedBy: string, date?: Date): Promise<PurchaseBillRow> {
+    return this.docs.void(this.spec, id, voidedBy, date);
   }
   present(row: PurchaseBillRow) {
     return presentDocument(row);

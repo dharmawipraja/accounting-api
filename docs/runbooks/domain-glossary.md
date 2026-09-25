@@ -119,6 +119,10 @@ debits/credits are swapped, which nets the original to zero. The original is mar
 `reversalOfId` pointing back. A unique index on `reversalOfId` prevents double-reversal.
 - `PostingService.prepareReversal` / `reverseInTx` (lines created with `debit: l.credit,
   credit: l.debit`); `@@unique([reversalOfId])` on `JournalEntry`.
+- A reversal may be dated later than the original (never earlier; enforced in
+  `prepareReversal`). The generic `POST /ledger/journal-entries/:id/reverse` only reverses
+  `MANUAL`/`OPENING` entries (`JournalService.reverse`); document-owned entries are undone
+  by voiding the document, and `CLOSING` entries by reopening the year.
 
 ### Segregation of duties (SoD)
 Internal control: for `MANUAL` entries, the user who posts must differ from the user who
@@ -220,7 +224,10 @@ payments can't jointly over-pay.
 Documents (invoices, bills, payments) start `DRAFT` (no ledger effect), become `POSTED`
 (journal entry written, control/subledger updated), and are undone with `VOID` — which
 reverses the journal entry and unwinds `amountPaid` rather than deleting anything. A
-draft can be soft-deleted; a posted document cannot.
+draft can be soft-deleted; a posted document cannot. A void may be dated later than the
+document (optional `{ date }` body, e.g. when its period is closed); the date is stored in
+`voided_on` (set iff `VOID`, DB CHECK) and as-of aging treats the document/payment as live
+before it.
 - `DocumentStatus` enum (`DRAFT`/`POSTED`/`VOID`); shared `DocumentLifecycleService`
   (`softDeleteDraft`, `reverseWithGuard`) in `src/ledger/document-lifecycle.service.ts`.
 

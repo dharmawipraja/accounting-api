@@ -908,4 +908,86 @@ describe('Payments (e2e)', () => {
       .accountBalance(acc['1-1200'], new Date('2026-12-31'));
     expect(arBalance.balance).toBe(totalOutstanding.toFixed(4));
   });
+  it('voids a payment on a later body date: reversal on that date, allocations unwound, voidedOn stored', async () => {
+    const customerId = await newCustomer('CUST-PAY-VOID-DATE');
+    const invoiceId = await makePostedInvoice(customerId);
+    const r = await request(server())
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        direction: 'RECEIPT',
+        partnerId: customerId,
+        date: '2026-02-15',
+        cashAccountId: acc['1-1000'],
+        allocations: [{ salesInvoiceId: invoiceId, amount: '400000' }],
+      })
+      .expect(201);
+    const paymentId = (r.body as { id: string }).id;
+    const posted = await request(server())
+      .post(`/v1/payments/${paymentId}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    const jeId = (posted.body as { journalEntryId: string }).journalEntryId;
+
+    // A void date before the payment date is rejected.
+    const early = await request(server())
+      .post(`/v1/payments/${paymentId}/void`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ date: '2026-02-14' })
+      .expect(422);
+    expect((early.body as { code: string }).code).toBe('VALIDATION_FAILED');
+
+    const res = await request(server())
+      .post(`/v1/payments/${paymentId}/void`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ date: '2026-03-03' })
+      .expect(200);
+    const body = res.body as { status: string; voidedOn: string };
+    expect(body.status).toBe('VOID');
+    expect(body.voidedOn.slice(0, 10)).toBe('2026-03-03');
+    const rev = await prisma.client.journalEntry.findFirst({
+      where: { reversalOfId: jeId },
+    });
+    expect(rev!.date.toISOString().slice(0, 10)).toBe('2026-03-03');
+    const inv = await request(server())
+      .get(`/v1/sales-invoices/${invoiceId}`)
+      .set('Authorization', `Bearer ${acct}`)
+      .expect(200);
+    expect((inv.body as { amountPaid: string }).amountPaid).toBe('0.0000');
+  });
+
+  it('no-body payment void stores voidedOn = payment date', async () => {
+    const customerId = await newCustomer('CUST-PAY-VOID-NOBODY');
+    const invoiceId = await makePostedInvoice(customerId);
+    const r = await request(server())
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        direction: 'RECEIPT',
+        partnerId: customerId,
+        date: '2026-02-16',
+        cashAccountId: acc['1-1000'],
+        allocations: [{ salesInvoiceId: invoiceId, amount: '100000' }],
+      })
+      .expect(201);
+    const paymentId = (r.body as { id: string }).id;
+    await request(server())
+      .post(`/v1/payments/${paymentId}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    const res = await request(server())
+      .post(`/v1/payments/${paymentId}/void`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    expect((res.body as { voidedOn: string }).voidedOn.slice(0, 10)).toBe(
+      '2026-02-16',
+    );
+  });
 });

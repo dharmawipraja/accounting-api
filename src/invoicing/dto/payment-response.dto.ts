@@ -36,6 +36,13 @@ export class PaymentResponseDto {
   @ApiProperty({ format: 'date-time', nullable: true }) postedAt!:
     | string
     | null;
+  @ApiProperty({
+    type: String,
+    format: 'date',
+    nullable: true,
+    description: 'Void (reversal) date; set iff status is VOID.',
+  })
+  voidedOn!: string | null;
   @ApiProperty({ format: 'date-time' }) createdAt!: string;
   @ApiProperty({ format: 'date-time' }) updatedAt!: string;
   @ApiPropertyOptional({ type: [PaymentAllocationResponseDto] })

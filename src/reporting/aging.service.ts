@@ -51,6 +51,10 @@ export class AgingService {
     const refCol =
       kind === 'AR' ? Prisma.raw('d.invoice_ref') : Prisma.raw('d.bill_ref');
 
+    // As-of semantics: a document/payment is live on `day` if it was posted
+    // dated on/before it and not voided on/before it (voided_on is the void's
+    // reversal date, which may be later than the document date). This keeps the
+    // subledger tied to the control account for every as-of date.
     // Fully-paid documents are filtered in SQL (not JS) so only genuinely open
     // items are materialized; the LIMIT is a backstop against unbounded rows.
     const rows = await this.prisma.$queryRaw<DocRow[]>(Prisma.sql`
@@ -60,11 +64,13 @@ export class AgingService {
                COALESCE((
                  SELECT SUM(pa.amount) FROM payment_allocations pa
                  JOIN payments p ON p.id = pa.payment_id
-                 WHERE pa.${allocCol} = d.id AND p.status = 'POSTED' AND p.deleted_at IS NULL AND p.date <= ${day}
+                 WHERE pa.${allocCol} = d.id AND p.deleted_at IS NULL AND p.date <= ${day}
+                   AND (p.status = 'POSTED' OR (p.status = 'VOID' AND p.voided_on > ${day}))
                ), 0) AS paid_as_of
         FROM ${docTable} d
         JOIN business_partners bp ON bp.id = d.partner_id
-        WHERE d.status = 'POSTED' AND d.deleted_at IS NULL AND d.date <= ${day}
+        WHERE d.deleted_at IS NULL AND d.date <= ${day}
+          AND (d.status = 'POSTED' OR (d.status = 'VOID' AND d.voided_on > ${day}))
       ) doc
       WHERE doc.total > doc.paid_as_of
       ORDER BY doc.partner_name ASC, doc.date ASC

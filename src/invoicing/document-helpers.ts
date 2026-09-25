@@ -34,3 +34,22 @@ export async function findControlAccountId(
   }
   return acc.id;
 }
+
+/** A void (reversal) may be dated later than the document/payment it voids,
+ *  never earlier. Both dates are UTC-midnight @db.Date values. */
+export function assertVoidDateNotBefore(
+  voidedOn: Date,
+  documentDate: Date,
+  id: string,
+): void {
+  if (voidedOn.getTime() < documentDate.getTime()) {
+    throw new ValidationFailedError(
+      'Void date cannot be before the document date',
+      {
+        id,
+        date: voidedOn.toISOString().slice(0, 10),
+        documentDate: documentDate.toISOString().slice(0, 10),
+      },
+    );
+  }
+}

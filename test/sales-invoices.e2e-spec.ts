@@ -493,4 +493,78 @@ describe('SalesInvoices (e2e)', () => {
       .expect(409);
     expect((res.body as { code: string }).code).toBe('CONFLICT');
   });
+  describe('void with an optional later date (closed original period)', () => {
+    const postInvoice = async (date: string) => {
+      const draft = await request(app.getHttpServer() as App)
+        .post('/v1/sales-invoices')
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({ ...draftBody(), date })
+        .expect(201);
+      const id = (draft.body as { id: string }).id;
+      const posted = await request(app.getHttpServer() as App)
+        .post(`/v1/sales-invoices/${id}/post`)
+        .set('Authorization', `Bearer ${appr}`)
+        .set('Idempotency-Key', randomUUID())
+        .expect(200);
+      return {
+        id,
+        journalEntryId: (posted.body as { journalEntryId: string })
+          .journalEntryId,
+      };
+    };
+    const voidReq = (id: string) =>
+      request(app.getHttpServer() as App)
+        .post(`/v1/sales-invoices/${id}/void`)
+        .set('Authorization', `Bearer ${appr}`)
+        .set('Idempotency-Key', randomUUID());
+
+    it('no-body void stores voidedOn = invoice date and reverses on that date', async () => {
+      const inv = await postInvoice('2026-02-12');
+      const res = await voidReq(inv.id).expect(200);
+      const body = res.body as { status: string; voidedOn: string };
+      expect(body.status).toBe('VOID');
+      expect(body.voidedOn.slice(0, 10)).toBe('2026-02-12');
+      const rev = await prisma.client.journalEntry.findFirst({
+        where: { reversalOfId: inv.journalEntryId },
+      });
+      expect(rev!.date.toISOString().slice(0, 10)).toBe('2026-02-12');
+    });
+
+    it('rejects a void date before the invoice date (422)', async () => {
+      const inv = await postInvoice('2026-02-12');
+      const res = await voidReq(inv.id)
+        .send({ date: '2026-02-11' })
+        .expect(422);
+      expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+    });
+
+    it('voids into a later open period once the invoice period is closed', async () => {
+      const inv = await postInvoice('2026-01-15');
+      const periods = app.get(PeriodsService);
+      const jan = (await periods.list(2026)).find(
+        (p) => p.startDate.toISOString().slice(0, 10) === '2026-01-01',
+      )!;
+      await periods.close(jan.id, 'closer');
+      try {
+        // Without a date the reversal targets the closed January period.
+        const closed = await voidReq(inv.id).expect(409);
+        expect((closed.body as { code: string }).code).toBe('CLOSED_PERIOD');
+
+        const res = await voidReq(inv.id)
+          .send({ date: '2026-02-10' })
+          .expect(200);
+        const body = res.body as { status: string; voidedOn: string };
+        expect(body.status).toBe('VOID');
+        expect(body.voidedOn.slice(0, 10)).toBe('2026-02-10');
+        const rev = await prisma.client.journalEntry.findFirst({
+          where: { reversalOfId: inv.journalEntryId },
+        });
+        expect(rev!.date.toISOString().slice(0, 10)).toBe('2026-02-10');
+        expect(rev!.sourceType).toBe('REVERSAL');
+      } finally {
+        await periods.reopen(jan.id);
+      }
+    });
+  });
 });

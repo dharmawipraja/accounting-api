@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiBody,
   ApiCreatedResponse,
   ApiNoContentResponse,
   ApiOkResponse,
@@ -25,6 +26,7 @@ import { JournalService } from './journal.service';
 import { JournalListQueryDto } from './dto/list-journal-entries.dto';
 import { CreateJournalEntryDto } from './dto/create-journal-entry.dto';
 import { JournalPostQueryDto } from './dto/journal-post-query.dto';
+import { ReverseJournalEntryDto } from './dto/reverse-journal-entry.dto';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { Role } from '../../auth/role.enum';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
@@ -106,13 +108,15 @@ export class JournalController {
   @ApiOkResponse({ type: JournalEntryResponseDto })
   @Roles(Role.APPROVER, Role.ADMIN)
   @IdempotentWrite()
+  @ApiBody({ type: ReverseJournalEntryDto, required: false })
   @Post(':id/reverse')
   @HttpCode(200)
   reverse(
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReverseJournalEntryDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<JournalEntry> {
-    return this.journal.reverse(id, user.id);
+    return this.journal.reverse(id, user.id, parseDate(dto?.date));
   }
 
   @ApiNoContentResponse()

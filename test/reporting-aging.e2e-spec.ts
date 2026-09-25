@@ -13,6 +13,7 @@ import { AgingService } from '../src/reporting/aging.service';
 import { PaymentsService } from '../src/invoicing/payments.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
+import { randomUUID } from 'crypto';
 import { bootstrapTestApp } from './e2e-helpers';
 
 describe('Reporting AR/AP aging (e2e)', () => {
@@ -403,5 +404,98 @@ describe('Reporting AR/AP aging (e2e)', () => {
     const capped = await aging.aging('AR', new Date('2026-07-01'), 1);
     expect(capped.truncated).toBe(true);
     expect(capped.partners.flatMap((p) => p.documents)).toHaveLength(1);
+  });
+  // Void dated in a later period: aging as of D must honour voided_on, and the
+  // AR subledger must tie to the AR control for every D (before the void,
+  // between the original and the void date, and after).
+  it('AR aging honours invoice/payment void dates and ties to AR control for every as-of date', async () => {
+    const apprToken = (
+      await app.get(AuthService).login('appr@aging.test', 'secret123')
+    ).accessToken;
+    const post = (url: string, body?: object) => {
+      const r = request(app.getHttpServer() as App)
+        .post(url)
+        .set('Authorization', `Bearer ${apprToken}`)
+        .set('Idempotency-Key', randomUUID());
+      return body ? r.send(body) : r;
+    };
+    const customer = await app.get(BusinessPartnersService).create({
+      code: 'CUST-AGING-VOIDDATE',
+      name: 'Pelanggan Void Date',
+      isCustomer: true,
+    });
+    const invoices = app.get(SalesInvoicesService);
+    const draft = await invoices.createDraft({
+      partnerId: customer.id,
+      date: new Date('2026-01-20'),
+      dueDate: new Date('2026-02-19'),
+      description: 'Invoice void-dated later',
+      lines: [
+        {
+          description: 'Jasa',
+          accountId: acc['4-1000'],
+          quantity: '1',
+          unitPrice: '900000',
+          taxCodeIds: [],
+        },
+      ],
+      createdBy: acctUserId,
+    });
+    const inv = await invoices.post(draft.id, apprUserId);
+    const payments = app.get(PaymentsService);
+    const draftPay = await payments.createDraft({
+      direction: 'RECEIPT',
+      partnerId: customer.id,
+      date: new Date('2026-01-25'),
+      cashAccountId: acc['1-1000'],
+      allocations: [{ salesInvoiceId: inv.id, amount: '300000' }],
+      createdBy: acctUserId,
+    });
+    const pay = await payments.post(draftPay.id, apprUserId);
+
+    // Payment voided on 2026-02-05, invoice voided on 2026-02-10.
+    await post(`/v1/payments/${pay.id}/void`, { date: '2026-02-05' }).expect(
+      200,
+    );
+    // An invoice void dated before the payment's void date would leave the
+    // payment's credit on AR with no document to age against → rejected.
+    const early = await post(`/v1/sales-invoices/${inv.id}/void`, {
+      date: '2026-02-01',
+    }).expect(422);
+    expect((early.body as { code: string }).code).toBe('VALIDATION_FAILED');
+    await post(`/v1/sales-invoices/${inv.id}/void`, {
+      date: '2026-02-10',
+    }).expect(200);
+
+    type AgingBody = {
+      partners: {
+        documents: { ref: string | null; outstanding: string }[];
+      }[];
+      totalOutstanding: string;
+    };
+    const expectations: [string, string | undefined][] = [
+      ['2026-01-24', '900000.0000'], // before the payment
+      ['2026-01-31', '600000.0000'], // payment counted (voided later)
+      ['2026-02-07', '900000.0000'], // payment voided, invoice not yet
+      ['2026-02-28', undefined], // invoice voided on 2026-02-10
+    ];
+    for (const [asOf, outstanding] of expectations) {
+      const res = await get(`/v1/reports/ar-aging?asOf=${asOf}`).expect(200);
+      const body = res.body as AgingBody;
+      const doc = body.partners
+        .flatMap((p) => p.documents)
+        .find((d) => d.ref === inv.invoiceRef);
+      expect({ asOf, outstanding: doc?.outstanding }).toEqual({
+        asOf,
+        outstanding,
+      });
+      const arControl = await app
+        .get(BalancesService)
+        .accountBalance(acc['1-1200'], new Date(asOf));
+      expect({ asOf, total: body.totalOutstanding }).toEqual({
+        asOf,
+        total: Number(arControl.balance).toFixed(4),
+      });
+    }
   });
 });
