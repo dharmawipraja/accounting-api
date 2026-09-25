@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { INestApplication } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../src/common/prisma/prisma.service';
@@ -277,6 +279,37 @@ describe('DB integrity — ledger invariants enforced by Postgres (e2e)', () => 
       expect(p.x).toMatch(/^[1-9][0-9]*$/);
     });
 
+    it.each(['0', '12345'])(
+      'a posted INSERT carrying posted_xid=%s is re-stamped with the current xid (and accepts its lines)',
+      async (xid) => {
+        const id = `dbi-xid-${xid}`;
+        const num = 91000 + Number(xid.length);
+        let same: boolean | undefined;
+        await inTx(async (tx) => {
+          await tx.$executeRawUnsafe(
+            `INSERT INTO journal_entries (id, entry_number, entry_ref, fiscal_year, date, period_id,
+               description, source_type, status, created_by, posted_by, posted_at, updated_at, posted_xid)
+             VALUES ('${id}', ${num}, 'JE/2026/0${num}', 2026, '2026-02-10', '${periodId}',
+               'caller-supplied xid', 'MANUAL', 'POSTED', 'a', 'p', now(), now(), '${xid}'::xid8)`,
+          );
+          // Lines are accepted only if posted_xid = this tx's id.
+          await tx.$executeRawUnsafe(
+            `INSERT INTO journal_lines (id, journal_entry_id, line_no, account_id, debit, credit)
+             VALUES (gen_random_uuid()::text, '${id}', 1, '${acc['1-1000']}', 7, 0),
+                    (gen_random_uuid()::text, '${id}', 2, '${acc['4-1000']}', 0, 7)`,
+          );
+          const [r] = await tx.$queryRawUnsafe<{ same: boolean }[]>(
+            `SELECT posted_xid = pg_current_xact_id() AS same FROM journal_entries WHERE id = '${id}'`,
+          );
+          same = r.same;
+        });
+        expect(same).toBe(true);
+        const [after] = await prisma.client.$queryRaw<{ x: string }[]>`
+          SELECT posted_xid::text AS x FROM journal_entries WHERE id = ${id}`;
+        expect(after.x).not.toBe(xid);
+      },
+    );
+
     it('rejects DELETE of a posted entry', async () => {
       const je = await postEntry();
       await expect(
@@ -482,6 +515,25 @@ describe('DB integrity — ledger invariants enforced by Postgres (e2e)', () => 
         /sales_invoice_lines_account_id_fkey/,
       ],
       [
+        'journal_entries.reversal_of_id',
+        (ctx: { draftId: string }) =>
+          `UPDATE journal_entries SET reversal_of_id = '${ghost}' WHERE id = '${ctx.draftId}'`,
+        /journal_entries_reversal_of_id_fkey/,
+      ],
+      [
+        'journal_entries.reversed_by_id',
+        (ctx: { draftId: string }) =>
+          `UPDATE journal_entries SET reversed_by_id = '${ghost}' WHERE id = '${ctx.draftId}'`,
+        /journal_entries_reversed_by_id_fkey/,
+      ],
+      [
+        'year_end_closings.closing_entry_id',
+        () =>
+          `INSERT INTO year_end_closings (fiscal_year, status, closing_entry_id, net_income, closed_at, closed_by, updated_at)
+           VALUES (2097, 'CLOSED', '${ghost}', 0, now(), 'x', now())`,
+        /year_end_closings_closing_entry_id_fkey/,
+      ],
+      [
         'tax_codes.tax_account_id',
         () =>
           `INSERT INTO tax_codes (id, code, name, kind, rate, tax_account_id, updated_at)
@@ -499,6 +551,66 @@ describe('DB integrity — ledger invariants enforced by Postgres (e2e)', () => 
         ],
       });
       await expect(runSql(sql({ draftId: draft.id }))).rejects.toThrow(err);
+    });
+
+    it('rejects hard-deleting a journal entry a year-end closing points at', async () => {
+      // Posted entries are undeletable by trigger already; a DRAFT is not, so
+      // it isolates the RESTRICT of the closing link itself.
+      const draft = await app.get(JournalService).createDraft({
+        date: new Date('2026-02-10'),
+        description: 'closing-link probe',
+        createdBy: 'a',
+        lines: [
+          { accountId: acc['1-1000'], debit: '1' },
+          { accountId: acc['4-1000'], credit: '1' },
+        ],
+      });
+      await expect(
+        inTx(async (tx) => {
+          await tx.$executeRawUnsafe(
+            `INSERT INTO year_end_closings (fiscal_year, status, closing_entry_id, net_income, closed_at, closed_by, updated_at)
+             VALUES (2095, 'CLOSED', '${draft.id}', 0, now(), 'x', now())`,
+          );
+          await tx.$executeRawUnsafe(
+            `DELETE FROM journal_lines WHERE journal_entry_id = '${draft.id}'`,
+          );
+          await tx.$executeRawUnsafe(
+            `DELETE FROM journal_entries WHERE id = '${draft.id}'`,
+          );
+        }),
+      ).rejects.toThrow(/year_end_closings_closing_entry_id_fkey/);
+    });
+
+    it('link-FK migration pre-check aborts with a clear message when orphans exist', async () => {
+      const sql = readFileSync(
+        join(
+          __dirname,
+          '../prisma/migrations/20260927000000_journal_link_fks/migration.sql',
+        ),
+        'utf8',
+      );
+      const precheck = /DO \$\$[\s\S]*?END \$\$;/.exec(sql)![0];
+      // Manufacture the orphans the FKs now forbid (replica mode skips FK
+      // triggers; superuser-only, test DB), then run the migration's pre-check.
+      // The tx rolls back, so nothing persists.
+      await expect(
+        inTx(async (tx) => {
+          await tx.$executeRawUnsafe(
+            'SET LOCAL session_replication_role = replica',
+          );
+          await tx.$executeRawUnsafe(
+            `INSERT INTO year_end_closings (fiscal_year, status, closing_entry_id, net_income, closed_at, closed_by, updated_at)
+             VALUES (2096, 'CLOSED', '${ghost}', 0, now(), 'x', now())`,
+          );
+          await tx.$executeRawUnsafe(
+            `INSERT INTO journal_entries (id, date, description, source_type, status, reversal_of_id, reversed_by_id, created_by, updated_at)
+             VALUES ('dbi-orphan-link', '2026-02-10', 'orphan', 'MANUAL', 'DRAFT', '${ghost}', '${ghost}', 'a', now())`,
+          );
+          await tx.$executeRawUnsafe(precheck);
+        }),
+      ).rejects.toThrow(
+        /journal_link_fks migration aborted.*1 year_end_closings\.closing_entry_id orphans.*1 journal_entries\.reversal_of_id orphans.*1 journal_entries\.reversed_by_id orphans/,
+      );
     });
 
     it('rejects hard-deleting a referenced account or a journal entry with lines', async () => {

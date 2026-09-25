@@ -208,33 +208,40 @@ model JournalSequence {
 }
 
 model JournalEntry {
-  id            String               @id @default(uuid())
-  entryNumber   Int?                 @map("entry_number")
-  entryRef      String?              @map("entry_ref")
-  fiscalYear    Int?                 @map("fiscal_year")
-  date          DateTime             @db.Date
-  periodId      String?              @map("period_id")
-  period        AccountingPeriod?    @relation(fields: [periodId], references: [id], onDelete: Restrict)
-  description   String
-  sourceType    JournalSourceType    @map("source_type")
-  sourceId      String?              @map("source_id")
-  status        JournalStatus        @default(DRAFT)
-  reversalOfId  String?              @map("reversal_of_id")
-  reversedById  String?              @map("reversed_by_id")
-  createdBy     String               @map("created_by")
-  postedBy      String?              @map("posted_by")
-  postedAt      DateTime?            @map("posted_at")
+  id              String               @id @default(uuid())
+  entryNumber     Int?                 @map("entry_number")
+  entryRef        String?              @map("entry_ref")
+  fiscalYear      Int?                 @map("fiscal_year")
+  date            DateTime             @db.Date
+  periodId        String?              @map("period_id")
+  period          AccountingPeriod?    @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  description     String
+  sourceType      JournalSourceType    @map("source_type")
+  sourceId        String?              @map("source_id")
+  status          JournalStatus        @default(DRAFT)
+  reversalOfId    String?              @map("reversal_of_id")
+  // Self-relations (20260927000000_journal_link_fks, ON DELETE RESTRICT).
+  // reversal_of_id is @@unique, so each original has at most one reversal.
+  reversalOf      JournalEntry?        @relation("JournalEntryReversal", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  reversal        JournalEntry?        @relation("JournalEntryReversal")
+  reversedById    String?              @map("reversed_by_id")
+  reversedBy      JournalEntry?        @relation("JournalEntryReversedBy", fields: [reversedById], references: [id], onDelete: Restrict)
+  reversedEntries JournalEntry[]       @relation("JournalEntryReversedBy")
+  createdBy       String               @map("created_by")
+  postedBy        String?              @map("posted_by")
+  postedAt        DateTime?            @map("posted_at")
   // DB-only: xid of the tx that posted the entry, set + frozen by trigger
   // (20260926300000_ledger_integrity); keys the posted-line insert guard.
-  postedXid     Unsupported("xid8")? @map("posted_xid")
-  createdAt     DateTime             @default(now()) @map("created_at")
-  updatedAt     DateTime             @updatedAt @map("updated_at")
-  deletedAt     DateTime?            @map("deleted_at")
-  deletedBy     String?              @map("deleted_by")
-  lines         JournalLine[]
-  salesInvoices SalesInvoice[]
-  purchaseBills PurchaseBill[]
-  payments      Payment[]
+  postedXid       Unsupported("xid8")? @map("posted_xid")
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
+  deletedAt       DateTime?            @map("deleted_at")
+  deletedBy       String?              @map("deleted_by")
+  lines           JournalLine[]
+  salesInvoices   SalesInvoice[]
+  purchaseBills   PurchaseBill[]
+  payments        Payment[]
+  yearEndClosings YearEndClosing[]
 
   // DB-level invariants (20260926300000_ledger_integrity), hand-authored:
   //   CHECK journal_entries_posted_complete (DRAFT ⇔ posted_at NULL; non-DRAFT
@@ -554,15 +561,16 @@ model DocumentSequence {
 }
 
 model YearEndClosing {
-  fiscalYear     Int         @id @map("fiscal_year")
+  fiscalYear     Int           @id @map("fiscal_year")
   status         CloseStatus
-  closingEntryId String?     @map("closing_entry_id")
-  netIncome      Decimal     @default(0) @map("net_income") @db.Decimal(20, 4)
-  closedAt       DateTime    @map("closed_at")
-  closedBy       String      @map("closed_by")
-  reopenedAt     DateTime?   @map("reopened_at")
-  reopenedBy     String?     @map("reopened_by")
-  updatedAt      DateTime    @updatedAt @map("updated_at")
+  closingEntryId String?       @map("closing_entry_id")
+  closingEntry   JournalEntry? @relation(fields: [closingEntryId], references: [id], onDelete: Restrict)
+  netIncome      Decimal       @default(0) @map("net_income") @db.Decimal(20, 4)
+  closedAt       DateTime      @map("closed_at")
+  closedBy       String        @map("closed_by")
+  reopenedAt     DateTime?     @map("reopened_at")
+  reopenedBy     String?       @map("reopened_by")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
 
   @@map("year_end_closings")
 }
