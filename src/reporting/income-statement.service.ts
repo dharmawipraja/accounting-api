@@ -26,9 +26,11 @@ export class IncomeStatementService {
   }
 
   async generate(from: Date, to: Date) {
-    const all = (await this.balances.movementsBetween(from, to)).filter(
-      (r) => r.type === 'REVENUE' || r.type === 'EXPENSE',
-    );
+    // Year-end CLOSING entries (and their reopen reversals) zero P&L; they are
+    // not business activity, so they never appear on the Laba Rugi.
+    const all = (
+      await this.balances.movementsBetween(from, to, { excludeClosing: true })
+    ).filter((r) => r.type === 'REVENUE' || r.type === 'EXPENSE');
     // Pull the income-tax-expense account out FIRST (whatever subtype it carries),
     // so it appears only on its own line and never double-counts in a subtype section.
     const taxRows = all.filter((r) => r.role === 'TAX_EXPENSE');

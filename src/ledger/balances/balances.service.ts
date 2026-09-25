@@ -5,7 +5,12 @@ import { AccountsService } from '../accounts/accounts.service';
 import { truncateToUtcDay } from '../../common/dates/utc-day';
 import { Money } from '../../common/money/money';
 import { signedNet } from './signing';
-import { POSTED_JE } from './posted-entry.sql';
+import {
+  EXCLUDE_OPENING_JE,
+  POSTED_JE,
+  excludeClosingJe,
+} from './posted-entry.sql';
+import type { LedgerTx } from '../posting/posting.service';
 
 export interface TrialBalanceRow {
   accountId: string;
@@ -35,6 +40,19 @@ export interface AccountBalanceRow {
   debit: string; // raw summed debits, 4dp
   credit: string; // raw summed credits, 4dp
   balance: string; // normalBalance-signed net, 4dp (convenience)
+}
+
+/** Report-view filters for `balancesAsOf` / `movementsBetween`. The defaults
+ *  (all false) count every posted entry — the post-closing ledger view. */
+export interface BalanceQueryOpts {
+  /** Exclude CLOSING entries and REVERSAL entries whose reversal_of_id is a CLOSING entry. */
+  excludeClosing?: boolean;
+  /** Only exclude closing entries dated >= this day (balance-sheet pre-closing view). */
+  excludeClosingFrom?: Date;
+  /** Exclude OPENING entries (cash-flow). */
+  excludeOpening?: boolean;
+  /** Run on this transaction client instead of the base client. */
+  tx?: LedgerTx;
 }
 
 interface RawBalanceRow {
@@ -70,8 +88,10 @@ export class BalancesService {
    *  accounts-join soft-delete guard. */
   private async groupedBalances(
     dateFilter: Prisma.Sql,
+    opts: BalanceQueryOpts = {},
   ): Promise<RawBalanceRow[]> {
-    return this.prisma.$queryRaw<RawBalanceRow[]>(Prisma.sql`
+    const client = opts.tx ?? this.prisma;
+    return client.$queryRaw<RawBalanceRow[]>(Prisma.sql`
       SELECT a.id AS account_id, a.code, a.name, a.type, a.subtype,
              a.normal_balance, a.cash_flow_category, a.role,
              COALESCE(SUM(jl.debit), 0) AS debit,
@@ -80,8 +100,19 @@ export class BalancesService {
       JOIN journal_lines jl ON jl.account_id = a.id
       JOIN journal_entries je ON je.id = jl.journal_entry_id
       WHERE ${POSTED_JE} AND a.deleted_at IS NULL AND ${dateFilter}
+        AND ${this.entryFilter(opts)}
       GROUP BY a.id, a.code, a.name, a.type, a.subtype, a.normal_balance, a.cash_flow_category, a.role
       ORDER BY a.code ASC`);
+  }
+
+  /** SQL for the opts' entry exclusions (`TRUE` when none). */
+  private entryFilter(opts: BalanceQueryOpts): Prisma.Sql {
+    const parts: Prisma.Sql[] = [];
+    if (opts.excludeClosing) parts.push(excludeClosingJe());
+    else if (opts.excludeClosingFrom)
+      parts.push(excludeClosingJe(this.toUtcDay(opts.excludeClosingFrom)));
+    if (opts.excludeOpening) parts.push(EXCLUDE_OPENING_JE);
+    return parts.length ? Prisma.join(parts, ' AND ') : Prisma.sql`TRUE`;
   }
 
   private toRow(r: RawBalanceRow): AccountBalanceRow {
@@ -106,18 +137,29 @@ export class BalancesService {
   }
 
   /** Every account's cumulative debit/credit + metadata as of a date. */
-  async balancesAsOf(asOf: Date): Promise<AccountBalanceRow[]> {
+  async balancesAsOf(
+    asOf: Date,
+    opts?: BalanceQueryOpts,
+  ): Promise<AccountBalanceRow[]> {
     const day = this.toUtcDay(asOf);
-    const rows = await this.groupedBalances(Prisma.sql`je.date <= ${day}`);
+    const rows = await this.groupedBalances(
+      Prisma.sql`je.date <= ${day}`,
+      opts,
+    );
     return rows.map((r) => this.toRow(r));
   }
 
   /** Every account's debit/credit movement over [from, to] (inclusive). */
-  async movementsBetween(from: Date, to: Date): Promise<AccountBalanceRow[]> {
+  async movementsBetween(
+    from: Date,
+    to: Date,
+    opts?: BalanceQueryOpts,
+  ): Promise<AccountBalanceRow[]> {
     const f = this.toUtcDay(from);
     const t = this.toUtcDay(to);
     const rows = await this.groupedBalances(
       Prisma.sql`je.date >= ${f} AND je.date <= ${t}`,
+      opts,
     );
     return rows.map((r) => this.toRow(r));
   }

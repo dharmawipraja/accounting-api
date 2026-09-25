@@ -98,14 +98,16 @@ describe('Year-end close (e2e)', () => {
     expect(ret.balance).toBe('1500000.0000'); // net income moved to Laba Ditahan
   });
 
-  it('after close: Neraca current-year earnings is 0 and cash-flow still reconciles', async () => {
+  it('after close: Neraca at year-end is pre-closing (earnings = net income) and cash-flow still reconciles', async () => {
     // (run after the close test, before reopen — re-close if needed)
     const status = await close.getStatus(2026);
     if (status?.status !== 'CLOSED') await close.close(2026, 'admin');
     const bs = await app
       .get(BalanceSheetService)
       .generate(new Date('2026-12-31'));
-    expect(bs.currentYearEarnings).toBe('0.0000'); // P&L closed out
+    // The closing entry dated on the report date is excluded (pre-closing view),
+    // so the year's profit still shows as current-year earnings.
+    expect(bs.currentYearEarnings).toBe('1500000.0000');
     expect(bs.balanced).toBe(true);
     const cf = await app
       .get(CashFlowService)

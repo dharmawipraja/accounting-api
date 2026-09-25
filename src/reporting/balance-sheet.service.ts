@@ -50,7 +50,12 @@ export class BalanceSheetService {
     const fy = await this.company.fiscalYearFor(asOf);
     const { start: fyStart } = await this.company.fiscalYearBounds(fy);
 
-    const rows = await this.balances.balancesAsOf(asOf);
+    // Pre-closing view: a closing entry dated ON the report date (the fiscal
+    // year-end) is left out, so Laba (Rugi) Berjalan shows the year's profit
+    // and Laba Ditahan excludes it; earlier years' closings still count.
+    const rows = await this.balances.balancesAsOf(asOf, {
+      excludeClosingFrom: asOf,
+    });
     const assets = this.group(rows.filter((r) => r.type === 'ASSET'));
     const liabilities = this.group(rows.filter((r) => r.type === 'LIABILITY'));
     const equityRows = rows.filter((r) => r.type === 'EQUITY');
@@ -63,7 +68,9 @@ export class BalanceSheetService {
       Money.zero(),
     );
     // Current-FY portion (sub-figure).
-    const fyRows = await this.balances.movementsBetween(fyStart, asOf);
+    const fyRows = await this.balances.movementsBetween(fyStart, asOf, {
+      excludeClosing: true,
+    });
     const currentYearEarnings = fyRows
       .filter((r) => r.type === 'REVENUE' || r.type === 'EXPENSE')
       .reduce(

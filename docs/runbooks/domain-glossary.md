@@ -276,6 +276,10 @@ a company-level flag.
 All reports are read-only and derive from `BalancesService` primitives
 (`balancesAsOf`, `movementsBetween`, `trialBalance`, `accountBalance`), which sum posted,
 non-deleted journal lines. Several reports emit a boolean self-check.
+`balancesAsOf`/`movementsBetween` take `BalanceQueryOpts` (`excludeClosing`,
+`excludeClosingFrom`, `excludeOpening`, `tx`); the P&L-view reports use them, while trial
+balance, general ledger and account balance deliberately **include** closing entries
+(post-closing view). Predicates live in `src/ledger/balances/posted-entry.sql.ts`.
 
 ### Trial balance (neraca saldo)
 Every account's total debits and credits as of a date; the grand `totalDebit` must equal
@@ -286,6 +290,10 @@ Every account's total debits and credits as of a date; the grand `totalDebit` mu
 Assets, liabilities, and equity as of a date, grouped by subtype. Equity includes a
 synthetic **Laba (Rugi) Berjalan** line = cumulative P&L (`Σ credit−debit` over
 REVENUE+EXPENSE), since current-year profit hasn't been closed to retained earnings yet.
+It is a **pre-closing** view: a `CLOSING` entry (or its reopen reversal) dated **on** the
+as-of date is excluded (`excludeClosingFrom: asOf`), so Neraca at the fiscal year-end
+shows the year's profit as Laba (Rugi) Berjalan; from the next day it sits in Laba
+Ditahan. `currentYearEarnings` = FY-to-date P&L movement with closing entries excluded.
 The `balanced` flag asserts **Assets = Liabilities + Equity**.
 - `BalanceSheetService.generate` (`src/reporting/balance-sheet.service.ts`);
   `balanced: assets.total.equals(liabilities.total.add(totalEquity))`.
@@ -293,7 +301,9 @@ The `balanced` flag asserts **Assets = Liabilities + Equity**.
 ### Income statement / Laba rugi
 Revenue and expense **movement** over a date range, sectioned into revenue, COGS (→ gross
 profit), operating expense (→ operating profit), other income/expense (→ profit before
-tax), then the `TAX_EXPENSE`-role line, yielding net income.
+tax), then the `TAX_EXPENSE`-role line, yielding net income. `CLOSING` entries and
+their reopen reversals are excluded (`excludeClosing`), so the figures are identical
+before close, after close, after reopen and after re-close.
 - `IncomeStatementService.generate` (`src/reporting/income-statement.service.ts`).
 
 ### Cash flow (laporan arus kas) — indirect method
@@ -301,6 +311,10 @@ Starts from net income (Σ cash-effect of P&L accounts), adds movements of non-c
 balance-sheet accounts bucketed by `cashFlowCategory` (OPERATING/INVESTING/FINANCING),
 and ties to cash. The `reconciles` flag asserts **opening cash + net change = closing
 cash** (`kasAwal + netChange == kasAkhir`), where cash = `role === 'CASH'` accounts.
+Flows exclude `CLOSING` entries (and their reversals) and `OPENING` entries; cash booked
+by `OPENING` entries inside the range is added to `kasAwal` (beginning balance, not an
+operating/financing flow). Accumulated depreciation is `cashFlowCategory: NONE` → it
+lands in operating as the non-cash add-back.
 - `CashFlowService.generate` (`src/reporting/cash-flow.service.ts`).
 
 ### AR / AP aging (umur piutang / umur utang)

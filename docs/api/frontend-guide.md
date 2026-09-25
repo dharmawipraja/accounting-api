@@ -658,8 +658,13 @@ no auth.
 
 ### Reports (all read, any auth)
 
-- `GET    /v1/reports/balance-sheet?asOf=` · any · Neraca
-- `GET    /v1/reports/income-statement?from=&to=` · any · Laba Rugi
+- `GET    /v1/reports/balance-sheet?asOf=` · any · Neraca — pre-closing view:
+  a year-end closing entry dated **on** `asOf` is ignored, so Neraca at the
+  fiscal year-end shows the year's profit as Laba (Rugi) Berjalan /
+  `currentYearEarnings` (it moves into Laba Ditahan from the next day)
+- `GET    /v1/reports/income-statement?from=&to=` · any · Laba Rugi — year-end
+  closing entries (and their reopen reversals) are excluded, so figures are the
+  same before and after a year is closed
 - `GET    /v1/reports/general-ledger?accountId=&from=&to=` · any · Buku Besar —
   span capped at **366 days** (`422` beyond); response carries `truncated: true`
   when the 10,000-line cap cut the list (narrow the range; `closingBalance` stays
@@ -667,7 +672,9 @@ no auth.
 - `GET    /v1/reports/ar-aging?asOf=` · any · AR aging — response carries a
   `truncated` flag (10,000 open-document cap)
 - `GET    /v1/reports/ap-aging?asOf=` · any · AP aging — same `truncated` flag
-- `GET    /v1/reports/cash-flow?from=&to=` · any · Arus Kas
+- `GET    /v1/reports/cash-flow?from=&to=` · any · Arus Kas — closing entries
+  excluded; opening-balance (Saldo Awal) entries dated inside the range are
+  part of `kasAwal`, not operating/financing flows
 
 ### Sales invoices
 

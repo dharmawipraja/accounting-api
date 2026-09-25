@@ -100,18 +100,20 @@ describe('Reporting cash flow (e2e)', () => {
     };
 
     expect(body.reconciles).toBe(true);
-    expect(body.kasAwal).toBe('0.0000');
+    // The OPENING entry dated inside the range is a beginning balance, not a
+    // flow: it lands in kasAwal.
+    expect(body.kasAwal).toBe('10000000.0000');
     // Kas: +10,000,000 (opening) + 2,000,000 (sale) − 500,000 (expense) = 11,500,000
     expect(body.kasAkhir).toBe('11500000.0000');
-    expect(body.netChange).toBe('11500000.0000');
+    expect(body.netChange).toBe('1500000.0000');
     // Net income: revenue 2,000,000 − expense 500,000
     expect(body.netIncome).toBe('1500000.0000');
 
     // Section breakdown (catches miscategorization the reconciliation alone can't):
     // operating = net income only (no working-capital movement in this seed);
-    // financing = Modal 10,000,000; investing = nothing.
+    // financing = nothing (the opening Modal is not a flow); investing = nothing.
     expect(body.operating.total).toBe('1500000.0000');
-    expect(body.financing.total).toBe('10000000.0000');
+    expect(body.financing.total).toBe('0.0000');
     expect(body.investing.total).toBe('0.0000');
     // operating + investing + financing === netChange
     const opTotal = Number(body.operating.total);

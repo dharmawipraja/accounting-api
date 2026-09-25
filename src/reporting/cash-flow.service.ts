@@ -32,7 +32,12 @@ export class CashFlowService {
   }
 
   async generate(from: Date, to: Date) {
-    const movements = await this.balances.movementsBetween(from, to);
+    // Flows exclude year-end CLOSING entries (P&L → Laba Ditahan is not cash
+    // activity) and OPENING entries (beginning balances, folded into kasAwal).
+    const movements = await this.balances.movementsBetween(from, to, {
+      excludeClosing: true,
+      excludeOpening: true,
+    });
     const nonCash = movements.filter((r) => r.role !== 'CASH');
 
     // Net income = Σ cash-effect of P&L accounts.
@@ -77,9 +82,17 @@ export class CashFlowService {
     const netChange = operating.add(investing).add(financing);
 
     const dayBefore = new Date(truncateToUtcDay(from).getTime() - 86_400_000);
+    // kasAwal = cash before the range + cash booked by OPENING entries inside
+    // it (all movements minus the flow movements), so `reconciles` still ties.
+    const allMovements = await this.balances.movementsBetween(from, to, {
+      excludeClosing: true,
+    });
+    const openingCash = this.cashBalance(allMovements).subtract(
+      this.cashBalance(movements),
+    );
     const kasAwal = this.cashBalance(
       await this.balances.balancesAsOf(dayBefore),
-    );
+    ).add(openingCash);
     const kasAkhir = this.cashBalance(await this.balances.balancesAsOf(to));
 
     return {

@@ -110,7 +110,8 @@ export const CHART_OF_ACCOUNTS: SeedAccount[] = [
     type: 'ASSET',
     subtype: 'ACCUMULATED_DEPRECIATION',
     normalBalance: 'CREDIT',
-    cashFlowCategory: 'INVESTING',
+    // Non-cash: depreciation is an operating add-back, not an investing flow.
+    cashFlowCategory: 'NONE',
     parentCode: '1-0000',
   },
   // 2 — Liabilitas
