@@ -13,7 +13,7 @@ import type { ThrottlerRequest } from '@nestjs/throttler';
  */
 @Injectable()
 export class UserThrottlerGuard extends ThrottlerGuard {
-  protected getTracker(req: {
+  protected override getTracker(req: {
     user?: { id?: string };
     ip?: string;
     body?: { email?: unknown };
@@ -38,7 +38,7 @@ export class UserThrottlerGuard extends ThrottlerGuard {
    * (the Redis store being unavailable) becomes a 503 so we never silently stop
    * limiting. Paired with the fail-fast ioredis client, this rejects promptly.
    */
-  protected async handleRequest(
+  protected override async handleRequest(
     requestProps: ThrottlerRequest,
   ): Promise<boolean> {
     try {
