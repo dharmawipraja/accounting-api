@@ -414,6 +414,67 @@ describe('User management (e2e)', () => {
     });
   });
 
+  describe('last-admin race', () => {
+    it('two admins demoting each other concurrently always leave one active ADMIN (5x, no 500s)', async () => {
+      const users = app.get(UsersService);
+      const a = await users.create({
+        email: 'race-a@um.test',
+        password: 'secret123',
+        name: 'Race A',
+        role: 'ADMIN',
+      });
+      const b = await users.create({
+        email: 'race-b@um.test',
+        password: 'secret123',
+        name: 'Race B',
+        role: 'ADMIN',
+      });
+      const tokenA = await login('race-a@um.test', 'secret123');
+      const tokenB = await login('race-b@um.test', 'secret123');
+      const demote = (token: string, id: string) =>
+        request(server())
+          .patch(`/v1/users/${id}`)
+          .set('Authorization', `Bearer ${token}`)
+          .send({ role: 'VIEWER' });
+      // Take the root admin out of the pool so A and B are the only admins.
+      await prisma.client.user.update({
+        where: { id: adminId },
+        data: { isActive: false },
+      });
+      try {
+        for (let i = 0; i < 5; i++) {
+          await prisma.client.user.updateMany({
+            where: { id: { in: [a.id, b.id] } },
+            data: { role: 'ADMIN', isActive: true },
+          });
+          const [ra, rb] = await Promise.all([
+            demote(tokenA, b.id),
+            demote(tokenB, a.id),
+          ]);
+          const statuses = [ra.status, rb.status];
+          // Winner 200; loser 422 (last-admin guard, under the admin-pool
+          // lock) or 403 (already demoted when its request authenticated).
+          expect(statuses.filter((s) => s === 200)).toHaveLength(1);
+          for (const s of statuses) expect([200, 403, 422]).toContain(s);
+          expect(
+            await prisma.client.user.count({
+              where: {
+                id: { in: [a.id, b.id] },
+                role: 'ADMIN',
+                isActive: true,
+              },
+            }),
+          ).toBe(1);
+        }
+      } finally {
+        await prisma.client.user.update({
+          where: { id: adminId },
+          data: { isActive: true },
+        });
+      }
+    });
+  });
+
   describe('change-password throttle', () => {
     it('rate-limits change-password attempts (429 after the per-route budget)', async () => {
       await app.get(UsersService).create({
