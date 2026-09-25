@@ -21,7 +21,8 @@ non-obvious patterns exist.
   `PrismaService.client`, never the raw `PrismaClient`.
 - **PostgreSQL 16** — the source of truth; several invariants live in SQL
   (`FOR UPDATE`/`FOR SHARE`, advisory locks, one-sided CHECK on journal lines,
-  append-only audit trigger).
+  deferred balance + posted-entry immutability triggers, RESTRICT FKs,
+  append-only audit trigger — see `database-and-migrations.md`).
 - **Redis 7** — throttler storage in dev/prod (in-memory in test). See the
   rate-limiting notes in `MEMORY`/runbooks; the limiter is **fail-closed**.
 - **decimal.js** — all money math; JS floats are forbidden at the boundary.
@@ -127,7 +128,10 @@ don't reinvent them.
 `assertBalanced(lines)` (`src/ledger/posting/assert-balanced.ts`) enforces the
 core invariant: ≥2 lines, each line has **exactly one** of debit/credit > 0, and
 total debits == total credits (compared as `Money`). Every posting path calls it;
-the DB also has a one-sided CHECK on `journal_lines` as defense-in-depth.
+the DB also enforces it as defense-in-depth: a one-sided CHECK on `journal_lines`
+and a deferred constraint trigger (posted entry ⇒ ≥ 2 lines, debits = credits,
+checked at COMMIT). Posted entries/lines are immutable at the DB (only the
+POSTED→REVERSED link-up is allowed), so corrections are always reversals.
 
 ### `Money` value object
 `src/common/money/money.ts` wraps `decimal.js` at **4 decimal places**,

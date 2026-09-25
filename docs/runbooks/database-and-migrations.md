@@ -61,6 +61,58 @@ the Prisma schema cannot express:
   is immutable even to the app/migrate DB role. INSERT/SELECT are unaffected. A
   statement-level `BEFORE TRUNCATE` trigger (`20260926100000_auth_hardening`)
   closes the TRUNCATE gap.
+- **Ledger integrity invariants** (`20260926300000_ledger_integrity`) — the
+  database, not just the app, guarantees the books. None of these should ever
+  fire from application code; if one does it is a bug and surfaces as a generic
+  `500 INTERNAL_ERROR` (logged + Sentry; no SQL leaks to the client — a new-FK
+  violation is Prisma `P2003` → `409 CONFLICT`).
+  - **Balance** — deferred constraint triggers `journal_lines_balanced` /
+    `journal_entries_balanced` (`DEFERRABLE INITIALLY DEFERRED`, checked at
+    COMMIT): an entry with `posted_at IS NOT NULL` has ≥ 2 lines and
+    `SUM(debit) = SUM(credit)`. Fires on line insert/update/delete and on the
+    DRAFT→POSTED flip.
+  - **Posted-entry immutability** — `journal_entries_immutable` (BEFORE
+    UPDATE/DELETE): once `posted_at` is set, the only permitted change is the
+    reversal link-up (`status` POSTED→REVERSED, `reversed_by_id` NULL→id, and
+    `updated_at`); any other column change, a soft delete (`deleted_at`), or a
+    DELETE raises. DRAFTs stay freely mutable/soft-deletable.
+    `journal_lines_immutable` (BEFORE INSERT/UPDATE/DELETE): lines of a posted
+    entry cannot be updated or deleted, and may be **inserted only by the
+    transaction that inserted the posted parent** (parent `xmin =
+    pg_current_xact_id()::xid`) — i.e. the nested `lines: { create }` of a
+    direct/document/reversal/closing post. `postDraft` promotes existing lines
+    untouched, so it never inserts into a posted parent. ⚠️ **A new posting path
+    must write the posted entry and its lines in ONE transaction (nested
+    create), and must never add/alter lines after posting** — correct via a
+    reversal instead.
+  - **No TRUNCATE** on `journal_entries`, `journal_lines`, `sales_invoices`,
+    `sales_invoice_lines`, `purchase_bills`, `purchase_bill_lines`, `payments`,
+    `payment_allocations` (statement-level `BEFORE TRUNCATE` → `ledger_no_truncate()`).
+  - **CHECKs** — `payments_amount_positive` (`amount > 0`),
+    `payment_allocations_one_target` (exactly one of invoice/bill),
+    `{sales_invoices,purchase_bills}_amount_paid_range` (`0 ≤ amount_paid ≤ total`),
+    `{sales_invoice,purchase_bill}_lines_nonnegative` (quantity, unit_price ≥ 0;
+    zero-price lines stay legal), `accounting_periods_dates_ordered`, and
+    `journal_entries_posted_complete` (DRAFT ⇔ `posted_at IS NULL`; a non-DRAFT
+    entry carries `entry_number`, `fiscal_year`, `period_id`, `posted_at`).
+  - **No overlapping periods** — `EXCLUDE USING gist (daterange(start_date,
+    end_date,'[]') WITH &&)` (`accounting_periods_no_overlap`; needs
+    `CREATE EXTENSION btree_gist`, shipped in the official postgres image).
+  - **FKs `ON DELETE RESTRICT`** on every ledger/document reference:
+    `journal_lines.{journal_entry_id,account_id}` (lines no longer
+    cascade-delete), `journal_entries.period_id`, document `partner_id` /
+    `journal_entry_id`, doc-line `account_id`, `payments.cash_account_id`,
+    `payment_allocations.{sales_invoice_id,purchase_bill_id}`,
+    `tax_codes.tax_account_id` (modelled as Prisma relations). Accounts and
+    partners are only soft-deleted, so these never block the app.
+    `tax_code_ids` arrays carry no FK.
+  - The migration **pre-checks existing data** and aborts with a list of the
+    offending rows/counts rather than repairing anything.
+  - **Restore**: `pg_dump` places triggers and FKs in post-data, so a full
+    `pg_restore` works; a `--data-only` restore into an existing schema needs
+    `--disable-triggers`. Tests that must manufacture an "impossible" state
+    (e.g. a soft-deleted posted entry) do it inside a tx with
+    `SET LOCAL session_replication_role = replica` (superuser only).
 - **Case-insensitive email uniqueness** (`20260926100000_auth_hardening`):
   `CREATE UNIQUE INDEX users_email_lower_key ON users (lower(email))` — an
   expression index Prisma can't model. The app stores/looks up emails via

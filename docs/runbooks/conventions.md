@@ -152,8 +152,10 @@ One stable error envelope, no leaked internals.
 - **Migration SQL is HAND-AUTHORED.** Generate the file with
   `prisma migrate dev --create-only` (or the `db:migrate` script), then write/edit
   the SQL by hand — we do not let Prisma auto-apply inferred DDL. This is how
-  partial-unique indexes, append-only triggers, advisory-lock helpers, and gapless
-  numbering constraints get expressed. Full mechanics in
+  partial-unique indexes, append-only triggers, advisory-lock helpers, gapless
+  numbering constraints, and the ledger-integrity triggers/CHECKs/FKs get
+  expressed. A posted journal entry and its lines must be written in ONE tx
+  (nested create) and never modified afterwards — the DB rejects anything else. Full mechanics in
   [`./database-and-migrations.md`](./database-and-migrations.md).
 - **After any `prisma/schema.prisma` change, run `npm run db:generate`** to
   regenerate the typed client before relying on the new types or committing.

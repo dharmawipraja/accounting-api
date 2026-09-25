@@ -120,24 +120,30 @@ enum AccountRole {
 }
 
 model Account {
-  id               String           @id @default(uuid())
-  code             String
-  name             String
-  type             AccountType
-  subtype          AccountSubtype
-  cashFlowCategory CashFlowCategory @default(NONE) @map("cash_flow_category")
-  role             AccountRole?
-  normalBalance    NormalBalance    @map("normal_balance")
-  parentId         String?          @map("parent_id")
-  parent           Account?         @relation("AccountHierarchy", fields: [parentId], references: [id])
-  children         Account[]        @relation("AccountHierarchy")
-  isPostable       Boolean          @default(true) @map("is_postable")
-  isActive         Boolean          @default(true) @map("is_active")
-  currency         String           @default("IDR")
-  createdAt        DateTime         @default(now()) @map("created_at")
-  updatedAt        DateTime         @updatedAt @map("updated_at")
-  deletedAt        DateTime?        @map("deleted_at")
-  deletedBy        String?          @map("deleted_by")
+  id                String             @id @default(uuid())
+  code              String
+  name              String
+  type              AccountType
+  subtype           AccountSubtype
+  cashFlowCategory  CashFlowCategory   @default(NONE) @map("cash_flow_category")
+  role              AccountRole?
+  normalBalance     NormalBalance      @map("normal_balance")
+  parentId          String?            @map("parent_id")
+  parent            Account?           @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children          Account[]          @relation("AccountHierarchy")
+  isPostable        Boolean            @default(true) @map("is_postable")
+  isActive          Boolean            @default(true) @map("is_active")
+  currency          String             @default("IDR")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  deletedAt         DateTime?          @map("deleted_at")
+  deletedBy         String?            @map("deleted_by")
+  // Back-relations of the ON DELETE RESTRICT FKs (20260926300000_ledger_integrity).
+  journalLines      JournalLine[]
+  salesInvoiceLines SalesInvoiceLine[]
+  purchaseBillLines PurchaseBillLine[]
+  cashPayments      Payment[]
+  taxCodes          TaxCode[]
 
   @@unique([code], name: "accounts_code_unique")
   @@index([deletedAt])
@@ -151,18 +157,22 @@ enum PeriodStatus {
 }
 
 model AccountingPeriod {
-  id         String       @id @default(uuid())
-  fiscalYear Int          @map("fiscal_year")
+  id         String         @id @default(uuid())
+  fiscalYear Int            @map("fiscal_year")
   sequence   Int
-  name       String       @unique
-  startDate  DateTime     @map("start_date") @db.Date
-  endDate    DateTime     @map("end_date") @db.Date
-  status     PeriodStatus @default(OPEN)
-  closedAt   DateTime?    @map("closed_at")
-  closedBy   String?      @map("closed_by")
-  createdAt  DateTime     @default(now()) @map("created_at")
-  updatedAt  DateTime     @updatedAt @map("updated_at")
+  name       String         @unique
+  startDate  DateTime       @map("start_date") @db.Date
+  endDate    DateTime       @map("end_date") @db.Date
+  status     PeriodStatus   @default(OPEN)
+  closedAt   DateTime?      @map("closed_at")
+  closedBy   String?        @map("closed_by")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt @map("updated_at")
+  entries    JournalEntry[]
 
+  // + hand-authored CHECK accounting_periods_dates_ordered (start <= end) and
+  //   EXCLUDE accounting_periods_no_overlap USING gist (btree_gist) — no two
+  //   periods overlap (20260926300000_ledger_integrity).
   @@unique([fiscalYear, sequence])
   @@index([startDate, endDate])
   @@map("accounting_periods")
@@ -198,27 +208,39 @@ model JournalSequence {
 }
 
 model JournalEntry {
-  id           String            @id @default(uuid())
-  entryNumber  Int?              @map("entry_number")
-  entryRef     String?           @map("entry_ref")
-  fiscalYear   Int?              @map("fiscal_year")
-  date         DateTime          @db.Date
-  periodId     String?           @map("period_id")
-  description  String
-  sourceType   JournalSourceType @map("source_type")
-  sourceId     String?           @map("source_id")
-  status       JournalStatus     @default(DRAFT)
-  reversalOfId String?           @map("reversal_of_id")
-  reversedById String?           @map("reversed_by_id")
-  createdBy    String            @map("created_by")
-  postedBy     String?           @map("posted_by")
-  postedAt     DateTime?         @map("posted_at")
-  createdAt    DateTime          @default(now()) @map("created_at")
-  updatedAt    DateTime          @updatedAt @map("updated_at")
-  deletedAt    DateTime?         @map("deleted_at")
-  deletedBy    String?           @map("deleted_by")
-  lines        JournalLine[]
+  id            String            @id @default(uuid())
+  entryNumber   Int?              @map("entry_number")
+  entryRef      String?           @map("entry_ref")
+  fiscalYear    Int?              @map("fiscal_year")
+  date          DateTime          @db.Date
+  periodId      String?           @map("period_id")
+  period        AccountingPeriod? @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  description   String
+  sourceType    JournalSourceType @map("source_type")
+  sourceId      String?           @map("source_id")
+  status        JournalStatus     @default(DRAFT)
+  reversalOfId  String?           @map("reversal_of_id")
+  reversedById  String?           @map("reversed_by_id")
+  createdBy     String            @map("created_by")
+  postedBy      String?           @map("posted_by")
+  postedAt      DateTime?         @map("posted_at")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+  deletedAt     DateTime?         @map("deleted_at")
+  deletedBy     String?           @map("deleted_by")
+  lines         JournalLine[]
+  salesInvoices SalesInvoice[]
+  purchaseBills PurchaseBill[]
+  payments      Payment[]
 
+  // DB-level invariants (20260926300000_ledger_integrity), hand-authored:
+  //   CHECK journal_entries_posted_complete (DRAFT ⇔ posted_at NULL; non-DRAFT
+  //   carries entry_number/fiscal_year/period_id/posted_at); deferred constraint
+  //   trigger journal_entries_balanced (posted ⇒ >= 2 lines, debit = credit);
+  //   trigger journal_entries_immutable (posted rows: only POSTED->REVERSED +
+  //   reversed_by_id + updated_at may change; no DELETE / soft delete);
+  //   no TRUNCATE; partial index journal_entries_posted_live_date_idx
+  //   ON (date) WHERE posted_at IS NOT NULL AND deleted_at IS NULL.
   @@unique([fiscalYear, entryNumber], name: "journal_entries_fy_number_unique")
   // At most one reversal per original (Postgres allows many NULLs, so non-reversal
   // rows are unaffected). Blocks concurrent/duplicate reversals at the DB layer.
@@ -234,19 +256,22 @@ model JournalEntry {
 model JournalLine {
   id             String       @id @default(uuid())
   journalEntryId String       @map("journal_entry_id")
-  entry          JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  entry          JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
   lineNo         Int          @map("line_no")
-  // accountId is a plain UUID (no FK to Account) by design — postable/active
-  // validity is enforced in PostingService.assertPostableAccounts, and we never
-  // hard-delete accounts (soft delete only), so a DB FK adds no safety here.
+  // FK (RESTRICT) to Account; postable/active validity is still enforced in
+  // PostingService. Accounts are only soft-deleted, so the FK never blocks.
   accountId      String       @map("account_id")
+  account        Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
   debit          Decimal      @default(0) @db.Decimal(20, 4)
   credit         Decimal      @default(0) @db.Decimal(20, 4)
   description    String?
   createdAt      DateTime     @default(now()) @map("created_at")
 
+  // + hand-authored triggers (20260926300000_ledger_integrity): lines of a
+  //   posted entry cannot be updated/deleted, and may be inserted only by the
+  //   tx that created the posted entry; deferred balance check; no TRUNCATE.
   @@unique([journalEntryId, lineNo])
-  @@index([accountId])
+  @@index([accountId, journalEntryId])
   @@index([journalEntryId])
   @@map("journal_lines")
 }
@@ -285,6 +310,7 @@ model TaxCode {
   kind         TaxKind
   rate         Decimal   @db.Decimal(9, 6)
   taxAccountId String    @map("tax_account_id")
+  taxAccount   Account   @relation(fields: [taxAccountId], references: [id], onDelete: Restrict)
   isActive     Boolean   @default(true) @map("is_active")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
@@ -308,20 +334,23 @@ enum PaymentDirection {
 }
 
 model BusinessPartner {
-  id         String    @id @default(uuid())
-  code       String
-  name       String
-  npwp       String?
-  email      String?
-  phone      String?
-  address    String?
-  isCustomer Boolean   @default(false) @map("is_customer")
-  isVendor   Boolean   @default(false) @map("is_vendor")
-  isActive   Boolean   @default(true) @map("is_active")
-  createdAt  DateTime  @default(now()) @map("created_at")
-  updatedAt  DateTime  @updatedAt @map("updated_at")
-  deletedAt  DateTime? @map("deleted_at")
-  deletedBy  String?   @map("deleted_by")
+  id            String         @id @default(uuid())
+  code          String
+  name          String
+  npwp          String?
+  email         String?
+  phone         String?
+  address       String?
+  isCustomer    Boolean        @default(false) @map("is_customer")
+  isVendor      Boolean        @default(false) @map("is_vendor")
+  isActive      Boolean        @default(true) @map("is_active")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  deletedAt     DateTime?      @map("deleted_at")
+  deletedBy     String?        @map("deleted_by")
+  salesInvoices SalesInvoice[]
+  purchaseBills PurchaseBill[]
+  payments      Payment[]
 
   @@unique([code], name: "business_partners_code_unique")
   @@index([deletedAt])
@@ -333,34 +362,39 @@ model BusinessPartner {
 }
 
 model SalesInvoice {
-  id               String             @id @default(uuid())
-  invoiceNumber    Int?               @map("invoice_number")
-  invoiceRef       String?            @map("invoice_ref")
-  fiscalYear       Int?               @map("fiscal_year")
-  partnerId        String             @map("partner_id")
-  date             DateTime           @db.Date
-  dueDate          DateTime?          @map("due_date") @db.Date
+  id               String              @id @default(uuid())
+  invoiceNumber    Int?                @map("invoice_number")
+  invoiceRef       String?             @map("invoice_ref")
+  fiscalYear       Int?                @map("fiscal_year")
+  partnerId        String              @map("partner_id")
+  partner          BusinessPartner     @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  date             DateTime            @db.Date
+  dueDate          DateTime?           @map("due_date") @db.Date
   description      String?
-  status           DocumentStatus     @default(DRAFT)
-  subtotal         Decimal            @default(0) @db.Decimal(20, 4)
-  taxTotal         Decimal            @default(0) @map("tax_total") @db.Decimal(20, 4)
-  withholdingTotal Decimal            @default(0) @map("withholding_total") @db.Decimal(20, 4)
-  total            Decimal            @default(0) @db.Decimal(20, 4)
-  amountPaid       Decimal            @default(0) @map("amount_paid") @db.Decimal(20, 4)
-  journalEntryId   String?            @map("journal_entry_id")
-  createdBy        String             @map("created_by")
-  postedBy         String?            @map("posted_by")
-  postedAt         DateTime?          @map("posted_at")
-  voidedOn         DateTime?          @map("voided_on") @db.Date
-  createdAt        DateTime           @default(now()) @map("created_at")
-  updatedAt        DateTime           @updatedAt @map("updated_at")
-  deletedAt        DateTime?          @map("deleted_at")
-  deletedBy        String?            @map("deleted_by")
+  status           DocumentStatus      @default(DRAFT)
+  subtotal         Decimal             @default(0) @db.Decimal(20, 4)
+  taxTotal         Decimal             @default(0) @map("tax_total") @db.Decimal(20, 4)
+  withholdingTotal Decimal             @default(0) @map("withholding_total") @db.Decimal(20, 4)
+  total            Decimal             @default(0) @db.Decimal(20, 4)
+  amountPaid       Decimal             @default(0) @map("amount_paid") @db.Decimal(20, 4)
+  journalEntryId   String?             @map("journal_entry_id")
+  createdBy        String              @map("created_by")
+  postedBy         String?             @map("posted_by")
+  postedAt         DateTime?           @map("posted_at")
+  voidedOn         DateTime?           @map("voided_on") @db.Date
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+  deletedAt        DateTime?           @map("deleted_at")
+  deletedBy        String?             @map("deleted_by")
   lines            SalesInvoiceLine[]
+  journalEntry     JournalEntry?       @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+  allocations      PaymentAllocation[]
 
+  // + hand-authored CHECK sales_invoices_amount_paid_range (0 <= amount_paid <= total)
   @@unique([fiscalYear, invoiceNumber], name: "sales_invoices_fy_number_unique")
   @@index([deletedAt])
   @@index([partnerId])
+  @@index([status, date])
   @@index([invoiceRef(ops: raw("gin_trgm_ops"))], type: Gin, map: "sales_invoices_invoice_ref_trgm")
   @@index([description(ops: raw("gin_trgm_ops"))], type: Gin, map: "sales_invoices_description_trgm")
   @@map("sales_invoices")
@@ -373,48 +407,57 @@ model SalesInvoiceLine {
   lineNo         Int          @map("line_no")
   description    String
   accountId      String       @map("account_id")
+  account        Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
   quantity       Decimal      @db.Decimal(20, 4)
   unitPrice      Decimal      @map("unit_price") @db.Decimal(20, 4)
   amount         Decimal      @db.Decimal(20, 4)
+  // No FK: an array of tax code ids (validated by the app).
   taxCodeIds     String[]     @map("tax_code_ids")
 
+  // + hand-authored CHECK sales_invoice_lines_nonnegative (quantity, unit_price >= 0)
   @@unique([salesInvoiceId, lineNo])
+  @@index([accountId])
   @@map("sales_invoice_lines")
 }
 
 model PurchaseBill {
-  id               String             @id @default(uuid())
-  billNumber       Int?               @map("bill_number")
-  billRef          String?            @map("bill_ref")
-  fiscalYear       Int?               @map("fiscal_year")
-  partnerId        String             @map("partner_id")
-  vendorInvoiceNo  String?            @map("vendor_invoice_no")
-  date             DateTime           @db.Date
-  dueDate          DateTime?          @map("due_date") @db.Date
+  id               String              @id @default(uuid())
+  billNumber       Int?                @map("bill_number")
+  billRef          String?             @map("bill_ref")
+  fiscalYear       Int?                @map("fiscal_year")
+  partnerId        String              @map("partner_id")
+  partner          BusinessPartner     @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  vendorInvoiceNo  String?             @map("vendor_invoice_no")
+  date             DateTime            @db.Date
+  dueDate          DateTime?           @map("due_date") @db.Date
   description      String?
-  status           DocumentStatus     @default(DRAFT)
-  subtotal         Decimal            @default(0) @db.Decimal(20, 4)
-  taxTotal         Decimal            @default(0) @map("tax_total") @db.Decimal(20, 4)
-  withholdingTotal Decimal            @default(0) @map("withholding_total") @db.Decimal(20, 4)
-  total            Decimal            @default(0) @db.Decimal(20, 4)
-  amountPaid       Decimal            @default(0) @map("amount_paid") @db.Decimal(20, 4)
-  journalEntryId   String?            @map("journal_entry_id")
-  createdBy        String             @map("created_by")
-  postedBy         String?            @map("posted_by")
-  postedAt         DateTime?          @map("posted_at")
-  voidedOn         DateTime?          @map("voided_on") @db.Date
-  createdAt        DateTime           @default(now()) @map("created_at")
-  updatedAt        DateTime           @updatedAt @map("updated_at")
-  deletedAt        DateTime?          @map("deleted_at")
-  deletedBy        String?            @map("deleted_by")
+  status           DocumentStatus      @default(DRAFT)
+  subtotal         Decimal             @default(0) @db.Decimal(20, 4)
+  taxTotal         Decimal             @default(0) @map("tax_total") @db.Decimal(20, 4)
+  withholdingTotal Decimal             @default(0) @map("withholding_total") @db.Decimal(20, 4)
+  total            Decimal             @default(0) @db.Decimal(20, 4)
+  amountPaid       Decimal             @default(0) @map("amount_paid") @db.Decimal(20, 4)
+  journalEntryId   String?             @map("journal_entry_id")
+  createdBy        String              @map("created_by")
+  postedBy         String?             @map("posted_by")
+  postedAt         DateTime?           @map("posted_at")
+  voidedOn         DateTime?           @map("voided_on") @db.Date
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+  deletedAt        DateTime?           @map("deleted_at")
+  deletedBy        String?             @map("deleted_by")
   lines            PurchaseBillLine[]
+  journalEntry     JournalEntry?       @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+  allocations      PaymentAllocation[]
 
+  // + hand-authored CHECK purchase_bills_amount_paid_range (0 <= amount_paid <= total)
   @@unique([fiscalYear, billNumber], name: "purchase_bills_fy_number_unique")
   // + hand-authored partial UNIQUE INDEX purchase_bills_partner_vendor_invoice_live_key
   //   ON (partner_id, vendor_invoice_no) WHERE deleted_at IS NULL AND status <> 'VOID'
   //   AND vendor_invoice_no IS NOT NULL (20260926200000) — duplicate → 409.
   @@index([deletedAt])
   @@index([partnerId])
+  @@index([status, date])
   @@index([billRef(ops: raw("gin_trgm_ops"))], type: Gin, map: "purchase_bills_bill_ref_trgm")
   @@index([vendorInvoiceNo(ops: raw("gin_trgm_ops"))], type: Gin, map: "purchase_bills_vendor_invoice_no_trgm")
   @@index([description(ops: raw("gin_trgm_ops"))], type: Gin, map: "purchase_bills_description_trgm")
@@ -428,12 +471,16 @@ model PurchaseBillLine {
   lineNo         Int          @map("line_no")
   description    String
   accountId      String       @map("account_id")
+  account        Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
   quantity       Decimal      @db.Decimal(20, 4)
   unitPrice      Decimal      @map("unit_price") @db.Decimal(20, 4)
   amount         Decimal      @db.Decimal(20, 4)
+  // No FK: an array of tax code ids (validated by the app).
   taxCodeIds     String[]     @map("tax_code_ids")
 
+  // + hand-authored CHECK purchase_bill_lines_nonnegative (quantity, unit_price >= 0)
   @@unique([purchaseBillId, lineNo])
+  @@index([accountId])
   @@map("purchase_bill_lines")
 }
 
@@ -444,8 +491,11 @@ model Payment {
   fiscalYear     Int?                @map("fiscal_year")
   direction      PaymentDirection
   partnerId      String              @map("partner_id")
+  partner        BusinessPartner     @relation(fields: [partnerId], references: [id], onDelete: Restrict)
   date           DateTime            @db.Date
   cashAccountId  String              @map("cash_account_id")
+  cashAccount    Account             @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
+  // + hand-authored CHECK payments_amount_positive (amount > 0)
   amount         Decimal             @db.Decimal(20, 4)
   description    String?
   status         DocumentStatus      @default(DRAFT)
@@ -459,6 +509,7 @@ model Payment {
   deletedAt      DateTime?           @map("deleted_at")
   deletedBy      String?             @map("deleted_by")
   allocations    PaymentAllocation[]
+  journalEntry   JournalEntry?       @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
 
   // RECEIPT and DISBURSEMENT have independent gapless sequences (PAY-RCV / PAY-DSB),
   // so the number is unique per (direction, fiscalYear), not per fiscalYear alone.
@@ -471,12 +522,17 @@ model Payment {
 }
 
 model PaymentAllocation {
-  id             String  @id @default(uuid())
-  paymentId      String  @map("payment_id")
-  payment        Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
-  salesInvoiceId String? @map("sales_invoice_id")
-  purchaseBillId String? @map("purchase_bill_id")
-  amount         Decimal @db.Decimal(20, 4)
+  id             String        @id @default(uuid())
+  paymentId      String        @map("payment_id")
+  payment        Payment       @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  salesInvoiceId String?       @map("sales_invoice_id")
+  salesInvoice   SalesInvoice? @relation(fields: [salesInvoiceId], references: [id], onDelete: Restrict)
+  purchaseBillId String?       @map("purchase_bill_id")
+  purchaseBill   PurchaseBill? @relation(fields: [purchaseBillId], references: [id], onDelete: Restrict)
+  amount         Decimal       @db.Decimal(20, 4)
+
+  // + hand-authored CHECKs: payment_allocations_amount_positive (amount > 0),
+  //   payment_allocations_one_target (exactly one of the two targets).
 
   @@index([salesInvoiceId])
   @@index([purchaseBillId])

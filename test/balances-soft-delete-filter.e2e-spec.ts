@@ -48,9 +48,15 @@ describe('Balances — soft-delete filter (e2e)', () => {
     );
     expect(before.credit).toBe('100000.0000');
     // Manufacture the otherwise-impossible state: soft-delete a POSTED entry.
-    await prisma.client.journalEntry.update({
-      where: { id: entry.id },
-      data: { deletedAt: new Date() },
+    // The DB's journal_entries_immutable trigger forbids this (AUDIT3-9), so
+    // bypass triggers for this one tx (test DB user is superuser) — the
+    // reporting filter stays a second line of defense.
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SET LOCAL session_replication_role = replica`;
+      await tx.journalEntry.update({
+        where: { id: entry.id },
+        data: { deletedAt: new Date() },
+      });
     });
     const after = await balances.accountBalance(
       acc['4-1000'],
