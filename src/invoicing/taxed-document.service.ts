@@ -30,6 +30,7 @@ import {
   buildLineCreateData,
   documentMessages,
 } from './document-presenter';
+import { assertDocumentLineAccounts } from './document-account-rules';
 
 type Spec<
   R extends DocumentRow,
@@ -84,6 +85,11 @@ export class TaxedDocumentService {
       throw new ValidationFailedError(m.partnerInactive, {
         partnerId: input.partnerId,
       });
+    await assertDocumentLineAccounts(
+      this.prisma.client,
+      spec.nature,
+      input.lines.map((l) => l.accountId),
+    );
     const settlementId = await findControlAccountId(
       this.prisma,
       spec.controlRole,
@@ -129,6 +135,11 @@ export class TaxedDocumentService {
         unitPrice: l.unitPrice.toString(),
         taxCodeIds: l.taxCodeIds,
       }));
+    await assertDocumentLineAccounts(
+      this.prisma.client,
+      spec.nature,
+      nextLines.map((l) => l.accountId),
+    );
     const settlementId = await findControlAccountId(
       this.prisma,
       spec.controlRole,

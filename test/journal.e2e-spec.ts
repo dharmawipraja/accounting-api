@@ -464,4 +464,101 @@ describe('JournalEntries (e2e)', () => {
       await reverse((ob.body as { id: string }).id).expect(200);
     });
   });
+
+  describe('AR/AP control accounts are document-only for MANUAL entries', () => {
+    let arId: string;
+    let apId: string;
+
+    beforeAll(async () => {
+      arId = (await prisma.client.account.findFirst({
+        where: { role: 'AR_CONTROL' },
+      }))!.id;
+      apId = (await prisma.client.account.findFirst({
+        where: { role: 'AP_CONTROL' },
+      }))!.id;
+    });
+
+    const controlBody = (accountId: string) => ({
+      date: '2026-03-12',
+      description: 'Manual hit on a control account',
+      lines: [
+        { accountId, debit: '5000' },
+        { accountId: modalId, credit: '5000' },
+      ],
+    });
+
+    it('rejects a direct MANUAL post touching AR control with 422 {accountId, role}', async () => {
+      await app
+        .get(CompanyService)
+        .update({ segregationOfDutiesEnabled: false });
+      const res = await request(app.getHttpServer() as App)
+        .post('/v1/ledger/journal-entries?post=true')
+        .set('Authorization', `Bearer ${approverToken}`)
+        .set('Idempotency-Key', randomUUID())
+        .send(controlBody(arId))
+        .expect(422);
+      const body = res.body as { code: string; details: unknown };
+      expect(body.code).toBe('VALIDATION_FAILED');
+      expect(body.details).toEqual({ accountId: arId, role: 'AR_CONTROL' });
+    });
+
+    it('rejects creating a MANUAL draft touching AP control with 422 {accountId, role}', async () => {
+      const res = await request(app.getHttpServer() as App)
+        .post('/v1/ledger/journal-entries')
+        .set('Authorization', `Bearer ${accountantToken}`)
+        .set('Idempotency-Key', randomUUID())
+        .send(controlBody(apId))
+        .expect(422);
+      const body = res.body as { code: string; details: unknown };
+      expect(body.code).toBe('VALIDATION_FAILED');
+      expect(body.details).toEqual({ accountId: apId, role: 'AP_CONTROL' });
+    });
+
+    it('rejects posting a pre-existing MANUAL draft touching AR control (422, stays DRAFT)', async () => {
+      // A draft written before the guard existed (bypasses the create check).
+      const draft = await prisma.client.journalEntry.create({
+        data: {
+          date: new Date('2026-03-12'),
+          description: 'Legacy draft on AR control',
+          sourceType: 'MANUAL',
+          status: 'DRAFT',
+          createdBy: randomUUID(),
+          lines: {
+            create: [
+              { lineNo: 1, accountId: arId, debit: '5000', credit: '0' },
+              { lineNo: 2, accountId: modalId, debit: '0', credit: '5000' },
+            ],
+          },
+        },
+      });
+      const res = await request(app.getHttpServer() as App)
+        .post(`/v1/ledger/journal-entries/${draft.id}/post`)
+        .set('Authorization', `Bearer ${approverToken}`)
+        .set('Idempotency-Key', randomUUID())
+        .expect(422);
+      const body = res.body as { code: string; details: unknown };
+      expect(body.code).toBe('VALIDATION_FAILED');
+      expect(body.details).toEqual({ accountId: arId, role: 'AR_CONTROL' });
+      const still = await prisma.client.journalEntry.findUnique({
+        where: { id: draft.id },
+      });
+      expect(still!.status).toBe('DRAFT');
+    });
+
+    it('still allows OPENING balances on AR/AP control (200)', async () => {
+      const res = await request(app.getHttpServer() as App)
+        .post('/v1/ledger/opening-balances')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          date: '2026-01-04',
+          balances: [
+            { accountId: arId, debit: '900' },
+            { accountId: apId, credit: '400' },
+          ],
+        })
+        .expect(200);
+      expect((res.body as { sourceType: string }).sourceType).toBe('OPENING');
+    });
+  });
 });

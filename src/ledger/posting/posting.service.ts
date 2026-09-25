@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { Account, JournalEntry, Prisma } from '@prisma/client';
+import {
+  Account,
+  JournalEntry,
+  JournalSourceType,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CompanyService } from '../../company/company.service';
 import { PeriodsService } from '../periods/periods.service';
@@ -18,6 +23,13 @@ import { ExtendedPrismaClient } from '../../common/prisma/soft-delete.extension'
 import { MetricsService } from '../../metrics/metrics.service';
 import { nextSequenceNumber, SqlTx } from '../../common/db/sequence';
 import { buildDocRef } from '../../common/db/doc-ref';
+import {
+  AccountPolicy,
+  FORBIDDEN_ROLE_MESSAGE,
+  UNRESTRICTED_POLICY,
+  accountPolicyFor,
+  findForbiddenRole,
+} from './account-policy';
 
 /** The interactive-transaction view of the soft-delete-extended client — what the
  *  `$transaction(async (tx) => …)` callback receives. Shared so document services
@@ -115,7 +127,10 @@ export class PostingService {
     // account deactivating between check and write) is acceptable; move these
     // inside the $transaction (with FOR SHARE on the period) if concurrency grows.
     const { periodId, fiscalYear } = await this.assertPostableDate(input.date);
-    await this.assertPostableAccounts(input.lines);
+    await this.assertPostableAccounts(
+      input.lines,
+      accountPolicyFor(input.sourceType),
+    );
     return new PreparedPosting(
       PROTOCOL_MINT,
       input,
@@ -442,7 +457,10 @@ export class PostingService {
         },
       );
     }
-    await this.assertPostableAccounts(lines);
+    await this.assertPostableAccounts(
+      lines,
+      accountPolicyFor(draft.sourceType),
+    );
     const fiscalYear = await this.company.fiscalYearFor(draft.date);
     // Same year-lock as preparePosting: a draft created while the year was open
     // must not be postable into it once the year has been closed.
@@ -468,6 +486,19 @@ export class PostingService {
           id: draftId,
         });
       }
+      // Post-time re-validation under the draft lock: the lines being promoted
+      // are the ones in the DB now, so re-check them against the source-type
+      // policy (catches drafts written before the guard existed).
+      const current = await tx.journalLine.findMany({
+        where: { journalEntryId: draftId },
+        orderBy: { lineNo: 'asc' },
+        select: { accountId: true },
+      });
+      await this.assertAccountPolicy(
+        current.map((l) => l.accountId),
+        draft.sourceType,
+        tx,
+      );
       const { entryNumber, entryRef } = await this.stampPostedInTx(
         tx,
         period.id,
@@ -504,7 +535,10 @@ export class PostingService {
    *  accounts keyed by id. The single source of postable-account validation: the
    *  post path asserts through it; the preview reuses the returned map to enrich
    *  journal lines with code/name (one fetch, one rule set). */
-  async resolvePostableAccounts(ids: string[]): Promise<Map<string, Account>> {
+  async resolvePostableAccounts(
+    ids: string[],
+    policy: AccountPolicy = UNRESTRICTED_POLICY,
+  ): Promise<Map<string, Account>> {
     const unique = [...new Set(ids)];
     const accounts = await this.prisma.client.account.findMany({
       where: { id: { in: unique } },
@@ -524,10 +558,50 @@ export class PostingService {
       if (!a.isActive)
         throw new InvalidAccountError('Account is inactive', { accountId: id });
     }
+    this.throwIfForbiddenRole(
+      unique.map((id) => byId.get(id)!),
+      policy,
+    );
     return byId;
   }
 
-  private async assertPostableAccounts(lines: PostLineInput[]): Promise<void> {
-    await this.resolvePostableAccounts(lines.map((l) => l.accountId));
+  /** Role-only policy check for a source type (no postable/active checks) —
+   *  used where accounts are not otherwise validated: MANUAL draft create and
+   *  the in-transaction re-check on draft post. Unknown ids are skipped. */
+  async assertAccountPolicy(
+    ids: string[],
+    sourceType: JournalSourceType,
+    db: LedgerTx = this.prisma.client,
+  ): Promise<void> {
+    const policy = accountPolicyFor(sourceType);
+    if (policy.forbiddenRoles.length === 0 || ids.length === 0) return;
+    const unique = [...new Set(ids)];
+    const accounts = await db.account.findMany({
+      where: { id: { in: unique } },
+      select: { id: true, role: true },
+    });
+    const byId = new Map(accounts.map((a) => [a.id, a]));
+    this.throwIfForbiddenRole(
+      unique.flatMap((id) => byId.get(id) ?? []),
+      policy,
+    );
+  }
+
+  private throwIfForbiddenRole(
+    accounts: { id: string; role: Account['role'] }[],
+    policy: AccountPolicy,
+  ): void {
+    const hit = findForbiddenRole(accounts, policy);
+    if (hit) throw new ValidationFailedError(FORBIDDEN_ROLE_MESSAGE, hit);
+  }
+
+  private async assertPostableAccounts(
+    lines: PostLineInput[],
+    policy: AccountPolicy,
+  ): Promise<void> {
+    await this.resolvePostableAccounts(
+      lines.map((l) => l.accountId),
+      policy,
+    );
   }
 }

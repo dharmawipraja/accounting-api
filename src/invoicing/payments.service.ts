@@ -22,6 +22,7 @@ import {
   findControlAccountId,
 } from './document-helpers';
 import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
+import { assertCashAccount } from './document-account-rules';
 import {
   AllocationInput,
   PAYMENT_TARGETS,
@@ -79,6 +80,7 @@ export class PaymentsService {
       throw new ValidationFailedError('Cash account is not postable', {
         cashAccountId: input.cashAccountId,
       });
+    await assertCashAccount(this.prisma.client, input.cashAccountId);
 
     let total = Money.zero();
     const allocatedByDoc = new Map<string, Money>();
@@ -262,6 +264,9 @@ export class PaymentsService {
           throw new ValidationFailedError('Payment is no longer a draft', {
             id,
           });
+        // Post-time re-validation under the lock: the cash side must still be
+        // a CASH-role account (catches drafts written before the rule existed).
+        await assertCashAccount(tx, payment.cashAccountId);
 
         // Lock each target document FOR UPDATE and re-verify outstanding (the real over-allocation guard).
         for (const a of allocations) {

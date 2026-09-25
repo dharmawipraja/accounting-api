@@ -191,6 +191,21 @@ the same total from the subledger and must reconcile to the control balance.
 - Settlement account resolved by role: `findControlAccountId(prisma, 'AR_CONTROL')` in
   `src/invoicing/sales-invoices.service.ts`; passed as `settlementAccountId` into the tax
   engine, which puts it on the AR/AP side of the journal.
+- **Control accounts are document-only.** A `MANUAL` journal entry (direct post, draft
+  create, draft post) may not touch an `AR_CONTROL`/`AP_CONTROL` account → `422
+  VALIDATION_FAILED` `{ accountId, role }` (`src/ledger/posting/account-policy.ts`, enforced
+  in `PostingService`). Invoice/bill **lines** may not use a `CASH`/`AR_CONTROL`/`AP_CONTROL`
+  account or a tax account (any `tax_codes.tax_account_id`); sales lines must be `REVENUE`
+  (or subtype `OTHER_INCOME`), purchase lines `EXPENSE` or `ASSET`; a payment's
+  `cashAccountId` must be a `CASH`-role account
+  (`src/invoicing/document-account-rules.ts`). All are checked at create/update and
+  re-checked inside the post transaction; the journal preview applies the same rules.
+  Reversals, document postings, `CLOSING` and `OPENING` entries are not restricted.
+- **Caveat — opening balances on AR/AP.** `OPENING` entries (`POST
+  /ledger/opening-balances`) *may* post to the control accounts (the go-live path), but a
+  lump opening AR/AP balance has no subledger documents behind it, so aging will **not**
+  tie to the control balance by that amount. To keep aging == control, enter open
+  customer/vendor balances at go-live as dated (backdated) invoices/bills instead.
 
 ### Sales invoice / Accounts receivable (faktur penjualan / piutang usaha — AR)
 What customers owe you. A `SalesInvoice` has lines, computed `subtotal` / `taxTotal` /

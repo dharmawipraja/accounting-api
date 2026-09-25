@@ -64,6 +64,10 @@ export class JournalService {
   ) {}
 
   async createDraft(input: DraftInput): Promise<JournalEntry> {
+    await this.posting.assertAccountPolicy(
+      input.lines.map((l) => l.accountId),
+      'MANUAL',
+    );
     return this.prisma.client.journalEntry.create({
       data: {
         date: input.date,

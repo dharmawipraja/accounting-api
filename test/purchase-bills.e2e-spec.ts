@@ -430,4 +430,97 @@ describe('PurchaseBills (e2e)', () => {
       .expect(409);
     expect((res.body as { code: string }).code).toBe('CONFLICT');
   });
+
+  describe('line accounts: no control/cash/tax accounts; purchase lines must be EXPENSE/ASSET', () => {
+    const server = () => app.getHttpServer() as App;
+    const bodyWithAccount = (accountId: string) => {
+      const b = draftBody();
+      b.lines[0].accountId = accountId;
+      b.lines[0].taxCodeIds = [];
+      return b;
+    };
+    const create = (accountId: string) =>
+      request(server())
+        .post('/v1/purchase-bills')
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
+        .send(bodyWithAccount(accountId));
+    const expect422 = (res: request.Response, details: unknown) => {
+      const body = res.body as { code: string; details: unknown };
+      expect(body.code).toBe('VALIDATION_FAILED');
+      expect(body.details).toEqual(details);
+    };
+
+    it('rejects a line on AP control with 422 {accountId, role}', async () => {
+      const res = await create(acc['2-1000']).expect(422);
+      expect422(res, { accountId: acc['2-1000'], role: 'AP_CONTROL' });
+    });
+
+    it('rejects a line on a CASH account with 422 {accountId, role}', async () => {
+      const res = await create(acc['1-1100']).expect(422);
+      expect422(res, { accountId: acc['1-1100'], role: 'CASH' });
+    });
+
+    it('rejects a line on a tax account with 422 {accountId, reason: TAX_ACCOUNT}', async () => {
+      const res = await create(acc['1-1400']).expect(422);
+      expect422(res, { accountId: acc['1-1400'], reason: 'TAX_ACCOUNT' });
+    });
+
+    it('rejects a line on a revenue account with 422 {accountId, reason: ACCOUNT_TYPE}', async () => {
+      const res = await create(acc['4-1000']).expect(422);
+      expect422(res, { accountId: acc['4-1000'], reason: 'ACCOUNT_TYPE' });
+    });
+
+    it('accepts a line on an inventory ASSET account (Persediaan) (201)', async () => {
+      await create(acc['1-1300']).expect(201);
+    });
+    it('accepts a line on a fixed ASSET account (Aset Tetap) (201)', async () => {
+      await create(acc['1-2000']).expect(201);
+    });
+
+    it('rejects a PATCH that moves a draft line onto AP control (422)', async () => {
+      const draft = await create(acc['5-2000']).expect(201);
+      const id = (draft.body as { id: string }).id;
+      const res = await request(server())
+        .patch(`/v1/purchase-bills/${id}`)
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({ lines: bodyWithAccount(acc['2-1000']).lines })
+        .expect(422);
+      expect422(res, { accountId: acc['2-1000'], role: 'AP_CONTROL' });
+    });
+
+    it('rejects posting a pre-existing draft whose line hits AP control (422, stays DRAFT)', async () => {
+      const draft = await create(acc['5-2000']).expect(201);
+      const id = (draft.body as { id: string }).id;
+      // Simulate a draft written before the guard existed.
+      await prisma.client.purchaseBillLine.updateMany({
+        where: { purchaseBillId: id },
+        data: { accountId: acc['2-1000'] },
+      });
+      const res = await request(server())
+        .post(`/v1/purchase-bills/${id}/post`)
+        .set('Authorization', `Bearer ${appr}`)
+        .set('Idempotency-Key', randomUUID())
+        .expect(422);
+      expect422(res, { accountId: acc['2-1000'], role: 'AP_CONTROL' });
+      const still = await prisma.client.purchaseBill.findUnique({
+        where: { id },
+      });
+      expect(still!.status).toBe('DRAFT');
+    });
+
+    it('preview rejects a AP-control line the same way a create does (422)', async () => {
+      const res = await request(server())
+        .post('/v1/journal-entries/preview')
+        .set('Authorization', `Bearer ${acct}`)
+        .send({
+          nature: 'PURCHASE',
+          settlementAccountId: acc['2-1000'],
+          lines: [{ accountId: acc['2-1000'], amount: '1000', taxCodeIds: [] }],
+        })
+        .expect(422);
+      expect422(res, { accountId: acc['2-1000'], role: 'AP_CONTROL' });
+    });
+  });
 });

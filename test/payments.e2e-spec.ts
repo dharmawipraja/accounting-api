@@ -990,4 +990,90 @@ describe('Payments (e2e)', () => {
       '2026-02-16',
     );
   });
+
+  describe('cashAccountId must be a CASH-role account', () => {
+    const createWithCash = async (
+      partnerCode: string,
+      cashAccountId: string,
+      status: number,
+    ) => {
+      const customerId = await newCustomer(partnerCode);
+      const invoiceId = await makePostedInvoice(customerId);
+      return request(server())
+        .post('/v1/payments')
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          direction: 'RECEIPT',
+          partnerId: customerId,
+          date: '2026-02-20',
+          cashAccountId,
+          allocations: [{ salesInvoiceId: invoiceId, amount: '100000' }],
+        })
+        .expect(status);
+    };
+
+    it('rejects AR control as the cash account with 422 {accountId, role}', async () => {
+      const res = await createWithCash('CUST-CASH-AR', acc['1-1200'], 422);
+      const body = res.body as { code: string; details: unknown };
+      expect(body.code).toBe('VALIDATION_FAILED');
+      expect(body.details).toEqual({
+        accountId: acc['1-1200'],
+        role: 'AR_CONTROL',
+      });
+    });
+
+    it('rejects a role-less expense account as the cash account with 422', async () => {
+      const res = await createWithCash('CUST-CASH-EXP', acc['5-2000'], 422);
+      const body = res.body as { code: string; details: unknown };
+      expect(body.code).toBe('VALIDATION_FAILED');
+      expect(body.details).toEqual({ accountId: acc['5-2000'], role: null });
+    });
+
+    it('accepts Bank (a second CASH-role account) as the cash account (201)', async () => {
+      await createWithCash('CUST-CASH-BANK', acc['1-1100'], 201);
+    });
+
+    it('rejects posting a pre-existing draft whose cash account is not CASH (422, stays DRAFT)', async () => {
+      const res = await createWithCash('CUST-CASH-LEGACY', acc['1-1000'], 201);
+      const id = (res.body as { id: string }).id;
+      // Simulate a draft written before the guard existed.
+      await prisma.client.payment.update({
+        where: { id },
+        data: { cashAccountId: acc['1-1200'] },
+      });
+      const post = await request(server())
+        .post(`/v1/payments/${id}/post`)
+        .set('Authorization', `Bearer ${appr}`)
+        .set('Idempotency-Key', randomUUID())
+        .expect(422);
+      const body = post.body as { code: string; details: unknown };
+      expect(body.code).toBe('VALIDATION_FAILED');
+      expect(body.details).toEqual({
+        accountId: acc['1-1200'],
+        role: 'AR_CONTROL',
+      });
+      const still = await prisma.client.payment.findUnique({ where: { id } });
+      expect(still!.status).toBe('DRAFT');
+    });
+
+    it('preview rejects a non-CASH cash account the same way a create does (422)', async () => {
+      const res = await request(server())
+        .post('/v1/journal-entries/preview')
+        .set('Authorization', `Bearer ${acct}`)
+        .send({
+          nature: 'PAYMENT',
+          direction: 'RECEIPT',
+          cashAccountId: acc['1-1200'],
+          allocations: [{ salesInvoiceId: randomUUID(), amount: '1000' }],
+        })
+        .expect(422);
+      const body = res.body as { code: string; details: unknown };
+      expect(body.code).toBe('VALIDATION_FAILED');
+      expect(body.details).toEqual({
+        accountId: acc['1-1200'],
+        role: 'AR_CONTROL',
+      });
+    });
+  });
 });

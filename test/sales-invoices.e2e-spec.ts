@@ -567,4 +567,94 @@ describe('SalesInvoices (e2e)', () => {
       }
     });
   });
+
+  describe('line accounts: no control/cash/tax accounts; sales lines must be REVENUE/OTHER_INCOME', () => {
+    const server = () => app.getHttpServer() as App;
+    const bodyWithAccount = (accountId: string) => {
+      const b = draftBody();
+      b.lines[0].accountId = accountId;
+      b.lines[0].taxCodeIds = [];
+      return b;
+    };
+    const create = (accountId: string) =>
+      request(server())
+        .post('/v1/sales-invoices')
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
+        .send(bodyWithAccount(accountId));
+    const expect422 = (res: request.Response, details: unknown) => {
+      const body = res.body as { code: string; details: unknown };
+      expect(body.code).toBe('VALIDATION_FAILED');
+      expect(body.details).toEqual(details);
+    };
+
+    it('rejects a line on AR control with 422 {accountId, role}', async () => {
+      const res = await create(acc['1-1200']).expect(422);
+      expect422(res, { accountId: acc['1-1200'], role: 'AR_CONTROL' });
+    });
+
+    it('rejects a line on a CASH account with 422 {accountId, role}', async () => {
+      const res = await create(acc['1-1000']).expect(422);
+      expect422(res, { accountId: acc['1-1000'], role: 'CASH' });
+    });
+
+    it('rejects a line on a tax account with 422 {accountId, reason: TAX_ACCOUNT}', async () => {
+      const res = await create(acc['2-1100']).expect(422);
+      expect422(res, { accountId: acc['2-1100'], reason: 'TAX_ACCOUNT' });
+    });
+
+    it('rejects a line on a non-revenue (expense) account with 422 {accountId, reason: ACCOUNT_TYPE}', async () => {
+      const res = await create(acc['5-2000']).expect(422);
+      expect422(res, { accountId: acc['5-2000'], reason: 'ACCOUNT_TYPE' });
+    });
+
+    it('accepts a line on an OTHER_INCOME revenue account (Pendapatan Lain-lain) (201)', async () => {
+      await create(acc['4-9000']).expect(201);
+    });
+
+    it('rejects a PATCH that moves a draft line onto AR control (422)', async () => {
+      const draft = await create(acc['4-1000']).expect(201);
+      const id = (draft.body as { id: string }).id;
+      const res = await request(server())
+        .patch(`/v1/sales-invoices/${id}`)
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({ lines: bodyWithAccount(acc['1-1200']).lines })
+        .expect(422);
+      expect422(res, { accountId: acc['1-1200'], role: 'AR_CONTROL' });
+    });
+
+    it('rejects posting a pre-existing draft whose line hits AR control (422, stays DRAFT)', async () => {
+      const draft = await create(acc['4-1000']).expect(201);
+      const id = (draft.body as { id: string }).id;
+      // Simulate a draft written before the guard existed.
+      await prisma.client.salesInvoiceLine.updateMany({
+        where: { salesInvoiceId: id },
+        data: { accountId: acc['1-1200'] },
+      });
+      const res = await request(server())
+        .post(`/v1/sales-invoices/${id}/post`)
+        .set('Authorization', `Bearer ${appr}`)
+        .set('Idempotency-Key', randomUUID())
+        .expect(422);
+      expect422(res, { accountId: acc['1-1200'], role: 'AR_CONTROL' });
+      const still = await prisma.client.salesInvoice.findUnique({
+        where: { id },
+      });
+      expect(still!.status).toBe('DRAFT');
+    });
+
+    it('preview rejects a AR-control line the same way a create does (422)', async () => {
+      const res = await request(server())
+        .post('/v1/journal-entries/preview')
+        .set('Authorization', `Bearer ${acct}`)
+        .send({
+          nature: 'SALE',
+          settlementAccountId: acc['1-1200'],
+          lines: [{ accountId: acc['1-1200'], amount: '1000', taxCodeIds: [] }],
+        })
+        .expect(422);
+      expect422(res, { accountId: acc['1-1200'], role: 'AR_CONTROL' });
+    });
+  });
 });

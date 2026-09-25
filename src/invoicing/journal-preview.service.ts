@@ -16,6 +16,10 @@ import {
   PreviewSourceLine,
 } from './journal-preview.projection';
 import { PreviewJournalEntryDto } from './dto/preview-journal-entry.dto';
+import {
+  assertCashAccount,
+  assertDocumentLineAccounts,
+} from './document-account-rules';
 
 @Injectable()
 export class JournalPreviewService {
@@ -43,6 +47,12 @@ export class JournalPreviewService {
   private async taxedLines(
     dto: PreviewJournalEntryDto,
   ): Promise<PreviewSourceLine[]> {
+    // Same line-account rules the create/post paths enforce, so preview == post.
+    await assertDocumentLineAccounts(
+      this.prisma.client,
+      dto.nature as 'SALE' | 'PURCHASE',
+      dto.lines!.map((l) => l.accountId),
+    );
     const calc = await this.tax.calculate({
       nature: dto.nature as 'SALE' | 'PURCHASE',
       settlementAccountId: dto.settlementAccountId!,
@@ -62,6 +72,7 @@ export class JournalPreviewService {
     dto: PreviewJournalEntryDto,
   ): Promise<PreviewSourceLine[]> {
     const target = PAYMENT_TARGETS[dto.direction!];
+    await assertCashAccount(this.prisma.client, dto.cashAccountId!);
     let total = Money.zero();
     for (const a of dto.allocations! as AllocationInput[]) {
       // Same allocation type-shape check as loadTarget (no DB read needed for the JE shape).

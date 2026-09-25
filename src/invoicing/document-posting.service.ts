@@ -9,6 +9,7 @@ import {
 } from '../tax/tax.service';
 import { DocumentNumberService } from './document-number.service';
 import { ValidationFailedError } from '../common/errors/domain-errors';
+import { assertDocumentLineAccounts } from './document-account-rules';
 
 export interface PostTaxedDocParams {
   nature: 'SALE' | 'PURCHASE';
@@ -116,6 +117,14 @@ export class DocumentPostingService {
         params.table,
         params.sourceId,
         params.notDraftMessage,
+      );
+      // Post-time re-validation under the row lock: the line accounts being
+      // posted must still satisfy the document line rules (catches drafts
+      // written before the rules existed).
+      await assertDocumentLineAccounts(
+        tx,
+        params.nature,
+        params.lines.map((l) => l.accountId),
       );
       const number = await this.docNumber.next(
         tx,

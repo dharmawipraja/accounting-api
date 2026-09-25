@@ -409,6 +409,12 @@ DELETE /ledger/journal-entries/:id      delete a DRAFT          (ACCOUNTANT+)
 ```
 
 - Debits must equal credits or you get `422 UNBALANCED_ENTRY`.
+- A manual entry may not touch the **AR/AP control accounts** (`role` `AR_CONTROL` /
+  `AP_CONTROL`) — on create (draft or `?post=true`) and on `/:id/post` you get
+  `422 VALIDATION_FAILED` with message
+  `"AR/AP control accounts can only be posted through sales invoices, purchase bills and payments"`
+  and `details: { accountId, role }`. Hide those accounts from the manual-entry account
+  picker. Opening balances (`POST /ledger/opening-balances`) are still allowed on them.
 - **Discover drafts awaiting approval** via `GET /v1/ledger/journal-entries?status=DRAFT`
   — this is your approval queue.
 - `POST /v1/ledger/journal-entries`, `/:id/post`, `/:id/reverse`, and
@@ -440,6 +446,15 @@ DELETE .../:id                                        delete a DRAFT        (ACC
 Posting an invoice/bill updates the AR/AP subledger and the corresponding control
 account; voiding reverses it.
 
+**Line accounts.** On create, `PATCH` and `/post`, each line's `accountId` is checked;
+violations return `422 VALIDATION_FAILED`:
+
+| Violation | `details` |
+| --- | --- |
+| Line on an AR/AP control or `CASH` account | `{ accountId, role }` (`AR_CONTROL` / `AP_CONTROL` / `CASH`) |
+| Line on a tax account (used by any tax code, e.g. PPN Keluaran/Masukan) — apply a tax code instead | `{ accountId, reason: "TAX_ACCOUNT" }` |
+| Sales line not a revenue account (`type` `REVENUE` or subtype `OTHER_INCOME`); purchase line not `EXPENSE`/`ASSET` | `{ accountId, reason: "ACCOUNT_TYPE" }` |
+
 **Void date.** Every void endpoint (invoice, bill, payment) accepts an optional body
 `{ "date": "YYYY-MM-DD" }` — the void (reversal) date. Omit it to void on the document's
 own date (unchanged behaviour). Pass a later date to void a document whose own period is
@@ -469,6 +484,10 @@ Payment void takes the same optional `{ "date" }` body and rules as invoice/bill
 
 A payment must allocate its full amount against open documents. RECEIPT = money in
 (against AR), DISBURSEMENT = money out (against AP).
+
+`cashAccountId` must be a **`CASH`-role** account (Kas / Bank) — otherwise, on create and
+on `/post`, `422 VALIDATION_FAILED` with `details: { accountId, role }` (`role` is the
+account's actual role, possibly `null`).
 
 ### Periods & year-end close
 
@@ -577,7 +596,9 @@ Response (`JournalPreviewResponseDto`) — each line carries a human-readable
 It validates the same way a real post does, so the user sees problems early: **`422`**
 for a non-postable/unknown account, unknown/inactive tax code, non-positive settlement
 (withholding ≥ gross), a missing AR/AP control account, or a wrong-type / non-positive
-allocation; **`400`** for a malformed body. It does **not** run period-lock,
+allocation, plus the same line-account / cash-account rules as the documents (a line on a
+control/cash/tax or wrong-type account, a non-`CASH` payment `cashAccountId`); **`400`**
+for a malformed body. It does **not** run period-lock,
 segregation-of-duties, or the deeper payment-allocation checks (partner-match /
 target-POSTED / outstanding) — those stay at real post time.
 
