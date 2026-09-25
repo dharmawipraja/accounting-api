@@ -146,4 +146,10 @@ describe('entityIdOf', () => {
     expect(entityIdOf([{ id: 'a' }])).toBeNull();
     expect(entityIdOf('id')).toBeNull();
   });
+
+  it('uses user.id for a { user, tempPassword } response (user create / reset-password)', () => {
+    expect(entityIdOf({ user: { id: 'u-1' }, tempPassword: 'x' })).toBe('u-1');
+    expect(entityIdOf({ user: { id: 42 } })).toBeNull();
+    expect(entityIdOf({ user: null })).toBeNull();
+  });
 });

@@ -1,4 +1,4 @@
-import { parseCorsOrigins } from './cors-origins';
+import { corsOptions, parseCorsOrigins } from './cors-origins';
 
 describe('parseCorsOrigins', () => {
   it('returns false when unset (CORS disabled — fail-closed)', () => {
@@ -13,5 +13,17 @@ describe('parseCorsOrigins', () => {
       'https://a.com',
       'https://b.com',
     ]);
+  });
+});
+
+describe('corsOptions', () => {
+  it('exposes Retry-After so a browser client can read the 429 back-off', () => {
+    expect(corsOptions('https://a.com')).toEqual({
+      origin: ['https://a.com'],
+      exposedHeaders: ['Retry-After'],
+    });
+  });
+  it('stays fail-closed (origin false) when CORS_ORIGIN is unset', () => {
+    expect(corsOptions(undefined).origin).toBe(false);
   });
 });

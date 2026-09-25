@@ -31,7 +31,10 @@ export function parseDurationMs(value: unknown): number | undefined {
   }
 }
 
-/** A positive `ms` duration no longer than `maxMs`. */
+/** An integer followed by exactly one unit: seconds, minutes, hours or days. */
+const DURATION_WITH_UNIT = /^\d+[smhd]$/;
+
+/** A positive `ms` duration (with a unit) no longer than `maxMs`. */
 function IsDurationAtMost(maxMs: number, opts?: ValidationOptions) {
   return ValidateBy(
     {
@@ -39,11 +42,15 @@ function IsDurationAtMost(maxMs: number, opts?: ValidationOptions) {
       constraints: [maxMs],
       validator: {
         validate: (value: unknown) => {
+          // A unit suffix is REQUIRED: jsonwebtoken reads a unitless string
+          // ('900') as milliseconds, silently minting sub-second tokens.
+          if (typeof value !== 'string' || !DURATION_WITH_UNIT.test(value))
+            return false;
           const parsed = parseDurationMs(value);
           return parsed !== undefined && parsed > 0 && parsed <= maxMs;
         },
         defaultMessage: (args) =>
-          `${args?.property} must be a positive duration (e.g. '900s', '7d') of at most ${maxMs / 1000}s`,
+          `${args?.property} must be a positive whole-number duration with a unit s/m/h/d (e.g. '900s', '7d') of at most ${maxMs / 1000}s`,
       },
     },
     opts,

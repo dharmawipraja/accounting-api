@@ -1,3 +1,5 @@
+// Must stay the first import: pins THROTTLE_LOGIN_IP_LIMIT before throttle.config loads.
+import './throttle-default-env';
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
@@ -63,15 +65,20 @@ describe('Throttle policy (e2e)', () => {
     // DIFFERENT email, so the per-email bucket never trips; only the IP one can.
     const ip = '198.51.100.77';
     const statuses: number[] = [];
+    let retryAfter: string | undefined;
     for (let i = 0; i < 31; i++) {
       const res = await request(app.getHttpServer() as App)
         .post('/v1/auth/login')
         .set('X-Forwarded-For', ip)
         .send({ email: `spray${i}@test.io`, password: 'wrong-password' });
       statuses.push(res.status);
+      retryAfter = res.headers['retry-after'];
     }
     expect(statuses.slice(0, 30).every((s) => s === 401)).toBe(true);
     expect(statuses[30]).toBe(429);
+    // The IP bucket is a NAMED throttler (Retry-After-loginIp); clients also
+    // get the standard Retry-After (seconds) to back off by.
+    expect(Number(retryAfter)).toBeGreaterThan(0);
 
     // A different client IP still has its own budget.
     const other = await request(app.getHttpServer() as App)

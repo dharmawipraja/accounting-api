@@ -87,7 +87,9 @@ IP (whatever emails it tries), per minute. Either one returns **429**.
 / `THROTTLE_CHANGE_PASSWORD_LIMIT` / `THROTTLE_LIMIT`. Health/readiness/metrics probes
 are not throttled.)
 
-On a **429**, back off and retry later (respect any `Retry-After`). Never hammer
+On a **429**, back off and retry later: every 429 carries a standard `Retry-After`
+header (seconds until the bucket frees), and CORS exposes it (`Access-Control-Expose-Headers:
+Retry-After`) so browser code can read it. Never hammer
 `/auth/login` — it has the tightest budget.
 
 Login and change-password can also answer **`503`** under a burst of password

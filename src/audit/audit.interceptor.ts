@@ -25,11 +25,20 @@ interface AuditableRequest {
   user?: { id: string; role: string };
 }
 
-/** The created/affected entity's id, when the response body carries one. */
+function boundedId(id: unknown): string | null {
+  return typeof id === 'string' && id.length > 0 && id.length <= 128
+    ? id
+    : null;
+}
+
+/** The created/affected entity's id, when the response body carries one —
+ *  either `{ id }` or the `{ user, tempPassword }` shape of user create /
+ *  reset-password (the entity is the user). */
 export function entityIdOf(data: unknown): string | null {
-  if (data && typeof data === 'object' && 'id' in data) {
-    const id = data.id;
-    if (typeof id === 'string' && id.length > 0 && id.length <= 128) return id;
+  if (!data || typeof data !== 'object') return null;
+  if ('id' in data) return boundedId(data.id);
+  if ('user' in data && data.user && typeof data.user === 'object') {
+    return 'id' in data.user ? boundedId(data.user.id) : null;
   }
   return null;
 }

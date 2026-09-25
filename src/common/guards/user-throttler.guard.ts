@@ -1,6 +1,10 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  ExecutionContext,
+  Injectable,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ThrottlerException, ThrottlerGuard } from '@nestjs/throttler';
-import type { ThrottlerRequest } from '@nestjs/throttler';
+import type { ThrottlerLimitDetail, ThrottlerRequest } from '@nestjs/throttler';
 
 /**
  * Keys the rate limit by the *verified* authenticated user (so concurrent users
@@ -31,6 +35,22 @@ export class UserThrottlerGuard extends ThrottlerGuard {
         : null;
     if (email) return Promise.resolve(`login:${email}`);
     return Promise.resolve(`ip:${req.ip ?? 'unknown'}`);
+  }
+
+  /**
+   * Always send the standard `Retry-After` (seconds) on a 429. The base guard
+   * only sets it for the `default` throttler; a named one (e.g. the per-IP
+   * `loginIp` bucket) gets just `Retry-After-<name>`, which clients don't read.
+   */
+  protected override async throwThrottlingException(
+    context: ExecutionContext,
+    detail: ThrottlerLimitDetail,
+  ): Promise<void> {
+    context
+      .switchToHttp()
+      .getResponse<{ header: (name: string, value: number) => void }>()
+      .header('Retry-After', detail.timeToBlockExpire);
+    return super.throwThrottlingException(context, detail);
   }
 
   /**

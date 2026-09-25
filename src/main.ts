@@ -6,7 +6,7 @@ import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
-import { parseCorsOrigins } from './config/cors-origins';
+import { corsOptions } from './config/cors-origins';
 import { scrubSentryEvent } from './config/sentry-scrub';
 import { resolveTrustProxy } from './config/trust-proxy';
 
@@ -49,7 +49,7 @@ async function bootstrap(): Promise<void> {
   // — and a client-forged X-Forwarded-For is ignored. See resolveTrustProxy.
   app.set('trust proxy', resolveTrustProxy(process.env));
   app.use(helmet());
-  app.enableCors({ origin: parseCorsOrigins(process.env.CORS_ORIGIN) });
+  app.enableCors(corsOptions(process.env.CORS_ORIGIN));
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

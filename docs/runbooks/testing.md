@@ -169,6 +169,15 @@ If it passes in isolation, it was contention — **not a code defect**. Only a
 failure that reproduces in isolation is a genuine bug worth debugging (then reach
 for [`./troubleshooting.md`](./troubleshooting.md)).
 
+**Login 429s are not flakiness.** Every e2e request comes from loopback — one
+client IP — so the per-IP login ceiling (`THROTTLE_LOGIN_IP_LIMIT`, prod default
+30/min) would 429 a spec that logs in over HTTP many times. `test/setup-env.ts`
+raises it to 1000 for the whole suite; only `test/throttle.e2e-spec.ts` pins the
+production default back (its first import, `./throttle-default-env`, sets it before
+`src/config/throttle.config.ts` reads `process.env` at module load). The per-email
+bucket (`THROTTLE_LOGIN_LIMIT`, 10/min) is NOT raised: use a distinct email per
+brute-force-style loop, or log in via `AuthService.login` (no HTTP, no bucket).
+
 ## Writing tests
 
 ### E2E bootstrap pattern (mandatory shape)

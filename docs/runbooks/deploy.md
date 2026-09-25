@@ -9,7 +9,9 @@
   `JWT_ACCESS_SECRET` (>=32 chars), `JWT_REFRESH_SECRET` (>=32),
   `DOMAIN`. Both DB passwords are interpolated into connection URLs — use
   URL-safe values (e.g. `openssl rand -hex 24`). The two JWT secrets **must differ** (startup validation rejects equal
-  secrets); `JWT_ACCESS_TTL` must be ≤ 3600s and `JWT_REFRESH_TTL` ≤ 30d.
+  secrets); `JWT_ACCESS_TTL` must be ≤ 3600s and `JWT_REFRESH_TTL` ≤ 30d, each a whole
+  number **with a unit** `s`/`m`/`h`/`d` (e.g. `900s`, `7d`) — a unitless `900` is rejected
+  at startup (jsonwebtoken would read it as 900 ms).
   Optional: `DB_POOL_MAX`, `DB_STATEMENT_TIMEOUT_MS`, `RETENTION_DAYS`,
   `BACKUP_INTERVAL`, `THROTTLE_LIMIT` (per-user requests/min, default 300),
   `THROTTLE_LOGIN_LIMIT` (per-email login attempts/min, default 10),

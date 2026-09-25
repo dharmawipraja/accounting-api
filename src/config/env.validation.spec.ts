@@ -44,6 +44,22 @@ describe('env validation', () => {
     expect(() => validate({ ...validEnv, NODE_ENV: 'staging' })).toThrow();
   });
 
+  it('rejects unitless JWT TTLs (jsonwebtoken would read "900" as 900 ms)', () => {
+    expect(() => validate({ ...validEnv, JWT_ACCESS_TTL: '900' })).toThrow(
+      /JWT_ACCESS_TTL/,
+    );
+    expect(() => validate({ ...validEnv, JWT_REFRESH_TTL: '604800' })).toThrow(
+      /JWT_REFRESH_TTL/,
+    );
+    expect(() => validate({ ...validEnv, JWT_ACCESS_TTL: '1.5h' })).toThrow();
+    expect(() =>
+      validate({ ...validEnv, JWT_ACCESS_TTL: '15m' }),
+    ).not.toThrow();
+    expect(() =>
+      validate({ ...validEnv, JWT_REFRESH_TTL: '720h' }),
+    ).not.toThrow();
+  });
+
   it('rejects empty JWT TTLs', () => {
     expect(() => validate({ ...validEnv, JWT_ACCESS_TTL: '' })).toThrow();
     expect(() => validate({ ...validEnv, JWT_REFRESH_TTL: '' })).toThrow();
