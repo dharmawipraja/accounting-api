@@ -16,8 +16,8 @@ import { Pool } from 'pg';
 import * as argon2 from 'argon2';
 
 async function main(): Promise<void> {
-  const [email, password, name] = process.argv.slice(2);
-  if (!email || !password || !name) {
+  const [rawEmail, password, name] = process.argv.slice(2);
+  if (!rawEmail || !password || !name) {
     console.error('Usage: npm run create-admin -- <email> <password> "<name>"');
     process.exit(1);
   }
@@ -30,6 +30,9 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // Same canonical form as the app (src/users/normalize-email.ts): the DB
+  // enforces uniqueness on lower(email).
+  const email = rawEmail.trim().toLowerCase();
   const pool = new Pool({ connectionString });
   const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 

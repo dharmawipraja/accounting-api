@@ -8,6 +8,7 @@ import {
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { THROTTLE, THROTTLE_TTL_MS } from '../config/throttle.config';
+import { LoginIpThrottle } from '../common/guards/login-ip-throttle';
 import { AuthService, TokenPair } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
@@ -35,6 +36,7 @@ export class AuthController {
 
   @Public()
   @Throttle({ default: { ttl: THROTTLE_TTL_MS, limit: THROTTLE.login } })
+  @LoginIpThrottle()
   @Post('login')
   @HttpCode(200)
   @ApiOkResponse({ type: TokenPairDto })

@@ -16,6 +16,9 @@ export const THROTTLE_TTL_MS = 60_000;
 export const THROTTLE = {
   global: Number(process.env.THROTTLE_LIMIT) || 300,
   login: Number(process.env.THROTTLE_LOGIN_LIMIT) || 10,
+  // Per-client-IP ceiling on login, independent of the per-email bucket, so
+  // rotating emails cannot buy unlimited argon2 work / password spraying.
+  loginIp: Number(process.env.THROTTLE_LOGIN_IP_LIMIT) || 30,
   refresh: Number(process.env.THROTTLE_REFRESH_LIMIT) || 30,
   // Bounds stolen-token password guessing AND per-request argon2 work.
   changePassword: Number(process.env.THROTTLE_CHANGE_PASSWORD_LIMIT) || 10,

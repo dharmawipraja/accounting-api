@@ -117,4 +117,39 @@ describe('Audit log (e2e)', () => {
     expect(row).not.toBeNull();
     expect(row!.path).toBe('/v1/probe'); // unchanged by the rejected UPDATE
   });
+
+  it('AUDIT3-7: audit_log rejects TRUNCATE', async () => {
+    await expect(
+      prisma.client.$executeRawUnsafe('TRUNCATE audit_log'),
+    ).rejects.toThrow(/append-only/i);
+    expect(await prisma.client.auditLog.count()).toBeGreaterThan(0);
+  });
+
+  it('AUDIT3-7: rows record the request trace id and the created entity id', async () => {
+    const res = await request(app.getHttpServer() as App)
+      .post('/v1/partners')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-Request-Id', 'audit-trace-0001')
+      .send({ code: 'AUD-2', name: 'Traced', isCustomer: true })
+      .expect(201);
+    const createdId = (res.body as { id: string }).id;
+    const row = await prisma.client.auditLog.findFirst({
+      where: { requestId: 'audit-trace-0001' },
+    });
+    expect(row).not.toBeNull();
+    expect(row!.entityId).toBe(createdId);
+
+    // A failed write still records the trace id; no entity id.
+    await request(app.getHttpServer() as App)
+      .post('/v1/partners')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-Request-Id', 'audit-trace-0002')
+      .send({ code: 'AUD-2', name: 'Dup', isCustomer: true })
+      .expect(409);
+    const failed = await prisma.client.auditLog.findFirst({
+      where: { requestId: 'audit-trace-0002' },
+    });
+    expect(failed!.statusCode).toBe(409);
+    expect(failed!.entityId).toBeNull();
+  });
 });

@@ -77,14 +77,19 @@ describe('Company settings (e2e)', () => {
     expect(count).toBe(1);
   });
 
-  it('SEC-4: company settings GET is limited to ADMIN and ACCOUNTANT', async () => {
+  it('AUDIT3-7: company settings GET is readable by every authenticated role; PATCH stays ADMIN', async () => {
     const get = (token: string) =>
       request(app.getHttpServer() as App)
         .get('/v1/company/settings')
         .set('Authorization', `Bearer ${token}`);
     await get(adminToken).expect(200);
     await get(accountantToken).expect(200);
-    await get(approverToken).expect(403);
-    await get(viewerToken).expect(403);
+    await get(approverToken).expect(200);
+    await get(viewerToken).expect(200);
+    await request(app.getHttpServer() as App)
+      .patch('/v1/company/settings')
+      .set('Authorization', `Bearer ${viewerToken}`)
+      .send({ segregationOfDutiesEnabled: true })
+      .expect(403);
   });
 });

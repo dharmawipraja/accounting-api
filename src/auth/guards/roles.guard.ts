@@ -1,4 +1,9 @@
-import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
@@ -11,6 +16,8 @@ import {
 
 @Injectable()
 export class RolesGuard implements CanActivate {
+  private readonly logger = new Logger(RolesGuard.name);
+
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
@@ -37,10 +44,12 @@ export class RolesGuard implements CanActivate {
       throw new UnauthorizedDomainError('Authentication required');
     }
     if (!required.includes(user.role)) {
-      throw new ForbiddenDomainError('Insufficient role', {
-        required,
-        actual: user.role,
-      });
+      // The role matrix stays server-side: log it for operators, but never
+      // disclose which roles would have been accepted to the caller.
+      this.logger.warn(
+        `Forbidden: user ${user.id} (${user.role}) lacks one of [${required.join(', ')}] for ${context.getClass().name}.${context.getHandler().name}`,
+      );
+      throw new ForbiddenDomainError('Insufficient role');
     }
     return true;
   }

@@ -6,6 +6,7 @@ import { UsersService } from '../users/users.service';
 import { UnauthorizedDomainError } from '../common/errors/domain-errors';
 import {
   AuthenticatedUser,
+  JWT_ALGORITHM,
   JwtPayload,
   RefreshJwtPayload,
 } from './strategies/jwt.strategy';
@@ -42,9 +43,7 @@ export class AuthService {
   async refresh(refreshToken: string): Promise<TokenPair> {
     let payload: RefreshJwtPayload;
     try {
-      payload = await this.jwt.verifyAsync<RefreshJwtPayload>(refreshToken, {
-        secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
-      });
+      payload = await this.verifyRefresh(refreshToken);
     } catch {
       throw new UnauthorizedDomainError('Invalid refresh token');
     }
@@ -61,10 +60,7 @@ export class AuthService {
 
   async logout(refreshToken: string): Promise<{ ok: true }> {
     try {
-      const payload = await this.jwt.verifyAsync<RefreshJwtPayload>(
-        refreshToken,
-        { secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET') },
-      );
+      const payload = await this.verifyRefresh(refreshToken);
       await this.refreshTokens.revokeFamilyByJti(payload.jti);
     } catch {
       // Idempotent: an invalid/expired/unknown token has nothing to revoke.
@@ -89,23 +85,43 @@ export class AuthService {
     await this.refreshTokens.revokeAllForUser(userId);
   }
 
+  /** Verify a refresh JWT: HS256-pinned, refresh secret, and `typ: refresh`
+   *  (pre-typ refresh tokens are rejected → the client must log in again). */
+  private async verifyRefresh(token: string): Promise<RefreshJwtPayload> {
+    const payload = await this.jwt.verifyAsync<RefreshJwtPayload>(token, {
+      secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
+      algorithms: [JWT_ALGORITHM],
+    });
+    if (payload?.typ !== 'refresh' || !payload.jti) {
+      throw new UnauthorizedDomainError('Invalid refresh token');
+    }
+    return payload;
+  }
+
   private async issueTokens(
     user: Pick<AuthenticatedUser, 'id' | 'email' | 'role'>,
     jti: string,
   ): Promise<TokenPair> {
     const accessToken = await this.jwt.signAsync(
-      { sub: user.id, email: user.email, role: user.role } satisfies JwtPayload,
+      {
+        sub: user.id,
+        email: user.email,
+        role: user.role,
+        typ: 'access',
+      } satisfies JwtPayload,
       {
         secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
+        algorithm: JWT_ALGORITHM,
         expiresIn: this.config.getOrThrow<string>(
           'JWT_ACCESS_TTL',
         ) as StringValue,
       },
     );
     const refreshToken = await this.jwt.signAsync(
-      { sub: user.id, jti },
+      { sub: user.id, jti, typ: 'refresh' } satisfies RefreshJwtPayload,
       {
         secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
+        algorithm: JWT_ALGORITHM,
         expiresIn: this.config.getOrThrow<string>(
           'JWT_REFRESH_TTL',
         ) as StringValue,

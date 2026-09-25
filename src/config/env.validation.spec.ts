@@ -82,4 +82,57 @@ describe('env validation', () => {
   it('rejects an invalid LOG_LEVEL', () => {
     expect(() => validate({ ...validEnv, LOG_LEVEL: 'verbose' })).toThrow();
   });
+
+  it('rejects identical access and refresh JWT secrets', () => {
+    expect(() =>
+      validate({ ...validEnv, JWT_REFRESH_SECRET: validEnv.JWT_ACCESS_SECRET }),
+    ).toThrow(/JWT_REFRESH_SECRET/);
+  });
+
+  it('upper-bounds JWT_ACCESS_TTL at 3600s', () => {
+    expect(() => validate({ ...validEnv, JWT_ACCESS_TTL: '1h' })).not.toThrow();
+    expect(() => validate({ ...validEnv, JWT_ACCESS_TTL: '3601s' })).toThrow(
+      /JWT_ACCESS_TTL/,
+    );
+    expect(() => validate({ ...validEnv, JWT_ACCESS_TTL: '2d' })).toThrow();
+  });
+
+  it('upper-bounds JWT_REFRESH_TTL at 30d', () => {
+    expect(() =>
+      validate({ ...validEnv, JWT_REFRESH_TTL: '30d' }),
+    ).not.toThrow();
+    expect(() => validate({ ...validEnv, JWT_REFRESH_TTL: '31d' })).toThrow(
+      /JWT_REFRESH_TTL/,
+    );
+  });
+
+  it('rejects an unparseable or non-positive TTL', () => {
+    expect(() =>
+      validate({ ...validEnv, JWT_ACCESS_TTL: 'fifteen minutes' }),
+    ).toThrow();
+    expect(() => validate({ ...validEnv, JWT_ACCESS_TTL: '0s' })).toThrow();
+    expect(() => validate({ ...validEnv, JWT_REFRESH_TTL: '-1d' })).toThrow();
+  });
+
+  it('validates the login-IP throttle, argon2 concurrency and trust-proxy knobs', () => {
+    expect(() =>
+      validate({
+        ...validEnv,
+        THROTTLE_LOGIN_IP_LIMIT: '30',
+        ARGON2_MAX_CONCURRENCY: '8',
+        TRUST_PROXY_HOPS: '1',
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validate({ ...validEnv, THROTTLE_LOGIN_IP_LIMIT: '0' }),
+    ).toThrow();
+    expect(() =>
+      validate({ ...validEnv, ARGON2_MAX_CONCURRENCY: '0' }),
+    ).toThrow();
+    expect(() =>
+      validate({ ...validEnv, ARGON2_MAX_CONCURRENCY: '1000' }),
+    ).toThrow();
+    expect(() => validate({ ...validEnv, TRUST_PROXY_HOPS: '-1' })).toThrow();
+    expect(() => validate({ ...validEnv, TRUST_PROXY_HOPS: 'yes' })).toThrow();
+  });
 });

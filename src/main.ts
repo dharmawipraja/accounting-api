@@ -8,6 +8,7 @@ import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { parseCorsOrigins } from './config/cors-origins';
 import { scrubSentryEvent } from './config/sentry-scrub';
+import { resolveTrustProxy } from './config/trust-proxy';
 
 async function bootstrap(): Promise<void> {
   if (process.env.SENTRY_DSN) {
@@ -43,9 +44,10 @@ async function bootstrap(): Promise<void> {
     bufferLogs: true,
   });
   app.useLogger(app.get(Logger));
-  // Trust the single reverse proxy in front of the app so rate limiting and
-  // request IPs reflect the real client, not the proxy's loopback address.
-  app.set('trust proxy', 1);
+  // Trust exactly the reverse-proxy hops in front of the app (prod: Caddy -> api
+  // = 1) so rate limiting and audit IPs reflect the real client, not the proxy
+  // — and a client-forged X-Forwarded-For is ignored. See resolveTrustProxy.
+  app.set('trust proxy', resolveTrustProxy(process.env));
   app.use(helmet());
   app.enableCors({ origin: parseCorsOrigins(process.env.CORS_ORIGIN) });
   app.useGlobalPipes(

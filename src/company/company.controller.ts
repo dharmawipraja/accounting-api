@@ -13,7 +13,8 @@ import { CompanySettingsDto } from './dto/company-settings-response.dto';
 export class CompanyController {
   constructor(private readonly company: CompanyService) {}
 
-  @Roles(Role.ADMIN, Role.ACCOUNTANT)
+  // Readable by every authenticated role: the FE needs base currency, fiscal
+  // year start and the SoD flag to render for VIEWER/APPROVER too.
   @Get()
   @ApiOkResponse({ type: CompanySettingsDto })
   get(): Promise<CompanySettings> {

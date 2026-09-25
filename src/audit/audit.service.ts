@@ -11,6 +11,8 @@ export interface AuditEntry {
   statusCode: number;
   durationMs: number;
   ip: string | null;
+  requestId: string | null;
+  entityId: string | null;
 }
 
 @Injectable()
@@ -32,6 +34,8 @@ export class AuditService {
           statusCode: entry.statusCode,
           durationMs: entry.durationMs,
           ip: entry.ip,
+          requestId: entry.requestId,
+          entityId: entry.entityId,
         },
       });
     } catch (err) {

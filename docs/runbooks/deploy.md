@@ -5,9 +5,15 @@
   `$DOMAIN` pointing at the VM (required for Caddy auto-HTTPS).
 - A `.env` next to the compose files (gitignored) with:
   `POSTGRES_PASSWORD`, `JWT_ACCESS_SECRET` (>=32 chars), `JWT_REFRESH_SECRET` (>=32),
-  `DOMAIN`. Optional: `DB_POOL_MAX`, `DB_STATEMENT_TIMEOUT_MS`, `RETENTION_DAYS`,
+  `DOMAIN`. The two JWT secrets **must differ** (startup validation rejects equal
+  secrets); `JWT_ACCESS_TTL` must be ≤ 3600s and `JWT_REFRESH_TTL` ≤ 30d.
+  Optional: `DB_POOL_MAX`, `DB_STATEMENT_TIMEOUT_MS`, `RETENTION_DAYS`,
   `BACKUP_INTERVAL`, `THROTTLE_LIMIT` (per-user requests/min, default 300),
-  `THROTTLE_LOGIN_LIMIT` (per-IP login attempts/min, default 10),
+  `THROTTLE_LOGIN_LIMIT` (per-email login attempts/min, default 10),
+  `THROTTLE_LOGIN_IP_LIMIT` (per-client-IP login attempts/min across all emails, default 30),
+  `ARGON2_MAX_CONCURRENCY` (concurrent password hash/verify per process, 1-64,
+  default 8; callers queue ≤5s, then `503`),
+  `TRUST_PROXY_HOPS` (Express `trust proxy` hop count; compose sets 1 for Caddy → api),
   `THROTTLE_REFRESH_LIMIT` (per-IP refresh attempts/min, default 30),
   `THROTTLE_CHANGE_PASSWORD_LIMIT` (per-user change-password attempts/min, default 10).
 - **Redis** must be running and reachable at `REDIS_URL` before the API starts. The
@@ -26,6 +32,14 @@ starts `api` (gated on `migrate` succeeding), `caddy`, and `backup`. `migrate` r
 
 ## Health & shutdown
 - `api` is healthy when `/ready` returns 200 (DB + Redis reachable — a dependency outage now marks the container unhealthy); `/health` stays a bare liveness probe. Caddy proxies only a started app.
+- One-time caveat (AUDIT3-7, `20260926100000_auth_hardening`): the migration
+  lowercases `users.email` and adds a unique index on `lower(email)`. It **aborts
+  with a clear error listing the emails** if two accounts differ only by
+  case/whitespace — nothing is applied (the check runs first). Resolve those
+  accounts by hand (rename/tombstone one), mark the failed attempt with
+  `npx prisma migrate resolve --rolled-back 20260926100000_auth_hardening`, and
+  re-run the deploy. Tokens now carry a `typ` claim: every access/refresh token issued
+  before the deploy is rejected, so all users log in again once.
 - One-time caveat: migration `20260705163429_scope_idempotency_keys_by_user`
   clears the `idempotency_keys` cache to add the NOT NULL `user_id` column. On
   the deploy that first applies it, a client retrying a write completed in the
@@ -37,8 +51,13 @@ starts `api` (gated on `migrate` succeeding), `caddy`, and `backup`. `migrate` r
 ## X-Forwarded-For / client IP trust (SEC-3)
 Caddy (the TLS edge) **ignores any client-supplied `X-Forwarded-For` by default**
 to prevent spoofing — it sets `X-Forwarded-For` to the real connecting client
-before proxying to `api`. The app's `trust proxy: 1` therefore sees the true
-client IP, so the per-IP login throttle cannot be bypassed with a forged header.
+before proxying to `api`. The app's `trust proxy` hop count (`TRUST_PROXY_HOPS`,
+default **1 in production**, 0 elsewhere; compose passes 1) makes `req.ip` the
+right-most `X-Forwarded-For` entry — the one Caddy wrote — so the per-IP login
+ceiling (`THROTTLE_LOGIN_IP_LIMIT`) and audit IPs use the true client address and
+cannot be bypassed with a forged header. **If you add a CDN/LB in front of Caddy,
+raise `TRUST_PROXY_HOPS` to the number of proxies** (and configure Caddy as below);
+if the API is ever exposed without Caddy, set it to 0.
 No Caddy directive is required; this is the default behavior of `reverse_proxy`.
 (The app-side per-account login throttle — keyed by the submitted email — is the
 complementary defense already in place.)

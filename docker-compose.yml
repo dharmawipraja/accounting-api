@@ -41,6 +41,15 @@ services:
       JWT_ACCESS_TTL: 900s
       JWT_REFRESH_TTL: 7d
       REDIS_URL: redis://redis:6379
+      # Optional knobs from .env (defaults mirror the app's own defaults).
+      THROTTLE_LIMIT: ${THROTTLE_LIMIT:-300}
+      THROTTLE_LOGIN_LIMIT: ${THROTTLE_LOGIN_LIMIT:-10}
+      THROTTLE_LOGIN_IP_LIMIT: ${THROTTLE_LOGIN_IP_LIMIT:-30}
+      THROTTLE_REFRESH_LIMIT: ${THROTTLE_REFRESH_LIMIT:-30}
+      THROTTLE_CHANGE_PASSWORD_LIMIT: ${THROTTLE_CHANGE_PASSWORD_LIMIT:-10}
+      ARGON2_MAX_CONCURRENCY: ${ARGON2_MAX_CONCURRENCY:-8}
+      # Caddy -> api is exactly one proxy hop.
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
     ports:
       - '127.0.0.1:3000:3000'
 

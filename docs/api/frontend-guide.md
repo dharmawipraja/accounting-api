@@ -38,8 +38,17 @@ POST /auth/login      { "email": "...", "password": "..." }
   → 200 { "accessToken": "<jwt>", "refreshToken": "<jwt>" }
 ```
 
+- **Emails are case-insensitive.** The server trims and lowercases the email on
+  login and user creation (`' Budi@Example.COM '` logs in as `budi@example.com`),
+  and `GET /auth/me` / user responses always return the lowercased form. Two users
+  cannot differ only by case (`409`). `password` is capped at **128** chars (`400`).
 - Send the access token on every authenticated request:
   `Authorization: Bearer <accessToken>`.
+- Tokens are typed (`typ: "access"` / `typ: "refresh"`): an access token is never
+  accepted by `/auth/refresh` and vice versa. **Deploy note (2026-09):** tokens
+  issued before this change carry no `typ` and are rejected with `401` — access
+  tokens on the next request, refresh tokens on the next `/auth/refresh`. Handle
+  it like any expired session: send the user back to login once.
 - **Access tokens are short-lived** (~15 minutes; exact TTL is the server's
   `JWT_ACCESS_TTL`). **Refresh tokens last ~7 days** (`JWT_REFRESH_TTL`).
 - On a **401** (expired/invalid access token), call:
@@ -61,21 +70,29 @@ POST /auth/login      { "email": "...", "password": "..." }
 ### Rate limiting (throttle)
 
 The API is rate-limited. Authenticated requests are budgeted **per user**, anonymous
-auth endpoints **per IP**.
+auth endpoints **per IP** (login additionally per email).
 
 | Scope                        | Limit     | Keyed by           |
 | ---------------------------- | --------- | ------------------ |
-| `POST /auth/login`           | 10 / min  | IP                 |
+| `POST /auth/login`           | 10 / min  | email (lowercased) |
+| `POST /auth/login`           | 30 / min  | client IP          |
 | `POST /auth/refresh`         | 30 / min  | IP                 |
 | `POST /auth/change-password` | 10 / min  | authenticated user |
 | All other endpoints          | 300 / min | authenticated user |
 
-(Defaults; operators can override via `THROTTLE_LOGIN_LIMIT` / `THROTTLE_REFRESH_LIMIT`
+Both login buckets apply at once: 10 attempts per account and 30 attempts per client
+IP (whatever emails it tries), per minute. Either one returns **429**.
+
+(Defaults; operators can override via `THROTTLE_LOGIN_LIMIT` / `THROTTLE_LOGIN_IP_LIMIT` / `THROTTLE_REFRESH_LIMIT`
 / `THROTTLE_CHANGE_PASSWORD_LIMIT` / `THROTTLE_LIMIT`. Health/readiness/metrics probes
 are not throttled.)
 
 On a **429**, back off and retry later (respect any `Retry-After`). Never hammer
 `/auth/login` — it has the tightest budget.
+
+Login and change-password can also answer **`503`** under a burst of password
+checks (the server caps concurrent password hashing). It is transient: retry after
+a short backoff.
 
 ---
 
@@ -251,7 +268,7 @@ Pagination is **not uniform** — check per endpoint:
   { "data": [ ... ], "total": 123, "limit": 50, "offset": 0 }
   ```
 
-  `limit` default **50**, **max 200**; `offset` default 0.
+  `limit` default **50**, **max 200**; `offset` default 0, **max 100000** (`400` above).
 
   The **enveloped** endpoints are:
   - `GET /v1/ledger/journal-entries` (filters: `q, status, sourceType, fiscalYear, from, to, limit, offset`)
@@ -342,7 +359,8 @@ field) and let it go. That user is created/reset with `mustChangePassword: true`
 - Handle this 403 globally (same place you handle 401-refresh): redirect to a
   change-password screen. Submit `POST /v1/auth/change-password
   { "currentPassword": "<the temp password>", "newPassword": "..." }`
-  (`newPassword` 8–128 chars). A wrong `currentPassword` is `401`.
+  (`newPassword` 8–128 chars, `currentPassword` ≤ 128). A wrong `currentPassword`
+  is `401`; a `newPassword` equal to `currentPassword` is **`422 VALIDATION_FAILED`**.
 - Success revokes **all** of the user's refresh sessions — other devices are signed
   out immediately; the tab that just changed the password keeps working until its
   current access token expires (≤15 min), since the access token itself isn't a
@@ -365,7 +383,10 @@ lists the **mutating / privileged** endpoints — plus `/v1/users/*` reads, the 
 place a `GET` is role-gated — where the role actually gates access. All paths below
 are under `/v1` (e.g. `POST /partners` means `POST /v1/partners`).
 
-A "✓" means that role is allowed. `403 FORBIDDEN` is returned otherwise.
+A "✓" means that role is allowed. `403 FORBIDDEN` is returned otherwise. The 403
+body is `{ code: "FORBIDDEN", message: "Insufficient role", traceId }` — it does
+**not** say which roles would be accepted (no `details`); use this matrix, or
+`GET /auth/me`'s `role`, to gate UI.
 
 | Endpoint (mutation)                                                                                              | VIEWER | ACCOUNTANT | APPROVER | ADMIN |
 | ---------------------------------------------------------------------------------------------------------------- | :----: | :--------: | :------: | :---: |

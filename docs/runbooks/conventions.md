@@ -88,7 +88,10 @@ One stable error envelope, no leaked internals.
   routes are auth, health, and metrics only.
 - **RBAC via `@Roles(...)`** (`src/auth/decorators/roles.decorator.ts`, roles in
   `src/auth/role.enum.ts`). Apply at the handler (or controller) level on every
-  state-changing route; reads may stay role-open where appropriate.
+  state-changing route; reads may stay role-open where appropriate. Enforced by
+  `test/route-authz.e2e-spec.ts`: a non-GET route without `@Roles` fails CI unless
+  added to its explicit allow-list (`auth/*`, `tax/calculate`,
+  `journal-entries/preview`). The 403 body never lists the accepted roles.
 - **Validate `:id` path params with `ParseUUIDPipe`** — e.g.
   `@Param('id', ParseUUIDPipe) id: string`. Rejects malformed ids with a 400
   before they reach the service/DB.
@@ -100,7 +103,8 @@ One stable error envelope, no leaked internals.
 - **Lists use the pagination envelope `{ data, total, limit, offset }`.** Drive
   it through the shared `listPaginated` seam (`src/common/pagination/paginated.ts`)
   and accept a `PaginationQueryDto` (`@Max(MAX_LIMIT)`; `MAX_LIMIT = 200`,
-  `DEFAULT_PAGE_SIZE = 50` in `src/common/pagination/pagination.constants.ts`).
+  `DEFAULT_PAGE_SIZE = 50`, `MAX_OFFSET = 100_000` in
+  `src/common/pagination/pagination.constants.ts`).
   All transactional lists AND accounts/tax-codes return this envelope — there are
   no remaining bare-array list endpoints, so a new list must use the envelope too.
 - **Optional date query params → `parseDate` / `query-dates` helpers.**

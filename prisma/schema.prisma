@@ -28,6 +28,8 @@ model User {
   refreshTokens      RefreshToken[]
 
   @@unique([email]) // DB index name is the Prisma default "users_email_key"
+  // + hand-authored UNIQUE INDEX users_email_lower_key ON users (lower(email))
+  //   (20260926100000_auth_hardening) — emails are stored/looked up lowercased.
   @@index([deletedAt])
   @@map("users")
 }
@@ -514,8 +516,12 @@ model AuditLog {
   statusCode Int      @map("status_code")
   durationMs Int      @map("duration_ms")
   ip         String?
+  requestId  String?  @map("request_id")
+  entityId   String?  @map("entity_id")
 
   @@index([timestamp])
   @@index([userId])
+  @@index([requestId])
+  @@index([entityId])
   @@map("audit_log")
 }

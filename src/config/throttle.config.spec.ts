@@ -10,12 +10,14 @@ describe('throttle.config', () => {
     delete process.env.THROTTLE_LOGIN_LIMIT;
     delete process.env.THROTTLE_REFRESH_LIMIT;
     delete process.env.THROTTLE_CHANGE_PASSWORD_LIMIT;
+    delete process.env.THROTTLE_LOGIN_IP_LIMIT;
     delete process.env.REQUEST_TIMEOUT_MS;
     jest.resetModules();
     const m = await import('./throttle.config');
     expect(m.THROTTLE).toEqual({
       global: 300,
       login: 10,
+      loginIp: 30,
       refresh: 30,
       changePassword: 10,
     });
@@ -30,12 +32,14 @@ describe('throttle.config', () => {
     process.env.THROTTLE_LOGIN_LIMIT = '5';
     process.env.THROTTLE_REFRESH_LIMIT = '15';
     process.env.THROTTLE_CHANGE_PASSWORD_LIMIT = '3';
+    process.env.THROTTLE_LOGIN_IP_LIMIT = '7';
     process.env.REQUEST_TIMEOUT_MS = '5000';
     jest.resetModules();
     const m = await import('./throttle.config');
     expect(m.THROTTLE).toEqual({
       global: 500,
       login: 5,
+      loginIp: 7,
       refresh: 15,
       changePassword: 3,
     });

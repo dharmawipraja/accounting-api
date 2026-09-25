@@ -29,6 +29,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { PasswordChangeGuard } from './auth/guards/password-change.guard';
 import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
+import { loginIpThrottler } from './common/guards/login-ip-throttle';
 import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout.interceptor';
 import { HttpDrainService } from './common/http/http-drain.service';
 import {
@@ -72,7 +73,10 @@ import {
     ThrottlerModule.forRootAsync({
       inject: [REDIS_CLIENT],
       useFactory: (redis: Redis | null) => {
-        const throttlers = [{ ttl: THROTTLE_TTL_MS, limit: THROTTLE.global }];
+        const throttlers = [
+          { ttl: THROTTLE_TTL_MS, limit: THROTTLE.global },
+          loginIpThrottler(),
+        ];
         // null (test) → default in-memory store; otherwise share the one Redis client.
         return redis
           ? { throttlers, storage: new ThrottlerStorageRedisService(redis) }

@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import * as argon2 from 'argon2';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import {
@@ -11,6 +10,7 @@ import { RefreshTokenService } from '../auth/refresh-token.service';
 import { tombstoneValue } from '../common/prisma/tombstone';
 import { UsersService, SafeUser } from './users.service';
 import { generateTempPassword } from './temp-password';
+import { passwordHasher } from './password-hashing';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -149,7 +149,7 @@ export class UserAdminService {
   /** New one-time password; all sessions die; user must change on next login. */
   async resetPassword(id: string) {
     const tempPassword = generateTempPassword();
-    const passwordHash = await argon2.hash(tempPassword);
+    const passwordHash = await passwordHasher.hash(tempPassword);
     let updated;
     try {
       // Single guarded write: the soft-delete extension injects deletedAt:null

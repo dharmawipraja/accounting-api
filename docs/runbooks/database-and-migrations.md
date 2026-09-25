@@ -58,7 +58,14 @@ the Prisma schema cannot express:
   non-zero). Not representable in `schema.prisma`.
 - **`audit_log` append-only trigger** (`20260617000001_audit_log_append_only`):
   a `BEFORE UPDATE OR DELETE` trigger that `RAISE EXCEPTION`s, so the audit table
-  is immutable even to the app/migrate DB role. INSERT/SELECT are unaffected.
+  is immutable even to the app/migrate DB role. INSERT/SELECT are unaffected. A
+  statement-level `BEFORE TRUNCATE` trigger (`20260926100000_auth_hardening`)
+  closes the TRUNCATE gap.
+- **Case-insensitive email uniqueness** (`20260926100000_auth_hardening`):
+  `CREATE UNIQUE INDEX users_email_lower_key ON users (lower(email))` — an
+  expression index Prisma can't model. The app stores/looks up emails via
+  `normalizeEmail()` (trim + lowercase); the migration aborts if case-duplicates
+  exist.
 - **Partial-unique index for singleton account roles**
   (`20260618000000_account_role`):
   `CREATE UNIQUE INDEX ... ON accounts (role) WHERE role IS NOT NULL AND role <> 'CASH'`

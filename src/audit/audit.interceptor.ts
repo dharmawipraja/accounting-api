@@ -20,7 +20,18 @@ interface AuditableRequest {
   params: Record<string, unknown>;
   body: unknown;
   ip?: string;
+  /** pino-http request id — the same value as X-Request-Id / error traceId. */
+  id?: unknown;
   user?: { id: string; role: string };
+}
+
+/** The created/affected entity's id, when the response body carries one. */
+export function entityIdOf(data: unknown): string | null {
+  if (data && typeof data === 'object' && 'id' in data) {
+    const id = data.id;
+    if (typeof id === 'string' && id.length > 0 && id.length <= 128) return id;
+  }
+  return null;
 }
 
 @Injectable()
@@ -40,12 +51,17 @@ export class AuditInterceptor implements NestInterceptor {
       params: req.params ?? {},
       body: sanitize(req.body),
       ip: req.ip ?? null,
+      requestId:
+        typeof req.id === 'string' || typeof req.id === 'number'
+          ? String(req.id)
+          : null,
     };
     return next.handle().pipe(
       concatMap((data) =>
         from(
           this.audit.record({
             ...base,
+            entityId: entityIdOf(data),
             statusCode: res.statusCode,
             durationMs: Date.now() - start,
           }),
@@ -59,6 +75,7 @@ export class AuditInterceptor implements NestInterceptor {
         return from(
           this.audit.record({
             ...base,
+            entityId: null,
             statusCode,
             durationMs: Date.now() - start,
           }),

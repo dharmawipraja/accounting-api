@@ -15,4 +15,14 @@ export class AuditEntryDto {
   @ApiProperty({ example: 201 }) statusCode!: number;
   @ApiProperty({ example: 42 }) durationMs!: number;
   @ApiProperty({ nullable: true, example: '127.0.0.1' }) ip!: string | null;
+  @ApiProperty({
+    nullable: true,
+    description: 'Request trace id (X-Request-Id / error envelope traceId)',
+  })
+  requestId!: string | null;
+  @ApiProperty({
+    nullable: true,
+    description: 'Id of the created/affected entity (response body `id`)',
+  })
+  entityId!: string | null;
 }

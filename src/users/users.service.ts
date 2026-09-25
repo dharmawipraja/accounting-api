@@ -1,13 +1,15 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import * as argon2 from 'argon2';
 import { randomBytes } from 'crypto';
 import { Role, User } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import {
   ConflictDomainError,
   NotFoundDomainError,
+  ValidationFailedError,
 } from '../common/errors/domain-errors';
 import { mapUniqueViolation } from '../common/errors/map-unique-violation';
+import { normalizeEmail } from './normalize-email';
+import { passwordHasher } from './password-hashing';
 
 export interface CreateUserInput {
   email: string;
@@ -29,19 +31,20 @@ export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(input: CreateUserInput): Promise<SafeUser> {
+    const email = normalizeEmail(input.email);
     const existing = await this.prisma.client.user.findFirst({
-      where: { email: input.email },
+      where: { email },
     });
     if (existing) {
       throw new ConflictDomainError('A user with this email already exists', {
-        email: input.email,
+        email,
       });
     }
-    const passwordHash = await argon2.hash(input.password);
+    const passwordHash = await passwordHasher.hash(input.password);
     try {
       const created = await this.prisma.client.user.create({
         data: {
-          email: input.email,
+          email,
           passwordHash,
           name: input.name,
           role: input.role,
@@ -53,7 +56,7 @@ export class UsersService {
       // Concurrent creates can both pass the pre-check above; the unique
       // constraint is the real guard. Map it to a clean 409.
       mapUniqueViolation(err, 'A user with this email already exists', {
-        email: input.email,
+        email,
       });
     }
   }
@@ -63,7 +66,9 @@ export class UsersService {
    * Do NOT use in read/list endpoints (it would leak the hash).
    */
   async findByEmailWithHash(email: string): Promise<User | null> {
-    return this.prisma.client.user.findFirst({ where: { email } });
+    return this.prisma.client.user.findFirst({
+      where: { email: normalizeEmail(email) },
+    });
   }
 
   async findById(id: string): Promise<SafeUser | null> {
@@ -72,16 +77,22 @@ export class UsersService {
   }
 
   async verifyPassword(user: User, password: string): Promise<boolean> {
-    return argon2.verify(user.passwordHash, password);
+    return passwordHasher.verify(user.passwordHash, password);
   }
 
   private decoyHashPromise?: Promise<string>;
 
-  /** A cached argon2 hash of random bytes — never matches any real password. */
+  /** A cached argon2 hash of random bytes — never matches any real password.
+   *  A failed first hash (e.g. a 503 from the argon2 gate) is NOT cached, or
+   *  every later unknown-email login would fail forever. */
   private decoyHash(): Promise<string> {
-    return (this.decoyHashPromise ??= argon2.hash(
-      randomBytes(32).toString('hex'),
-    ));
+    this.decoyHashPromise ??= passwordHasher
+      .hash(randomBytes(32).toString('hex'))
+      .catch((err: unknown) => {
+        this.decoyHashPromise = undefined;
+        throw err;
+      });
+    return this.decoyHashPromise;
   }
 
   /**
@@ -93,28 +104,38 @@ export class UsersService {
     user: User | null,
     password: string,
   ): Promise<boolean> {
-    if (user) return argon2.verify(user.passwordHash, password);
-    await argon2.verify(await this.decoyHash(), password);
+    if (user) return passwordHasher.verify(user.passwordHash, password);
+    await passwordHasher.verify(await this.decoyHash(), password);
     return false;
   }
 
   /** Self-service password change: verifies the current password, re-hashes,
-   *  clears mustChangePassword. Caller is responsible for session revocation. */
+   *  clears mustChangePassword. Caller is responsible for session revocation.
+   *  Reusing the current password is refused (422) — checked before any argon2
+   *  work, and it discloses nothing (the caller supplied both values). */
   async changePassword(
     userId: string,
     currentPassword: string,
     newPassword: string,
   ): Promise<void> {
+    if (newPassword === currentPassword) {
+      throw new ValidationFailedError(
+        'New password must differ from the current password',
+      );
+    }
     const user = await this.prisma.client.user.findFirst({
       where: { id: userId },
     });
-    if (!user || !(await argon2.verify(user.passwordHash, currentPassword))) {
+    if (
+      !user ||
+      !(await passwordHasher.verify(user.passwordHash, currentPassword))
+    ) {
       throw new UnauthorizedException('Current password is incorrect');
     }
     await this.prisma.client.user.update({
       where: { id: userId },
       data: {
-        passwordHash: await argon2.hash(newPassword),
+        passwordHash: await passwordHasher.hash(newPassword),
         mustChangePassword: false,
       },
     });

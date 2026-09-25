@@ -47,8 +47,11 @@ describe('RBAC (e2e)', () => {
       .set('Authorization', `Bearer ${viewerToken}`)
       .expect(403)
       .expect((r) => {
-        const body = r.body as { code: string };
+        const body = r.body as { code: string; details?: unknown };
         expect(body.code).toBe('FORBIDDEN');
+        // AUDIT3-7: the role matrix is not disclosed to the caller.
+        expect(body.details).toBeUndefined();
+        expect(JSON.stringify(body)).not.toMatch(/ADMIN|VIEWER|required/);
       });
   });
 

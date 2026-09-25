@@ -76,4 +76,15 @@ describe('Pagination (e2e)', () => {
       .set('Authorization', `Bearer ${acct}`)
       .expect(400);
   });
+
+  it('rejects an offset above 100000 (400)', async () => {
+    await request(server())
+      .get('/v1/partners?offset=100001')
+      .set('Authorization', `Bearer ${acct}`)
+      .expect(400);
+    await request(server())
+      .get('/v1/partners?offset=100000')
+      .set('Authorization', `Bearer ${acct}`)
+      .expect(200);
+  });
 });

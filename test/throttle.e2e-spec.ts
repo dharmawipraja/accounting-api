@@ -58,6 +58,29 @@ describe('Throttle policy (e2e)', () => {
     expect(statuses[10]).toBe(429);
   });
 
+  it('AUDIT3-7: login is ALSO capped per client IP — rotating emails cannot bypass it', async () => {
+    // 30/min per IP (THROTTLE_LOGIN_IP_LIMIT default). Every attempt uses a
+    // DIFFERENT email, so the per-email bucket never trips; only the IP one can.
+    const ip = '198.51.100.77';
+    const statuses: number[] = [];
+    for (let i = 0; i < 31; i++) {
+      const res = await request(app.getHttpServer() as App)
+        .post('/v1/auth/login')
+        .set('X-Forwarded-For', ip)
+        .send({ email: `spray${i}@test.io`, password: 'wrong-password' });
+      statuses.push(res.status);
+    }
+    expect(statuses.slice(0, 30).every((s) => s === 401)).toBe(true);
+    expect(statuses[30]).toBe(429);
+
+    // A different client IP still has its own budget.
+    const other = await request(app.getHttpServer() as App)
+      .post('/v1/auth/login')
+      .set('X-Forwarded-For', '198.51.100.78')
+      .send({ email: 'spray-other@test.io', password: 'wrong-password' });
+    expect(other.status).toBe(401);
+  }, 60_000);
+
   it('a normal low-volume authenticated request is not throttled', async () => {
     const res = await request(app.getHttpServer() as App)
       .get('/v1/auth/me')

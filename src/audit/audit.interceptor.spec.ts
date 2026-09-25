@@ -1,7 +1,7 @@
 import { CallHandler, ExecutionContext, HttpException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { firstValueFrom, of, throwError } from 'rxjs';
-import { AuditInterceptor } from './audit.interceptor';
+import { AuditInterceptor, entityIdOf } from './audit.interceptor';
 import { AuditService } from './audit.service';
 import {
   ConflictDomainError,
@@ -120,5 +120,30 @@ describe('AuditInterceptor', () => {
     );
     expect(result).toEqual({ ok: true });
     expect(record).not.toHaveBeenCalled();
+  });
+
+  it('records the request id and the response entity id on success', async () => {
+    const { record, interceptor } = setup();
+    const ctx = makeCtx();
+    ctx.switchToHttp().getRequest<{ id?: string }>().id = 'trace-1';
+    const obs = interceptor.intercept(ctx, {
+      handle: () => of({ id: 'e-1', name: 'x' }),
+    });
+    await firstValueFrom(obs);
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({ requestId: 'trace-1', entityId: 'e-1' }),
+    );
+  });
+});
+
+describe('entityIdOf', () => {
+  it('extracts a string id and ignores everything else', () => {
+    expect(entityIdOf({ id: 'abc' })).toBe('abc');
+    expect(entityIdOf({ id: 42 })).toBeNull();
+    expect(entityIdOf({ id: '' })).toBeNull();
+    expect(entityIdOf({ id: 'x'.repeat(129) })).toBeNull();
+    expect(entityIdOf(undefined)).toBeNull();
+    expect(entityIdOf([{ id: 'a' }])).toBeNull();
+    expect(entityIdOf('id')).toBeNull();
   });
 });

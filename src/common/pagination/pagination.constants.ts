@@ -2,3 +2,6 @@
 export const DEFAULT_PAGE_SIZE = 50;
 /** Hard upper bound on `limit` (enforced by PaginationQueryDto's @Max). */
 export const MAX_LIMIT = 200;
+/** Hard upper bound on `offset` — deep OFFSET scans are O(offset); anything
+ *  past this should narrow with filters instead. */
+export const MAX_OFFSET = 100_000;

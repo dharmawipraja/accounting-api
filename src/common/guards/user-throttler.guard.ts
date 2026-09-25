@@ -23,8 +23,12 @@ export class UserThrottlerGuard extends ThrottlerGuard {
     // Anonymous: a login carries an email — key by it so per-account brute force
     // is bounded regardless of a spoofed X-Forwarded-For. Combining with IP would
     // let a rotating spoofed IP restore a fresh budget, defeating the limit.
+    // The complementary per-client-IP ceiling (rotating EMAILS) is the separate
+    // `loginIp` named throttler — see common/guards/login-ip-throttle.ts.
     const email =
-      typeof req.body?.email === 'string' ? req.body.email.toLowerCase() : null;
+      typeof req.body?.email === 'string'
+        ? req.body.email.trim().toLowerCase()
+        : null;
     if (email) return Promise.resolve(`login:${email}`);
     return Promise.resolve(`ip:${req.ip ?? 'unknown'}`);
   }
