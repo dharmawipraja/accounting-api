@@ -15,6 +15,7 @@ import { JournalService } from '../src/ledger/journal/journal.service';
 import { Money } from '../src/common/money/money';
 import {
   ConflictDomainError,
+  NotFoundDomainError,
   ValidationFailedError,
 } from '../src/common/errors/domain-errors';
 import { bootstrapTestApp } from './e2e-helpers';
@@ -98,7 +99,9 @@ describe('Draft edit/delete vs post race (e2e)', () => {
 
   const editedLines = () => [line('2000000', 'A'), line('500000', 'B')];
 
-  /** Settle a promise, failing the test on anything but a clean domain error. */
+  /** Settle a promise, failing the test on anything but a clean domain error.
+   *  404 is clean too: a delete that commits before the post's first read
+   *  leaves the post a NotFound. */
   const settle = async <T>(
     p: Promise<T>,
   ): Promise<{ ok: true; v: T } | { ok: false; err: unknown }> => {
@@ -107,7 +110,8 @@ describe('Draft edit/delete vs post race (e2e)', () => {
     } catch (err) {
       if (
         !(err instanceof ValidationFailedError) &&
-        !(err instanceof ConflictDomainError)
+        !(err instanceof ConflictDomainError) &&
+        !(err instanceof NotFoundDomainError)
       )
         throw err;
       return { ok: false, err };
@@ -248,6 +252,8 @@ describe('Draft edit/delete vs post race (e2e)', () => {
           settle(invoices.update(draft.id, { lines: editedLines() })),
           settle(invoices.post(draft.id, 'poster')),
         ]);
+        // Both can succeed (edit then post); never both fail.
+        expect(upd.ok || post.ok).toBe(true);
         const status = await assertInvoiceConsistent(draft.id);
         if (post.ok) expect(status).toBe('POSTED');
         // An edit that lost the race is the clean onlyDraftEdit 422.

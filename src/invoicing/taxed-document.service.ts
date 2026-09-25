@@ -143,8 +143,8 @@ export class TaxedDocumentService {
       async (tx) => {
         const ltx: LedgerTx = tx;
         await this.lockDraftRow(ltx, spec, id, m.onlyDraftEdit);
-        const row = await spec.findById(id, ltx);
-        if (!row) throw new ValidationFailedError(m.onlyDraftEdit, { id });
+        // Present: the row is locked live above, so this read cannot miss it.
+        const row = (await spec.findById(id, ltx))!;
         const nextLines =
           input.lines ??
           (row.lines ?? []).map((l) => ({
@@ -397,7 +397,8 @@ export class TaxedDocumentService {
   }
 
   /** FOR UPDATE the document row and re-check it is still a live DRAFT; the
-   *  first statement of every draft mutation (same first lock as posting). */
+   *  first statement of every draft mutation (same first lock as posting).
+   *  404 if the row is gone, 422 `message` if it is no longer a DRAFT. */
   private async lockDraftRow<
     R extends DocumentRow,
     C extends CreateDocumentInput,
@@ -411,10 +412,10 @@ export class TaxedDocumentService {
     const rows = await tx.$queryRaw<{ status: string }[]>(
       Prisma.sql`SELECT status FROM ${Prisma.raw(spec.table)} WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`,
     );
-    if (rows.length === 0 || rows[0].status !== 'DRAFT')
-      throw new ValidationFailedError(message, {
-        id,
-        status: rows[0]?.status,
-      });
+    // Row gone (deleted since the pre-read) → the same 404 getById gives.
+    if (rows.length === 0)
+      throw new NotFoundDomainError(documentMessages(spec).notFound, { id });
+    if (rows[0].status !== 'DRAFT')
+      throw new ValidationFailedError(message, { id, status: rows[0].status });
   }
 }
