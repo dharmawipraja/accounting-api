@@ -5,6 +5,10 @@ import { PeriodsService } from '../src/ledger/periods/periods.service';
 import { AccountsService } from '../src/ledger/accounts/accounts.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
+import { PostingService } from '../src/ledger/posting/posting.service';
+import { CompanyService } from '../src/company/company.service';
+import { PrismaService } from '../src/common/prisma/prisma.service';
+import { asOfOrToday } from '../src/common/dates/query-dates';
 import { bootstrapTestApp } from './e2e-helpers';
 
 describe('Periods (e2e)', () => {
@@ -12,9 +16,10 @@ describe('Periods (e2e)', () => {
   let cleanup: () => Promise<void>;
   let adminToken: string;
   let periodsService: PeriodsService;
+  let prisma: PrismaService;
 
   beforeAll(async () => {
-    ({ app, cleanup } = await bootstrapTestApp());
+    ({ app, prisma, cleanup } = await bootstrapTestApp());
 
     await app.get(AccountsService).seedIfEmpty();
     const users = app.get(UsersService);
@@ -152,5 +157,68 @@ describe('Periods (e2e)', () => {
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(409);
     expect((res.body as { code: string }).code).toBe('CONFLICT');
+  });
+
+  describe('auto-generation', () => {
+    let current: number;
+    let acc: Record<string, string>;
+    const entry = (date: string) => ({
+      date: new Date(date),
+      description: 'auto-gen probe',
+      sourceType: 'MANUAL' as const,
+      createdBy: 'creator',
+      lines: [
+        { accountId: acc['1-1000'], debit: '1000' },
+        { accountId: acc['4-1000'], credit: '1000' },
+      ],
+    });
+
+    beforeAll(async () => {
+      // "Today" is the WIB calendar day (REPORT_UTC_OFFSET_MINUTES), not UTC.
+      current = await app.get(CompanyService).fiscalYearFor(asOfOrToday());
+      const { data } = await app.get(AccountsService).list({ limit: 200 });
+      acc = Object.fromEntries(data.map((a) => [a.code, a.id]));
+    });
+
+    it('boot generated the current AND the next fiscal year', async () => {
+      expect(await periodsService.list(current)).toHaveLength(12);
+      expect(await periodsService.list(current + 1)).toHaveLength(12);
+    });
+
+    it('posting into next year with no periods generates that year, then posts', async () => {
+      await prisma.client.accountingPeriod.deleteMany({
+        where: { fiscalYear: current + 1 },
+      });
+      const je = await app
+        .get(PostingService)
+        .post(entry(`${current + 1}-02-10`), 'poster');
+      expect(je.status).toBe('POSTED');
+      expect(await periodsService.list(current + 1)).toHaveLength(12);
+    });
+
+    it('posting into an earlier year with no periods generates it too', async () => {
+      expect(await periodsService.list(current - 1)).toHaveLength(0);
+      const je = await app
+        .get(PostingService)
+        .post(entry(`${current - 1}-05-10`), 'poster');
+      expect(je.fiscalYear).toBe(current - 1);
+      expect(await periodsService.list(current - 1)).toHaveLength(12);
+    });
+
+    it('a date beyond next year is still rejected (CLOSED_PERIOD) and generates nothing', async () => {
+      await expect(
+        app.get(PostingService).post(entry(`${current + 2}-01-15`), 'poster'),
+      ).rejects.toMatchObject({ code: 'CLOSED_PERIOD' });
+      expect(await periodsService.list(current + 2)).toHaveLength(0);
+    });
+
+    it('a CLOSED period is not regenerated: posting there stays rejected', async () => {
+      const p = (await periodsService.list(current - 1))[4]; // month 5
+      await periodsService.close(p.id, 'closer');
+      await expect(
+        app.get(PostingService).post(entry(`${current - 1}-05-20`), 'poster'),
+      ).rejects.toMatchObject({ code: 'CLOSED_PERIOD' });
+      expect(await periodsService.list(current - 1)).toHaveLength(12);
+    });
   });
 });

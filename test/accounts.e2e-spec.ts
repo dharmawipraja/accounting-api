@@ -257,4 +257,50 @@ describe('Accounts (e2e)', () => {
       .expect(422);
     expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
   });
+
+  describe('system (role) accounts cannot be retired', () => {
+    const roleAccountId = async (role: 'CASH' | 'AR_CONTROL' | 'TAX_EXPENSE') =>
+      (await prisma.client.account.findFirst({ where: { role } }))!.id;
+
+    it('rejects deactivating an account with a role (422 VALIDATION_FAILED)', async () => {
+      const id = await roleAccountId('AR_CONTROL');
+      const res = await request(app.getHttpServer() as App)
+        .post(`/v1/ledger/accounts/${id}/deactivate`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(422);
+      expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+      expect(
+        (await prisma.client.account.findFirst({ where: { id } }))!.isActive,
+      ).toBe(true);
+    });
+
+    it('rejects PATCH isActive=false on an account with a role (422)', async () => {
+      const id = await roleAccountId('CASH');
+      const res = await request(app.getHttpServer() as App)
+        .patch(`/v1/ledger/accounts/${id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ isActive: false })
+        .expect(422);
+      expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+    });
+
+    it('still allows renaming an account with a role (200)', async () => {
+      const id = await roleAccountId('CASH');
+      await request(app.getHttpServer() as App)
+        .patch(`/v1/ledger/accounts/${id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ name: 'Kas Kecil' })
+        .expect(200);
+    });
+
+    it('rejects deleting an account with a role even with no posted lines (422)', async () => {
+      const id = await roleAccountId('TAX_EXPENSE');
+      const res = await request(app.getHttpServer() as App)
+        .delete(`/v1/ledger/accounts/${id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(422);
+      expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+      expect(await prisma.client.account.count({ where: { id } })).toBe(1);
+    });
+  });
 });

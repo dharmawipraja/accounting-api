@@ -8,17 +8,19 @@ import { PostingService } from '../src/ledger/posting/posting.service';
 import { GeneralLedgerService } from '../src/reporting/general-ledger.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
+import { PrismaService } from '../src/common/prisma/prisma.service';
 import { bootstrapTestApp } from './e2e-helpers';
 
 describe('Reporting general ledger (e2e)', () => {
   let app: INestApplication;
+  let prisma: PrismaService;
   let cleanup: () => Promise<void>;
   let token: string;
   let acc: Record<string, string>;
   let kasId: string;
 
   beforeAll(async () => {
-    ({ app, cleanup } = await bootstrapTestApp());
+    ({ app, prisma, cleanup } = await bootstrapTestApp());
     await app.get(CompanyService).seedIfEmpty();
     await app.get(CompanyService).update({ segregationOfDutiesEnabled: false });
     await app.get(AccountsService).seedIfEmpty();
@@ -167,5 +169,46 @@ describe('Reporting general ledger (e2e)', () => {
     await get(
       '/v1/reports/general-ledger?accountId=00000000-0000-0000-0000-000000000000&from=2026-01-01&to=2026-12-31',
     ).expect(404);
+  });
+
+  it('orders two lines of one entry on the same account by line_no', async () => {
+    // Build a draft whose lines are stored physically out of order (line 2
+    // inserted before line 1), then promote it through postDraft. Without the
+    // jl.line_no tie-breaker the heap/index order would list L2 first.
+    const bank = acc['1-1100'];
+    const draft = await prisma.client.journalEntry.create({
+      data: {
+        date: new Date('2026-03-05'),
+        description: 'same-account lines',
+        sourceType: 'MANUAL',
+        createdBy: 'a',
+      },
+    });
+    const line = (
+      lineNo: number,
+      debit: string,
+      credit: string,
+      accountId = bank,
+    ) =>
+      prisma.client.journalLine.create({
+        data: {
+          journalEntryId: draft.id,
+          lineNo,
+          accountId,
+          debit,
+          credit,
+          description: `L${lineNo}`,
+        },
+      });
+    await line(2, '0', '100');
+    await line(1, '300', '0');
+    await line(3, '0', '200', acc['3-1000']);
+    await app.get(PostingService).postDraft(draft.id, 'p');
+
+    const res = await get(
+      `/v1/reports/general-ledger?accountId=${bank}&from=2026-03-01&to=2026-03-31`,
+    ).expect(200);
+    const body = res.body as { lines: { description: string }[] };
+    expect(body.lines.map((l) => l.description)).toEqual(['L1', 'L2']);
   });
 });

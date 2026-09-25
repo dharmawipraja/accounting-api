@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { Money } from './money';
 
 describe('Money', () => {
@@ -12,6 +13,20 @@ describe('Money', () => {
 
   it('multiplies by a rate', () => {
     expect(Money.of('1000000').multiply('0.11').toString()).toBe('110000.0000');
+  });
+
+  it('multiplies by a Money or Prisma.Decimal factor (quantity x price)', () => {
+    expect(Money.of('2500').multiply(Money.of('3')).toString()).toBe(
+      '7500.0000',
+    );
+    expect(
+      Money.of('1000').multiply(new Prisma.Decimal('0.11')).toString(),
+    ).toBe('110.0000');
+  });
+
+  it('rejects a JS number factor at the type level', () => {
+    // @ts-expect-error — a float factor must not reach decimal math
+    expect(() => Money.of('1').multiply(0.1)).not.toThrow();
   });
 
   it('rounds to whole rupiah (half-up)', () => {

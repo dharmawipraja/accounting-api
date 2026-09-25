@@ -117,10 +117,9 @@ export class PostingService {
         { createdBy: input.createdBy },
       );
     }
-    // NOTE: period + account checks are intentionally pre-transaction. For this
-    // single-company, low-concurrency phase the TOCTOU window (period closing /
-    // account deactivating between check and write) is acceptable; move these
-    // inside the $transaction (with FOR SHARE on the period) if concurrency grows.
+    // Period + account checks run here pre-transaction for early, cheap 4xx;
+    // the authoritative re-checks happen inside the write tx (stampPostedInTx:
+    // period FOR SHARE + year advisory lock, then accounts FOR SHARE).
     const { periodId, fiscalYear } = await this.assertPostableDate(input.date);
     await this.assertPostableAccounts(
       input.lines,
@@ -141,7 +140,7 @@ export class PostingService {
   async assertPostableDate(
     date: Date,
   ): Promise<{ periodId: string; fiscalYear: number }> {
-    const period = await this.periods.findOpenPeriodForDate(date);
+    const period = await this.periods.resolveOpenPeriodForDate(date);
     if (!period) {
       throw new ClosedPeriodError(
         'No open accounting period contains this date',
@@ -172,6 +171,12 @@ export class PostingService {
       tx,
       periodId,
       fiscalYear,
+      {
+        accounts: {
+          ids: input.lines.map((l) => l.accountId),
+          policy: accountPolicyFor(input.sourceType),
+        },
+      },
     );
     return tx.journalEntry.create({
       data: {
@@ -210,14 +215,26 @@ export class PostingService {
    *  numbering, and the metric live in exactly one place. `allowClosedYear` is passed
    *  through to the guard (reversal/void on reopen sets it). The metric increments inside
    *  the tx; a rare rollback after this point over-counts by 1 — acceptable for a
-   *  throughput metric. */
+   *  throughput metric. `accounts` (fresh posts and draft promotions; reversals
+   *  mirror an already-posted entry and skip it) re-validates the line accounts
+   *  under FOR SHARE. Lock order: year advisory lock → period row → accounts
+   *  (sorted by id) → journal sequence. */
   private async stampPostedInTx(
     tx: LedgerTx,
     periodId: string,
     fiscalYear: number,
-    opts: { allowClosedYear?: boolean } = {},
+    opts: {
+      allowClosedYear?: boolean;
+      accounts?: { ids: string[]; policy: AccountPolicy };
+    } = {},
   ): Promise<{ entryNumber: number; entryRef: string }> {
     await this.assertPostablePeriodInTx(tx, periodId, fiscalYear, opts);
+    if (opts.accounts)
+      await this.assertPostableAccountsInTx(
+        tx,
+        opts.accounts.ids,
+        opts.accounts.policy,
+      );
     const entryNumber = await this.nextNumber(tx, fiscalYear);
     const entryRef = this.buildEntryRef(fiscalYear, entryNumber);
     this.metrics.incLedgerEntriesPosted();
@@ -322,7 +339,7 @@ export class PostingService {
         },
       );
     }
-    const period = await this.periods.findOpenPeriodForDate(reversalDate);
+    const period = await this.periods.resolveOpenPeriodForDate(reversalDate);
     if (!period) {
       throw new ClosedPeriodError('No open period for the reversal date', {
         date: reversalDate.toISOString().slice(0, 10),
@@ -443,7 +460,7 @@ export class PostingService {
         },
       );
     }
-    const period = await this.periods.findOpenPeriodForDate(draft.date);
+    const period = await this.periods.resolveOpenPeriodForDate(draft.date);
     if (!period) {
       throw new ClosedPeriodError(
         'No open accounting period contains this date',
@@ -482,22 +499,24 @@ export class PostingService {
         });
       }
       // Post-time re-validation under the draft lock: the lines being promoted
-      // are the ones in the DB now, so re-check them against the source-type
-      // policy (catches drafts written before the guard existed).
+      // are the ones in the DB now, so the stamp re-checks THEIR accounts
+      // (postable/active/not deleted + source-type policy, FOR SHARE) — this
+      // also catches drafts written before the policy guard existed.
       const current = await tx.journalLine.findMany({
         where: { journalEntryId: draftId },
         orderBy: { lineNo: 'asc' },
         select: { accountId: true },
       });
-      await this.assertAccountPolicy(
-        current.map((l) => l.accountId),
-        draft.sourceType,
-        tx,
-      );
       const { entryNumber, entryRef } = await this.stampPostedInTx(
         tx,
         period.id,
         fiscalYear,
+        {
+          accounts: {
+            ids: current.map((l) => l.accountId),
+            policy: accountPolicyFor(draft.sourceType),
+          },
+        },
       );
       return tx.journalEntry.update({
         where: { id: draftId },
@@ -539,6 +558,85 @@ export class PostingService {
       where: { id: { in: unique } },
     });
     const byId = new Map(accounts.map((a) => [a.id, a]));
+    this.assertAccountsValid(unique, byId, policy);
+    return byId;
+  }
+
+  /** Role-only policy check for a source type (no postable/active checks) —
+   *  used where accounts are not otherwise validated (MANUAL draft create).
+   *  Unknown ids are skipped. */
+  async assertAccountPolicy(
+    ids: string[],
+    sourceType: JournalSourceType,
+    db: LedgerTx = this.prisma.client,
+  ): Promise<void> {
+    const policy = accountPolicyFor(sourceType);
+    if (policy.forbiddenRoles.length === 0 || ids.length === 0) return;
+    const unique = [...new Set(ids)];
+    const accounts = await db.account.findMany({
+      where: { id: { in: unique } },
+      select: { id: true, role: true },
+    });
+    const byId = new Map(accounts.map((a) => [a.id, a]));
+    this.throwIfForbiddenRole(
+      unique.flatMap((id) => byId.get(id) ?? []),
+      policy,
+    );
+  }
+
+  /** In-transaction re-check of the line accounts: lock them FOR SHARE (sorted
+   *  by id, deterministic) so a concurrent deactivate/soft-delete (FOR UPDATE)
+   *  serializes with this post, then re-apply the same rules as
+   *  resolvePostableAccounts. Raw SQL on purpose: a soft-deleted row must be
+   *  seen and reported as missing, and Prisma has no FOR SHARE. */
+  private async assertPostableAccountsInTx(
+    tx: LedgerTx,
+    ids: string[],
+    policy: AccountPolicy,
+  ): Promise<void> {
+    const unique = [...new Set(ids)].sort();
+    if (unique.length === 0) return;
+    const rows = await tx.$queryRaw<
+      {
+        id: string;
+        is_postable: boolean;
+        is_active: boolean;
+        role: Account['role'];
+      }[]
+    >`
+      SELECT id, is_postable, is_active, role FROM accounts
+      WHERE id = ANY(${unique}::text[]) AND deleted_at IS NULL
+      ORDER BY id FOR SHARE`;
+    const byId = new Map(
+      rows.map((r) => [
+        r.id,
+        {
+          id: r.id,
+          isPostable: r.is_postable,
+          isActive: r.is_active,
+          role: r.role,
+        },
+      ]),
+    );
+    this.assertAccountsValid(unique, byId, policy);
+  }
+
+  /** The postable-account rule set, shared by the pre-tx and in-tx checks:
+   *  every id exists (live), is a postable leaf, is active, and its role is
+   *  allowed by the source-type policy. */
+  private assertAccountsValid(
+    unique: string[],
+    byId: Map<
+      string,
+      {
+        id: string;
+        isPostable: boolean;
+        isActive: boolean;
+        role: Account['role'];
+      }
+    >,
+    policy: AccountPolicy,
+  ): void {
     for (const id of unique) {
       const a = byId.get(id);
       if (!a)
@@ -555,29 +653,6 @@ export class PostingService {
     }
     this.throwIfForbiddenRole(
       unique.map((id) => byId.get(id)!),
-      policy,
-    );
-    return byId;
-  }
-
-  /** Role-only policy check for a source type (no postable/active checks) —
-   *  used where accounts are not otherwise validated: MANUAL draft create and
-   *  the in-transaction re-check on draft post. Unknown ids are skipped. */
-  async assertAccountPolicy(
-    ids: string[],
-    sourceType: JournalSourceType,
-    db: LedgerTx = this.prisma.client,
-  ): Promise<void> {
-    const policy = accountPolicyFor(sourceType);
-    if (policy.forbiddenRoles.length === 0 || ids.length === 0) return;
-    const unique = [...new Set(ids)];
-    const accounts = await db.account.findMany({
-      where: { id: { in: unique } },
-      select: { id: true, role: true },
-    });
-    const byId = new Map(accounts.map((a) => [a.id, a]));
-    this.throwIfForbiddenRole(
-      unique.flatMap((id) => byId.get(id) ?? []),
       policy,
     );
   }

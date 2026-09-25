@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { Account, AccountSubtype, AccountType, Prisma } from '@prisma/client';
-import { PrismaService } from '../../common/prisma/prisma.service';
+import { LedgerTx, PrismaService } from '../../common/prisma/prisma.service';
+import { tombstoneValue } from '../../common/prisma/tombstone';
 import { listPaginated, Paginated } from '../../common/pagination/paginated';
 import {
   ConflictDomainError,
@@ -213,39 +214,79 @@ export class AccountsService implements OnModuleInit {
     id: string,
     data: Partial<Pick<Account, 'name' | 'cashFlowCategory' | 'isActive'>>,
   ): Promise<Account> {
+    if (data.isActive === false) {
+      // A deactivation — same lock + role rule as POST :id/deactivate.
+      return this.prisma.transaction(async (tx) => {
+        await this.lockForRetire(tx, id, 'deactivate');
+        return tx.account.update({ where: { id }, data });
+      });
+    }
     await this.findById(id);
     return this.prisma.client.account.update({ where: { id }, data });
   }
 
+  /** Deactivate under a FOR UPDATE row lock: posting re-reads its accounts
+   *  FOR SHARE inside the posting tx, so a deactivation and a post serialize
+   *  (a post that commits first stands; one that waits sees isActive=false). */
   async deactivate(id: string): Promise<Account> {
-    await this.findById(id);
-    return this.prisma.client.account.update({
-      where: { id },
-      data: { isActive: false },
+    return this.prisma.transaction(async (tx) => {
+      await this.lockForRetire(tx, id, 'deactivate');
+      return tx.account.update({ where: { id }, data: { isActive: false } });
     });
   }
 
+  /** Soft-delete under the same FOR UPDATE lock, counting posted lines INSIDE
+   *  the tx: a concurrent post either committed its lines before the lock (the
+   *  count sees them → 422) or blocks on its FOR SHARE and then finds the
+   *  account deleted (→ INVALID_ACCOUNT). */
   async softDelete(id: string, deletedBy: string): Promise<void> {
-    const account = await this.findById(id);
-    // Only POSTED/REVERSED lines block deletion — a soft-deleted draft's lines
-    // must not pin the account forever.
-    const postedLineCount = await this.prisma.client.journalLine.count({
-      where: {
-        accountId: id,
-        entry: { status: { in: ['POSTED', 'REVERSED'] } },
-      },
+    await this.prisma.transaction(async (tx) => {
+      const account = await this.lockForRetire(tx, id, 'delete');
+      // Only POSTED/REVERSED lines block deletion — a soft-deleted draft's lines
+      // must not pin the account forever.
+      const [{ n }] = await tx.$queryRaw<{ n: number }[]>`
+        SELECT COUNT(*)::int AS n FROM journal_lines jl
+        JOIN journal_entries je ON je.id = jl.journal_entry_id
+        WHERE jl.account_id = ${id} AND je.status IN ('POSTED', 'REVERSED')`;
+      if (n > 0) {
+        throw new ValidationFailedError(
+          'Cannot delete an account with posted lines; deactivate instead',
+          { id },
+        );
+      }
+      // Same tombstone semantics as the extension's tombstoneDelete() (which
+      // is not available on `tx`): free the unique code, stamp deletedAt/By.
+      await tx.account.update({
+        where: { id },
+        data: {
+          code: tombstoneValue(account.code, id),
+          deletedAt: new Date(),
+          deletedBy,
+        },
+      });
     });
-    if (postedLineCount > 0) {
+  }
+
+  /** FOR UPDATE the live account row (404 if missing/deleted) and refuse to
+   *  retire a system account: a non-null `role` (cash, AR/AP control, retained
+   *  earnings, opening-balance equity, tax expense) is resolved by role at
+   *  post/close time, so deactivating or deleting it would break documents,
+   *  payments and year-end close. */
+  private async lockForRetire(
+    tx: LedgerTx,
+    id: string,
+    action: 'deactivate' | 'delete',
+  ): Promise<{ code: string }> {
+    const rows = await tx.$queryRaw<{ code: string; role: string | null }[]>`
+      SELECT code, role::text AS role FROM accounts
+      WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
+    if (rows.length === 0)
+      throw new NotFoundDomainError('Account not found', { id });
+    if (rows[0].role !== null)
       throw new ValidationFailedError(
-        'Cannot delete an account with posted lines; deactivate instead',
-        { id },
+        `Cannot ${action} a system account (role ${rows[0].role})`,
+        { id, role: rows[0].role },
       );
-    }
-    await this.prisma.client.account.tombstoneDelete(
-      id,
-      'code',
-      account.code,
-      deletedBy,
-    );
+    return rows[0];
   }
 }

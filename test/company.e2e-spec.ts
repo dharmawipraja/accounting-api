@@ -92,4 +92,45 @@ describe('Company settings (e2e)', () => {
       .send({ segregationOfDutiesEnabled: true })
       .expect(403);
   });
+
+  describe('fiscalYearStartMonth lock', () => {
+    const patchMonth = (m: number) =>
+      request(app.getHttpServer() as App)
+        .patch('/v1/company/settings')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ fiscalYearStartMonth: m });
+
+    it('rejects changing the start month once accounting periods exist (422)', async () => {
+      expect(await prisma.client.accountingPeriod.count()).toBeGreaterThan(0);
+      const res = await patchMonth(4).expect(422);
+      expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+    });
+
+    it('allows re-sending the unchanged start month (200)', async () => {
+      await patchMonth(1).expect(200);
+    });
+
+    it('allows a change when no period and no journal entry exists (200)', async () => {
+      await prisma.client.accountingPeriod.deleteMany({});
+      const res = await patchMonth(4).expect(200);
+      expect(
+        (res.body as { fiscalYearStartMonth: number }).fiscalYearStartMonth,
+      ).toBe(4);
+      await patchMonth(1).expect(200);
+    });
+
+    it('rejects a change when a journal entry exists even without periods (422)', async () => {
+      expect(await prisma.client.accountingPeriod.count()).toBe(0);
+      await prisma.client.journalEntry.create({
+        data: {
+          date: new Date('2026-01-05'),
+          description: 'draft',
+          sourceType: 'MANUAL',
+          createdBy: 'someone',
+        },
+      });
+      const res = await patchMonth(7).expect(422);
+      expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+    });
+  });
 });

@@ -1,4 +1,5 @@
 import { Decimal } from 'decimal.js';
+import type { Prisma } from '@prisma/client';
 
 const SCALE = 4;
 
@@ -37,8 +38,12 @@ export class Money {
     return new Money(this.value.minus(other.value));
   }
 
-  multiply(factor: string | number | Decimal): Money {
-    return new Money(this.value.times(new Decimal(factor)));
+  /** Multiply by a rate or quantity. Like `of()`, never a JS number — a float
+   *  factor would reintroduce binary rounding before the decimal math. */
+  multiply(factor: string | Money | Prisma.Decimal): Money {
+    const f =
+      factor instanceof Money ? factor.value : new Decimal(factor.toString());
+    return new Money(this.value.times(f));
   }
 
   roundToRupiah(): Money {

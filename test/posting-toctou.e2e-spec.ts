@@ -12,6 +12,7 @@ import {
   ConflictDomainError,
   ValidationFailedError,
 } from '../src/common/errors/domain-errors';
+import { nextSequenceNumber } from '../src/common/db/sequence';
 import { bootstrapTestApp } from './e2e-helpers';
 
 describe('PostingService TOCTOU guard (e2e)', () => {
@@ -74,6 +75,72 @@ describe('PostingService TOCTOU guard (e2e)', () => {
         posting.createPostedEntryInTx(tx, preparedOk),
       ),
     ).rejects.toBeInstanceOf(ValidationFailedError);
+  });
+
+  it('sequence updated_at is written in UTC even when the session time zone is not UTC', async () => {
+    const [{ skew }] = await prisma.transaction(async (tx) => {
+      await tx.$executeRaw`SET LOCAL TIME ZONE 'Asia/Jakarta'`;
+      await nextSequenceNumber(tx, 'document_sequences', {
+        document_type: 'TZ-PROBE',
+        fiscal_year: 2026,
+      });
+      return tx.$queryRaw<{ skew: number }[]>`
+        SELECT ABS(EXTRACT(EPOCH FROM ((now() AT TIME ZONE 'UTC') - updated_at)))::float8 AS skew
+        FROM document_sequences
+        WHERE document_type = 'TZ-PROBE' AND fiscal_year = 2026`;
+    });
+    // A local (UTC+7) wall-clock value would be 25,200 s off.
+    expect(skew).toBeLessThan(60);
+  });
+
+  describe('in-tx account re-check (FOR SHARE)', () => {
+    let n = 0;
+    const freshAccount = async () =>
+      app.get(AccountsService).create({
+        code: `1-17${String(++n).padStart(2, '0')}`,
+        name: `TOCTOU acct ${n}`,
+        type: 'ASSET',
+        subtype: 'CURRENT_ASSET',
+        normalBalance: 'DEBIT',
+        parentCode: '1-0000',
+      });
+    const onAccount = (accountId: string) => ({
+      ...balanced(new Date('2026-07-15')),
+      lines: [
+        { accountId, debit: '100.0000' },
+        { accountId: modalId, credit: '100.0000' },
+      ],
+    });
+
+    it('rejects an account deactivated after preparation (INVALID_ACCOUNT)', async () => {
+      const a = await freshAccount();
+      const prepared = await posting.preparePosting(onAccount(a.id), 'p');
+      await app.get(AccountsService).deactivate(a.id);
+      await expect(
+        prisma.transaction((tx) => posting.createPostedEntryInTx(tx, prepared)),
+      ).rejects.toMatchObject({ code: 'INVALID_ACCOUNT' });
+    });
+
+    it('rejects an account soft-deleted after preparation (INVALID_ACCOUNT)', async () => {
+      const a = await freshAccount();
+      const prepared = await posting.preparePosting(onAccount(a.id), 'p');
+      await app.get(AccountsService).softDelete(a.id, 'admin');
+      await expect(
+        prisma.transaction((tx) => posting.createPostedEntryInTx(tx, prepared)),
+      ).rejects.toMatchObject({ code: 'INVALID_ACCOUNT' });
+      expect(
+        await prisma.client.journalLine.count({ where: { accountId: a.id } }),
+      ).toBe(0);
+    });
+
+    it('still posts when the accounts stay valid', async () => {
+      const a = await freshAccount();
+      const prepared = await posting.preparePosting(onAccount(a.id), 'p');
+      const je = await prisma.transaction((tx) =>
+        posting.createPostedEntryInTx(tx, prepared),
+      );
+      expect(je.status).toBe('POSTED');
+    });
   });
 
   it('in-tx guard rejects a post into a CLOSED year (ClosedYearError)', async () => {

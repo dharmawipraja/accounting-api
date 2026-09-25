@@ -51,7 +51,7 @@ export class GeneralLedgerService {
       JOIN journal_entries je ON je.id = jl.journal_entry_id
       WHERE jl.account_id = ${accountId} AND ${POSTED_JE}
         AND je.date >= ${this.day(from)} AND je.date <= ${this.day(to)}
-      ORDER BY je.date ASC, je.entry_number ASC
+      ORDER BY je.date ASC, je.entry_number ASC, jl.line_no ASC
       LIMIT ${maxLines + 1}`);
     const truncated = rows.length > maxLines;
     const included = truncated ? rows.slice(0, maxLines) : rows;

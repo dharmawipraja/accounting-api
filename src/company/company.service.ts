@@ -1,7 +1,10 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { CompanySettings, Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
-import { NotFoundDomainError } from '../common/errors/domain-errors';
+import {
+  NotFoundDomainError,
+  ValidationFailedError,
+} from '../common/errors/domain-errors';
 import {
   fiscalYearForDate,
   fiscalYearStartDate,
@@ -86,9 +89,31 @@ export class CompanyService implements OnModuleInit {
 
   async update(input: UpdateCompanyInput): Promise<CompanySettings> {
     const current = await this.get();
-    return this.prisma.client.companySettings.update({
-      where: { id: current.id },
-      data: input,
+    return this.prisma.transaction(async (tx) => {
+      const changesStartMonth =
+        input.fiscalYearStartMonth !== undefined &&
+        input.fiscalYearStartMonth !== current.fiscalYearStartMonth;
+      if (changesStartMonth) {
+        // The start month defines every fiscal year, period boundary and
+        // JE/document number series. Once any period or journal entry exists
+        // (soft-deleted rows included — they still carry a fiscal year),
+        // re-slicing the years would orphan them, so the month is locked.
+        const [{ used }] = await tx.$queryRaw<{ used: boolean }[]>`
+          SELECT EXISTS (SELECT 1 FROM accounting_periods)
+              OR EXISTS (SELECT 1 FROM journal_entries) AS used`;
+        if (used)
+          throw new ValidationFailedError(
+            'fiscalYearStartMonth cannot change once accounting periods or journal entries exist',
+            {
+              fiscalYearStartMonth: current.fiscalYearStartMonth,
+              requested: input.fiscalYearStartMonth,
+            },
+          );
+      }
+      return tx.companySettings.update({
+        where: { id: current.id },
+        data: input,
+      });
     });
   }
 }
