@@ -128,7 +128,19 @@ describe('Reporting after year-end close (e2e)', () => {
   it('after reopen and re-close: reports still equal the before-close snapshot', async () => {
     await close.reopen(2026, 'admin');
     expect(await reports()).toEqual(before);
-    await close.close(2026, 'admin');
+    const rec = await close.close(2026, 'admin');
     expect(await reports()).toEqual(before);
+    // The report snapshot alone can't detect a wrong re-close: assert the ledger.
+    expect(rec.netIncome.toFixed(4)).toBe('1400000.0000');
+    const bs = await app
+      .get(BalanceSheetService)
+      .generate(new Date('2027-01-01'));
+    expect(bs.equity.groups.flatMap((g) => g.lines)).toContainEqual({
+      code: '3-2000',
+      name: 'Laba Ditahan',
+      amount: '1400000.0000',
+    });
+    expect(bs.currentYearEarnings).toBe('0.0000');
+    expect(bs.balanced).toBe(true);
   });
 });

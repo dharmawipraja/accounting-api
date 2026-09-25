@@ -45,7 +45,8 @@ export interface AccountBalanceRow {
 /** Report-view filters for `balancesAsOf` / `movementsBetween`. The defaults
  *  (all false) count every posted entry — the post-closing ledger view. */
 export interface BalanceQueryOpts {
-  /** Exclude CLOSING entries and REVERSAL entries whose reversal_of_id is a CLOSING entry. */
+  /** Exclude CLOSING entries and REVERSAL entries whose reversal_of_id is a CLOSING entry.
+   *  Takes precedence over `excludeClosingFrom` when both are set. */
   excludeClosing?: boolean;
   /** Only exclude closing entries dated >= this day (balance-sheet pre-closing view). */
   excludeClosingFrom?: Date;

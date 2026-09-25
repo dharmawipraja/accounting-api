@@ -5,9 +5,11 @@ import { PeriodsService } from '../src/ledger/periods/periods.service';
 import { PostingService } from '../src/ledger/posting/posting.service';
 import { CompanyService } from '../src/company/company.service';
 import { YearEndCloseService } from '../src/close/year-end-close.service';
+import { BalancesService } from '../src/ledger/balances/balances.service';
 import {
   ClosedPeriodError,
   ClosedYearError,
+  ConflictDomainError,
   ValidationFailedError,
 } from '../src/common/errors/domain-errors';
 import { bootstrapTestApp } from './e2e-helpers';
@@ -19,6 +21,7 @@ describe('PostingService TOCTOU guard (e2e)', () => {
   let posting: PostingService;
   let kasId: string;
   let modalId: string;
+  let revenueId: string;
 
   beforeAll(async () => {
     ({ app, prisma, cleanup } = await bootstrapTestApp({ pipe: false }));
@@ -30,10 +33,13 @@ describe('PostingService TOCTOU guard (e2e)', () => {
     await app.get(PeriodsService).generatePeriods(2029);
     await app.get(PeriodsService).generatePeriods(2030);
     await app.get(PeriodsService).generatePeriods(2031);
+    await app.get(PeriodsService).generatePeriods(2032);
+    await app.get(PeriodsService).generatePeriods(2033);
     posting = app.get(PostingService);
     const { data: accounts } = await app.get(AccountsService).list();
     kasId = accounts.find((a) => a.code === '1-1000')!.id;
     modalId = accounts.find((a) => a.code === '3-1000')!.id;
+    revenueId = accounts.find((a) => a.code === '4-1000')!.id;
   }, 120_000);
 
   afterAll(() => cleanup());
@@ -144,5 +150,103 @@ describe('PostingService TOCTOU guard (e2e)', () => {
     await expect(
       posting.post(balanced(new Date('2026-09-16')), 'p'),
     ).rejects.toBeInstanceOf(ClosedPeriodError);
+  });
+
+  /** Poll pg_locks until some session is WAITING on an advisory lock (the close
+   *  blocked behind an in-flight post), or fail after ~10s. */
+  const waitForAdvisoryWaiter = async () => {
+    for (let i = 0; i < 200; i++) {
+      const rows = await prisma.client.$queryRaw<{ n: number }[]>`
+        SELECT count(*)::int AS n FROM pg_locks
+        WHERE locktype = 'advisory' AND NOT granted`;
+      if (rows[0].n > 0) return;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    throw new Error('close never blocked on the fiscal-year advisory lock');
+  };
+
+  const sale = (date: string, amount: string) => ({
+    date: new Date(date),
+    description: 'sale',
+    sourceType: 'MANUAL' as const,
+    lines: [
+      { accountId: kasId, debit: amount },
+      { accountId: revenueId, credit: amount },
+    ],
+    createdBy: 'creator',
+  });
+
+  it('year-end close computes P&L under the exclusive lock: a post committing while close waits is closed too', async () => {
+    const close = app.get(YearEndCloseService);
+    await posting.post(sale('2032-03-10', '1000'), 'p');
+    // A post in flight: it holds the SHARED year lock with its entry inserted but
+    // not yet committed when the close starts.
+    const lateOk = await posting.preparePosting(sale('2032-06-10', '250'), 'p');
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let inserted!: () => void;
+    const insertedP = new Promise<void>((r) => (inserted = r));
+    const postTx = prisma.client.$transaction(
+      async (tx) => {
+        const e = await posting.createPostedEntryInTx(tx, lateOk);
+        inserted();
+        await gate;
+        return e;
+      },
+      { timeout: 20_000 },
+    );
+    await insertedP;
+    const closeP = close.close(2032, 'admin');
+    await waitForAdvisoryWaiter();
+    release();
+    await postTx;
+    const rec = await closeP;
+
+    // The late entry was swept into the closing entry: revenue nets to 0 over FY
+    // (closing included), and netIncome counts both sales.
+    expect(rec.netIncome.toFixed(4)).toBe('1250.0000');
+    const rows = await app
+      .get(BalancesService)
+      .movementsBetween(new Date('2032-01-01'), new Date('2032-12-31'));
+    const rev = rows.find((r) => r.accountId === revenueId)!;
+    expect(rev.balance).toBe('0.0000');
+    const pl = rows.filter((r) => r.type === 'REVENUE' || r.type === 'EXPENSE');
+    for (const r of pl) expect(r.balance).toBe('0.0000');
+  }, 30_000);
+
+  it('concurrent closes of an empty year: exactly one wins, the other is a Conflict', async () => {
+    const close = app.get(YearEndCloseService);
+    const results = await Promise.allSettled([
+      close.close(2033, 'a'),
+      close.close(2033, 'b'),
+    ]);
+    const ok = results.filter((r) => r.status === 'fulfilled');
+    const bad = results.filter(
+      (r): r is PromiseRejectedResult => r.status === 'rejected',
+    );
+    expect(ok).toHaveLength(1);
+    expect(bad).toHaveLength(1);
+    expect(bad[0].reason).toBeInstanceOf(ConflictDomainError);
+    expect(
+      await prisma.client.yearEndClosing.count({
+        where: { fiscalYear: 2033, status: 'CLOSED' },
+      }),
+    ).toBe(1);
+  });
+
+  it('concurrent reopens of an entry-less closed year: exactly one wins, the other is rejected', async () => {
+    const close = app.get(YearEndCloseService);
+    const results = await Promise.allSettled([
+      close.reopen(2033, 'a'),
+      close.reopen(2033, 'b'),
+    ]);
+    const ok = results.filter((r) => r.status === 'fulfilled');
+    const bad = results.filter(
+      (r): r is PromiseRejectedResult => r.status === 'rejected',
+    );
+    expect(ok).toHaveLength(1);
+    expect(bad).toHaveLength(1);
+    expect(bad[0].reason).toBeInstanceOf(ValidationFailedError);
+    expect((await close.getStatus(2033))?.status).toBe('OPEN');
   });
 });
