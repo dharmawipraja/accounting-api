@@ -69,9 +69,10 @@ One stable error envelope, no leaked internals.
   (`src/common/errors/map-unique-violation.ts`) to rethrow it as a
   `ConflictDomainError` with a friendly message, and rethrow everything else
   unchanged. `P2025` → 404 is handled by the filter automatically.
-- **Deadlock / serialization failure → 409 `CONFLICT` `{ retryable: true }`.**
+- **Deadlock / serialization failure / lock timeout → 409 `CONFLICT` `{ retryable: true }`.**
   `isTransientConflict()` (`src/common/errors/exception-status.ts`) recognises
-  P2034 and PG `40P01`/`40001` in every shape Prisma 7 + the pg adapter surfaces
+  P2034 and PG `40P01`/`40001`/`55P03` (`lock_not_available`, e.g. a
+  `SET LOCAL lock_timeout` expiring before a `LOCK TABLE`) in every shape Prisma 7 + the pg adapter surfaces
   them (P2010 meta, bare `DriverAdapterError`). Still: take row locks in a
   deterministic order (e.g. sort ids before a `FOR UPDATE` loop).
 
@@ -138,14 +139,28 @@ One stable error envelope, no leaked internals.
   ad-hoc dedupe — reuse this seam. The key is scoped to method + full URL
   (query string included) + a body hash, so different targets can't replay each
   other's responses.
-- **Every write goes through `this.prisma.transaction(fn, opts)` — never a raw
-  `$transaction(` (ESLint error in `src/`).** Under an idempotency context (ALS,
-  set by the interceptor) it marks `idempotency_keys.committed_at` as the last
-  statement inside the tx, so the mark is durable iff the write committed. A
-  committed key is never released or stale-reclaimed: a retry after a lost
-  response gets `409 { committed: true }` rather than a duplicate write. Even a
-  single-insert create on an idempotent route must run inside
+- **Every write on an `@Idempotent` route goes through
+  `this.prisma.transaction(fn, opts)` — never a raw `$transaction(` (ESLint error
+  in `src/`), and never a bare `prisma.client.<model>.create/update` outside one.**
+  Under an idempotency context (ALS, set by the interceptor; read synchronously
+  when `transaction()` is called) it marks `idempotency_keys.committed_at` (UTC)
+  as the last statement inside the tx, so the mark is durable iff the write
+  committed. A committed key is never released or stale-reclaimed: a retry after
+  a lost response gets `409 { committed: true }` rather than a duplicate write.
+  Even a single-insert create on an idempotent route must run inside
   `prisma.transaction` so it gets marked.
+- **The mark is fenced by `reservation_token`.** `reserve()` writes a fresh token
+  per reservation (a stale reclaim rotates it); the in-tx mark, `complete()`,
+  `release()` and `markCommitted()` all match on it. If the reservation was taken
+  over by a newer attempt, the mark updates 0 rows and the tx rolls back with
+  `409 { reclaimed: true }` — the newer attempt owns the key.
+- **No fire-and-forget async work inside an idempotent handler.** A promise you
+  don't await (a `void this.x.doLater()`, a `setTimeout`, an event emitted to an
+  async listener) inherits the request's ALS idempotency context: any
+  `prisma.transaction` it opens would mark — and be fenced by — the request's key,
+  possibly after the response was recorded. Do background work outside the
+  context (`idempotencyContext.exit(() => …)`, as `PeriodsService.generatePeriods`
+  does) or, better, not from a request handler at all.
 
 ## 5. Migrations
 

@@ -164,8 +164,9 @@ These are the typed domain errors the API raises (`src/common/errors/domain-erro
 
 Prisma-level failures are normalized too: a unique conflict surfaces as `409 CONFLICT`,
 a missing row as `404 NOT_FOUND`, malformed input as `400 INVALID_INPUT`.
-A database **deadlock or serialization failure** (a concurrent transaction won)
-surfaces as `409 CONFLICT` with `details: { retryable: true }`: nothing was
+A database **deadlock, serialization failure or lock timeout** (a concurrent
+transaction won, or held a lock too long — e.g. a company start-month change waits at
+most 5s for its table locks) surfaces as `409 CONFLICT` with `details: { retryable: true }`: nothing was
 committed and the idempotency key was released, so retry the same request (same
 `Idempotency-Key`) after a short back-off.
 
@@ -240,6 +241,18 @@ Behavior:
     reload the list/resource to find the created or updated record;
   - the normal outcome of a fresh attempt, if the first request failed without
     committing anything (its key was released).
+
+  **After a 408 specifically, don't expect a replay.** The timeout abandons the
+  original request without recording its response, so a same-key retry gets
+  `409` "in progress" while the original is still running, then either the
+  committed-`409` (`details.committed: true` — it did commit: stop and reload) or,
+  if it ultimately failed, keeps getting "in progress" until the reservation
+  expires (~2 minutes), after which the retry executes fresh. Keep backing off
+  on "in progress"; never switch to a new key.
+  A retry that takes over an expired reservation while the original is, in fact,
+  still finishing makes the original roll back (it no longer owns the key), so
+  exactly one of them writes (the original's response is then `409 CONFLICT` with
+  `details: { key, reclaimed: true }`).
 
   Retrying with a _new_ key can create a duplicate invoice/payment.
 - **Keys are scoped per user** — two different users may use the same key
