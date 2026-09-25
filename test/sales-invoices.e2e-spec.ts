@@ -378,6 +378,37 @@ describe('SalesInvoices (e2e)', () => {
     expect(body.total).toBe('1110000.0000');
   });
 
+  it('rejects a PATCH whose line uses a soft-deleted tax code (422 Unknown tax code)', async () => {
+    const taxCodes = app.get(TaxCodesService);
+    const ppn = await taxCodes.findById(code['PPN-OUT-11']);
+    const gone = await taxCodes.create({
+      code: 'PPN-OUT-GONE',
+      name: 'PPN Keluaran (dihapus)',
+      kind: 'PPN_OUTPUT',
+      rate: '0.11',
+      taxAccountId: ppn.taxAccountId,
+    });
+    await taxCodes.softDelete(gone.id, 'tester');
+    const draft = await request(app.getHttpServer() as App)
+      .post('/v1/sales-invoices')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send(draftBody())
+      .expect(201);
+    const id = (draft.body as { id: string }).id;
+    const body = draftBody();
+    body.lines[0].taxCodeIds = [gone.id];
+    const res = await request(app.getHttpServer() as App)
+      .patch(`/v1/sales-invoices/${id}`)
+      .set('Authorization', `Bearer ${acct}`)
+      .send({ lines: body.lines })
+      .expect(422);
+    expect(res.body).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      details: { taxCodeId: gone.id },
+    });
+  });
+
   it('I-4: list filtered by status=POSTED returns only posted invoices → 200', async () => {
     // status-filter branch in listPage() (q.status path).
     const res = await request(app.getHttpServer() as App)

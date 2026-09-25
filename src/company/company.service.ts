@@ -115,6 +115,10 @@ export class CompanyService implements OnModuleInit {
       // concurrent INSERT/UPDATE/DELETE (a new draft JE, a period close, a
       // year close) but not reads, so the checks below stay true while the
       // periods are replaced. A rare admin action — the brief stall is fine.
+      // Bounded wait: behind a long-running writer, give up after 5s (55P03 →
+      // 409 retryable) instead of queueing — a queued SHARE ROW EXCLUSIVE
+      // request would itself block every new write until it got the lock.
+      await tx.$executeRaw`SET LOCAL lock_timeout = '5s'`;
       await tx.$executeRaw`
         LOCK TABLE journal_entries, accounting_periods, year_end_closings
         IN SHARE ROW EXCLUSIVE MODE`;

@@ -181,6 +181,37 @@ describe('Company settings (e2e)', () => {
       });
     });
 
+    it('a start-month change blocked on its table locks gives up after lock_timeout with a retryable 409', async () => {
+      let release!: () => void;
+      const held = new Promise<void>((r) => (release = r));
+      let locked!: () => void;
+      const isLocked = new Promise<void>((r) => (locked = r));
+      // Another session holds a lock that conflicts with the change's
+      // SHARE ROW EXCLUSIVE lock on journal_entries (e.g. a long write).
+      const holder = prisma.transaction(
+        async (tx) => {
+          await tx.$executeRaw`LOCK TABLE journal_entries IN ROW EXCLUSIVE MODE`;
+          locked();
+          await held;
+        },
+        { timeout: 30_000 },
+      );
+      await isLocked;
+      try {
+        const started = Date.now();
+        const res = await patchMonth(7);
+        expect(res.status).toBe(409);
+        expect(res.body).toMatchObject({
+          code: 'CONFLICT',
+          details: { retryable: true },
+        });
+        expect(Date.now() - started).toBeLessThan(15_000);
+      } finally {
+        release();
+        await holder;
+      }
+    }, 30_000);
+
     it('rejects a change once a journal entry exists, even a draft (422)', async () => {
       await prisma.client.journalEntry.create({
         data: {

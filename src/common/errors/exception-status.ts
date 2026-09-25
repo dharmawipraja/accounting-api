@@ -28,8 +28,9 @@ export const PRISMA_STATUS: Record<
 };
 
 /** Postgres SQLSTATEs for a transaction aborted by a concurrent one: deadlock
- *  (40P01) and serialization failure (40001). Safe to retry as-is. */
-const TRANSIENT_PG_CODES = new Set(['40P01', '40001']);
+ *  (40P01), serialization failure (40001), and a lock wait that hit
+ *  `lock_timeout` (55P03 lock_not_available). Safe to retry as-is. */
+const TRANSIENT_PG_CODES = new Set(['40P01', '40001', '55P03']);
 
 /** Envelope for a transient transaction conflict. The tx rolled back, so
  *  nothing committed and the idempotency key was released — a retry (same key)
@@ -55,7 +56,7 @@ function driverAdapterCode(e: unknown): string | undefined {
 }
 
 /**
- * True for a deadlock / serialization failure, however Prisma 7 + the pg
+ * True for a deadlock / serialization failure / lock timeout, however Prisma 7 + the pg
  * adapter surfaces it: P2034 (a 40001 on a model query), P2010 with
  * `meta.driverAdapterError` (a raw query), or a bare DriverAdapterError (a
  * 40P01 on a model query — the client rethrows it unwrapped). Pure.

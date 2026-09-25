@@ -60,7 +60,8 @@ export class TaxService {
    *  connection; defaults to the shared client. */
   async calculate(
     input: TaxableTransaction,
-    db: Pick<ExtendedPrismaClient, 'taxCode'> = this.prisma.client,
+    db: Pick<ExtendedPrismaClient, 'taxCode' | 'companySettings'> = this.prisma
+      .client,
   ): Promise<TaxCalculation> {
     if (input.lines.length === 0) {
       throw new ValidationFailedError(
@@ -80,8 +81,11 @@ export class TaxService {
     }
 
     const ids = [...new Set(input.lines.flatMap((l) => l.taxCodeIds))];
+    // `deletedAt: null` is explicit (not left to the soft-delete extension)
+    // because `db` may be any caller-supplied client/tx: a tombstoned code
+    // must read as unknown whatever connection the lookup runs on.
     const codes = await db.taxCode.findMany({
-      where: { id: { in: ids } },
+      where: { id: { in: ids }, deletedAt: null },
     });
     const byId = new Map(codes.map((c) => [c.id, c]));
 
@@ -112,7 +116,8 @@ export class TaxService {
     // enforces it identically. Settings are read only when it matters.
     const ppnOutput = [...byId.values()].find((c) => c.kind === 'PPN_OUTPUT');
     if (input.nature === 'SALE' && ppnOutput) {
-      const settings = await this.prisma.client.companySettings.findFirst({
+      // Through `db` so an in-tx caller reads settings on its own connection.
+      const settings = await db.companySettings.findFirst({
         select: { isPkp: true },
       });
       if (settings && !settings.isPkp)

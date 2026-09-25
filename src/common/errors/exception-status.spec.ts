@@ -104,6 +104,14 @@ describe('isTransientConflict (deadlock / serialization failure)', () => {
     expect(statusFromException(adapterErr('40P01'))).toBe(409);
   });
 
+  it('a lock timeout (55P03 lock_not_available) is transient → 409, raw or model query', () => {
+    const raw = known('P2010', { driverAdapterError: adapterErr('55P03') });
+    expect(isTransientConflict(raw)).toBe(true);
+    expect(statusFromException(raw)).toBe(409);
+    expect(isTransientConflict(adapterErr('55P03'))).toBe(true);
+    expect(statusFromException(adapterErr('55P03'))).toBe(409);
+  });
+
   it('other codes and errors are not transient', () => {
     expect(isTransientConflict(known('P2002'))).toBe(false);
     expect(
