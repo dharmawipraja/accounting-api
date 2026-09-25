@@ -15,7 +15,11 @@ for failure triage, and [`./conventions.md`](./conventions.md) for general code 
 - **Unit** tests exercise pure logic (money math, tax calc, validators, interceptors,
   guards) with hand-rolled mocks. No DB, no network. There are 42 unit spec files.
 - **E2E** tests boot the real `AppModule` and talk to a throwaway `postgres:16`
-  container started by Testcontainers, with **migrations applied on every run**
+  container (pinned to the same digest as `docker-compose.yml`'s `db` —
+  `POSTGRES_TEST_IMAGE` in `test/testcontainers.ts`; bump both together) started by
+  Testcontainers, connecting as the container superuser
+  (`bootstrapTestApp({ appDbUrl })` can swap in another role — see
+  `test/db-app-role.e2e-spec.ts`), with **migrations applied on every run**
   (`npx prisma migrate deploy` against the fresh container — see `test/testcontainers.ts`).
   `maxWorkers: 1` forces them to run **serially**; `testTimeout` is 30s (suite
   `beforeAll` allows 120s for container start + migrate). There are 43 e2e spec files.

@@ -4,8 +4,11 @@
 - Docker + Docker Compose v2 on the VM; ports 80 and 443 open; DNS A-record for
   `$DOMAIN` pointing at the VM (required for Caddy auto-HTTPS).
 - A `.env` next to the compose files (gitignored) with:
-  `POSTGRES_PASSWORD`, `JWT_ACCESS_SECRET` (>=32 chars), `JWT_REFRESH_SECRET` (>=32),
-  `DOMAIN`. The two JWT secrets **must differ** (startup validation rejects equal
+  `POSTGRES_PASSWORD` (DB owner), `APP_DB_PASSWORD` (the api's least-privilege
+  `accounting_app` role — see [Database roles](#database-roles-least-privilege)),
+  `JWT_ACCESS_SECRET` (>=32 chars), `JWT_REFRESH_SECRET` (>=32),
+  `DOMAIN`. Both DB passwords are interpolated into connection URLs — use
+  URL-safe values (e.g. `openssl rand -hex 24`). The two JWT secrets **must differ** (startup validation rejects equal
   secrets); `JWT_ACCESS_TTL` must be ≤ 3600s and `JWT_REFRESH_TTL` ≤ 30d.
   Optional: `DB_POOL_MAX`, `DB_STATEMENT_TIMEOUT_MS`, `RETENTION_DAYS`,
   `BACKUP_INTERVAL`, `THROTTLE_LIMIT` (per-user requests/min, default 300),
@@ -26,9 +29,50 @@
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
-This builds the image, runs `migrate` (prisma migrate deploy) to completion, then
+This builds the images (tagged `accounting-api:local` / `accounting-api-migrate:local`
+unless `API_IMAGE` / `MIGRATE_IMAGE` are set), runs `migrate` (prisma migrate deploy,
+then the idempotent `accounting_app` grants step) to completion, then
 starts `api` (gated on `migrate` succeeding), `caddy`, and `backup`. `migrate` runs
 **before** the app and never in-process.
+
+To deploy the images CI published instead of building on the VM (what CD does):
+```bash
+export API_IMAGE=ghcr.io/<owner>/<repo>:<sha> MIGRATE_IMAGE=ghcr.io/<owner>/<repo>-migrate:<sha>
+docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build
+```
+`--no-build` matters: `api`/`migrate` keep a `build:` section for local builds, and
+without it compose could reuse a stale locally-built image.
+
+## Database roles (least privilege)
+
+| Role | Used by | Privileges |
+|---|---|---|
+| `accounting` (`POSTGRES_USER`, owner) | `migrate`, `backup`, operators | owns the schema; DDL |
+| `accounting_app` | `api` (`DATABASE_URL` in `docker-compose.prod.yml`) | `SELECT/INSERT/UPDATE/DELETE` on all tables, `USAGE/SELECT/UPDATE` on sequences; **no** TRUNCATE, **no** DDL, not superuser/createdb/createrole, owns nothing, no access to `_prisma_migrations`, INSERT/SELECT only on the append-only `audit_log` |
+
+- **Where it is created:** `scripts/db/app-role.sql` (idempotent) is applied
+  (a) by the postgres init hook `scripts/db/initdb/10-accounting-app-role.sh` on a
+  **fresh** data volume, and (b) by the `migrate` service after every
+  `prisma migrate deploy` (`node scripts/db/ensure-app-role.js`) — so **existing
+  volumes are upgraded on the next deploy** and every table a new migration adds is
+  granted (default privileges cover owner-created future tables as well).
+- **Env:** `APP_DB_PASSWORD` is required by `db` (init hook), `migrate` (grants step)
+  and `api` (its `DATABASE_URL` is
+  `postgresql://accounting_app:${APP_DB_PASSWORD}@db:5432/accounting`). `migrate`'s
+  `DATABASE_URL` stays the owner URL (`POSTGRES_PASSWORD`). The password is never
+  hard-coded or echoed to logs.
+- **Rotate `APP_DB_PASSWORD`:** change it in `.env` and redeploy — `migrate` re-sets
+  the role's password before `api` restarts with the new one.
+- **First deploy on an existing volume:** nothing manual — `migrate` creates the role.
+- **Restore:** a `pg_dump` contains GRANTs to `accounting_app`; restoring into a fresh
+  volume is fine (the init hook creates the role first). Restoring elsewhere, create
+  the role first (run the grants step) or ignore the `role does not exist` GRANT
+  warnings and run the grants step afterwards.
+- **Local dev is unaffected:** `.env.development` keeps connecting as the owner
+  (see `local-development.md`). Tests (testcontainers) use the container superuser;
+  `test/db-app-role.e2e-spec.ts` proves the app runs as `accounting_app` and that
+  TRUNCATE/DDL are denied.
 
 ## Health & shutdown
 - `api` is healthy when `/ready` returns 200 (DB + Redis reachable — a dependency outage now marks the container unhealthy); `/health` stays a bare liveness probe. Caddy proxies only a started app.
@@ -80,8 +124,9 @@ from one source while rotating a forged `X-Forwarded-For`; it should still 429
 ## Rollback
 
 1. **App-only rollback (no schema change):** redeploy the previous image tag/commit —
-   `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` after
-   checking out the prior commit (or pinning the prior image tag). Caddy/api/backup
+   check out the prior commit and export its `API_IMAGE` / `MIGRATE_IMAGE`
+   (`ghcr.io/<owner>/<repo>[-migrate]:<prior-sha>`), then `pull` +
+   `up -d --no-build` (or `up -d --build` for a VM-built image). Caddy/api/backup
    restart against the unchanged DB.
 2. **Migrations are forward-only.** Rolling back the image does NOT undo a migration.
    If a bad migration shipped:
@@ -226,15 +271,29 @@ with `age -d -i <key> file.dump.age > file.dump`, then follow `backup-and-restor
 `.github/workflows/cd.yml` is **manual** (`workflow_dispatch`) — it does NOT run on push.
 To release: GitHub → **Actions** → **CD** → **Run workflow** → pick the **tag** (or branch)
 from the ref dropdown → **Run**. It builds/deploys exactly the selected ref.
-1. **Publish** — builds and pushes the image to `ghcr.io/<owner>/<repo>:<tag>`, `:<sha>`,
-   and `:latest` (`<tag>` = the selected ref name, e.g. `v1.2.0`) using the built-in
-   `GITHUB_TOKEN` (no extra secret; ensure the repo's Package settings allow Actions to
-   write packages). Tip: create an annotated tag first (`git tag -a v1.2.0 -m ... && git
-   push origin v1.2.0`), then select it in the dropdown.
+0. **CI gate** — the run fails immediately unless `ci.yml` has a **successful run for
+   the exact commit SHA** being released (checked via the Actions API). CI runs on push
+   to `main` and on PRs, so tag a commit that is green on `main`.
+1. **Publish** — builds and pushes TWO images using the built-in `GITHUB_TOKEN` (no
+   extra secret; ensure the repo's Package settings allow Actions to write packages):
+   - runtime (`production` stage) → `ghcr.io/<owner>/<repo>:<sha>` (+ `:<tag>`, `:latest`)
+   - migrate (`build` stage — prisma CLI + migrations + `scripts/db`) →
+     `ghcr.io/<owner>/<repo>-migrate:<sha>` (+ `:<tag>`, `:latest`)
+
+   (`<tag>` = the selected ref name, e.g. `v1.2.0`.) Tip: create an annotated tag first
+   (`git tag -a v1.2.0 -m ... && git push origin v1.2.0`), then select it in the dropdown.
 2. **Deploy (optional, gated)** — runs ONLY if a `DEPLOY_SSH_HOST` secret is set. Add
    `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_PATH` (repo dir on the
-   VM) as Actions secrets; the VM's compose must reference the GHCR image. Until then,
-   CD only publishes.
+   VM) as Actions secrets. Over SSH it checks the repo out at the released SHA (if
+   `DEPLOY_PATH` is a git checkout), exports `API_IMAGE` / `MIGRATE_IMAGE` = the
+   immutable `:<sha>` images, and runs `compose pull` + `compose up -d --no-build`.
+   The VM must be logged in to GHCR if the packages are private
+   (`docker login ghcr.io` with a `read:packages` token) and its `.env` must contain
+   `APP_DB_PASSWORD`. Until the secrets exist, CD only publishes.
+
+All workflow actions are pinned to full commit SHAs (with a `# vX.Y.Z` comment);
+bump them by resolving the new tag's commit (`gh api repos/<o>/<r>/git/ref/tags/<tag>`,
+dereferencing annotated tags via `git/tags/<sha>`), never by switching back to a tag.
 
 ## Activating CI (SEC-8)
 The CI workflow (`.github/workflows/ci.yml`) is committed but dormant — the repo

@@ -102,6 +102,13 @@ points at `accounting_dev`, create that database (e.g.
 > If you run native Postgres/Redis instead, skip the compose step and just ensure
 > `DATABASE_URL` / `REDIS_URL` resolve.
 
+> **DB role in dev:** local dev deliberately connects as the **owner** (`accounting`),
+> because `npm run db:migrate` (prisma migrate dev) needs DDL. Production splits this:
+> the API runs as the least-privilege `accounting_app` role and only `migrate` uses
+> the owner (see `deploy.md` → *Database roles*). To try the app role locally, run
+> `DATABASE_URL=<owner url> APP_DB_PASSWORD=<pw> node scripts/db/ensure-app-role.js`
+> and start the app with `DATABASE_URL=postgresql://accounting_app:<pw>@localhost:5432/<db>`.
+
 ### Apply migrations + generate the client
 
 ```bash

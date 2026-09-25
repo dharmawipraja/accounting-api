@@ -16,9 +16,13 @@ services:
     build:
       context: .
       target: build
-    command: ['npx', 'prisma', 'migrate', 'deploy']
+    # Schema migrations run as the OWNER (accounting); then the idempotent grants
+    # step (re)creates the least-privilege `accounting_app` role the api runs as
+    # and grants it DML on every table — including ones this deploy just added.
+    command: ['sh', '-c', 'npx prisma migrate deploy && node scripts/db/ensure-app-role.js']
     environment:
       DATABASE_URL: postgresql://accounting:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/accounting?schema=public
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?APP_DB_PASSWORD is required (password for the accounting_app DB role)}
     depends_on:
       db:
         condition: service_healthy
@@ -45,6 +49,9 @@ services:
       migrate:
         condition: service_completed_successfully
     environment:
+      # Least privilege: the api connects as `accounting_app` (DML only — no DDL,
+      # no TRUNCATE, not the owner). Only `migrate` (and backups) use the owner.
+      DATABASE_URL: postgresql://accounting_app:${APP_DB_PASSWORD:?APP_DB_PASSWORD is required (password for the accounting_app DB role)}@db:5432/accounting?schema=public
       DB_POOL_MAX: 15
       DB_STATEMENT_TIMEOUT_MS: 30000
     healthcheck:
@@ -85,6 +92,14 @@ services:
   db:
     logging: *default-logging
     restart: unless-stopped
+    # Fresh volume only: the init script creates `accounting_app` + default
+    # privileges before the first migration. Existing volumes are covered by the
+    # migrate service's idempotent grants step (same SQL).
+    environment:
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?APP_DB_PASSWORD is required (password for the accounting_app DB role)}
+    volumes:
+      - ./scripts/db/initdb/10-accounting-app-role.sh:/docker-entrypoint-initdb.d/10-accounting-app-role.sh:ro
+      - ./scripts/db/app-role.sql:/docker-entrypoint-app-role.sql:ro
     command:
       - postgres
       - '-c'

@@ -42,15 +42,21 @@ export interface TestApp {
  *                       prod pipe (whitelist + transform + forbidNonWhitelisted).
  * @param opts.configure pre-init hook for extra middleware (e.g. helmet); runs AFTER
  *                       the global filter and BEFORE app.init().
+ * @param opts.appDbUrl  optional hook run on the migrated DB before boot; returns the
+ *                       DATABASE_URL the APP connects with (e.g. a least-privilege
+ *                       role). Default: the container superuser URL (`db.url`).
  */
 export async function bootstrapTestApp(
   opts: {
     pipe?: boolean;
     configure?: (app: INestApplication) => void;
+    appDbUrl?: (db: TestDb) => Promise<string> | string;
   } = {},
 ): Promise<TestApp> {
   const db = await startTestDb();
-  const prisma = makePrismaOverride(db.url);
+  const prisma = makePrismaOverride(
+    opts.appDbUrl ? await opts.appDbUrl(db) : db.url,
+  );
   await prisma.$connect();
   const mod = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(PrismaService)
