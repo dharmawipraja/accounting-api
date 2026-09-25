@@ -208,26 +208,29 @@ model JournalSequence {
 }
 
 model JournalEntry {
-  id            String            @id @default(uuid())
-  entryNumber   Int?              @map("entry_number")
-  entryRef      String?           @map("entry_ref")
-  fiscalYear    Int?              @map("fiscal_year")
-  date          DateTime          @db.Date
-  periodId      String?           @map("period_id")
-  period        AccountingPeriod? @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  id            String               @id @default(uuid())
+  entryNumber   Int?                 @map("entry_number")
+  entryRef      String?              @map("entry_ref")
+  fiscalYear    Int?                 @map("fiscal_year")
+  date          DateTime             @db.Date
+  periodId      String?              @map("period_id")
+  period        AccountingPeriod?    @relation(fields: [periodId], references: [id], onDelete: Restrict)
   description   String
-  sourceType    JournalSourceType @map("source_type")
-  sourceId      String?           @map("source_id")
-  status        JournalStatus     @default(DRAFT)
-  reversalOfId  String?           @map("reversal_of_id")
-  reversedById  String?           @map("reversed_by_id")
-  createdBy     String            @map("created_by")
-  postedBy      String?           @map("posted_by")
-  postedAt      DateTime?         @map("posted_at")
-  createdAt     DateTime          @default(now()) @map("created_at")
-  updatedAt     DateTime          @updatedAt @map("updated_at")
-  deletedAt     DateTime?         @map("deleted_at")
-  deletedBy     String?           @map("deleted_by")
+  sourceType    JournalSourceType    @map("source_type")
+  sourceId      String?              @map("source_id")
+  status        JournalStatus        @default(DRAFT)
+  reversalOfId  String?              @map("reversal_of_id")
+  reversedById  String?              @map("reversed_by_id")
+  createdBy     String               @map("created_by")
+  postedBy      String?              @map("posted_by")
+  postedAt      DateTime?            @map("posted_at")
+  // DB-only: xid of the tx that posted the entry, set + frozen by trigger
+  // (20260926300000_ledger_integrity); keys the posted-line insert guard.
+  postedXid     Unsupported("xid8")? @map("posted_xid")
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt @map("updated_at")
+  deletedAt     DateTime?            @map("deleted_at")
+  deletedBy     String?              @map("deleted_by")
   lines         JournalLine[]
   salesInvoices SalesInvoice[]
   purchaseBills PurchaseBill[]
@@ -237,8 +240,9 @@ model JournalEntry {
   //   CHECK journal_entries_posted_complete (DRAFT ⇔ posted_at NULL; non-DRAFT
   //   carries entry_number/fiscal_year/period_id/posted_at); deferred constraint
   //   trigger journal_entries_balanced (posted ⇒ >= 2 lines, debit = credit);
-  //   trigger journal_entries_immutable (posted rows: only POSTED->REVERSED +
-  //   reversed_by_id + updated_at may change; no DELETE / soft delete);
+  //   trigger journal_entries_immutable (posted rows: the only UPDATE allowed is
+  //   POSTED->REVERSED + reversed_by_id NULL->id (+ updated_at); no DELETE /
+  //   soft delete); trigger journal_entries_stamp_posted_xid;
   //   no TRUNCATE; partial index journal_entries_posted_live_date_idx
   //   ON (date) WHERE posted_at IS NOT NULL AND deleted_at IS NULL.
   @@unique([fiscalYear, entryNumber], name: "journal_entries_fy_number_unique")

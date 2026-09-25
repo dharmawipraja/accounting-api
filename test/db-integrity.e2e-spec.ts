@@ -26,6 +26,11 @@ describe('DB integrity — ledger invariants enforced by Postgres (e2e)', () => 
   let billId: string;
   let paymentId: string;
 
+  const IMMUTABLE_ENTRY =
+    /posted journal entry .* is immutable \(only the POSTED->REVERSED link-up is permitted\)/;
+  const LINES_AFTER_POSTING =
+    /posted journal entry .* is immutable \(lines cannot be added after posting\)/;
+
   type Tx = Prisma.TransactionClient;
   const inTx = (fn: (tx: Tx) => Promise<unknown>) =>
     prisma.$transaction(async (tx) => {
@@ -158,18 +163,127 @@ describe('DB integrity — ledger invariants enforced by Postgres (e2e)', () => 
       ['amount-bearing entry number', `entry_number = entry_number + 1000`],
       ['status back to DRAFT', `status = 'DRAFT'`],
       ['soft delete', `deleted_at = now(), deleted_by = 'x'`],
+      ['updated_at only', `updated_at = now()`],
+      ['no-op', `status = status`],
+      ['posted_xid', `posted_xid = pg_current_xact_id()`],
+      [
+        'REVERSED without a reversal link',
+        `status = 'REVERSED'`, // reversed_by_id stays NULL
+      ],
     ])('rejects UPDATE of a posted entry (%s)', async (_label, set) => {
       const je = await postEntry();
       await expect(
         runSql(`UPDATE journal_entries SET ${set} WHERE id = '${je.id}'`),
-      ).rejects.toThrow(/immutable|journal_entries_posted_complete/i);
+      ).rejects.toThrow(IMMUTABLE_ENTRY);
+    });
+
+    describe('on an already-REVERSED entry', () => {
+      let originalId: string;
+      beforeAll(async () => {
+        const je = await postEntry();
+        await app.get(JournalService).reverse(je.id, 'p');
+        originalId = je.id;
+      });
+
+      it.each([
+        ['REVERSED→POSTED', `status = 'POSTED', reversed_by_id = NULL`],
+        ['re-pointing reversed_by_id', `reversed_by_id = 'someone-else'`],
+        ['updated_at only', `updated_at = now()`],
+      ])('rejects %s', async (_label, set) => {
+        await expect(
+          runSql(
+            `UPDATE journal_entries SET ${set} WHERE id = '${originalId}'`,
+          ),
+        ).rejects.toThrow(IMMUTABLE_ENTRY);
+      });
+    });
+
+    it('rejects a no-op UPDATE used to re-own an old posted entry, then adding lines in the same tx', async () => {
+      const je = await postEntry();
+      await expect(
+        inTx(async (tx) => {
+          await tx.$executeRawUnsafe(
+            `UPDATE journal_entries SET updated_at = now() WHERE id = '${je.id}'`,
+          );
+          await tx.$executeRawUnsafe(
+            `INSERT INTO journal_lines (id, journal_entry_id, line_no, account_id, debit, credit)
+             VALUES (gen_random_uuid()::text, '${je.id}', 3, '${acc['1-1000']}', 5, 0),
+                    (gen_random_uuid()::text, '${je.id}', 4, '${acc['4-1000']}', 0, 5)`,
+          );
+        }),
+      ).rejects.toThrow(IMMUTABLE_ENTRY);
+      // …and without the UPDATE the INSERT alone is refused by the line guard.
+      await expect(
+        runSql(
+          `INSERT INTO journal_lines (id, journal_entry_id, line_no, account_id, debit, credit)
+           VALUES (gen_random_uuid()::text, '${je.id}', 3, '${acc['1-1000']}', 5, 0),
+                  (gen_random_uuid()::text, '${je.id}', 4, '${acc['4-1000']}', 0, 5)`,
+        ),
+      ).rejects.toThrow(LINES_AFTER_POSTING);
+    });
+
+    it('a reversal tx cannot add lines to the ORIGINAL entry', async () => {
+      const je = await postEntry();
+      const [{ n }] = await prisma.client.$queryRaw<{ n: number }[]>`
+        SELECT COALESCE(MAX(entry_number), 0)::int + 1 AS n FROM journal_entries WHERE fiscal_year = 2026`;
+      await expect(
+        inTx(async (tx) => {
+          // A legitimate-looking reversal: posted reversal entry + the
+          // original's POSTED→REVERSED link-up…
+          await tx.$executeRawUnsafe(
+            `INSERT INTO journal_entries (id, entry_number, entry_ref, fiscal_year, date, period_id,
+               description, source_type, status, reversal_of_id, created_by, posted_by, posted_at, updated_at)
+             VALUES ('dbi-rev-${n}', ${n}, 'JE/2026/X${n}', 2026, '2026-02-10', '${periodId}',
+               'rev', 'REVERSAL', 'POSTED', '${je.id}', 'p', 'p', now(), now())`,
+          );
+          await tx.$executeRawUnsafe(
+            `INSERT INTO journal_lines (id, journal_entry_id, line_no, account_id, debit, credit)
+             VALUES (gen_random_uuid()::text, 'dbi-rev-${n}', 1, '${acc['4-1000']}', 100000, 0),
+                    (gen_random_uuid()::text, 'dbi-rev-${n}', 2, '${acc['1-1000']}', 0, 100000)`,
+          );
+          await tx.$executeRawUnsafe(
+            `UPDATE journal_entries SET status = 'REVERSED', reversed_by_id = 'dbi-rev-${n}', updated_at = now()
+             WHERE id = '${je.id}'`,
+          );
+          // …then sneaking extra lines into the original.
+          await tx.$executeRawUnsafe(
+            `INSERT INTO journal_lines (id, journal_entry_id, line_no, account_id, debit, credit)
+             VALUES (gen_random_uuid()::text, '${je.id}', 3, '${acc['1-1000']}', 5, 0),
+                    (gen_random_uuid()::text, '${je.id}', 4, '${acc['4-1000']}', 0, 5)`,
+          );
+        }),
+      ).rejects.toThrow(LINES_AFTER_POSTING);
+    });
+
+    it('posted_xid is stamped by the DB and cannot be pre-seeded on a draft', async () => {
+      const draft = await app.get(JournalService).createDraft({
+        date: new Date('2026-02-10'),
+        description: 'xid probe',
+        createdBy: 'a',
+        lines: [
+          { accountId: acc['1-1000'], debit: '1' },
+          { accountId: acc['4-1000'], credit: '1' },
+        ],
+      });
+      await runSql(
+        `UPDATE journal_entries SET posted_xid = '12345'::xid8 WHERE id = '${draft.id}'`,
+      );
+      const [d] = await prisma.client.$queryRaw<{ x: string | null }[]>`
+        SELECT posted_xid::text AS x FROM journal_entries WHERE id = ${draft.id}`;
+      expect(d.x).toBeNull();
+      await app.get(JournalService).postDraft(draft.id, 'p');
+      const [p] = await prisma.client.$queryRaw<{ x: string | null }[]>`
+        SELECT posted_xid::text AS x FROM journal_entries WHERE id = ${draft.id}`;
+      expect(p.x).toMatch(/^[1-9][0-9]*$/);
     });
 
     it('rejects DELETE of a posted entry', async () => {
       const je = await postEntry();
       await expect(
         runSql(`DELETE FROM journal_entries WHERE id = '${je.id}'`),
-      ).rejects.toThrow(/immutable/i);
+      ).rejects.toThrow(
+        /posted journal entry .* is immutable \(DELETE not permitted\)/,
+      );
     });
 
     it('rejects INSERTing extra lines into an existing posted entry (later tx)', async () => {
@@ -180,14 +294,16 @@ describe('DB integrity — ledger invariants enforced by Postgres (e2e)', () => 
            VALUES (gen_random_uuid()::text, '${je.id}', 3, '${acc['1-1000']}', 5, 0),
                   (gen_random_uuid()::text, '${je.id}', 4, '${acc['4-1000']}', 0, 5)`,
         ),
-      ).rejects.toThrow(/immutable/i);
+      ).rejects.toThrow(LINES_AFTER_POSTING);
     });
 
     it.each([
       'journal_lines',
       'journal_entries',
       'sales_invoices',
+      'sales_invoice_lines',
       'purchase_bills',
+      'purchase_bill_lines',
       'payments',
       'payment_allocations',
     ])('rejects TRUNCATE %s', async (table) => {

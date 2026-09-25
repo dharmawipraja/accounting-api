@@ -10,10 +10,11 @@
 -- Invariants added (see docs/runbooks/database-and-migrations.md):
 --   1. Posted entries balance: SUM(debit) = SUM(credit) and >= 2 lines
 --      (deferred constraint triggers, checked at COMMIT).
---   2. Posted entries are immutable: only status POSTED->REVERSED (+ the
---      reversed_by_id link, + updated_at) may change; no DELETE, no soft delete;
---      their lines cannot be updated/deleted, and lines may be inserted into a
---      posted entry only by the transaction that created it.
+--   2. Posted entries are immutable: the only permitted UPDATE is the reversal
+--      link-up (status POSTED->REVERSED + reversed_by_id NULL->id, + updated_at);
+--      no other/no-op UPDATE, no DELETE, no soft delete; their lines cannot be
+--      updated/deleted, and lines may be inserted into a posted entry only by
+--      the transaction that posted it (journal_entries.posted_xid).
 --   3. TRUNCATE is refused on the financial-history tables.
 --   4. CHECKs: payment amount > 0, allocation has exactly one target,
 --      0 <= amount_paid <= total, doc-line quantity/unit_price >= 0, period
@@ -265,6 +266,34 @@ CREATE CONSTRAINT TRIGGER journal_entries_balanced
 -- ---------------------------------------------------------------------------
 -- 5) Posted-entry immutability
 -- ---------------------------------------------------------------------------
+-- posted_xid: the (64-bit, wraparound-free) id of the transaction that POSTED
+-- the entry — set by trigger on INSERT-as-posted or on the DRAFT->POSTED flip,
+-- immutable afterwards. The line-insert guard keys on it, so only the posting
+-- transaction itself can write a posted entry's lines. Existing posted rows get
+-- the sentinel '0' (never a live xid: normal xids start at 3), so no later
+-- transaction can ever add lines to them. DB-only: Prisma sees it as
+-- Unsupported("xid8") and never reads or writes it.
+ALTER TABLE "journal_entries" ADD COLUMN "posted_xid" xid8;
+UPDATE "journal_entries" SET "posted_xid" = '0'::xid8 WHERE "posted_at" IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION journal_entries_stamp_posted_xid_trg() RETURNS trigger AS $$
+BEGIN
+  IF NEW.posted_at IS NOT NULL AND (TG_OP = 'INSERT' OR OLD.posted_at IS NULL) THEN
+    NEW.posted_xid := pg_current_xact_id(); -- becoming posted in this tx
+  ELSIF NEW.posted_at IS NULL THEN
+    NEW.posted_xid := NULL; -- a DRAFT can never carry (or pre-seed) one
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Named to fire AFTER journal_entries_immutable (BEFORE triggers run in name
+-- order), so a caller-supplied posted_xid change on a posted row is rejected
+-- there before this trigger could touch it.
+CREATE TRIGGER journal_entries_stamp_posted_xid
+  BEFORE INSERT OR UPDATE ON journal_entries
+  FOR EACH ROW EXECUTE FUNCTION journal_entries_stamp_posted_xid_trg();
+
 CREATE OR REPLACE FUNCTION journal_entries_immutable_trg() RETURNS trigger AS $$
 DECLARE
   masked journal_entries;
@@ -276,19 +305,19 @@ BEGIN
     RAISE EXCEPTION 'journal_entries: posted journal entry % is immutable (DELETE not permitted)', OLD.id
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
-  -- The only legal change to a posted entry is the reversal link-up
-  -- (PostingService.reverseInTx): status POSTED->REVERSED + reversed_by_id
-  -- NULL->reversal id; Prisma's @updatedAt may bump updated_at.
+  -- The ONLY legal UPDATE of a posted entry is the reversal link-up
+  -- (PostingService.reverseInTx): status POSTED->REVERSED together with
+  -- reversed_by_id NULL->reversal id; Prisma's @updatedAt bumps updated_at.
+  -- Every other UPDATE — including a no-op or updated_at-only one — raises.
+  -- posted_xid is NOT masked: any change to it is rejected.
   masked := NEW;
   masked.status := OLD.status;
   masked.reversed_by_id := OLD.reversed_by_id;
   masked.updated_at := OLD.updated_at;
-  IF masked IS DISTINCT FROM OLD
-     OR (NEW.status IS DISTINCT FROM OLD.status
-         AND NOT (OLD.status = 'POSTED' AND NEW.status = 'REVERSED'))
-     OR (NEW.reversed_by_id IS DISTINCT FROM OLD.reversed_by_id
-         AND NOT (OLD.reversed_by_id IS NULL AND NEW.status = 'REVERSED')) THEN
-    RAISE EXCEPTION 'journal_entries: posted journal entry % is immutable (only POSTED->REVERSED is permitted)', OLD.id
+  IF NOT (OLD.status = 'POSTED' AND NEW.status = 'REVERSED'
+          AND OLD.reversed_by_id IS NULL AND NEW.reversed_by_id IS NOT NULL)
+     OR masked IS DISTINCT FROM OLD THEN
+    RAISE EXCEPTION 'journal_entries: posted journal entry % is immutable (only the POSTED->REVERSED link-up is permitted)', OLD.id
       USING ERRCODE = 'integrity_constraint_violation';
   END IF;
   RETURN NEW;
@@ -300,15 +329,15 @@ CREATE TRIGGER journal_entries_immutable
   FOR EACH ROW EXECUTE FUNCTION journal_entries_immutable_trg();
 
 -- Lines of a posted entry: no UPDATE/DELETE; INSERT only by the transaction
--- that inserted the posted parent (the direct/document/reversal/closing posts
--- write entry + lines in one tx via a nested create). A parent row's xmin is
--- the xid of the transaction that last wrote it; the posting paths never
--- write lines after flipping an existing DRAFT to POSTED (postDraft promotes
--- the draft's existing lines untouched).
+-- that POSTED the parent (posted_xid = pg_current_xact_id()) — i.e. the nested
+-- lines create of a direct/document/reversal/closing post. postDraft promotes
+-- the draft's existing lines untouched, so it never inserts into a posted
+-- parent. A reversal tx flips the ORIGINAL to REVERSED but did not post it, so
+-- it cannot add lines to the original.
 CREATE OR REPLACE FUNCTION journal_lines_immutable_trg() RETURNS trigger AS $$
 DECLARE
   v_posted timestamp(3);
-  v_xmin xid;
+  v_xid xid8;
 BEGIN
   IF TG_OP IN ('UPDATE', 'DELETE') THEN
     SELECT posted_at INTO v_posted FROM journal_entries WHERE id = OLD.journal_entry_id;
@@ -318,8 +347,8 @@ BEGIN
     END IF;
   END IF;
   IF TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND NEW.journal_entry_id IS DISTINCT FROM OLD.journal_entry_id) THEN
-    SELECT posted_at, xmin INTO v_posted, v_xmin FROM journal_entries WHERE id = NEW.journal_entry_id;
-    IF v_posted IS NOT NULL AND v_xmin IS DISTINCT FROM pg_current_xact_id()::xid THEN
+    SELECT posted_at, posted_xid INTO v_posted, v_xid FROM journal_entries WHERE id = NEW.journal_entry_id;
+    IF v_posted IS NOT NULL AND v_xid IS DISTINCT FROM pg_current_xact_id() THEN
       RAISE EXCEPTION 'journal_lines: posted journal entry % is immutable (lines cannot be added after posting)',
         NEW.journal_entry_id USING ERRCODE = 'integrity_constraint_violation';
     END IF;

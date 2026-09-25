@@ -155,7 +155,9 @@ One stable error envelope, no leaked internals.
   partial-unique indexes, append-only triggers, advisory-lock helpers, gapless
   numbering constraints, and the ledger-integrity triggers/CHECKs/FKs get
   expressed. A posted journal entry and its lines must be written in ONE tx
-  (nested create) and never modified afterwards — the DB rejects anything else. Full mechanics in
+  (nested create) and never modified afterwards — the DB rejects anything
+  else (the only permitted UPDATE of a posted entry is the POSTED→REVERSED
+  link-up). Full mechanics in
   [`./database-and-migrations.md`](./database-and-migrations.md).
 - **After any `prisma/schema.prisma` change, run `npm run db:generate`** to
   regenerate the typed client before relying on the new types or committing.

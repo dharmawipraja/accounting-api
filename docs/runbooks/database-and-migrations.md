@@ -72,16 +72,26 @@ the Prisma schema cannot express:
     `SUM(debit) = SUM(credit)`. Fires on line insert/update/delete and on the
     DRAFT→POSTED flip.
   - **Posted-entry immutability** — `journal_entries_immutable` (BEFORE
-    UPDATE/DELETE): once `posted_at` is set, the only permitted change is the
-    reversal link-up (`status` POSTED→REVERSED, `reversed_by_id` NULL→id, and
-    `updated_at`); any other column change, a soft delete (`deleted_at`), or a
-    DELETE raises. DRAFTs stay freely mutable/soft-deletable.
-    `journal_lines_immutable` (BEFORE INSERT/UPDATE/DELETE): lines of a posted
-    entry cannot be updated or deleted, and may be **inserted only by the
-    transaction that inserted the posted parent** (parent `xmin =
-    pg_current_xact_id()::xid`) — i.e. the nested `lines: { create }` of a
-    direct/document/reversal/closing post. `postDraft` promotes existing lines
-    untouched, so it never inserts into a posted parent. ⚠️ **A new posting path
+    UPDATE/DELETE): once `posted_at` is set, the **only** permitted UPDATE is
+    the reversal link-up — `status` POSTED→REVERSED together with
+    `reversed_by_id` NULL→id (Prisma's `updated_at` bump allowed alongside).
+    Any other UPDATE raises, including a no-op (`SET status = status`) or an
+    `updated_at`-only one, REVERSED→POSTED, re-pointing `reversed_by_id`, a
+    soft delete (`deleted_at`), and DELETE. DRAFTs stay freely
+    mutable/soft-deletable.
+    `journal_entries.posted_xid` (`xid8`, DB-only — `Unsupported("xid8")` in
+    Prisma) is stamped with `pg_current_xact_id()` by
+    `journal_entries_stamp_posted_xid` when the row becomes posted (INSERT as
+    posted, or the DRAFT→POSTED flip), is forced NULL on drafts, and is frozen
+    afterwards. Pre-existing posted rows were backfilled with the sentinel `0`
+    (never a live xid). `journal_lines_immutable` (BEFORE
+    INSERT/UPDATE/DELETE): lines of a posted entry cannot be updated or
+    deleted, and may be **inserted only by the transaction that posted the
+    parent** (`parent.posted_xid = pg_current_xact_id()`) — i.e. the nested
+    `lines: { create }` of a direct/document/reversal/closing post. A reversal
+    tx flips the original but did not post it, so it cannot add lines to it;
+    `postDraft` promotes existing lines untouched, so it never inserts into a
+    posted parent. ⚠️ **A new posting path
     must write the posted entry and its lines in ONE transaction (nested
     create), and must never add/alter lines after posting** — correct via a
     reversal instead.
