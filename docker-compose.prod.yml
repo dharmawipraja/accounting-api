@@ -10,6 +10,9 @@ x-logging: &default-logging
 services:
   migrate:
     logging: *default-logging
+    # CD sets MIGRATE_IMAGE to the pushed ghcr `-migrate:<sha>` image and runs
+    # `compose pull && up -d --no-build`; locally `up --build` builds + tags it.
+    image: ${MIGRATE_IMAGE:-accounting-api-migrate:local}
     build:
       context: .
       target: build
@@ -28,6 +31,8 @@ services:
 
   api:
     logging: *default-logging
+    # CD sets API_IMAGE to the pushed ghcr `:<sha>` image (see migrate above).
+    image: ${API_IMAGE:-accounting-api:local}
     init: true
     read_only: true
     cap_drop:

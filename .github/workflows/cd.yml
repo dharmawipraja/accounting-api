@@ -4,6 +4,10 @@ on:
   # Manual only. In the GitHub Actions UI: open this workflow → "Run workflow" →
   # pick the tag (or branch) from the ref dropdown → Run. It builds/deploys that
   # ref; it does NOT run automatically on push to main.
+  #
+  # Gated on CI: the `ci-gate` job refuses to build/deploy a commit unless the CI
+  # workflow (ci.yml) has a SUCCESSFUL run for that exact commit SHA. CI runs on
+  # push to main and on PRs, so a tag/branch cut from a green main commit passes.
   workflow_dispatch:
 
 concurrency:
@@ -11,26 +15,70 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ci-gate:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - name: Require a successful CI run for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          n=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&status=success&per_page=1" --jq '.total_count')
+          if [ "${n:-0}" -lt 1 ]; then
+            echo "::error::CI has no successful run for $SHA — refusing to build/deploy. Run CI (push to main / PR) first."
+            exit 1
+          fi
+          echo "CI passed for $SHA ($n successful run(s))."
+
   push:
+    needs: [ci-gate]
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    outputs:
+      api_image: ${{ steps.names.outputs.api_image }}
+      migrate_image: ${{ steps.names.outputs.migrate_image }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      # GHCR repository names must be lowercase; github.repository may not be.
+      - id: names
+        run: |
+          repo="ghcr.io/${GITHUB_REPOSITORY,,}"
+          {
+            echo "repo=$repo"
+            echo "api_image=$repo:${GITHUB_SHA}"
+            echo "migrate_image=$repo-migrate:${GITHUB_SHA}"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+      # Runtime image (Dockerfile `production` stage) → the `api` service.
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
+          target: production
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
-            ghcr.io/${{ github.repository }}:latest
+            ${{ steps.names.outputs.repo }}:${{ github.ref_name }}
+            ${{ steps.names.outputs.repo }}:${{ github.sha }}
+            ${{ steps.names.outputs.repo }}:latest
+      # Migrate image (Dockerfile `build` stage: has the prisma CLI + migrations +
+      # scripts/db) → the one-shot `migrate` service.
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          target: build
+          push: true
+          tags: |
+            ${{ steps.names.outputs.repo }}-migrate:${{ github.ref_name }}
+            ${{ steps.names.outputs.repo }}-migrate:${{ github.sha }}
+            ${{ steps.names.outputs.repo }}-migrate:latest
   # The `secrets` context cannot be used in a job-level `if:` (GitHub errors with
   # "Unrecognized named-value: 'secrets'"). So read the secret into an output here,
   # then gate the deploy job on it via the (allowed) `needs` context.
@@ -56,12 +104,29 @@ jobs:
     if: ${{ needs.gate.outputs.deploy == 'true' }}
     steps:
       - name: Deploy over SSH
-        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        env:
+          # Immutable per-commit tags pushed above; docker-compose.prod.yml reads
+          # these for the `api` / `migrate` services' `image:`.
+          API_IMAGE: ${{ needs.push.outputs.api_image }}
+          MIGRATE_IMAGE: ${{ needs.push.outputs.migrate_image }}
+          DEPLOY_SHA: ${{ github.sha }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         with:
           host: ${{ secrets.DEPLOY_SSH_HOST }}
           username: ${{ secrets.DEPLOY_SSH_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: API_IMAGE,MIGRATE_IMAGE,DEPLOY_SHA,DEPLOY_PATH
           script: |
-            cd ${{ secrets.DEPLOY_PATH }}
+            set -eu
+            cd "$DEPLOY_PATH"
+            # Keep the compose files / Caddyfile / scripts in step with the images.
+            if [ -d .git ]; then
+              git fetch --quiet origin
+              git checkout --quiet --detach "$DEPLOY_SHA"
+            fi
+            export API_IMAGE MIGRATE_IMAGE
+            # Pull the images CI just pushed, then start WITHOUT building so the
+            # host never runs a stale locally-built image.
             docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build

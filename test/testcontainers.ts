@@ -13,8 +13,13 @@ export interface TestDb {
   stop: () => Promise<void>;
 }
 
+// Same digest-pinned image as docker-compose.yml's `db` service, so tests run
+// against the exact Postgres build production does (bump both together).
+export const POSTGRES_TEST_IMAGE =
+  'postgres:16@sha256:fe03a7605299a34ddf5e4f285dff78c3d7190a576b3c6b46f2fcff69f4bffd54';
+
 export async function startTestDb(): Promise<TestDb> {
-  const container = await new PostgreSqlContainer('postgres:16').start();
+  const container = await new PostgreSqlContainer(POSTGRES_TEST_IMAGE).start();
   try {
     const url = container.getConnectionUri();
 
