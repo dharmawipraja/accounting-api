@@ -274,8 +274,8 @@ describe('Accounts (e2e)', () => {
       ).toBe(true);
     });
 
-    it('rejects PATCH isActive=false on an account with a role (422)', async () => {
-      const id = await roleAccountId('CASH');
+    it('rejects PATCH isActive=false on an account with a singleton role (422)', async () => {
+      const id = await roleAccountId('TAX_EXPENSE');
       const res = await request(app.getHttpServer() as App)
         .patch(`/v1/ledger/accounts/${id}`)
         .set('Authorization', `Bearer ${adminToken}`)
@@ -301,6 +301,201 @@ describe('Accounts (e2e)', () => {
         .expect(422);
       expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
       expect(await prisma.client.account.count({ where: { id } })).toBe(1);
+    });
+  });
+
+  describe('CASH accounts: retirable when zero-balance and not the last; role assignable by PATCH', () => {
+    const server = () => app.getHttpServer() as App;
+    const createAccount = async (body: Record<string, unknown>) =>
+      (
+        (
+          await request(server())
+            .post('/v1/ledger/accounts')
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({ parentCode: '1-0000', ...body })
+            .expect(201)
+        ).body as { id: string }
+      ).id;
+    const cashAccount = (code: string) =>
+      createAccount({
+        code,
+        name: `Bank ${code}`,
+        type: 'ASSET',
+        subtype: 'CURRENT_ASSET',
+        normalBalance: 'DEBIT',
+        role: 'CASH',
+      });
+    const postCash = async (cashId: string, side: 'debit' | 'credit') => {
+      const { data: accounts } = await app.get(AccountsService).list();
+      const modalId = accounts.find((a) => a.code === '3-1000')!.id;
+      await app.get(CompanyService).seedIfEmpty();
+      await app.get(PeriodsService).generatePeriods(2040);
+      await app.get(PostingService).post(
+        {
+          date: new Date('2040-03-10'),
+          description: `cash ${side}`,
+          sourceType: 'MANUAL',
+          createdBy: 'a',
+          lines:
+            side === 'debit'
+              ? [
+                  { accountId: cashId, debit: '1000' },
+                  { accountId: modalId, credit: '1000' },
+                ]
+              : [
+                  { accountId: modalId, debit: '1000' },
+                  { accountId: cashId, credit: '1000' },
+                ],
+        },
+        'p',
+      );
+    };
+
+    it('deactivates a zero-balance secondary CASH account (200)', async () => {
+      const id = await cashAccount('1-1810');
+      const res = await request(server())
+        .post(`/v1/ledger/accounts/${id}/deactivate`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect((res.body as { isActive: boolean }).isActive).toBe(false);
+    });
+
+    it('rejects retiring a CASH account with a non-zero balance (422), allows it once the balance nets to zero', async () => {
+      const id = await cashAccount('1-1820');
+      await postCash(id, 'debit');
+      const res = await request(server())
+        .post(`/v1/ledger/accounts/${id}/deactivate`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(422);
+      expect(res.body).toMatchObject({
+        code: 'VALIDATION_FAILED',
+        details: { id, role: 'CASH', balance: '1000.0000' },
+      });
+      await request(server())
+        .delete(`/v1/ledger/accounts/${id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(422);
+      await postCash(id, 'credit');
+      await request(server())
+        .post(`/v1/ledger/accounts/${id}/deactivate`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+    });
+
+    it('soft-deletes a zero-balance CASH account with no posted lines (204)', async () => {
+      const id = await cashAccount('1-1825');
+      await request(server())
+        .delete(`/v1/ledger/accounts/${id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(204);
+    });
+
+    it('PATCH role=CASH on a debit-normal ASSET account without a role (200)', async () => {
+      const id = await createAccount({
+        code: '1-1830',
+        name: 'Rekening Lama',
+        type: 'ASSET',
+        subtype: 'CURRENT_ASSET',
+        normalBalance: 'DEBIT',
+      });
+      const res = await request(server())
+        .patch(`/v1/ledger/accounts/${id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ role: 'CASH' })
+        .expect(200);
+      expect((res.body as { role: string }).role).toBe('CASH');
+    });
+
+    it('rejects PATCH role=CASH on a credit-normal (contra) asset (422)', async () => {
+      const id = await createAccount({
+        code: '1-1840',
+        name: 'Akumulasi Penyusutan X',
+        type: 'ASSET',
+        subtype: 'ACCUMULATED_DEPRECIATION',
+        normalBalance: 'CREDIT',
+      });
+      const res = await request(server())
+        .patch(`/v1/ledger/accounts/${id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ role: 'CASH' })
+        .expect(422);
+      expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+    });
+
+    it('rejects PATCH role=CASH on a non-ASSET account (422)', async () => {
+      const id = await createAccount({
+        code: '2-1830',
+        name: 'Utang Lain',
+        type: 'LIABILITY',
+        subtype: 'CURRENT_LIABILITY',
+        normalBalance: 'CREDIT',
+        parentCode: '2-0000',
+      });
+      await request(server())
+        .patch(`/v1/ledger/accounts/${id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ role: 'CASH' })
+        .expect(422);
+    });
+
+    it('rejects PATCH role=CASH on an account holding a singleton role (422)', async () => {
+      const ar = (await prisma.client.account.findFirst({
+        where: { role: 'AR_CONTROL' },
+      }))!.id;
+      await request(server())
+        .patch(`/v1/ledger/accounts/${ar}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ role: 'CASH' })
+        .expect(422);
+      expect(
+        (await prisma.client.account.findFirst({ where: { id: ar } }))!.role,
+      ).toBe('AR_CONTROL');
+    });
+
+    it('rejects PATCH of a singleton role (create-only) with 400', async () => {
+      const id = await createAccount({
+        code: '1-1850',
+        name: 'Piutang Lain',
+        type: 'ASSET',
+        subtype: 'CURRENT_ASSET',
+        normalBalance: 'DEBIT',
+      });
+      await request(server())
+        .patch(`/v1/ledger/accounts/${id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ role: 'AR_CONTROL' })
+        .expect(400);
+    });
+
+    it('rejects retiring the last active CASH account (422)', async () => {
+      const kas = (await prisma.client.account.findFirst({
+        where: { code: '1-1000' },
+      }))!.id;
+      const others = await prisma.client.account.findMany({
+        where: { role: 'CASH', isActive: true, id: { not: kas } },
+      });
+      for (const o of others) {
+        await request(server())
+          .post(`/v1/ledger/accounts/${o.id}/deactivate`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .expect(200);
+      }
+      const res = await request(server())
+        .post(`/v1/ledger/accounts/${kas}/deactivate`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(422);
+      expect(res.body).toMatchObject({
+        code: 'VALIDATION_FAILED',
+        details: { id: kas, role: 'CASH', otherActiveCashAccounts: 0 },
+      });
+      await request(server())
+        .delete(`/v1/ledger/accounts/${kas}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(422);
+      expect(
+        (await prisma.client.account.findFirst({ where: { id: kas } }))!
+          .isActive,
+      ).toBe(true);
     });
   });
 });

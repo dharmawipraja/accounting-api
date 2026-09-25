@@ -770,9 +770,9 @@ no auth.
 - `GET    /v1/ledger/accounts/:id` · any · get one account
 - `GET    /v1/ledger/accounts/:id/balance` · any · account balance (`?asOf=`)
 - `POST   /v1/ledger/accounts` · ACCOUNTANT+ · create account
-- `PATCH  /v1/ledger/accounts/:id` · ACCOUNTANT+ · update account (`isActive: false` follows the deactivate rules)
-- `POST   /v1/ledger/accounts/:id/deactivate` · ADMIN · soft-deactivate account (system accounts — any non-null `role` — → `422`)
-- `DELETE /v1/ledger/accounts/:id` · ADMIN · soft-delete account (system accounts or accounts with posted lines → `422`)
+- `PATCH  /v1/ledger/accounts/:id` · ACCOUNTANT+ · update account `{name?, cashFlowCategory?, isActive?, role?}` (`isActive: false` follows the deactivate rules). `role` accepts **only `'CASH'`**: it marks an existing postable, debit-normal `ASSET` account with no role as a cash/bank account so payments can use it; any other role value → `400`, a credit-normal/non-ASSET/header account or one that already holds a singleton role → `422 VALIDATION_FAILED`. Singleton roles (AR/AP control, retained earnings, opening-balance equity, tax expense) are create-only.
+- `POST   /v1/ledger/accounts/:id/deactivate` · ADMIN · soft-deactivate account. Singleton system accounts (non-null `role` other than `CASH`) → `422`. A `CASH` account → `422` unless its balance is zero (`details.balance`) **and** another active `CASH` account remains (`details.otherActiveCashAccounts: 0`)
+- `DELETE /v1/ledger/accounts/:id` · ADMIN · soft-delete account (same system-account / `CASH` rules as deactivate; accounts with posted lines → `422`)
 
 ### Ledger — journal
 

@@ -10,6 +10,25 @@ import {
 } from '../../common/errors/domain-errors';
 import { mapUniqueViolation } from '../../common/errors/map-unique-violation';
 import { CHART_OF_ACCOUNTS } from './chart-of-accounts.seed';
+import { Money } from '../../common/money/money';
+import { POSTED_JE } from '../balances/posted-entry.sql';
+
+/**
+ * Transaction-scoped advisory lock serializing CASH-account retirements, so
+ * two concurrent retirements of the last two CASH accounts can't both pass the
+ * "another active CASH account remains" check. Kept out of the fiscal-year
+ * range and the other 71_00x_001 keys (see domain-glossary.md lock table).
+ */
+export const CASH_RETIRE_LOCK_KEY = 71_003_001;
+
+export interface UpdateAccountInput {
+  name?: string;
+  cashFlowCategory?: Account['cashFlowCategory'];
+  isActive?: boolean;
+  /** Only CASH is assignable after creation (a set-valued role); singleton
+   *  roles stay create-only. */
+  role?: 'CASH';
+}
 
 export interface CreateAccountInput {
   code: string;
@@ -210,19 +229,53 @@ export class AccountsService implements OnModuleInit {
     }
   }
 
-  async update(
-    id: string,
-    data: Partial<Pick<Account, 'name' | 'cashFlowCategory' | 'isActive'>>,
-  ): Promise<Account> {
-    if (data.isActive === false) {
-      // A deactivation — same lock + role rule as POST :id/deactivate.
+  async update(id: string, input: UpdateAccountInput): Promise<Account> {
+    const { role, ...data } = input;
+    if (data.isActive === false || role !== undefined) {
       return this.prisma.transaction(async (tx) => {
-        await this.lockForRetire(tx, id, 'deactivate');
-        return tx.account.update({ where: { id }, data });
+        // A deactivation — same lock + role rule as POST :id/deactivate.
+        if (data.isActive === false)
+          await this.lockForRetire(tx, id, 'deactivate');
+        if (role !== undefined) await this.assertCashAssignable(tx, id);
+        return tx.account.update({
+          where: { id },
+          data: role !== undefined ? { ...data, role } : data,
+        });
       });
     }
     await this.findById(id);
     return this.prisma.client.account.update({ where: { id }, data });
+  }
+
+  /** CASH may be added to an existing account (e.g. a bank account created
+   *  before roles existed) so payments can use it — but only to a postable,
+   *  debit-normal ASSET, and never over a singleton system role. */
+  private async assertCashAssignable(tx: LedgerTx, id: string): Promise<void> {
+    const rows = await tx.$queryRaw<
+      {
+        type: string;
+        normal_balance: string;
+        role: string | null;
+        is_postable: boolean;
+      }[]
+    >`
+      SELECT type::text AS type, normal_balance::text AS normal_balance,
+             role::text AS role, is_postable
+      FROM accounts WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
+    if (rows.length === 0)
+      throw new NotFoundDomainError('Account not found', { id });
+    const a = rows[0];
+    if (a.role === 'CASH') return;
+    if (a.role !== null)
+      throw new ValidationFailedError(
+        `Account already holds the system role ${a.role}; system roles cannot be changed`,
+        { id, role: a.role },
+      );
+    if (a.type !== 'ASSET' || a.normal_balance !== 'DEBIT' || !a.is_postable)
+      throw new ValidationFailedError(
+        'The CASH role requires a postable, debit-normal ASSET account',
+        { id, type: a.type, normalBalance: a.normal_balance },
+      );
   }
 
   /** Deactivate under a FOR UPDATE row lock: posting re-reads its accounts
@@ -268,10 +321,11 @@ export class AccountsService implements OnModuleInit {
   }
 
   /** FOR UPDATE the live account row (404 if missing/deleted) and refuse to
-   *  retire a system account: a non-null `role` (cash, AR/AP control, retained
-   *  earnings, opening-balance equity, tax expense) is resolved by role at
-   *  post/close time, so deactivating or deleting it would break documents,
-   *  payments and year-end close. */
+   *  retire a singleton system account: AR/AP control, retained earnings,
+   *  opening-balance equity and tax expense are resolved by role at post/close
+   *  time, so deactivating or deleting one would break documents and year-end
+   *  close. CASH is a set, so one CASH account may be retired as long as
+   *  `assertCashRetirable` holds. */
   private async lockForRetire(
     tx: LedgerTx,
     id: string,
@@ -282,11 +336,46 @@ export class AccountsService implements OnModuleInit {
       WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
     if (rows.length === 0)
       throw new NotFoundDomainError('Account not found', { id });
-    if (rows[0].role !== null)
+    if (rows[0].role === 'CASH') {
+      await this.assertCashRetirable(tx, id, action);
+    } else if (rows[0].role !== null) {
       throw new ValidationFailedError(
         `Cannot ${action} a system account (role ${rows[0].role})`,
         { id, role: rows[0].role },
       );
+    }
     return rows[0];
+  }
+
+  /** A CASH account may be retired only when (a) its posted balance is zero —
+   *  read under the row lock, which a concurrent post's FOR SHARE re-read
+   *  serializes against — and (b) at least one OTHER active CASH account
+   *  remains, checked under CASH_RETIRE_LOCK_KEY so two concurrent
+   *  retirements can't both see the other as the survivor. */
+  private async assertCashRetirable(
+    tx: LedgerTx,
+    id: string,
+    action: 'deactivate' | 'delete',
+  ): Promise<void> {
+    const [{ balance }] = await tx.$queryRaw<{ balance: string }[]>`
+      SELECT (COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0))::text AS balance
+      FROM journal_lines jl
+      JOIN journal_entries je ON je.id = jl.journal_entry_id
+      WHERE jl.account_id = ${id} AND ${POSTED_JE}`;
+    const net = Money.of(balance);
+    if (!net.isZero())
+      throw new ValidationFailedError(
+        `Cannot ${action} a CASH account with a non-zero balance; move the balance to another cash account first`,
+        { id, role: 'CASH', balance: net.toPersistence() },
+      );
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${CASH_RETIRE_LOCK_KEY})`;
+    const [{ n }] = await tx.$queryRaw<{ n: number }[]>`
+      SELECT COUNT(*)::int AS n FROM accounts
+      WHERE role = 'CASH' AND id <> ${id} AND is_active AND deleted_at IS NULL`;
+    if (n === 0)
+      throw new ValidationFailedError(
+        `Cannot ${action} the last active CASH account; payments need at least one`,
+        { id, role: 'CASH', otherActiveCashAccounts: 0 },
+      );
   }
 }

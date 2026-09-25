@@ -74,6 +74,9 @@ programmatically, instead of hard-coding account codes: `CASH`, `AR_CONTROL`,
 `AP_CONTROL`, `RETAINED_EARNINGS`, `OPENING_BALANCE_EQUITY`, `TAX_EXPENSE`. `CASH` may
 be a set (multiple bank/cash accounts); the other five are singletons. New code should
 identify system accounts via `account.role`, never by code string.
+- Singleton roles are create-only. `CASH` may also be assigned later with
+  `PATCH /ledger/accounts/:id {role: 'CASH'}` — only to a postable, debit-normal `ASSET`
+  with no role (e.g. a bank account created before roles existed).
 - `Account.role` (nullable) in `prisma/schema.prisma`. Examples: year-end close looks up
   `role: 'RETAINED_EARNINGS'`; cash flow sums `role === 'CASH'`; the income statement pulls
   the `role === 'TAX_EXPENSE'` line out separately.
@@ -105,7 +108,10 @@ rule keys off `posted_at`, not `status`.
   (in-transaction write); in-tx TOCTOU guard `assertPostablePeriodInTx`, then the line
   accounts are re-validated `FOR SHARE` (sorted by id) before the sequence. Account
   deactivate/delete take the account row `FOR UPDATE`, so they serialize with posting;
-  accounts with a `role` can never be deactivated or deleted.
+  accounts with a singleton `role` can never be deactivated or deleted. A `CASH` account
+  can, but only when its posted balance is zero (read under that row lock) and at least
+  one OTHER active `CASH` account remains (checked under advisory lock `71_003_001`);
+  otherwise `422` with `details.balance` / `details.otherActiveCashAccounts`.
 
 ### Gapless entry number (nomor jurnal)
 Posted entries get a per-fiscal-year sequential `entryNumber` and a human ref
@@ -193,6 +199,7 @@ keep new keys out of these ranges):
 | fiscal year int | **exclusive** | `YearEndCloseService.close()` / `reopen()` | close/reopen vs each other and vs posts |
 | `71_001_001` (`USER_ADMIN_LOCK_KEY`) | exclusive | `UserAdminService` update/remove | admin-pool mutations (last-admin rail) |
 | `71_002_001` (`PERIOD_GENERATION_LOCK_KEY`) | exclusive | `generatePeriods`, `CompanyService.update` (start-month change) | period generation vs start-month change |
+| `71_003_001` (`CASH_RETIRE_LOCK_KEY`) | exclusive | `AccountsService` deactivate/delete of a `CASH` account | CASH retirements vs each other (last-CASH rail) |
 
 ### Closed-year guard
 A closed fiscal year rejects new posts, draft-posts, reversals, and document voids until

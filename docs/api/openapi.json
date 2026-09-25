@@ -4082,6 +4082,13 @@
       "UpdateAccountDto": {
         "type": "object",
         "properties": {
+          "role": {
+            "type": "string",
+            "description": "Assign the CASH role to an existing postable, debit-normal ASSET account that has no role (e.g. a pre-existing bank account). Singleton roles are create-only.",
+            "enum": [
+              "CASH"
+            ]
+          },
           "name": {
             "type": "string"
           },
