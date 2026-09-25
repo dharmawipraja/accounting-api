@@ -56,8 +56,8 @@ export class PurchaseBillsService {
       allocationColumn: 'purchase_bill_id',
       trigramColumns: ['bill_ref', 'vendor_invoice_no', 'description'],
       model: this.prisma.client.purchaseBill,
-      findById: (id) =>
-        this.prisma.client.purchaseBill.findFirst({
+      findById: (id, db = this.prisma.client) =>
+        db.purchaseBill.findFirst({
           where: { id },
           include: { lines: { orderBy: { lineNo: 'asc' } } },
         }),

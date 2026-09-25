@@ -53,3 +53,44 @@ export function assertVoidDateNotBefore(
     );
   }
 }
+
+type PostableLine = {
+  accountId: string;
+  quantity: Prisma.Decimal | string;
+  unitPrice: Prisma.Decimal | string;
+  taxCodeIds: string[];
+};
+
+/** The document content a journal entry is derived from. */
+export interface PostableDraftContent {
+  date: Date;
+  description: string | null;
+  lines?: PostableLine[];
+}
+
+/** True when two reads of a draft carry the same postable content (date,
+ *  description, and lines in order: account, quantity, unit price, tax codes).
+ *  Posting uses it under the document row lock to prove the entry it prepared
+ *  from a pre-lock read matches the locked row. */
+export function samePostableContent(
+  a: PostableDraftContent,
+  b: PostableDraftContent,
+): boolean {
+  if (a.date.getTime() !== b.date.getTime()) return false;
+  if ((a.description ?? null) !== (b.description ?? null)) return false;
+  const la = a.lines ?? [];
+  const lb = b.lines ?? [];
+  if (la.length !== lb.length) return false;
+  const eq = (x: Prisma.Decimal | string, y: Prisma.Decimal | string) =>
+    new Prisma.Decimal(x.toString()).equals(y.toString());
+  return la.every((x, i) => {
+    const y = lb[i];
+    return (
+      x.accountId === y.accountId &&
+      eq(x.quantity, y.quantity) &&
+      eq(x.unitPrice, y.unitPrice) &&
+      x.taxCodeIds.length === y.taxCodeIds.length &&
+      x.taxCodeIds.every((t, j) => t === y.taxCodeIds[j])
+    );
+  });
+}

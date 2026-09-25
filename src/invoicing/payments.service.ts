@@ -264,8 +264,11 @@ export class PaymentsService {
           throw new ValidationFailedError('Payment is no longer a draft', {
             id,
           });
-        // Post-time re-validation under the lock: the cash side must still be
-        // a CASH-role account (catches drafts written before the rule existed).
+        // A draft payment has no edit path (create / delete / post only), so
+        // the cashAccountId, amount and allocations read before this tx are
+        // the locked row's; a concurrent delete fails the re-check above.
+        // Post-time re-validation: the cash side must still be a CASH-role
+        // account (catches drafts written before the rule existed).
         await assertCashAccount(tx, payment.cashAccountId);
 
         // Lock each target document FOR UPDATE and re-verify outstanding (the real over-allocation guard).

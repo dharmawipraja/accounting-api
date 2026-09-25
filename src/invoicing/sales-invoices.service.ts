@@ -54,8 +54,8 @@ export class SalesInvoicesService {
       allocationColumn: 'sales_invoice_id',
       trigramColumns: ['invoice_ref', 'description'],
       model: this.prisma.client.salesInvoice,
-      findById: (id) =>
-        this.prisma.client.salesInvoice.findFirst({
+      findById: (id, db = this.prisma.client) =>
+        db.salesInvoice.findFirst({
           where: { id },
           include: { lines: { orderBy: { lineNo: 'asc' } } },
         }),

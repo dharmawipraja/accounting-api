@@ -446,6 +446,13 @@ DELETE .../:id                                        delete a DRAFT        (ACC
 Posting an invoice/bill updates the AR/AP subledger and the corresponding control
 account; voiding reverses it.
 
+**Edit/delete vs post.** `PATCH`, `DELETE` and `/post` on the same draft serialize on
+the document row. An edit or delete that loses to a post gets `422 VALIDATION_FAILED`
+(`Only a DRAFT invoice can be edited` / `... can be deleted`); a post always posts the
+lines stored at that moment (it restarts internally if the draft was edited mid-post).
+If the draft keeps changing across several internal restarts the post returns
+`409 CONFLICT` (`Invoice was edited while being posted; retry`) — reload and retry.
+
 **Line accounts.** On create, `PATCH` and `/post`, each line's `accountId` is checked;
 violations return `422 VALIDATION_FAILED`:
 

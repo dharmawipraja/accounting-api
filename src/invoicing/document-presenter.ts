@@ -27,6 +27,7 @@ export function documentMessages(l: DocumentLabels) {
     onlyDraftEdit: `Only a DRAFT ${l.noun} can be edited`,
     notADraft: `${N} is not a draft`,
     noLongerDraft: `${N} is no longer a draft`,
+    changedDuringPost: `${N} was edited while being posted; retry`,
     onlyPostedVoid: `Only a POSTED ${l.noun} can be voided`,
     voidWithPaymentsFirst: `Cannot void ${l.article} ${l.noun} with payments; void the payments first`,
     voidWithPayments: `Cannot void ${l.article} ${l.noun} with payments`,

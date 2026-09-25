@@ -122,7 +122,8 @@ export interface DocumentDescriptor<
   /** Own searched columns for fuzzy ?q= search — a non-empty tuple (trigramSearch requires ≥1). */
   trigramColumns: [string, ...string[]];
   model: SoftDeletableModel;
-  findById(id: string): Promise<TRow | null>;
+  /** Read the row with its lines; `db` = a transaction to read under its locks. */
+  findById(id: string, db?: LedgerTx): Promise<TRow | null>;
   page(a: {
     where: DocumentListWhere;
     limit: number;

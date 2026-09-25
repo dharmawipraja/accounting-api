@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { TaxKind } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { ExtendedPrismaClient } from '../common/prisma/soft-delete.extension';
 import { Money } from '../common/money/money';
 import { ValidationFailedError } from '../common/errors/domain-errors';
 
@@ -54,7 +55,13 @@ const ALLOWED_KINDS: Record<TaxNature, TaxKind[]> = {
 export class TaxService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async calculate(input: TaxableTransaction): Promise<TaxCalculation> {
+  /** `db` lets a caller run the tax-code read inside its own transaction (e.g.
+   *  a draft edit under the document row lock) instead of taking a second pool
+   *  connection; defaults to the shared client. */
+  async calculate(
+    input: TaxableTransaction,
+    db: Pick<ExtendedPrismaClient, 'taxCode'> = this.prisma.client,
+  ): Promise<TaxCalculation> {
     if (input.lines.length === 0) {
       throw new ValidationFailedError(
         'A taxable transaction needs at least one line',
@@ -73,7 +80,7 @@ export class TaxService {
     }
 
     const ids = [...new Set(input.lines.flatMap((l) => l.taxCodeIds))];
-    const codes = await this.prisma.client.taxCode.findMany({
+    const codes = await db.taxCode.findMany({
       where: { id: { in: ids } },
     });
     const byId = new Map(codes.map((c) => [c.id, c]));

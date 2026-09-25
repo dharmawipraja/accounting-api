@@ -17,6 +17,7 @@ import {
   taxableLines,
   findControlAccountId,
   assertVoidDateNotBefore,
+  samePostableContent,
 } from './document-helpers';
 import {
   DocumentDescriptor,
@@ -31,6 +32,13 @@ import {
   documentMessages,
 } from './document-presenter';
 import { assertDocumentLineAccounts } from './document-account-rules';
+
+/** Posting restarts from a fresh read at most this many times when the draft
+ *  is edited between its pre-read and the row lock, then answers 409. */
+const MAX_POST_ATTEMPTS = 3;
+
+/** Internal signal: the locked draft no longer matches the pre-lock read. */
+class DraftChangedError extends Error {}
 
 type Spec<
   R extends DocumentRow,
@@ -114,55 +122,65 @@ export class TaxedDocumentService {
     return spec.createRow(common, input);
   }
 
+  /** Edit a DRAFT. The whole edit runs in one transaction that first locks the
+   *  document row FOR UPDATE and re-checks it is still a live DRAFT — the same
+   *  row lock posting takes first — so an edit and a post fully serialize: a
+   *  post that wins leaves the edit a 422 onlyDraftEdit, and an edit that wins
+   *  is what the post then sees. Lines/totals are derived from the row read
+   *  under that lock (tax-code/account reads go through the same tx). */
   async update<
     R extends DocumentRow,
     C extends CreateDocumentInput,
     U extends UpdateDocumentInput,
   >(spec: Spec<R, C, U>, id: string, input: U): Promise<R> {
     const m = documentMessages(spec);
-    const row = await this.getById(spec, id);
-    if (row.status !== 'DRAFT')
-      throw new ValidationFailedError(m.onlyDraftEdit, {
-        id,
-        status: row.status,
-      });
-    const nextLines =
-      input.lines ??
-      (row.lines ?? []).map((l) => ({
-        description: l.description,
-        accountId: l.accountId,
-        quantity: l.quantity.toString(),
-        unitPrice: l.unitPrice.toString(),
-        taxCodeIds: l.taxCodeIds,
-      }));
-    await assertDocumentLineAccounts(
-      this.prisma.client,
-      spec.nature,
-      nextLines.map((l) => l.accountId),
-    );
+    await this.getById(spec, id); // 404 for an unknown / deleted id
     const settlementId = await findControlAccountId(
       this.prisma,
       spec.controlRole,
     );
-    const totals = await this.docPosting.computeTotals(
-      spec.nature,
-      settlementId,
-      taxableLines(nextLines),
+    await this.prisma.client.$transaction(
+      async (tx) => {
+        const ltx: LedgerTx = tx;
+        await this.lockDraftRow(ltx, spec, id, m.onlyDraftEdit);
+        const row = await spec.findById(id, ltx);
+        if (!row) throw new ValidationFailedError(m.onlyDraftEdit, { id });
+        const nextLines =
+          input.lines ??
+          (row.lines ?? []).map((l) => ({
+            description: l.description,
+            accountId: l.accountId,
+            quantity: l.quantity.toString(),
+            unitPrice: l.unitPrice.toString(),
+            taxCodeIds: l.taxCodeIds,
+          }));
+        await assertDocumentLineAccounts(
+          ltx,
+          spec.nature,
+          nextLines.map((l) => l.accountId),
+        );
+        const totals = await this.docPosting.computeTotals(
+          spec.nature,
+          settlementId,
+          taxableLines(nextLines),
+          ltx,
+        );
+        const common = {
+          date: input.date ?? row.date,
+          dueDate: input.dueDate ?? row.dueDate,
+          description: input.description ?? row.description,
+          subtotal: totals.subtotal,
+          taxTotal: totals.taxTotal,
+          withholdingTotal: totals.withholdingTotal,
+          total: totals.total,
+          lines: { create: buildLineCreateData(nextLines) },
+        };
+        await spec.updateRow(ltx, id, common, input, row);
+      },
+      // An edit racing a post waits out the post's row lock here; give it room
+      // to reach its clean 422 instead of Prisma's 5s default (→ 500 under load).
+      { maxWait: 5000, timeout: 20000 },
     );
-    const common = {
-      date: input.date ?? row.date,
-      dueDate: input.dueDate ?? row.dueDate,
-      description: input.description ?? row.description,
-      subtotal: totals.subtotal,
-      taxTotal: totals.taxTotal,
-      withholdingTotal: totals.withholdingTotal,
-      total: totals.total,
-      lines: { create: buildLineCreateData(nextLines) },
-    };
-    await this.prisma.client.$transaction(async (tx) => {
-      const ltx: LedgerTx = tx;
-      await spec.updateRow(ltx, id, common, input, row);
-    });
     return this.getById(spec, id);
   }
 
@@ -218,6 +236,33 @@ export class TaxedDocumentService {
     U extends UpdateDocumentInput,
   >(spec: Spec<R, C, U>, id: string, postedBy: string): Promise<R> {
     const m = documentMessages(spec);
+    // The entry is prepared (tax, period, SoD, accounts) from a pre-lock read to
+    // keep those reads out of the write tx; under the row lock the stored draft
+    // is re-read and must still match it. A draft edited in between restarts the
+    // post from the fresh read (bounded), so what is posted is always the row
+    // as it stands under the lock.
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await this.postOnce(spec, id, postedBy, m);
+        return this.getById(spec, id);
+      } catch (err) {
+        if (!(err instanceof DraftChangedError)) throw err;
+        if (attempt >= MAX_POST_ATTEMPTS)
+          throw new ConflictDomainError(m.changedDuringPost, { id });
+      }
+    }
+  }
+
+  private async postOnce<
+    R extends DocumentRow,
+    C extends CreateDocumentInput,
+    U extends UpdateDocumentInput,
+  >(
+    spec: Spec<R, C, U>,
+    id: string,
+    postedBy: string,
+    m: ReturnType<typeof documentMessages>,
+  ): Promise<void> {
     const row = await this.getById(spec, id);
     if (row.status !== 'DRAFT')
       throw new ValidationFailedError(m.notADraft, { id, status: row.status });
@@ -245,10 +290,14 @@ export class TaxedDocumentService {
         lines: taxableLines(row.lines ?? []),
         table: spec.table,
         notDraftMessage: m.noLongerDraft,
+        verifyLockedInTx: async (tx) => {
+          const locked = await spec.findById(id, tx);
+          if (!locked || !samePostableContent(row, locked))
+            throw new DraftChangedError();
+        },
       },
       (ctx) => spec.finalizePosted(ctx.tx, id, ctx, postedBy),
     );
-    return this.getById(spec, id);
   }
 
   async void<
@@ -345,5 +394,27 @@ export class TaxedDocumentService {
       Prisma.sql`SELECT status, amount_paid FROM ${Prisma.raw(spec.table)} WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`,
     );
     return rows[0];
+  }
+
+  /** FOR UPDATE the document row and re-check it is still a live DRAFT; the
+   *  first statement of every draft mutation (same first lock as posting). */
+  private async lockDraftRow<
+    R extends DocumentRow,
+    C extends CreateDocumentInput,
+    U extends UpdateDocumentInput,
+  >(
+    tx: LedgerTx,
+    spec: Spec<R, C, U>,
+    id: string,
+    message: string,
+  ): Promise<void> {
+    const rows = await tx.$queryRaw<{ status: string }[]>(
+      Prisma.sql`SELECT status FROM ${Prisma.raw(spec.table)} WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`,
+    );
+    if (rows.length === 0 || rows[0].status !== 'DRAFT')
+      throw new ValidationFailedError(message, {
+        id,
+        status: rows[0]?.status,
+      });
   }
 }

@@ -19,9 +19,14 @@ export class DocumentLifecycleService {
   ) {}
 
   /**
-   * Soft-deletes a DRAFT document. The `status: 'DRAFT', deletedAt: null`
-   * predicate is the optimistic concurrency guard: a concurrent post flips
-   * status so count===0 and we 422. Mirrors the per-service deleteDraft().
+   * Soft-deletes a DRAFT document. This single conditional UPDATE is itself the
+   * header row lock + re-check: Postgres row-locks the row, and if a concurrent
+   * post holds it FOR UPDATE the UPDATE waits, then re-evaluates
+   * `status = 'DRAFT' AND deleted_at IS NULL` against the committed version —
+   * a post that won leaves count===0 (422); a delete that won makes the post's
+   * own FOR UPDATE (… AND deleted_at IS NULL) find no row (422). Never
+   * POSTED-and-deleted (test/draft-race.e2e-spec.ts). It takes no other lock,
+   * so it cannot invert posting's lock order.
    */
   async softDeleteDraft(
     model: SoftDeletableModel,

@@ -24,6 +24,11 @@ export interface PostTaxedDocParams {
   lines: TaxableLineInput[];
   /** Table the source document lives in — a constant literal, never user input. */
   table: 'sales_invoices' | 'purchase_bills';
+  /** Runs right after the source row is locked FOR UPDATE and re-checked DRAFT.
+   *  Must re-read the document through `tx` and throw if its postable content
+   *  (date, description, lines) differs from what `date`/`description`/`lines`
+   *  above were derived from — so the entry posted is always the locked row's. */
+  verifyLockedInTx: (tx: LedgerTx) => Promise<void>;
   /** Type-specific "no longer a draft" message (from documentMessages(spec)). */
   notDraftMessage: string;
 }
@@ -72,24 +77,31 @@ export class DocumentPostingService {
     nature: 'SALE' | 'PURCHASE',
     settlementAccountId: string,
     lines: TaxableLineInput[],
+    db?: LedgerTx,
   ): Promise<{
     subtotal: string;
     taxTotal: string;
     withholdingTotal: string;
     total: string;
   }> {
-    const calc = await this.tax.calculate({
-      nature,
-      settlementAccountId,
-      lines,
-    });
+    const calc = await this.tax.calculate(
+      {
+        nature,
+        settlementAccountId,
+        lines,
+      },
+      db,
+    );
     return this.summarize(calc);
   }
 
   /** Post a taxed document atomically. The source row is locked (FOR UPDATE) and
-   *  re-checked still-DRAFT internally, before a number is consumed; `finalize`
-   *  updates the document row to POSTED with the assigned number/ref + journal
-   *  entry id. */
+   *  re-checked still-DRAFT internally, then `verifyLockedInTx` proves the lines
+   *  the entry was derived from are the ones stored under that lock (a draft edit
+   *  serializes on the same row lock), before a number is consumed. Lock order:
+   *  document row → fiscal-year advisory lock / period FOR SHARE → sequences.
+   *  `finalize` updates the document row to POSTED with the assigned number/ref +
+   *  journal entry id. */
   async post(
     params: PostTaxedDocParams,
     finalize: (ctx: PostedDocContext) => Promise<void>,
@@ -118,8 +130,11 @@ export class DocumentPostingService {
         params.sourceId,
         params.notDraftMessage,
       );
-      // Post-time re-validation under the row lock: the line accounts being
-      // posted must still satisfy the document line rules (catches drafts
+      // The locked row must still hold exactly the content the entry was
+      // derived from; otherwise an edit committed after the pre-read.
+      await params.verifyLockedInTx(tx);
+      // Post-time re-validation of the (now verified-current) line accounts:
+      // they must still satisfy the document line rules (catches drafts
       // written before the rules existed).
       await assertDocumentLineAccounts(
         tx,

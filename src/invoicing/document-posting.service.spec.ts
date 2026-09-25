@@ -56,6 +56,7 @@ describe('DocumentPostingService (orchestration)', () => {
     lines: [],
     table: 'sales_invoices' as const,
     notDraftMessage: 'Invoice is no longer a draft',
+    verifyLockedInTx: jest.fn().mockResolvedValue(undefined),
   };
 
   it('prepares before the transaction, locks before numbering, threads period/fy, and finalizes', async () => {
@@ -80,6 +81,16 @@ describe('DocumentPostingService (orchestration)', () => {
     );
     // lock-before-number: $queryRaw (FOR UPDATE) must precede docNumber.next
     expect(txWithLock.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      docNumber.next.mock.invocationCallOrder[0],
+    );
+    // the locked row is verified against the prepared content after the lock,
+    // before a number is consumed
+    const verify = params.verifyLockedInTx;
+    expect(verify).toHaveBeenCalledWith(txWithLock);
+    expect(txWithLock.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      verify.mock.invocationCallOrder[0],
+    );
+    expect(verify.mock.invocationCallOrder[0]).toBeLessThan(
       docNumber.next.mock.invocationCallOrder[0],
     );
     // preparePosting token is passed directly to the write (2-arg token form)
