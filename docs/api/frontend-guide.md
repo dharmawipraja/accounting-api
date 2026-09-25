@@ -145,6 +145,10 @@ These are the typed domain errors the API raises (`src/common/errors/domain-erro
 
 Prisma-level failures are normalized too: a unique conflict surfaces as `409 CONFLICT`,
 a missing row as `404 NOT_FOUND`, malformed input as `400 INVALID_INPUT`.
+A database **deadlock or serialization failure** (a concurrent transaction won)
+surfaces as `409 CONFLICT` with `details: { retryable: true }`: nothing was
+committed and the idempotency key was released, so retry the same request (same
+`Idempotency-Key`) after a short back-off.
 
 ### Money
 
@@ -204,17 +208,30 @@ Behavior:
 
 - **Replay** — a repeated call with the same key and identical body returns the
   original response (201/200) without re-executing the write. Safe to retry.
-- **Retry after a timeout (408) or network failure — reuse the SAME key.** A
-  408 does _not_ mean the write failed: the server may still finish it after
-  responding. Retrying with the same key is always safe (you get a replay, or
-  a `409` while it's still running — back off and retry the same key). Retrying
-  with a _new_ key can create a duplicate invoice/payment.
+- **Retry after a timeout (408), a 5xx, or a network failure — reuse the SAME key.**
+  A 408/500 does _not_ mean the write failed: the server may have committed it
+  (or may still finish it) after responding. A same-key retry **never executes
+  the write twice**. It gets one of:
+  - the original response (replay) — done;
+  - `409 CONFLICT` "in progress" while the first request is still running — back
+    off and retry the same key;
+  - `409 CONFLICT` with `details.committed: true` ("…committed its write, but its
+    response is unavailable") — the write **did** happen but its response was
+    lost. **Stop retrying** (this key is spent and will keep returning this 409);
+    reload the list/resource to find the created or updated record;
+  - the normal outcome of a fresh attempt, if the first request failed without
+    committing anything (its key was released).
+
+  Retrying with a _new_ key can create a duplicate invoice/payment.
 - **Keys are scoped per user** — two different users may use the same key
   independently; a key never replays another user's response.
 - **Body/endpoint mismatch** — same key with a different request body or a different
   endpoint → **`422 VALIDATION_FAILED`**.
 - **In-flight** — same key while the first request is still being processed →
   **`409 CONFLICT`**.
+- **Committed, response lost** — same key after the first request's write
+  committed but its response could not be recorded → **`409 CONFLICT`** with
+  `details: { key, committed: true }`. Don't retry; reload the resource.
 - **Missing header** — omitting `Idempotency-Key` on a covered endpoint →
   **`422 VALIDATION_FAILED`**.
 

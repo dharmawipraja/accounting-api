@@ -29,9 +29,7 @@ describe('DocumentPostingService (orchestration)', () => {
       buildRef: jest.fn().mockReturnValue('INV/2026/000042'),
     };
     const prisma = {
-      client: {
-        $transaction: jest.fn((cb: (t: unknown) => unknown) => cb(tx)),
-      },
+      transaction: jest.fn((cb: (t: unknown) => unknown) => cb(tx)),
     };
     const svc = new DocumentPostingService(
       prisma as unknown as PrismaService,
@@ -66,7 +64,7 @@ describe('DocumentPostingService (orchestration)', () => {
       ...tx,
       $queryRaw: jest.fn().mockResolvedValue([{ status: 'DRAFT' }]),
     };
-    (prisma.client.$transaction as jest.Mock).mockImplementation(
+    (prisma.transaction as jest.Mock).mockImplementation(
       (cb: (t: unknown) => unknown) => cb(txWithLock),
     );
     const finalize = jest.fn().mockResolvedValue(undefined);
@@ -77,7 +75,7 @@ describe('DocumentPostingService (orchestration)', () => {
     expect(tax.calculate).toHaveBeenCalledTimes(1);
     expect(posting.preparePosting).toHaveBeenCalledTimes(1);
     expect(posting.preparePosting.mock.invocationCallOrder[0]).toBeLessThan(
-      prisma.client.$transaction.mock.invocationCallOrder[0],
+      prisma.transaction.mock.invocationCallOrder[0],
     );
     // lock-before-number: $queryRaw (FOR UPDATE) must precede docNumber.next
     expect(txWithLock.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
@@ -123,7 +121,7 @@ describe('DocumentPostingService (orchestration)', () => {
       // FOR UPDATE lock re-reads the row as already POSTED (lost the race)
       $queryRaw: jest.fn().mockResolvedValue([{ status: 'POSTED' }]),
     };
-    (prisma.client.$transaction as jest.Mock).mockImplementation(
+    (prisma.transaction as jest.Mock).mockImplementation(
       (cb: (t: unknown) => unknown) => cb(txWithLock),
     );
     const finalize = jest.fn().mockResolvedValue(undefined);
@@ -146,7 +144,7 @@ describe('DocumentPostingService (orchestration)', () => {
       // FOR UPDATE lock finds no row (soft-deleted / missing)
       $queryRaw: jest.fn().mockResolvedValue([]),
     };
-    (prisma.client.$transaction as jest.Mock).mockImplementation(
+    (prisma.transaction as jest.Mock).mockImplementation(
       (cb: (t: unknown) => unknown) => cb(txWithLock),
     );
     const finalize = jest.fn().mockResolvedValue(undefined);

@@ -72,7 +72,7 @@ export class DocumentLifecycleService {
       opts.reversalDate,
     );
     try {
-      await this.prisma.client.$transaction(async (tx) => {
+      await this.prisma.transaction(async (tx) => {
         const ltx: LedgerTx = tx;
         const locked = await opts.lock(ltx);
         if (!locked || locked.status !== 'POSTED') {

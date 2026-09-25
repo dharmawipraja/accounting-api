@@ -173,7 +173,7 @@ export class TaxCodesService implements OnModuleInit {
     const allAccounts = await this.accounts.listAll();
     const idByCode = new Map(allAccounts.map((a) => [a.code, a.id]));
     try {
-      await this.prisma.client.$transaction(async (tx) => {
+      await this.prisma.transaction(async (tx) => {
         for (const s of TAX_CODE_SEED) {
           const taxAccountId = idByCode.get(s.accountCode);
           if (!taxAccountId) {

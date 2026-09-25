@@ -75,8 +75,8 @@ export class SalesInvoicesService {
         this.prisma.client.salesInvoice.findMany({
           where: { id: { in: ids } },
         }),
-      createRow: ({ lines, ...scalars }) =>
-        this.prisma.client.salesInvoice.create({
+      createRow: (tx, { lines, ...scalars }) =>
+        tx.salesInvoice.create({
           data: { ...scalars, lines: { create: lines.create } },
           include: { lines: { orderBy: { lineNo: 'asc' } } },
         }),

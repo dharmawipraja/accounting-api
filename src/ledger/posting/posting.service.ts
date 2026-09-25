@@ -19,7 +19,6 @@ import {
 } from '../../common/errors/domain-errors';
 import { PostEntryInput, PostLineInput } from './posting.types';
 import { assertBalanced } from './assert-balanced';
-import { ExtendedPrismaClient } from '../../common/prisma/soft-delete.extension';
 import { MetricsService } from '../../metrics/metrics.service';
 import { nextSequenceNumber, SqlTx } from '../../common/db/sequence';
 import { buildDocRef } from '../../common/db/doc-ref';
@@ -31,13 +30,9 @@ import {
   findForbiddenRole,
 } from './account-policy';
 
-/** The interactive-transaction view of the soft-delete-extended client — what the
- *  `$transaction(async (tx) => …)` callback receives. Shared so document services
- *  can compose journal posting into their own transactions. */
-export type LedgerTx = Omit<
-  ExtendedPrismaClient,
-  '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends' | '$use'
->;
+/** Re-exported from PrismaService (its home) so existing imports keep working. */
+import type { LedgerTx } from '../../common/prisma/prisma.service';
+export type { LedgerTx };
 
 /** Module-private mint key — external code cannot import it, so it cannot
  *  satisfy the token constructors' first parameter. */
@@ -96,7 +91,7 @@ export class PostingService {
 
   async post(input: PostEntryInput, postedBy: string): Promise<JournalEntry> {
     const prepared = await this.preparePosting(input, postedBy);
-    return this.prisma.client.$transaction((tx) =>
+    return this.prisma.transaction((tx) =>
       this.createPostedEntryInTx(tx, prepared),
     );
   }
@@ -272,7 +267,7 @@ export class PostingService {
   ): Promise<JournalEntry> {
     const prepared = await this.prepareReversal(entryId, reversedBy, date);
     try {
-      return await this.prisma.client.$transaction((tx) =>
+      return await this.prisma.transaction((tx) =>
         this.reverseInTx(tx, prepared),
       );
     } catch (err) {
@@ -474,7 +469,7 @@ export class PostingService {
       );
     }
 
-    return this.prisma.client.$transaction(async (tx) => {
+    return this.prisma.transaction(async (tx) => {
       // Lock the draft row and re-check status BEFORE consuming a number, so a
       // concurrent/retried postDraft of the same draft can't burn a gapless
       // number (and can't resurrect a soft-deleted draft).

@@ -30,6 +30,7 @@ import {
   settleInTx,
   unwindInTx,
   buildPaymentLines,
+  inLockOrder,
 } from './payment-targets';
 
 /** A payment row with its allocations eagerly loaded — what getById always returns. */
@@ -119,25 +120,29 @@ export class PaymentsService {
       total = total.add(amt);
     }
 
-    return this.prisma.client.payment.create({
-      data: {
-        direction: input.direction,
-        partnerId: input.partnerId,
-        date: input.date,
-        cashAccountId: input.cashAccountId,
-        amount: total.toPersistence(),
-        description: input.description,
-        createdBy: input.createdBy,
-        allocations: {
-          create: input.allocations.map((a) => ({
-            salesInvoiceId: a.salesInvoiceId,
-            purchaseBillId: a.purchaseBillId,
-            amount: a.amount,
-          })),
+    // Transaction so an idempotent create marks its key committed atomically
+    // with the insert (see PrismaService.transaction).
+    return this.prisma.transaction((tx) =>
+      tx.payment.create({
+        data: {
+          direction: input.direction,
+          partnerId: input.partnerId,
+          date: input.date,
+          cashAccountId: input.cashAccountId,
+          amount: total.toPersistence(),
+          description: input.description,
+          createdBy: input.createdBy,
+          allocations: {
+            create: input.allocations.map((a) => ({
+              salesInvoiceId: a.salesInvoiceId,
+              purchaseBillId: a.purchaseBillId,
+              amount: a.amount,
+            })),
+          },
         },
-      },
-      include: { allocations: true },
-    });
+        include: { allocations: true },
+      }),
+    );
   }
 
   async getById(id: string): Promise<PaymentWithAllocations> {
@@ -255,7 +260,7 @@ export class PaymentsService {
     };
     const prepared = await this.posting.preparePosting(journalInput, postedBy);
 
-    await this.prisma.client.$transaction(
+    await this.prisma.transaction(
       async (tx) => {
         // Lock + re-check the payment is still a draft.
         const lockedP = await tx.$queryRaw<{ status: string }[]>`
@@ -271,8 +276,10 @@ export class PaymentsService {
         // account (catches drafts written before the rule existed).
         await assertCashAccount(tx, payment.cashAccountId);
 
-        // Lock each target document FOR UPDATE and re-verify outstanding (the real over-allocation guard).
-        for (const a of allocations) {
+        // Lock each target document FOR UPDATE and re-verify outstanding (the
+        // real over-allocation guard) — in id order, so concurrent payments over
+        // overlapping documents can't deadlock.
+        for (const a of inLockOrder(target, allocations)) {
           await settleInTx(tx, target, a, payment.partnerId);
         }
 
@@ -343,7 +350,7 @@ export class PaymentsService {
       },
       applyInTx: async (tx) => {
         const target = PAYMENT_TARGETS[payment.direction];
-        for (const a of allocations) {
+        for (const a of inLockOrder(target, allocations)) {
           await unwindInTx(tx, target, a);
         }
         await tx.payment.update({

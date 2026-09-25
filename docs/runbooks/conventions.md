@@ -69,6 +69,11 @@ One stable error envelope, no leaked internals.
   (`src/common/errors/map-unique-violation.ts`) to rethrow it as a
   `ConflictDomainError` with a friendly message, and rethrow everything else
   unchanged. `P2025` → 404 is handled by the filter automatically.
+- **Deadlock / serialization failure → 409 `CONFLICT` `{ retryable: true }`.**
+  `isTransientConflict()` (`src/common/errors/exception-status.ts`) recognises
+  P2034 and PG `40P01`/`40001` in every shape Prisma 7 + the pg adapter surfaces
+  them (P2010 meta, bare `DriverAdapterError`). Still: take row locks in a
+  deterministic order (e.g. sort ids before a `FOR UPDATE` loop).
 
 ## 3. API conventions
 
@@ -123,6 +128,14 @@ One stable error envelope, no leaked internals.
   ad-hoc dedupe — reuse this seam. The key is scoped to method + full URL
   (query string included) + a body hash, so different targets can't replay each
   other's responses.
+- **Every write goes through `this.prisma.transaction(fn, opts)` — never a raw
+  `$transaction(` (ESLint error in `src/`).** Under an idempotency context (ALS,
+  set by the interceptor) it marks `idempotency_keys.committed_at` as the last
+  statement inside the tx, so the mark is durable iff the write committed. A
+  committed key is never released or stale-reclaimed: a retry after a lost
+  response gets `409 { committed: true }` rather than a duplicate write. Even a
+  single-insert create on an idempotent route must run inside
+  `prisma.transaction` so it gets marked.
 
 ## 5. Migrations
 

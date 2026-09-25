@@ -119,7 +119,9 @@ export class TaxedDocumentService {
       createdBy: input.createdBy,
       lines: { create: buildLineCreateData(input.lines) },
     };
-    return spec.createRow(common, input);
+    // A single insert, but still a transaction: under an Idempotency-Key the
+    // key is marked committed atomically with it (see PrismaService.transaction).
+    return this.prisma.transaction((tx) => spec.createRow(tx, common, input));
   }
 
   /** Edit a DRAFT. The whole edit runs in one transaction that first locks the
@@ -139,7 +141,7 @@ export class TaxedDocumentService {
       this.prisma,
       spec.controlRole,
     );
-    await this.prisma.client.$transaction(
+    await this.prisma.transaction(
       async (tx) => {
         const ltx: LedgerTx = tx;
         await this.lockDraftRow(ltx, spec, id, m.onlyDraftEdit);

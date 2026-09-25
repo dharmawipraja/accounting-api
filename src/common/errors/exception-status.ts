@@ -27,6 +27,52 @@ export const PRISMA_STATUS: Record<
   P2020: { status: 400, code: 'INVALID_INPUT', message: 'Value out of range' },
 };
 
+/** Postgres SQLSTATEs for a transaction aborted by a concurrent one: deadlock
+ *  (40P01) and serialization failure (40001). Safe to retry as-is. */
+const TRANSIENT_PG_CODES = new Set(['40P01', '40001']);
+
+/** Envelope for a transient transaction conflict. The tx rolled back, so
+ *  nothing committed and the idempotency key was released — a retry (same key)
+ *  is safe. */
+export const TRANSIENT_CONFLICT = {
+  status: 409,
+  code: 'CONFLICT',
+  message:
+    'The request conflicted with a concurrent transaction and was rolled back; retry it',
+  details: { retryable: true },
+} as const;
+
+/** SQLSTATE carried by a Prisma 7 driver-adapter error (`{ name:
+ *  'DriverAdapterError', cause: { originalCode, code, … } }`), if any. */
+function driverAdapterCode(e: unknown): string | undefined {
+  if (typeof e !== 'object' || e === null) return undefined;
+  const { name, cause } = e as { name?: unknown; cause?: unknown };
+  if (name !== 'DriverAdapterError' || typeof cause !== 'object' || !cause)
+    return undefined;
+  const c = cause as { originalCode?: unknown; code?: unknown };
+  const code = c.originalCode ?? c.code;
+  return typeof code === 'string' ? code : undefined;
+}
+
+/**
+ * True for a deadlock / serialization failure, however Prisma 7 + the pg
+ * adapter surfaces it: P2034 (a 40001 on a model query), P2010 with
+ * `meta.driverAdapterError` (a raw query), or a bare DriverAdapterError (a
+ * 40P01 on a model query — the client rethrows it unwrapped). Pure.
+ */
+export function isTransientConflict(err: unknown): boolean {
+  if (err instanceof Prisma.PrismaClientKnownRequestError) {
+    if (err.code === 'P2034') return true;
+    const code = driverAdapterCode(
+      (err.meta as { driverAdapterError?: unknown } | undefined)
+        ?.driverAdapterError,
+    );
+    return code !== undefined && TRANSIENT_PG_CODES.has(code);
+  }
+  const code = driverAdapterCode(err);
+  return code !== undefined && TRANSIENT_PG_CODES.has(code);
+}
+
 /**
  * The HTTP status an exception maps to — the single source shared by
  * `AllExceptionsFilter` (the client response) and `AuditInterceptor` (the recorded
@@ -36,6 +82,7 @@ export const PRISMA_STATUS: Record<
 export function statusFromException(err: unknown): number {
   if (err instanceof DomainError) return err.status;
   if (err instanceof HttpException) return err.getStatus();
+  if (isTransientConflict(err)) return TRANSIENT_CONFLICT.status;
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     return PRISMA_STATUS[err.code]?.status ?? 500;
   }

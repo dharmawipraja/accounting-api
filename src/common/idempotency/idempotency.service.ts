@@ -17,6 +17,12 @@ export type ReserveResult =
  * endpoint/body mismatch, or 409s while still in flight. complete() stores a
  * JSON snapshot of the response; release() drops a reservation after a failure
  * so a retry can re-attempt (failures are never cached).
+ *
+ * Exactly-once: the business transaction marks the row `committedAt` as its
+ * last statement (PrismaService.transaction). A committed row is never
+ * released or stale-reclaimed, so if the response is lost after the commit
+ * (complete() failed, process crashed) a same-key retry gets a 409 saying the
+ * write committed — never a second execution.
  */
 @Injectable()
 export class IdempotencyService {
@@ -107,9 +113,19 @@ export class IdempotencyService {
       );
     }
     if (record.response === null || record.httpStatus === null) {
-      // In-flight. If the reservation is older than the TTL, the owner crashed
-      // between its commit and complete(); reclaim it once so this retry can
-      // proceed. The atomic deleteMany ensures only one racing retry wins.
+      if (record.committedAt) {
+        // The original request's write committed but its response was never
+        // recorded (complete() failed or the process died). Re-executing would
+        // duplicate the write, so this key is spent: 409, never a re-run.
+        throw new ConflictDomainError(
+          "The original request with this idempotency key committed its write, but its response is unavailable; don't retry — look up the resource instead",
+          { key, committed: true },
+        );
+      }
+      // In-flight and uncommitted. If the reservation is older than the TTL,
+      // the owner died before committing anything; reclaim it once so this
+      // retry can proceed. The atomic deleteMany ensures only one racing retry
+      // wins, and its committedAt predicate never reclaims a committed row.
       if (allowReclaim && this.isStale(record.createdAt)) {
         // isStale() is a fast in-memory early-exit; the createdAt predicate
         // below is the authoritative atomic filter so only one racing retry wins.
@@ -122,6 +138,10 @@ export class IdempotencyService {
             // and would always match zero rows, making the reclaim a no-op.
             response: { equals: Prisma.DbNull },
             completedAt: null,
+            // A committing owner holds this row's lock (its in-tx mark); the
+            // delete waits, then re-checks this predicate against the committed
+            // row and skips it.
+            committedAt: null,
             createdAt: { lt: new Date(Date.now() - this.inflightTtlMs) },
           },
         });
@@ -173,16 +193,32 @@ export class IdempotencyService {
     });
   }
 
+  /** Drop a reservation after a failed request so a retry can re-attempt —
+   *  unless its write committed (committedAt set), in which case the row stays
+   *  and a retry gets the committed-409. One atomic statement; best-effort. */
   async release(userId: string, key: string): Promise<void> {
     await this.prisma.client.idempotencyKey
-      .delete({ where: { userId_key: { userId, key } } })
+      .deleteMany({ where: { userId, key, committedAt: null } })
+      .catch(() => undefined);
+  }
+
+  /** Best-effort out-of-tx committed mark, for when the handler succeeded but
+   *  complete() failed: covers a handler whose write didn't go through
+   *  PrismaService.transaction. Swallows errors (the DB may be the failure). */
+  async markCommitted(userId: string, key: string): Promise<void> {
+    await this.prisma.client.idempotencyKey
+      .updateMany({
+        where: { userId, key, committedAt: null },
+        data: { committedAt: new Date() },
+      })
       .catch(() => undefined);
   }
 
   /**
-   * Delete completed idempotency keys older than the retention window. In-flight
-   * rows (completedAt null) are excluded — the `completedAt: { lt }` predicate
-   * never matches NULL — so the FIN-L2 lazy-expiry remains the sole owner of those.
+   * Delete completed idempotency keys older than the retention window, and
+   * committed-but-never-completed ones (response lost) likewise — they are
+   * never reclaimed, so this is their only expiry. Uncommitted in-flight rows
+   * are excluded — the FIN-L2 lazy-expiry remains the sole owner of those.
    * Returns the number of rows deleted.
    */
   async purgeCompleted(
@@ -190,7 +226,12 @@ export class IdempotencyService {
   ): Promise<number> {
     const threshold = new Date(Date.now() - olderThanMs);
     const { count } = await this.prisma.client.idempotencyKey.deleteMany({
-      where: { completedAt: { lt: threshold } },
+      where: {
+        OR: [
+          { completedAt: { lt: threshold } },
+          { completedAt: null, committedAt: { lt: threshold } },
+        ],
+      },
     });
     return count;
   }

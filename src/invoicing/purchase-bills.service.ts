@@ -77,8 +77,8 @@ export class PurchaseBillsService {
         this.prisma.client.purchaseBill.findMany({
           where: { id: { in: ids } },
         }),
-      createRow: ({ lines, ...scalars }, input) =>
-        this.prisma.client.purchaseBill.create({
+      createRow: (tx, { lines, ...scalars }, input) =>
+        tx.purchaseBill.create({
           data: {
             ...scalars,
             vendorInvoiceNo: input.vendorInvoiceNo,

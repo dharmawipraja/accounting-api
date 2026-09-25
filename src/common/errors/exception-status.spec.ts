@@ -1,6 +1,11 @@
 import { HttpException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { statusFromException, PRISMA_STATUS } from './exception-status';
+import {
+  isTransientConflict,
+  statusFromException,
+  PRISMA_STATUS,
+  TRANSIENT_CONFLICT,
+} from './exception-status';
 import {
   ConflictDomainError,
   ValidationFailedError,
@@ -63,5 +68,61 @@ describe('statusFromException', () => {
     expect(statusFromException(new Error('boom'))).toBe(500);
     expect(statusFromException('nope')).toBe(500);
     expect(statusFromException(undefined)).toBe(500);
+  });
+});
+
+describe('isTransientConflict (deadlock / serialization failure)', () => {
+  const known = (code: string, meta?: Record<string, unknown>) =>
+    new Prisma.PrismaClientKnownRequestError('m', {
+      code,
+      clientVersion: 'test',
+      meta,
+    });
+  // Shapes observed from Prisma 7.8 + @prisma/adapter-pg against real Postgres.
+  const adapterErr = (code: string) => {
+    const e = new Error('deadlock detected') as Error & { cause: unknown };
+    e.name = 'DriverAdapterError';
+    e.cause = { originalCode: code, kind: 'postgres', code };
+    return e;
+  };
+
+  it('P2034 (40001 on a model query) is transient → 409', () => {
+    expect(isTransientConflict(known('P2034'))).toBe(true);
+    expect(statusFromException(known('P2034'))).toBe(409);
+  });
+
+  it('P2010 carrying 40P01/40001 (raw query) is transient → 409', () => {
+    for (const code of ['40P01', '40001']) {
+      const err = known('P2010', { driverAdapterError: adapterErr(code) });
+      expect(isTransientConflict(err)).toBe(true);
+      expect(statusFromException(err)).toBe(409);
+    }
+  });
+
+  it('a bare DriverAdapterError 40P01 (model query) is transient → 409', () => {
+    expect(isTransientConflict(adapterErr('40P01'))).toBe(true);
+    expect(statusFromException(adapterErr('40P01'))).toBe(409);
+  });
+
+  it('other codes and errors are not transient', () => {
+    expect(isTransientConflict(known('P2002'))).toBe(false);
+    expect(
+      isTransientConflict(
+        known('P2010', { driverAdapterError: adapterErr('23505') }),
+      ),
+    ).toBe(false);
+    expect(isTransientConflict(known('P2010'))).toBe(false);
+    expect(isTransientConflict(adapterErr('23505'))).toBe(false);
+    expect(isTransientConflict(new Error('deadlock detected'))).toBe(false);
+    expect(isTransientConflict(null)).toBe(false);
+    expect(statusFromException(adapterErr('23505'))).toBe(500);
+  });
+
+  it('envelope is CONFLICT with retryable: true', () => {
+    expect(TRANSIENT_CONFLICT).toMatchObject({
+      status: 409,
+      code: 'CONFLICT',
+      details: { retryable: true },
+    });
   });
 });

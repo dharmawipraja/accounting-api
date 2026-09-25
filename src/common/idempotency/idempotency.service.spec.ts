@@ -139,10 +139,13 @@ describe('IdempotencyService', () => {
     });
   });
 
-  it('release() deletes and swallows errors', async () => {
+  it('release() deletes only an uncommitted row and swallows errors', async () => {
     const { service, idempotencyKey } = makeService();
-    idempotencyKey.delete.mockRejectedValue(new Error('gone'));
+    idempotencyKey.deleteMany.mockRejectedValue(new Error('gone'));
     await expect(service.release('u1', 'k')).resolves.toBeUndefined();
+    expect(idempotencyKey.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 'u1', key: 'k', committedAt: null },
+    });
   });
 
   it('reclaims a stale in-flight key and re-reserves it', async () => {
@@ -206,7 +209,12 @@ describe('IdempotencyService', () => {
     const result = await service.purgeCompleted(3_600_000);
     expect(result).toBe(3);
     expect(idempotencyKey.deleteMany).toHaveBeenCalledWith({
-      where: { completedAt: { lt: expect.any(Date) as Date } },
+      where: {
+        OR: [
+          { completedAt: { lt: expect.any(Date) as Date } },
+          { completedAt: null, committedAt: { lt: expect.any(Date) as Date } },
+        ],
+      },
     });
   });
 

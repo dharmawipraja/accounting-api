@@ -130,7 +130,13 @@ export interface DocumentDescriptor<
     offset: number;
   }): Promise<{ rows: TRow[]; total: number }>;
   hydrate(ids: string[]): Promise<TRow[]>;
-  createRow(common: DocumentCreateCommon, input: TCreate): Promise<TRow>;
+  /** Runs inside PrismaService.transaction so an idempotent create marks its
+   *  key committed atomically with the insert. */
+  createRow(
+    tx: LedgerTx,
+    common: DocumentCreateCommon,
+    input: TCreate,
+  ): Promise<TRow>;
   updateRow(
     tx: LedgerTx,
     id: string,

@@ -9,7 +9,12 @@ import { Prisma } from '@prisma/client';
 import type { Response } from 'express';
 import * as Sentry from '@sentry/node';
 import { DomainError } from '../errors/domain-errors';
-import { PRISMA_STATUS, statusFromException } from '../errors/exception-status';
+import {
+  isTransientConflict,
+  PRISMA_STATUS,
+  statusFromException,
+  TRANSIENT_CONFLICT,
+} from '../errors/exception-status';
 
 interface ErrorEnvelope {
   code: string;
@@ -61,6 +66,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
           };
         }
       }
+    } else if (isTransientConflict(exception)) {
+      // Deadlock / serialization failure: the tx rolled back — a client retry
+      // is safe. Expected under contention, so warn (no Sentry).
+      envelope = {
+        code: TRANSIENT_CONFLICT.code,
+        message: TRANSIENT_CONFLICT.message,
+        details: { ...TRANSIENT_CONFLICT.details },
+      };
+      this.logger.warn(
+        `Transient transaction conflict -> ${status} on ${url}: ${
+          exception instanceof Error ? exception.message : String(exception)
+        }`,
+      );
     } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       const mapped = PRISMA_STATUS[exception.code];
       if (mapped) {

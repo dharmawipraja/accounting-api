@@ -1076,4 +1076,49 @@ describe('Payments (e2e)', () => {
       });
     });
   });
+  it('concurrent posts allocating [A,B] and [B,A] never deadlock (targets locked in id order)', async () => {
+    const customerId = await newCustomer('CUST-PAY-LOCKORDER');
+    const a = await makePostedInvoice(customerId);
+    const b = await makePostedInvoice(customerId);
+    const draft = async (first: string, second: string): Promise<string> =>
+      (
+        (
+          await request(server())
+            .post('/v1/payments')
+            .set('Authorization', `Bearer ${acct}`)
+            .set('Idempotency-Key', randomUUID())
+            .send({
+              direction: 'RECEIPT',
+              partnerId: customerId,
+              date: '2026-02-15',
+              cashAccountId: acc['1-1000'],
+              allocations: [
+                { salesInvoiceId: first, amount: '1000' },
+                { salesInvoiceId: second, amount: '1000' },
+              ],
+            })
+            .expect(201)
+        ).body as { id: string }
+      ).id;
+    const post = (id: string) =>
+      request(server())
+        .post(`/v1/payments/${id}/post`)
+        .set('Authorization', `Bearer ${appr}`)
+        .set('Idempotency-Key', randomUUID());
+
+    const statuses: number[] = [];
+    for (let round = 0; round < 8; round++) {
+      const [p1, p2] = [await draft(a, b), await draft(b, a)];
+      const results = await Promise.all([post(p1), post(p2)]);
+      statuses.push(...results.map((r) => r.status));
+    }
+    // Opposite input orders lock identically, so the two posts queue rather
+    // than deadlock: every post succeeds (no 500, no retryable 409).
+    expect(statuses.every((st) => st === 200)).toBe(true);
+    const inv = await prisma.client.salesInvoice.findMany({
+      where: { id: { in: [a, b] } },
+      select: { amountPaid: true },
+    });
+    for (const i of inv) expect(i.amountPaid.toString()).toBe('16000');
+  });
 });

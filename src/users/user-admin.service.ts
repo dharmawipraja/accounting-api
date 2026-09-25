@@ -106,7 +106,7 @@ export class UserAdminService {
       ((dto.role !== undefined && dto.role !== 'ADMIN') ||
         dto.isActive === false);
 
-    const updated = await this.prisma.client.$transaction(async (tx) => {
+    const updated = await this.prisma.transaction(async (tx) => {
       // Soft-delete extension does NOT apply inside $transaction → filter explicitly.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(${USER_ADMIN_LOCK_KEY})`;
       const target = await tx.user.findFirst({
@@ -176,7 +176,7 @@ export class UserAdminService {
   async remove(actorId: string, id: string): Promise<void> {
     if (id === actorId)
       throw new ValidationFailedError('You cannot delete yourself', { id });
-    await this.prisma.client.$transaction(async (tx) => {
+    await this.prisma.transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(${USER_ADMIN_LOCK_KEY})`;
       const target = await tx.user.findFirst({
         where: { id, deletedAt: null },

@@ -75,7 +75,7 @@ export class PeriodsService implements OnModuleInit {
   }
 
   async close(id: string, closedBy: string): Promise<AccountingPeriod> {
-    return this.prisma.client.$transaction(async (tx) => {
+    return this.prisma.transaction(async (tx) => {
       // FOR UPDATE the period row so a concurrent posting (which takes FOR SHARE
       // + re-checks OPEN) serializes; re-check status under the lock.
       const rows = await tx.$queryRaw<{ status: string }[]>`

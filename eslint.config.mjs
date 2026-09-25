@@ -36,4 +36,22 @@ export default tseslint.config(
       "prettier/prettier": ["error", { endOfLine: "auto" }],
     },
   },
+  {
+    // Every interactive transaction in src/ must go through
+    // PrismaService.transaction(): it marks the request's Idempotency-Key
+    // committed inside the tx, which is what stops a retry from re-executing a
+    // committed write. A raw `$transaction(` silently loses that guarantee.
+    files: ['src/**/*.ts'],
+    ignores: ['src/common/prisma/prisma.service.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "CallExpression[callee.property.name='$transaction']",
+          message:
+            'Use this.prisma.transaction(fn, opts) — it marks the idempotency key committed inside the tx. Raw $transaction( is only allowed in prisma.service.ts.',
+        },
+      ],
+    },
+  },
 );

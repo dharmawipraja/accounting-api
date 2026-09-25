@@ -36,7 +36,7 @@ export class YearEndCloseService {
     const { start: fyStart, end: yearEnd } =
       await this.company.fiscalYearBounds(fiscalYear);
 
-    await this.prisma.client.$transaction(
+    await this.prisma.transaction(
       async (tx) => {
         // FIRST take the exclusive per-fiscal-year lock and re-check status: it
         // serializes concurrent closes (no double-close / orphaned second entry)
@@ -182,7 +182,7 @@ export class YearEndCloseService {
         undefined,
         { allowClosedYear: true },
       );
-      await this.prisma.client.$transaction(async (tx) => {
+      await this.prisma.transaction(async (tx) => {
         // Serialize concurrent reopens and re-check status under the lock, so a
         // double-reopen can't double-reverse the closing entry.
         const status = await this.lockAndReadClosingStatus(tx, fiscalYear);
@@ -198,7 +198,7 @@ export class YearEndCloseService {
         });
       });
     } else {
-      await this.prisma.client.$transaction(async (tx) => {
+      await this.prisma.transaction(async (tx) => {
         // Same serializer as above for an entry-less (empty-year) close.
         const status = await this.lockAndReadClosingStatus(tx, fiscalYear);
         if (status !== 'CLOSED') {

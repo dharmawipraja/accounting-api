@@ -183,6 +183,21 @@ export async function loadTarget(
   return row;
 }
 
+/** Allocations in ascending target-document id order. Post and void lock each
+ *  target FOR UPDATE one by one; taking those locks in one global order means
+ *  two payments over the same documents (e.g. [A,B] and [B,A]) queue instead
+ *  of deadlocking. Stable, so repeated allocations to one document keep their
+ *  relative order. Pure: returns a new array. */
+export function inLockOrder(
+  target: PaymentTarget,
+  allocations: readonly AllocationInput[],
+): AllocationInput[] {
+  const idOf = (a: AllocationInput) => target.allocId(a) ?? '';
+  return [...allocations].sort((a, b) =>
+    idOf(a) < idOf(b) ? -1 : idOf(a) > idOf(b) ? 1 : 0,
+  );
+}
+
 /** Lock the target FOR UPDATE, re-verify POSTED + partner + outstanding, increment amountPaid.
  *  Call once per allocation so repeated allocations to one document see each other's
  *  increment under the lock. */

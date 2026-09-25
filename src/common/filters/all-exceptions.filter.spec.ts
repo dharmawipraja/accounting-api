@@ -152,6 +152,35 @@ describe('AllExceptionsFilter', () => {
     expect((m.payload() as { code: string }).code).toBe('INVALID_INPUT');
   });
 
+  it('maps a deadlock (bare DriverAdapterError 40P01) to 409 CONFLICT retryable, no Sentry', () => {
+    (Sentry.captureException as jest.Mock).mockClear();
+    const m = mockHost();
+    const err = new Error('deadlock detected') as Error & { cause: unknown };
+    err.name = 'DriverAdapterError';
+    err.cause = { originalCode: '40P01', kind: 'postgres', code: '40P01' };
+    filter.catch(err, m.host);
+    expect(m.code()).toBe(409);
+    expect(m.payload()).toMatchObject({
+      code: 'CONFLICT',
+      details: { retryable: true },
+    });
+    expect(Sentry.captureException as jest.Mock).not.toHaveBeenCalled();
+  });
+
+  it('maps Prisma P2034 (write conflict) to 409 CONFLICT retryable', () => {
+    const m = mockHost();
+    const err = new Prisma.PrismaClientKnownRequestError('conflict', {
+      code: 'P2034',
+      clientVersion: Prisma.prismaVersion.client,
+    });
+    filter.catch(err, m.host);
+    expect(m.code()).toBe(409);
+    expect(m.payload()).toMatchObject({
+      code: 'CONFLICT',
+      details: { retryable: true },
+    });
+  });
+
   it('leaves an unmapped Prisma code as 500 INTERNAL_ERROR and reports it to Sentry', () => {
     (Sentry.captureException as jest.Mock).mockClear();
     const m = mockHost();

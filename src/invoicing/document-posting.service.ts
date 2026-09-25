@@ -123,7 +123,7 @@ export class DocumentPostingService {
       journalInput,
       params.postedBy,
     );
-    await this.prisma.client.$transaction(async (tx) => {
+    await this.prisma.transaction(async (tx) => {
       await this.lockDraftInTx(
         tx,
         params.table,

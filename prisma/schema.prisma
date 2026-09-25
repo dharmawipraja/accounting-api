@@ -261,6 +261,9 @@ model IdempotencyKey {
   httpStatus  Int?      @map("http_status")
   createdAt   DateTime  @default(now()) @map("created_at")
   completedAt DateTime? @map("completed_at")
+  // Set inside the business tx (PrismaService.transaction) — durable iff the
+  // write committed. Such a row is never released or stale-reclaimed.
+  committedAt DateTime? @map("committed_at")
 
   @@id([userId, key])
   @@map("idempotency_keys")

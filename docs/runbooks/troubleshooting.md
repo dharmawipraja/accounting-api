@@ -161,6 +161,40 @@ mechanics, and [`./deploy.md`](./deploy.md) for production deploys.
   409-then-replay), never a fresh one — a fresh key can duplicate the write.
 - **Fix:** Investigate the slow handler (usually a slow query or a lock wait).
 
+### Same-key retry keeps returning 409 "committed its write, but its response is unavailable"
+
+- **Symptom:** A covered write returned `500`/`408`/network error; every retry
+  with the same `Idempotency-Key` now returns `409 CONFLICT` with
+  `details.committed: true`.
+- **Cause:** By design. Every business write runs in `PrismaService.transaction()`,
+  which marks the request's `idempotency_keys.committed_at` as the **last statement
+  inside the transaction** — so the mark exists iff the write committed. The
+  first request's write committed, but recording its response (`complete()`)
+  failed, or the process died before it could. A committed key is never
+  released and never stale-reclaimed, so the retry cannot re-execute the write
+  (which would duplicate an invoice/payment/journal entry).
+- **Fix:** Nothing to repair — the write is in the database. The client should
+  reload the resource (list by partner/date/description) instead of retrying.
+  To inspect: `SELECT * FROM idempotency_keys WHERE key = '<key>'` → `committed_at`
+  set, `response`/`completed_at` NULL. Such rows expire with the completed-key
+  purge (`IDEMPOTENCY_COMPLETED_TTL_MS`, counted from `committed_at`).
+- **Dev note:** A raw `$transaction(` anywhere in `src/` (outside
+  `prisma.service.ts`) is an ESLint error — it would skip the committed mark.
+  Use `this.prisma.transaction(fn, opts)`.
+
+### 409 CONFLICT with `details.retryable: true`
+
+- **Symptom:** A write returns `409 CONFLICT`, message "…conflicted with a
+  concurrent transaction and was rolled back; retry it", `details.retryable: true`.
+- **Cause:** Postgres aborted the transaction with a deadlock (`40P01`) or
+  serialization failure (`40001`; Prisma `P2034`). Occasional occurrences under
+  contention are expected; the filter logs a warning (not Sentry).
+- **Fix:** The client retries with the same `Idempotency-Key` (the aborted tx
+  committed nothing and its key was released). If it recurs for one flow, look
+  for inconsistent lock ordering — e.g. payment post/void lock allocation
+  targets in ascending document-id order (`inLockOrder` in `payment-targets.ts`)
+  precisely so opposite-order allocations queue instead of deadlocking.
+
 ---
 
 ## Dependencies & tooling

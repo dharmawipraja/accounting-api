@@ -7,7 +7,7 @@ import {
 import { HTTP_CODE_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
 import { Observable, from, of } from 'rxjs';
-import { catchError, switchMap } from 'rxjs/operators';
+import { catchError, map, switchMap } from 'rxjs/operators';
 import { createHash } from 'crypto';
 import { IDEMPOTENT_KEY } from './idempotent.decorator';
 
@@ -15,6 +15,7 @@ import { IDEMPOTENT_KEY } from './idempotent.decorator';
 // UUIDs (the frontend default) and other compact tokens pass.
 const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9._:-]{1,128}$/;
 import { IdempotencyService } from './idempotency.service';
+import { idempotencyContext } from './idempotency-context';
 import { ValidationFailedError } from '../errors/domain-errors';
 
 interface IdempotentRequest {
@@ -84,17 +85,38 @@ export class IdempotencyInterceptor implements NestInterceptor {
           res.statusCode = reserved.httpStatus;
           return of(reserved.response);
         }
-        return next.handle().pipe(
-          switchMap((data) =>
-            from(this.idempotency.complete(userId, key, data, httpStatus)).pipe(
-              switchMap(() => of(data)),
-            ),
-          ),
+        // Run the handler inside the idempotency ALS context so every
+        // PrismaService.transaction it opens marks this key committed as its
+        // last statement. Nest's handle() binds the downstream chain (via
+        // AsyncResource.bind) to the async context current when handle() is
+        // CALLED, so calling it inside run() carries the context into the
+        // controller and service layer.
+        const handled = idempotencyContext.run({ userId, key }, () =>
+          next.handle(),
+        );
+        return handled.pipe(
+          // Handler failed: release the key so a retry can re-attempt — release()
+          // keeps it if the write had already committed (retry then gets 409).
           catchError((err: unknown) =>
             from(this.idempotency.release(userId, key)).pipe(
               switchMap(() => {
                 throw err;
               }),
+            ),
+          ),
+          // Handler succeeded, so its write committed. If recording the
+          // response fails, NEVER release (a retry would re-execute the write):
+          // leave the committed reservation so the retry gets 409.
+          switchMap((data: unknown) =>
+            from(this.idempotency.complete(userId, key, data, httpStatus)).pipe(
+              catchError((err: unknown) =>
+                from(this.idempotency.markCommitted(userId, key)).pipe(
+                  switchMap(() => {
+                    throw err;
+                  }),
+                ),
+              ),
+              map((): unknown => data),
             ),
           ),
         );

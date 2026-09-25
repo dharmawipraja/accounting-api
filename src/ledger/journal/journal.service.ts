@@ -68,24 +68,28 @@ export class JournalService {
       input.lines.map((l) => l.accountId),
       'MANUAL',
     );
-    return this.prisma.client.journalEntry.create({
-      data: {
-        date: input.date,
-        description: input.description,
-        sourceType: 'MANUAL',
-        status: 'DRAFT',
-        createdBy: input.createdBy,
-        lines: {
-          create: input.lines.map((l, i) => ({
-            lineNo: i + 1,
-            accountId: l.accountId,
-            debit: l.debit ?? '0',
-            credit: l.credit ?? '0',
-            description: l.description,
-          })),
+    // Transaction so an idempotent create marks its key committed atomically
+    // with the insert (see PrismaService.transaction).
+    return this.prisma.transaction((tx) =>
+      tx.journalEntry.create({
+        data: {
+          date: input.date,
+          description: input.description,
+          sourceType: 'MANUAL',
+          status: 'DRAFT',
+          createdBy: input.createdBy,
+          lines: {
+            create: input.lines.map((l, i) => ({
+              lineNo: i + 1,
+              accountId: l.accountId,
+              debit: l.debit ?? '0',
+              credit: l.credit ?? '0',
+              description: l.description,
+            })),
+          },
         },
-      },
-    });
+      }),
+    );
   }
 
   async getById(id: string): Promise<JournalEntry> {

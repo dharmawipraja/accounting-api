@@ -58,7 +58,7 @@ export class AccountsService implements OnModuleInit {
     );
     try {
       // One transaction so a lost boot race rolls back cleanly (no partial chart).
-      await this.prisma.client.$transaction(async (tx) => {
+      await this.prisma.transaction(async (tx) => {
         const idByCode = new Map<string, string>();
         for (const a of ordered) {
           let parentId: string | null = null;

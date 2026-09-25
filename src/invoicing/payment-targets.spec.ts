@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import {
   exceedsOutstanding,
   buildPaymentLines,
+  inLockOrder,
   PAYMENT_TARGETS,
 } from './payment-targets';
 
@@ -37,5 +38,24 @@ describe('buildPaymentLines', () => {
       { accountId: 'ap', debit: '500.0000' },
       { accountId: 'cash', credit: '500.0000' },
     ]);
+  });
+});
+
+describe('inLockOrder', () => {
+  it('orders allocations by target id so opposite input orders lock identically', () => {
+    const t = PAYMENT_TARGETS.RECEIPT;
+    const a = { salesInvoiceId: 'aaa', amount: '1' };
+    const b = { salesInvoiceId: 'bbb', amount: '2' };
+    expect(inLockOrder(t, [b, a])).toEqual([a, b]);
+    expect(inLockOrder(t, [a, b])).toEqual([a, b]);
+  });
+  it('is stable for repeated allocations to one document and does not mutate input', () => {
+    const t = PAYMENT_TARGETS.DISBURSEMENT;
+    const x1 = { purchaseBillId: 'x', amount: '1' };
+    const x2 = { purchaseBillId: 'x', amount: '2' };
+    const w = { purchaseBillId: 'w', amount: '3' };
+    const input = [x1, w, x2];
+    expect(inLockOrder(t, input)).toEqual([w, x1, x2]);
+    expect(input).toEqual([x1, w, x2]);
   });
 });

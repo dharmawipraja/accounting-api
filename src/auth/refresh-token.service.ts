@@ -47,7 +47,7 @@ export class RefreshTokenService {
       | { ok: true; jti: string; familyId: string }
       | { ok: false; reason: 'invalid' | 'reuse' };
 
-    const result = await this.prisma.client.$transaction(
+    const result = await this.prisma.transaction(
       async (tx): Promise<RotateResult> => {
         const rows = await tx.$queryRaw<
           {

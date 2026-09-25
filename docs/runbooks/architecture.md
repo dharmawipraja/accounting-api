@@ -147,7 +147,7 @@ deleted when this was extracted.)
 ### The tx-composable `PostingService`
 `src/ledger/posting/posting.service.ts` is the **single writer of posted journal
 entries** (manual, invoice, bill, payment, reversal, close). It splits work so
-document services can compose posting into their own `$transaction`:
+document services can compose posting into their own `prisma.transaction(...)`:
 - `preparePosting(input, postedBy)` — pre-tx reads (balance, segregation-of-duties,
   open period, postable accounts, year-not-closed) → returns a **branded `PreparedPosting`
   token** (minted via a module-private `PROTOCOL_MINT` symbol). In-tx writes
