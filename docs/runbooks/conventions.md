@@ -24,8 +24,8 @@ bug, not a style nit.
 - **Construct only via `Money.of(string | Decimal)`, `Money.zero()`, or
   `Money.sum()`.** `Money.of()` deliberately rejects JS `number` at the type
   level — a float can never sneak in before it is wrapped in exact decimal math.
-  (The one place a raw `number` is allowed is `Money.multiply(factor)`, where the
-  factor is a rate/quantity, not an amount.)
+  `Money.multiply(factor)` is the same: the rate/quantity factor is
+  `string | Money | Prisma.Decimal`, never a `number`.
 - **Store and transport money as decimal strings.** Persist with
   `money.toPersistence()` (always 4dp). Serialize in DTOs/responses as strings
   via the shared `serializeMoney` helper; document them with `@ApiMoney`. Never
@@ -107,10 +107,14 @@ One stable error envelope, no leaked internals.
   `src/common/pagination/pagination.constants.ts`).
   All transactional lists AND accounts/tax-codes return this envelope — there are
   no remaining bare-array list endpoints, so a new list must use the envelope too.
-- **Optional date query params → `parseDate` / `query-dates` helpers.**
-  Convert a nullable string param with `parseDate(value)`
-  (`src/common/dates/parse-date.ts`, returns `Date | undefined`). For the common
-  cases use the higher-level helpers in `src/common/dates/query-dates.ts`:
+- **Business dates → `businessDate` / `query-dates` helpers.** Every business-date
+  input (JE/document/payment/due/void/reverse date, report params) is converted with
+  `businessDate(value)` / `optionalBusinessDate(value)`
+  (`src/common/dates/business-date.ts`): the calendar day from the first 10 chars,
+  offset ignored, at UTC midnight — never `new Date(value)`, which shifts
+  `2026-07-01T00:30+07:00` to June 30. `parseDate` (full instant) is only for
+  timestamp filters (audit log). For the common cases use the higher-level helpers in
+  `src/common/dates/query-dates.ts`:
   `asOfOrToday(asOf?)` (defaults to today), `dateRange(from, to)` (required pair,
   422 if from > to), `optionalDateRange(from?, to?)`. These are the shared
   controller date-boundary seam — don't inline `new Date(x)` in controllers.

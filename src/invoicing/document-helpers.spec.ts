@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import {
+  assertDueDateNotBefore,
   assertVoidDateNotBefore,
   samePostableContent,
   taxableLines,
@@ -101,5 +102,32 @@ describe('samePostableContent', () => {
     const b = base();
     mutate(b);
     expect(samePostableContent(base(), b)).toBe(false);
+  });
+});
+
+describe('assertDueDateNotBefore', () => {
+  const date = new Date('2026-03-10');
+  it('accepts no due date, the same day, or a later day', () => {
+    expect(() => assertDueDateNotBefore(date, undefined)).not.toThrow();
+    expect(() => assertDueDateNotBefore(date, null)).not.toThrow();
+    expect(() =>
+      assertDueDateNotBefore(date, new Date('2026-03-10')),
+    ).not.toThrow();
+    expect(() =>
+      assertDueDateNotBefore(date, new Date('2026-04-10')),
+    ).not.toThrow();
+  });
+  it('rejects a due date before the document date with {date, dueDate}', () => {
+    expect(() => assertDueDateNotBefore(date, new Date('2026-03-09'))).toThrow(
+      ValidationFailedError,
+    );
+    try {
+      assertDueDateNotBefore(date, new Date('2026-03-09'));
+    } catch (e) {
+      expect((e as ValidationFailedError).details).toEqual({
+        date: '2026-03-10',
+        dueDate: '2026-03-09',
+      });
+    }
   });
 });

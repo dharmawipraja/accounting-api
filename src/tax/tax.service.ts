@@ -107,6 +107,21 @@ export class TaxService {
       }
     }
 
+    // Only a PKP (VAT-registered) company may charge PPN Output. Checked here
+    // so every sales path — create, update, post, preview, /tax/calculate —
+    // enforces it identically. Settings are read only when it matters.
+    const ppnOutput = [...byId.values()].find((c) => c.kind === 'PPN_OUTPUT');
+    if (input.nature === 'SALE' && ppnOutput) {
+      const settings = await this.prisma.client.companySettings.findFirst({
+        select: { isPkp: true },
+      });
+      if (settings && !settings.isPkp)
+        throw new ValidationFailedError(
+          'PPN Output can only be charged by a PKP company (companySettings.isPkp is false)',
+          { taxCodeId: ppnOutput.id, kind: ppnOutput.kind },
+        );
+    }
+
     // Subtotal: sum of all base line amounts (tax-exclusive).
     const subtotal = Money.sum(input.lines.map((l) => Money.of(l.amount)));
 
@@ -140,8 +155,11 @@ export class TaxService {
     // Build journal lines.
     const journalLines: CalculatedLine[] = [];
 
-    // Base lines: SALE → credit revenue; PURCHASE → debit expense.
+    // Base lines: SALE → credit revenue; PURCHASE → debit expense. A zero
+    // amount (a free item) is part of the document but carries no ledger
+    // effect, so it gets no journal line (a 0/0 line is invalid double entry).
     for (const line of input.lines) {
+      if (Money.of(line.amount).isZero()) continue;
       const amt = Money.of(line.amount).toPersistence();
       journalLines.push(
         input.nature === 'SALE'
@@ -155,6 +173,9 @@ export class TaxService {
     let pphTotal = Money.zero();
 
     for (const t of taxes) {
+      const amt = Money.of(t.amount);
+      // A code whose DPP is only free items rounds to 0: breakdown row, no JE line.
+      if (amt.isZero()) continue;
       // PPN_INPUT and PPH_PREPAID go on the debit side; OUTPUT/PAYABLE on credit.
       const isDebit = t.kind === 'PPN_INPUT' || t.kind === 'PPH_PREPAID';
       journalLines.push(
@@ -162,7 +183,6 @@ export class TaxService {
           ? { accountId: t.accountId, debit: t.amount }
           : { accountId: t.accountId, credit: t.amount },
       );
-      const amt = Money.of(t.amount);
       if (t.kind === 'PPN_OUTPUT' || t.kind === 'PPN_INPUT') {
         ppnTotal = ppnTotal.add(amt);
       } else {
@@ -175,6 +195,14 @@ export class TaxService {
     // (the ledger's one-sided CHECK requires a positive amount). Reject at the
     // preview boundary with a clean 422 rather than letting Phase 4 hit a 500.
     const settlement = subtotal.add(ppnTotal).subtract(pphTotal);
+    if (subtotal.isZero()) {
+      // Every line is free: there is nothing to post (and the settlement
+      // side would be a zero line). Rejected on create/update/post/preview.
+      throw new ValidationFailedError(
+        'Document total must be greater than zero',
+        { subtotal: subtotal.toPersistence() },
+      );
+    }
     if (settlement.isZero() || settlement.isNegative()) {
       throw new ValidationFailedError(
         'Total withholding leaves a non-positive settlement amount',

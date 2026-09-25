@@ -410,6 +410,9 @@ model PurchaseBill {
   lines            PurchaseBillLine[]
 
   @@unique([fiscalYear, billNumber], name: "purchase_bills_fy_number_unique")
+  // + hand-authored partial UNIQUE INDEX purchase_bills_partner_vendor_invoice_live_key
+  //   ON (partner_id, vendor_invoice_no) WHERE deleted_at IS NULL AND status <> 'VOID'
+  //   AND vendor_invoice_no IS NOT NULL (20260926200000) — duplicate → 409.
   @@index([deletedAt])
   @@index([partnerId])
   @@index([billRef(ops: raw("gin_trgm_ops"))], type: Gin, map: "purchase_bills_bill_ref_trgm")

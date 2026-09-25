@@ -1,4 +1,9 @@
-import { AccountRole, AccountSubtype, AccountType } from '@prisma/client';
+import {
+  AccountRole,
+  AccountSubtype,
+  AccountType,
+  NormalBalance,
+} from '@prisma/client';
 import { ValidationFailedError } from '../common/errors/domain-errors';
 import { LedgerTx } from '../ledger/posting/posting.service';
 
@@ -8,13 +13,17 @@ export interface RuleAccount {
   role: AccountRole | null;
   type: AccountType;
   subtype: AccountSubtype;
+  normalBalance: NormalBalance;
 }
 
 export interface AccountRuleViolation {
   message: string;
   details:
     | { accountId: string; role: AccountRole | null }
-    | { accountId: string; reason: 'TAX_ACCOUNT' | 'ACCOUNT_TYPE' };
+    | {
+        accountId: string;
+        reason: 'TAX_ACCOUNT' | 'ACCOUNT_TYPE' | 'CONTRA_ASSET';
+      };
 }
 
 /** System-managed roles a document line may never post to: the control account
@@ -28,7 +37,9 @@ const LINE_FORBIDDEN_ROLES: readonly AccountRole[] = [
 /** Pure rule for an invoice/bill line account. Order: forbidden role, then tax
  *  account (tax postings come from tax codes), then the nature's type rule
  *  (sales → REVENUE type or OTHER_INCOME subtype; purchase → EXPENSE or ASSET,
- *  i.e. expenses, inventory, fixed assets). */
+ *  i.e. expenses, inventory, fixed assets — but never a contra-asset, an ASSET
+ *  with a CREDIT normal balance such as Akumulasi Penyusutan, which only moves
+ *  via depreciation/disposal journals). */
 export function documentLineAccountViolation(
   nature: 'SALE' | 'PURCHASE',
   account: RuleAccount,
@@ -48,6 +59,17 @@ export function documentLineAccountViolation(
       message:
         'Document lines cannot post to a tax account; apply a tax code instead',
       details: { accountId: account.id, reason: 'TAX_ACCOUNT' },
+    };
+  }
+  if (
+    nature === 'PURCHASE' &&
+    account.type === 'ASSET' &&
+    account.normalBalance === 'CREDIT'
+  ) {
+    return {
+      message:
+        'Purchase bill lines cannot post to a contra-asset account (e.g. accumulated depreciation)',
+      details: { accountId: account.id, reason: 'CONTRA_ASSET' },
     };
   }
   const typeOk =
@@ -96,7 +118,13 @@ export async function assertDocumentLineAccounts(
   const [accounts, taxCodes] = await Promise.all([
     db.account.findMany({
       where: { id: { in: unique } },
-      select: { id: true, role: true, type: true, subtype: true },
+      select: {
+        id: true,
+        role: true,
+        type: true,
+        subtype: true,
+        normalBalance: true,
+      },
     }),
     db.taxCode.findMany({
       where: { taxAccountId: { in: unique } },

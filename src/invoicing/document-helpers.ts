@@ -54,6 +54,23 @@ export function assertVoidDateNotBefore(
   }
 }
 
+/** A document's due date may equal its date but never precede it. Both are
+ *  UTC-midnight business dates; an absent due date is always fine. */
+export function assertDueDateNotBefore(
+  date: Date,
+  dueDate: Date | null | undefined,
+): void {
+  if (dueDate && dueDate.getTime() < date.getTime()) {
+    throw new ValidationFailedError(
+      'Due date cannot be before the document date',
+      {
+        date: date.toISOString().slice(0, 10),
+        dueDate: dueDate.toISOString().slice(0, 10),
+      },
+    );
+  }
+}
+
 type PostableLine = {
   accountId: string;
   quantity: Prisma.Decimal | string;

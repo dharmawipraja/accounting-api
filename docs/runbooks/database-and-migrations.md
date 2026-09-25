@@ -156,9 +156,12 @@ no separate seed command for the core reference data:
 
 - **Chart of accounts** — `AccountsService.seedIfEmpty()` inserts the SAK-aligned
   chart from `src/ledger/accounts/chart-of-accounts.seed.ts` if the table is empty.
-- **Accounting periods** — `PeriodsService.generatePeriods()` ensures the current
-  fiscal year's 12 monthly periods exist (`fiscalYearStartMonth` from company
-  settings).
+- **Accounting periods** — `PeriodsService.onModuleInit()` ensures the current AND
+  next fiscal year's 12 monthly periods exist ("current" = today's WIB date via
+  `REPORT_UTC_OFFSET_MINUTES`; `fiscalYearStartMonth` from company settings, which is
+  locked once any period or journal entry exists). Posting into a fiscal year with no
+  periods that is ≤ current + 1 generates it on demand
+  (`PeriodsService.resolveOpenPeriodForDate`, idempotent `createMany skipDuplicates`).
 - **Company settings** (`CompanyService.seedIfEmpty`) and **tax codes**
   (`TaxCodesService.seedIfEmpty`) seed on boot the same way.
 - **First ADMIN user** — there is no registration endpoint; bootstrap it explicitly:
@@ -167,6 +170,11 @@ no separate seed command for the core reference data:
   ```
   `scripts/create-admin.ts` argon2-hashes the password and upserts the user via the
   adapter-pg client. In prod, run it once against the deployed DB.
+
+> **Hand-authored partial unique** `purchase_bills_partner_vendor_invoice_live_key`
+> (`20260926200000`): `(partner_id, vendor_invoice_no)` unique among live bills
+> (`deleted_at IS NULL AND status <> 'VOID'`). Its migration aborts with a clear
+> error listing any existing duplicate pairs — void/delete/correct them first.
 
 > **System accounts are identified by `account.role`, not by hardcoded codes.** The
 > seeded chart assigns the `AccountRole` enum (`CASH`, `AR_CONTROL`, `AP_CONTROL`,

@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import {
+  paymentDateViolation,
   exceedsOutstanding,
   buildPaymentLines,
   inLockOrder,
@@ -57,5 +58,20 @@ describe('inLockOrder', () => {
     const input = [x1, w, x2];
     expect(inLockOrder(t, input)).toEqual([w, x1, x2]);
     expect(input).toEqual([x1, w, x2]);
+  });
+});
+
+describe('paymentDateViolation', () => {
+  const doc = { id: 'inv-1', date: new Date('2026-05-20') };
+  it('allows a payment on or after the document date', () => {
+    expect(paymentDateViolation(new Date('2026-05-20'), doc)).toBeNull();
+    expect(paymentDateViolation(new Date('2026-06-01'), doc)).toBeNull();
+  });
+  it('reports {paymentDate, documentId, documentDate} for an earlier payment', () => {
+    expect(paymentDateViolation(new Date('2026-05-19'), doc)).toEqual({
+      paymentDate: '2026-05-19',
+      documentId: 'inv-1',
+      documentDate: '2026-05-20',
+    });
   });
 });

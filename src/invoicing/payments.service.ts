@@ -31,6 +31,7 @@ import {
   unwindInTx,
   buildPaymentLines,
   inLockOrder,
+  assertPaymentDateNotBefore,
 } from './payment-targets';
 
 /** A payment row with its allocations eagerly loaded — what getById always returns. */
@@ -103,6 +104,7 @@ export class PaymentsService {
           'Can only allocate to a POSTED document',
           { documentId: targetRow.id, status: targetRow.status },
         );
+      assertPaymentDateNotBefore(input.date, targetRow);
       // Outstanding net of what THIS payment already allocated to the same
       // document, so two allocations to one invoice can't each pass in isolation.
       const alreadyAllocated = allocatedByDoc.get(targetRow.id) ?? Money.zero();
@@ -277,10 +279,11 @@ export class PaymentsService {
         await assertCashAccount(tx, payment.cashAccountId);
 
         // Lock each target document FOR UPDATE and re-verify outstanding (the
-        // real over-allocation guard) — in id order, so concurrent payments over
-        // overlapping documents can't deadlock.
+        // real over-allocation guard) and payment date >= document date — in
+        // id order, so concurrent payments over overlapping documents can't
+        // deadlock.
         for (const a of inLockOrder(target, allocations)) {
-          await settleInTx(tx, target, a, payment.partnerId);
+          await settleInTx(tx, target, a, payment.partnerId, payment.date);
         }
 
         const number = await this.docNumber.next(

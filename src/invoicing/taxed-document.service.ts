@@ -17,6 +17,7 @@ import {
   taxableLines,
   findControlAccountId,
   assertVoidDateNotBefore,
+  assertDueDateNotBefore,
   samePostableContent,
 } from './document-helpers';
 import {
@@ -88,6 +89,7 @@ export class TaxedDocumentService {
     U extends UpdateDocumentInput,
   >(spec: Spec<R, C, U>, input: C): Promise<R> {
     const m = documentMessages(spec);
+    assertDueDateNotBefore(input.date, input.dueDate);
     const partner = await this.partners.findById(input.partnerId);
     if (!partner[spec.partnerFlag] || !partner.isActive)
       throw new ValidationFailedError(m.partnerInactive, {
@@ -177,6 +179,9 @@ export class TaxedDocumentService {
           total: totals.total,
           lines: { create: buildLineCreateData(nextLines) },
         };
+        // Judged on the merged (effective) values: moving only the date past
+        // the stored due date is rejected too.
+        assertDueDateNotBefore(common.date, common.dueDate);
         await spec.updateRow(ltx, id, common, input, row);
       },
       // An edit racing a post waits out the post's row lock here; give it room

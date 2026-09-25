@@ -9,6 +9,7 @@ const acct = (over: Partial<RuleAccount>): RuleAccount => ({
   role: null,
   type: 'REVENUE',
   subtype: 'REVENUE',
+  normalBalance: 'CREDIT',
   ...over,
 });
 
@@ -64,7 +65,7 @@ describe('documentLineAccountViolation', () => {
     expect(
       documentLineAccountViolation(
         'PURCHASE',
-        acct({ type: 'ASSET', subtype: 'FIXED_ASSET' }),
+        acct({ type: 'ASSET', subtype: 'FIXED_ASSET', normalBalance: 'DEBIT' }),
         false,
       ),
     ).toBeNull();
@@ -74,6 +75,30 @@ describe('documentLineAccountViolation', () => {
           ?.details,
       ).toEqual({ accountId: 'a1', reason: 'ACCOUNT_TYPE' });
     }
+  });
+});
+
+describe('documentLineAccountViolation — contra assets', () => {
+  it('rejects a contra-asset (ASSET with CREDIT normal balance) on a purchase with reason CONTRA_ASSET', () => {
+    const v = documentLineAccountViolation(
+      'PURCHASE',
+      acct({
+        type: 'ASSET',
+        subtype: 'ACCUMULATED_DEPRECIATION',
+        normalBalance: 'CREDIT',
+      }),
+      false,
+    );
+    expect(v?.details).toEqual({ accountId: 'a1', reason: 'CONTRA_ASSET' });
+  });
+  it('keeps accepting a debit-normal asset on a purchase', () => {
+    expect(
+      documentLineAccountViolation(
+        'PURCHASE',
+        acct({ type: 'ASSET', subtype: 'FIXED_ASSET', normalBalance: 'DEBIT' }),
+        false,
+      ),
+    ).toBeNull();
   });
 });
 

@@ -320,7 +320,12 @@ than **2 characters** (after trimming) is ignored (the normal list is returned).
 ### Dates
 
 - Accounting dates are **date-only**, `YYYY-MM-DD` (no time component). Send them as
-  `YYYY-MM-DD` strings.
+  `YYYY-MM-DD` strings. If a full ISO timestamp is sent for a business date (journal,
+  document, due, payment, void/reverse date, report `asOf`/`from`/`to`), the server takes
+  the **calendar day from its first 10 characters** and ignores the time and offset —
+  `2026-07-01T00:30+07:00` is **July 1** (never shifted to June 30 by UTC conversion).
+  An impossible day (e.g. `2026-02-30`) → `422 VALIDATION_FAILED`. (Audit-log
+  `from`/`to` filters are timestamps and keep their time.)
 - Report query parameters:
   - `?asOf=YYYY-MM-DD` — **balance sheet**, **AR/AP aging**, **trial balance**,
     account balance. Defaults to **today in WIB** (UTC+7; server-configurable via
@@ -499,6 +504,26 @@ violations return `422 VALIDATION_FAILED`:
 | Line on an AR/AP control or `CASH` account | `{ accountId, role }` (`AR_CONTROL` / `AP_CONTROL` / `CASH`) |
 | Line on a tax account (used by any tax code, e.g. PPN Keluaran/Masukan) — apply a tax code instead | `{ accountId, reason: "TAX_ACCOUNT" }` |
 | Sales line not a revenue account (`type` `REVENUE` or subtype `OTHER_INCOME`); purchase line not `EXPENSE`/`ASSET` | `{ accountId, reason: "ACCOUNT_TYPE" }` |
+| Purchase line on a **contra-asset** (`ASSET` with `normalBalance` `CREDIT`, e.g. Akumulasi Penyusutan) | `{ accountId, reason: "CONTRA_ASSET" }` |
+
+**Other document rules** (create, `PATCH` and — where noted — `/post`):
+
+- **Free lines.** A line may have `unitPrice` (or `quantity`) `0` — a free item. It is
+  stored and shown on the document but produces no journal line (nor does a tax code
+  whose base is only free lines). A document whose **total is 0** (every line free) is
+  rejected: `422 VALIDATION_FAILED` "Document total must be greater than zero" (create,
+  `PATCH`, `/post`, tax/journal preview).
+- **Due date.** `dueDate` must be on/after `date` → else `422 VALIDATION_FAILED`
+  `{ date, dueDate }`. On `PATCH` the effective (merged) values are checked, so moving
+  only `date` past the stored `dueDate` is rejected too.
+- **PPN Output needs a PKP company.** A sales invoice using a `PPN_OUTPUT` tax code when
+  company settings `isPkp` is `false` → `422 VALIDATION_FAILED` `{ taxCodeId, kind }`
+  (create, `PATCH`, `/post`, `POST /tax/calculate` and the journal preview with
+  `nature: SALE`).
+- **Vendor invoice number (bills).** A `vendorInvoiceNo` may appear on at most one
+  **live** bill per vendor (not deleted, not `VOID`) → a duplicate on create or `PATCH`
+  is `409 CONFLICT` `{ partnerId, vendorInvoiceNo }`. Voiding or deleting the bill frees
+  the number; another vendor may use the same number.
 
 **Void date.** Every void endpoint (invoice, bill, payment) accepts an optional body
 `{ "date": "YYYY-MM-DD" }` — the void (reversal) date. Omit it to void on the document's
@@ -534,6 +559,10 @@ A payment must allocate its full amount against open documents. RECEIPT = money 
 on `/post`, `422 VALIDATION_FAILED` with `details: { accountId, role }` (`role` is the
 account's actual role, possibly `null`).
 
+The payment `date` must be **on/after the date of every invoice/bill it allocates to** —
+otherwise, on create (and re-checked on `/post`), `422 VALIDATION_FAILED` with
+`details: { paymentDate, documentId, documentDate }`.
+
 ### Periods & year-end close
 
 ```
@@ -548,6 +577,11 @@ GET  /close/year-end/:fy          close status for a fiscal year (any auth; 404 
 
 - Posting into a **closed period** → `409 CLOSED_PERIOD`; into a **closed year** →
   `409 CLOSED_YEAR`. After year-end close, the year is locked against new posting.
+- Periods for the **current and next** fiscal year (judged on today's WIB date) exist
+  from server start. Posting (or previewing with a `date`) into a fiscal year that has no
+  periods yet, if that year is **≤ current + 1**, generates its 12 periods automatically
+  and proceeds; a date further in the future still gets `409 CLOSED_PERIOD`. A date in an
+  existing but closed period is never regenerated.
 - Year-end close zeroes the cumulative P&L into Laba Ditahan (retained earnings).
 
 ### Tax preview
@@ -728,9 +762,9 @@ no auth.
 - `GET    /v1/ledger/accounts/:id` · any · get one account
 - `GET    /v1/ledger/accounts/:id/balance` · any · account balance (`?asOf=`)
 - `POST   /v1/ledger/accounts` · ACCOUNTANT+ · create account
-- `PATCH  /v1/ledger/accounts/:id` · ACCOUNTANT+ · update account
-- `POST   /v1/ledger/accounts/:id/deactivate` · ADMIN · soft-deactivate account
-- `DELETE /v1/ledger/accounts/:id` · ADMIN · soft-delete account
+- `PATCH  /v1/ledger/accounts/:id` · ACCOUNTANT+ · update account (`isActive: false` follows the deactivate rules)
+- `POST   /v1/ledger/accounts/:id/deactivate` · ADMIN · soft-deactivate account (system accounts — any non-null `role` — → `422`)
+- `DELETE /v1/ledger/accounts/:id` · ADMIN · soft-delete account (system accounts or accounts with posted lines → `422`)
 
 ### Ledger — journal
 
@@ -831,7 +865,7 @@ no auth.
 ### Company
 
 - `GET    /v1/company/settings` · any · company settings
-- `PATCH  /v1/company/settings` · ADMIN · update company settings
+- `PATCH  /v1/company/settings` · ADMIN · update company settings (changing `fiscalYearStartMonth` once any period or journal entry exists → `422`)
 
 ### Audit
 

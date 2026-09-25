@@ -24,6 +24,7 @@ export interface TargetRow {
   id: string;
   partnerId: string;
   status: DocumentStatus;
+  date: Date;
   total: Prisma.Decimal;
   amountPaid: Prisma.Decimal;
 }
@@ -79,6 +80,7 @@ export const PAYMENT_TARGETS: Record<PaymentDirection, PaymentTarget> = {
             id: inv.id,
             partnerId: inv.partnerId,
             status: inv.status,
+            date: inv.date,
             total: inv.total,
             amountPaid: inv.amountPaid,
           }
@@ -113,6 +115,7 @@ export const PAYMENT_TARGETS: Record<PaymentDirection, PaymentTarget> = {
             id: bill.id,
             partnerId: bill.partnerId,
             status: bill.status,
+            date: bill.date,
             total: bill.total,
             amountPaid: bill.amountPaid,
           }
@@ -141,6 +144,35 @@ export function exceedsOutstanding(
     .subtract(Money.of(amountPaid.toString()))
     .subtract(Money.of(amount))
     .isNegative();
+}
+
+/** Pure payment-date rule: a payment may not be dated before any document it
+ *  settles — otherwise, for as-of dates in between, AR/AP control would carry
+ *  the payment while aging has no open document to age it against. Returns the
+ *  422 details, or null when the dates are fine. */
+export function paymentDateViolation(
+  paymentDate: Date,
+  document: { id: string; date: Date },
+): { paymentDate: string; documentId: string; documentDate: string } | null {
+  if (paymentDate.getTime() >= document.date.getTime()) return null;
+  return {
+    paymentDate: paymentDate.toISOString().slice(0, 10),
+    documentId: document.id,
+    documentDate: document.date.toISOString().slice(0, 10),
+  };
+}
+
+/** Throws the 422 for a paymentDateViolation. */
+export function assertPaymentDateNotBefore(
+  paymentDate: Date,
+  document: { id: string; date: Date },
+): void {
+  const v = paymentDateViolation(paymentDate, document);
+  if (v)
+    throw new ValidationFailedError(
+      'Payment date cannot be before the date of a document it allocates to',
+      v,
+    );
 }
 
 /** The 2-line cash/control journal for a payment. */
@@ -198,14 +230,15 @@ export function inLockOrder(
   );
 }
 
-/** Lock the target FOR UPDATE, re-verify POSTED + partner + outstanding, increment amountPaid.
- *  Call once per allocation so repeated allocations to one document see each other's
- *  increment under the lock. */
+/** Lock the target FOR UPDATE, re-verify POSTED + partner + payment date + outstanding,
+ *  increment amountPaid. Call once per allocation so repeated allocations to one document
+ *  see each other's increment under the lock. */
 export async function settleInTx(
   tx: LedgerTx,
   target: PaymentTarget,
   alloc: AllocationInput,
   partnerId: string,
+  paymentDate: Date,
 ): Promise<void> {
   const id = target.allocId(alloc)!;
   const rows = await tx.$queryRaw<
@@ -214,9 +247,10 @@ export async function settleInTx(
       total: string;
       amount_paid: string;
       partner_id: string;
+      date: Date;
     }[]
   >(
-    Prisma.sql`SELECT status, total, amount_paid, partner_id FROM ${Prisma.raw(target.table)} WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`,
+    Prisma.sql`SELECT status, total, amount_paid, partner_id, date FROM ${Prisma.raw(target.table)} WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`,
   );
   if (rows.length === 0 || rows[0].status !== 'POSTED')
     throw new ValidationFailedError(`Allocated ${target.noun} is not posted`, {
@@ -227,6 +261,7 @@ export async function settleInTx(
       `Allocated ${target.noun} belongs to another partner`,
       { id },
     );
+  assertPaymentDateNotBefore(paymentDate, { id, date: rows[0].date });
   if (
     exceedsOutstanding(
       new Prisma.Decimal(rows[0].total),

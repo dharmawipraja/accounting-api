@@ -47,6 +47,9 @@ const CODES = [
 const make = (subset = CODES) =>
   new TaxService({
     client: {
+      companySettings: {
+        findFirst: jest.fn().mockResolvedValue({ isPkp: true }),
+      },
       taxCode: {
         findMany: jest
           .fn()
@@ -179,5 +182,45 @@ describe('TaxService.calculate', () => {
         lines: [],
       }),
     ).rejects.toBeInstanceOf(ValidationFailedError);
+  });
+
+  it('drops zero-amount journal lines (free item) but keeps it in the subtotal base', async () => {
+    const r = await make().calculate({
+      nature: 'SALE',
+      settlementAccountId: 'ar',
+      lines: [
+        { accountId: 'rev', amount: '1000', taxCodeIds: ['ppn-out'] },
+        { accountId: 'rev-free', amount: '0', taxCodeIds: [] },
+      ],
+    });
+    expect(r.journalLines.map((l) => l.accountId)).toEqual([
+      'rev',
+      'acc-ppn-out',
+      'ar',
+    ]);
+    expect(r.settlementAmount).toBe('1110.0000');
+  });
+
+  it('drops a tax line whose amount rounds to zero', async () => {
+    const r = await make().calculate({
+      nature: 'SALE',
+      settlementAccountId: 'ar',
+      lines: [
+        { accountId: 'rev', amount: '1000', taxCodeIds: [] },
+        { accountId: 'rev-free', amount: '0', taxCodeIds: ['ppn-out'] },
+      ],
+    });
+    expect(r.journalLines.map((l) => l.accountId)).toEqual(['rev', 'ar']);
+    expect(r.taxes[0].amount).toBe('0.0000'); // still reported in the breakdown
+  });
+
+  it('rejects a zero-total document with a total-specific message (422)', async () => {
+    await expect(
+      make().calculate({
+        nature: 'SALE',
+        settlementAccountId: 'ar',
+        lines: [{ accountId: 'rev', amount: '0', taxCodeIds: ['ppn-out'] }],
+      }),
+    ).rejects.toThrow('Document total must be greater than zero');
   });
 });

@@ -102,7 +102,10 @@ that an OPEN period contains the date, that the fiscal year is not closed, and t
 accounts are postable; then assigns a number and sets `postedAt`. The "is this counted?"
 rule keys off `posted_at`, not `status`.
 - `PostingService.preparePosting` (out-of-transaction checks) + `createPostedEntryInTx`
-  (in-transaction write); in-tx TOCTOU guard `assertPostablePeriodInTx`.
+  (in-transaction write); in-tx TOCTOU guard `assertPostablePeriodInTx`, then the line
+  accounts are re-validated `FOR SHARE` (sorted by id) before the sequence. Account
+  deactivate/delete take the account row `FOR UPDATE`, so they serialize with posting;
+  accounts with a `role` can never be deactivated or deleted.
 
 ### Gapless entry number (nomor jurnal)
 Posted entries get a per-fiscal-year sequential `entryNumber` and a human ref
@@ -137,14 +140,17 @@ created the entry (toggleable per company). Document-sourced entries are exempt.
 A monthly bucket with a status of `OPEN` or `CLOSED`. You can only post into the OPEN
 period whose date range contains the entry date; closing a month freezes it.
 - `AccountingPeriod` model (`fiscalYear`, `sequence`, `startDate`, `endDate`, `status`),
-  `PeriodStatus` enum; open-period lookup in `PostingService.preparePosting`.
+  `PeriodStatus` enum; open-period lookup via `PeriodsService.resolveOpenPeriodForDate`
+  (auto-generates a missing fiscal year ≤ current + 1; boot pre-generates current and
+  next).
 
 ### Fiscal year (tahun buku / tahun fiskal)
 The 12-month reporting year. It need not start in January: `fiscalYearStartMonth`
 configures the start. A date's fiscal year is the calendar year if the month is ≥ the
 start month, else the prior year.
 - `CompanySettings.fiscalYearStartMonth`; `fiscalYearForDate()` in
-  `src/common/dates/fiscal-year.ts`.
+  `src/common/dates/fiscal-year.ts`. Locked (422) once any accounting period or journal
+  entry exists.
 
 ---
 

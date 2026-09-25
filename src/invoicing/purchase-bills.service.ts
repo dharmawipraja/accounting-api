@@ -4,6 +4,21 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { TaxedDocumentService } from './taxed-document.service';
 import { presentDocument } from './document-presenter';
 import { DocumentDescriptor } from './document-descriptor';
+import { mapUniqueViolation } from '../common/errors/map-unique-violation';
+
+/** The only unique a bill create/update can hit is the live (partner,
+ *  vendor_invoice_no) partial index → 409; anything else rethrows unchanged. */
+function duplicateVendorInvoice(
+  err: unknown,
+  partnerId: string,
+  vendorInvoiceNo: string | null | undefined,
+): never {
+  mapUniqueViolation(
+    err,
+    'This vendor invoice number is already recorded on another live bill for this vendor',
+    { partnerId, vendorInvoiceNo },
+  );
+}
 
 export type PurchaseBillRow = PurchaseBill & { lines?: PurchaseBillLine[] };
 
@@ -78,24 +93,38 @@ export class PurchaseBillsService {
           where: { id: { in: ids } },
         }),
       createRow: (tx, { lines, ...scalars }, input) =>
-        tx.purchaseBill.create({
-          data: {
-            ...scalars,
-            vendorInvoiceNo: input.vendorInvoiceNo,
-            lines: { create: lines.create },
-          },
-          include: { lines: { orderBy: { lineNo: 'asc' } } },
-        }),
+        tx.purchaseBill
+          .create({
+            data: {
+              ...scalars,
+              vendorInvoiceNo: input.vendorInvoiceNo,
+              lines: { create: lines.create },
+            },
+            include: { lines: { orderBy: { lineNo: 'asc' } } },
+          })
+          .catch((err: unknown) =>
+            duplicateVendorInvoice(
+              err,
+              scalars.partnerId,
+              input.vendorInvoiceNo,
+            ),
+          ),
       updateRow: async (tx, id, { lines, ...scalars }, input, existing) => {
         await tx.purchaseBillLine.deleteMany({ where: { purchaseBillId: id } });
-        await tx.purchaseBill.update({
-          where: { id },
-          data: {
-            ...scalars,
-            vendorInvoiceNo: input.vendorInvoiceNo ?? existing.vendorInvoiceNo,
-            lines: { create: lines.create },
-          },
-        });
+        const vendorInvoiceNo =
+          input.vendorInvoiceNo ?? existing.vendorInvoiceNo;
+        await tx.purchaseBill
+          .update({
+            where: { id },
+            data: {
+              ...scalars,
+              vendorInvoiceNo,
+              lines: { create: lines.create },
+            },
+          })
+          .catch((err: unknown) =>
+            duplicateVendorInvoice(err, existing.partnerId, vendorInvoiceNo),
+          );
       },
       finalizePosted: async (tx, id, ctx, postedBy) => {
         await tx.purchaseBill.update({
