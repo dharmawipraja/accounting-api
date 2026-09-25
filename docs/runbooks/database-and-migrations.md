@@ -91,7 +91,10 @@ the Prisma schema cannot express:
     `lines: { create }` of a direct/document/reversal/closing post. A reversal
     tx flips the original but did not post it, so it cannot add lines to it;
     `postDraft` promotes existing lines untouched, so it never inserts into a
-    posted parent. ⚠️ **A new posting path
+    posted parent. The trigger reads the parent row **`FOR SHARE`**
+    (`20260929000000_journal_lines_parent_for_share`), so a line write racing
+    a DRAFT→POSTED promotion in another tx waits for it and then sees the
+    committed (posted) parent instead of a stale draft snapshot. ⚠️ **A new posting path
     must write the posted entry and its lines in ONE transaction (nested
     create), and must never add/alter lines after posting** — correct via a
     reversal instead.

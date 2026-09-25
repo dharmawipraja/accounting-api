@@ -11,7 +11,10 @@ import { BalanceSheetService } from '../src/reporting/balance-sheet.service';
 import { CashFlowService } from '../src/reporting/cash-flow.service';
 import { YearEndCloseService } from '../src/close/year-end-close.service';
 import { JournalService } from '../src/ledger/journal/journal.service';
-import { ClosedYearError } from '../src/common/errors/domain-errors';
+import {
+  ClosedYearError,
+  InvalidAccountError,
+} from '../src/common/errors/domain-errors';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
 import { bootstrapTestApp } from './e2e-helpers';
@@ -286,6 +289,104 @@ describe('Year-end close (e2e)', () => {
     const reopenedRec = await close.reopen(2033, 'admin');
     expect(reopenedRec.status).toBe('OPEN');
     expect(reopenedRec.closingEntryId).toBeNull();
+  });
+
+  it('closes, reopens and re-closes a year whose P&L account was deactivated mid-year; MANUAL posts to it still 422', async () => {
+    await app.get(PeriodsService).generatePeriods(2036);
+    const accounts = app.get(AccountsService);
+    const rev = await accounts.create({
+      code: '4-1036',
+      name: 'Pendapatan Lini Lama',
+      type: 'REVENUE',
+      subtype: 'REVENUE',
+      normalBalance: 'CREDIT',
+      parentCode: '4-0000',
+    });
+    await posting.post(
+      {
+        date: new Date('2036-03-01'),
+        description: 'old-line sale',
+        sourceType: 'MANUAL',
+        createdBy: 'a',
+        lines: [
+          { accountId: acc['1-1000'], debit: '750000' },
+          { accountId: rev.id, credit: '750000' },
+        ],
+      },
+      'p',
+    );
+    await accounts.deactivate(rev.id); // product line discontinued mid-year
+    const yearEnd = new Date('2036-12-31');
+
+    const first = await close.close(2036, 'admin');
+    expect(first.status).toBe('CLOSED');
+    expect(first.netIncome.toFixed(4)).toBe('750000.0000');
+    expect((await balances.accountBalance(rev.id, yearEnd)).balance).toBe(
+      '0.0000',
+    ); // zeroed into Laba Ditahan despite being inactive
+
+    const reopened = await close.reopen(2036, 'admin');
+    expect(reopened.status).toBe('OPEN');
+    const second = await close.close(2036, 'admin');
+    expect(second.status).toBe('CLOSED');
+    expect(second.closingEntryId).not.toBe(first.closingEntryId);
+    expect((await balances.accountBalance(rev.id, yearEnd)).balance).toBe(
+      '0.0000',
+    );
+
+    // Only CLOSING is exempt: an ordinary post to the inactive account fails.
+    await expect(
+      posting.post(
+        {
+          date: new Date('2027-05-01'),
+          description: 'post to inactive',
+          sourceType: 'MANUAL',
+          createdBy: 'a',
+          lines: [
+            { accountId: acc['1-1000'], debit: '100' },
+            { accountId: rev.id, credit: '100' },
+          ],
+        },
+        'p',
+      ),
+    ).rejects.toBeInstanceOf(InvalidAccountError);
+  });
+
+  it('reopen reverses the CURRENT closing entry even if the pre-lock read was stale (re-read under the lock)', async () => {
+    await app.get(PeriodsService).generatePeriods(2037);
+    await posting.post(
+      {
+        date: new Date('2037-04-01'),
+        description: 'FY2037 sale',
+        sourceType: 'MANUAL',
+        createdBy: 'a',
+        lines: [
+          { accountId: acc['1-1000'], debit: '300000' },
+          { accountId: acc['4-1000'], credit: '300000' },
+        ],
+      },
+      'p',
+    );
+    const stale = await close.close(2037, 'admin'); // closing entry X
+    await close.reopen(2037, 'admin'); // X reversed
+    const current = await close.close(2037, 'admin'); // closing entry Y
+    expect(current.closingEntryId).not.toBe(stale.closingEntryId);
+
+    // Simulate a reopen whose unlocked pre-read happened before the
+    // reopen + re-close above: it still sees closingEntryId = X.
+    const spy = jest
+      .spyOn(close, 'getStatus')
+      .mockResolvedValueOnce({ ...stale, status: 'CLOSED' });
+    try {
+      const rec = await close.reopen(2037, 'admin');
+      expect(rec.status).toBe('OPEN');
+    } finally {
+      spy.mockRestore();
+    }
+    const y = await prisma.client.journalEntry.findFirst({
+      where: { id: current.closingEntryId! },
+    });
+    expect(y!.status).toBe('REVERSED'); // Y (current) reversed, not X again
   });
 
   it('POST reopen without an Idempotency-Key header returns 422 before reaching the service', async () => {

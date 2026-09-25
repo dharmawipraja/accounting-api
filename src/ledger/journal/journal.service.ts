@@ -159,13 +159,34 @@ export class JournalService {
   /**
    * Post opening balances, auto-plugging the imbalance into the Opening Balance
    * Equity account (3-9000) so the entry always balances. If the supplied
-   * balances already net to zero, no plug line is added.
+   * balances already net to zero, no plug line is added. Opening balances are
+   * balance-sheet positions only: a REVENUE/EXPENSE account is a 422
+   * (`reason: 'PNL_IN_OPENING'`) — mid-year YTD P&L goes in as a MANUAL
+   * journal. Account type is immutable, so this pre-tx check cannot go stale.
    */
   async postOpeningBalances(
     date: Date,
     balances: PostLineInput[],
     postedBy: string,
   ): Promise<JournalEntry> {
+    const pnl = await this.prisma.client.account.findMany({
+      where: {
+        id: { in: [...new Set(balances.map((b) => b.accountId))] },
+        type: { in: ['REVENUE', 'EXPENSE'] },
+      },
+      select: { id: true },
+    });
+    if (pnl.length > 0) {
+      const pnlIds = new Set(pnl.map((a) => a.id));
+      const accountId = balances.find((b) =>
+        pnlIds.has(b.accountId),
+      )!.accountId;
+      throw new ValidationFailedError(
+        'Opening balances may only use balance-sheet accounts; enter year-to-date revenue/expense as a MANUAL journal',
+        { accountId, reason: 'PNL_IN_OPENING' },
+      );
+    }
+
     let debit = Money.zero();
     let credit = Money.zero();
     for (const b of balances) {

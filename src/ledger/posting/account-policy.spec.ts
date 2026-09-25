@@ -1,4 +1,5 @@
 import {
+  CLOSING_POLICY,
   MANUAL_ENTRY_POLICY,
   UNRESTRICTED_POLICY,
   accountPolicyFor,
@@ -10,13 +11,32 @@ describe('account-policy', () => {
     expect(accountPolicyFor('MANUAL')).toBe(MANUAL_ENTRY_POLICY);
     for (const t of [
       'OPENING',
-      'CLOSING',
       'REVERSAL',
       'SALES_INVOICE',
       'PURCHASE_BILL',
       'PAYMENT',
     ] as const) {
       expect(accountPolicyFor(t)).toBe(UNRESTRICTED_POLICY);
+    }
+  });
+
+  it('CLOSING is role-unrestricted and the ONLY policy that tolerates inactive accounts', () => {
+    // A deactivated P&L account with FY movement must still be zeroed by the
+    // year-end close; every other source type keeps the isActive check.
+    expect(accountPolicyFor('CLOSING')).toBe(CLOSING_POLICY);
+    expect(CLOSING_POLICY).toEqual({
+      forbiddenRoles: [],
+      allowInactive: true,
+    });
+    for (const t of [
+      'MANUAL',
+      'OPENING',
+      'REVERSAL',
+      'SALES_INVOICE',
+      'PURCHASE_BILL',
+      'PAYMENT',
+    ] as const) {
+      expect(accountPolicyFor(t).allowInactive ?? false).toBe(false);
     }
   });
 

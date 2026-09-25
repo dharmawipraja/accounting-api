@@ -363,6 +363,69 @@ describe('DB integrity — ledger invariants enforced by Postgres (e2e)', () => 
       ).rejects.toThrow(LINES_AFTER_POSTING);
     });
 
+    it('a line insert racing a DRAFT→POSTED promotion waits on the parent (FOR SHARE) and is rejected once it commits', async () => {
+      const draft = await app.get(JournalService).createDraft({
+        date: new Date('2026-02-10'),
+        description: 'race: post vs line insert',
+        createdBy: 'a',
+        lines: [
+          { accountId: acc['1-1000'], debit: '100' },
+          { accountId: acc['4-1000'], credit: '100' },
+        ],
+      });
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      let promoted!: () => void;
+      const isPromoted = new Promise<void>((r) => (promoted = r));
+      // Tx B: promote the draft (as postDraft does) and hold the tx open.
+      const poster = prisma.$transaction(
+        async (tx) => {
+          await tx.$executeRawUnsafe(
+            `UPDATE journal_entries SET status = 'POSTED', posted_at = now(), posted_by = 'p',
+               entry_number = 90777, entry_ref = 'JE/2026/090777', fiscal_year = 2026,
+               period_id = '${periodId}' WHERE id = '${draft.id}'`,
+          );
+          promoted();
+          await gate;
+        },
+        { timeout: 20_000 },
+      );
+      await isPromoted;
+      // Tx A (autocommit, another connection): add a balanced pair of lines to
+      // the entry B is posting. Without FOR SHARE it reads the pre-post
+      // snapshot (still a draft) and slips in; with it, it waits for B.
+      const inserter = runSql(
+        `INSERT INTO journal_lines (id, journal_entry_id, line_no, account_id, debit, credit)
+         VALUES (gen_random_uuid()::text, '${draft.id}', 3, '${acc['1-1000']}', 7, 0),
+                (gen_random_uuid()::text, '${draft.id}', 4, '${acc['4-1000']}', 0, 7)`,
+      ).then(
+        () => ({ ok: true as const }),
+        (err: unknown) => ({ ok: false as const, err }),
+      );
+      let settled = false;
+      void inserter.then(() => (settled = true));
+      for (let i = 0; i < 50 && !settled; i++) {
+        const [{ n }] = await prisma.client.$queryRaw<{ n: number }[]>`
+          SELECT COUNT(*)::int AS n FROM pg_stat_activity
+          WHERE wait_event_type = 'Lock' AND query LIKE 'INSERT INTO journal_lines%'`;
+        if (n > 0) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(settled).toBe(false); // A is blocked behind B, not already done
+      release();
+      await poster;
+      const res = await inserter;
+      expect(res.ok).toBe(false);
+      expect(String((res as { err: unknown }).err)).toMatch(
+        LINES_AFTER_POSTING,
+      );
+      expect(
+        await prisma.client.journalLine.count({
+          where: { journalEntryId: draft.id },
+        }),
+      ).toBe(2);
+    });
+
     it.each([
       'journal_lines',
       'journal_entries',

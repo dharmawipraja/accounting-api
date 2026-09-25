@@ -45,8 +45,8 @@ export class YearEndCloseService {
         // AND waits out every in-flight post (they hold the SHARED lock), so the
         // P&L read below sees each committed post and no new post can land in
         // the year until this tx ends — nothing is left unclosed.
-        const status = await this.lockAndReadClosingStatus(tx, fiscalYear);
-        if (status === 'CLOSED') {
+        const locked = await this.lockAndReadClosing(tx, fiscalYear);
+        if (locked?.status === 'CLOSED') {
           throw new ConflictDomainError('Fiscal year is already closed', {
             fiscalYear,
           });
@@ -158,66 +158,68 @@ export class YearEndCloseService {
   }
 
   /** Take the exclusive per-fiscal-year advisory lock (auto-released at tx end) and read the
-   *  current closing status under it — the close/reopen serializer; the caller re-checks the
-   *  returned status. EXCLUSIVE lock, deliberately distinct from posting's
-   *  pg_advisory_xact_lock_shared (assertPostablePeriodInTx) — do not merge the two. */
-  private async lockAndReadClosingStatus(
+   *  current closing row under it — the close/reopen serializer; the caller re-checks the
+   *  returned status (and, on reopen, uses THIS closingEntryId, never a pre-lock read). EXCLUSIVE
+   *  lock, deliberately distinct from posting's pg_advisory_xact_lock_shared
+   *  (assertPostablePeriodInTx) — do not merge the two. */
+  private async lockAndReadClosing(
     tx: LedgerTx,
     fiscalYear: number,
-  ): Promise<string | null> {
+  ): Promise<{ status: string; closingEntryId: string | null } | null> {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(${fiscalYear})`;
-    const rows = await tx.$queryRaw<{ status: string }[]>`
-      SELECT status FROM year_end_closings WHERE fiscal_year = ${fiscalYear}`;
-    return rows.length > 0 ? rows[0].status : null;
+    const rows = await tx.$queryRaw<
+      { status: string; closing_entry_id: string | null }[]
+    >`
+      SELECT status, closing_entry_id FROM year_end_closings
+      WHERE fiscal_year = ${fiscalYear}`;
+    return rows.length > 0
+      ? { status: rows[0].status, closingEntryId: rows[0].closing_entry_id }
+      : null;
   }
 
   async reopen(
     fiscalYear: number,
     reopenedBy: string,
   ): Promise<YearEndClosing> {
+    // Fast path only: a friendly early 422 without opening a tx.
     const rec = await this.getStatus(fiscalYear);
     if (!rec || rec.status !== 'CLOSED') {
       throw new ValidationFailedError('Fiscal year is not closed', {
         fiscalYear,
       });
     }
-    if (rec.closingEntryId) {
-      const prepared = await this.posting.prepareReversal(
-        rec.closingEntryId,
-        reopenedBy,
-        undefined,
-        { allowClosedYear: true },
-      );
-      await this.prisma.transaction(async (tx) => {
-        // Serialize concurrent reopens and re-check status under the lock, so a
-        // double-reopen can't double-reverse the closing entry.
-        const status = await this.lockAndReadClosingStatus(tx, fiscalYear);
-        if (status !== 'CLOSED') {
+    await this.prisma.transaction(
+      async (tx) => {
+        // Serialize against concurrent reopen/close and re-read the closing row
+        // under the lock: a reopen + re-close that committed after the pre-read
+        // above replaced closingEntryId, so the reversal must target the id
+        // read HERE (never double-reverse a stale entry or leave the current
+        // one standing).
+        const locked = await this.lockAndReadClosing(tx, fiscalYear);
+        if (locked?.status !== 'CLOSED') {
           throw new ValidationFailedError('Fiscal year is not closed', {
             fiscalYear,
           });
         }
-        await this.posting.reverseInTx(tx, prepared);
-        await tx.yearEndClosing.update({
-          where: { fiscalYear },
-          data: { status: 'OPEN', reopenedAt: new Date(), reopenedBy },
-        });
-      });
-    } else {
-      await this.prisma.transaction(async (tx) => {
-        // Same serializer as above for an entry-less (empty-year) close.
-        const status = await this.lockAndReadClosingStatus(tx, fiscalYear);
-        if (status !== 'CLOSED') {
-          throw new ValidationFailedError('Fiscal year is not closed', {
-            fiscalYear,
-          });
+        if (locked.closingEntryId) {
+          // Same accepted trade-off as close(): prepareReversal's plain reads
+          // borrow a second pool connection; the closing entry is committed
+          // and cannot change while we hold the exclusive year lock.
+          const prepared = await this.posting.prepareReversal(
+            locked.closingEntryId,
+            reopenedBy,
+            undefined,
+            { allowClosedYear: true },
+          );
+          await this.posting.reverseInTx(tx, prepared);
         }
         await tx.yearEndClosing.update({
           where: { fiscalYear },
           data: { status: 'OPEN', reopenedAt: new Date(), reopenedBy },
         });
-      });
-    }
+      },
+      { maxWait: 5000, timeout: 20000 },
+    );
     return this.getStatus(fiscalYear) as Promise<YearEndClosing>;
   }
 }

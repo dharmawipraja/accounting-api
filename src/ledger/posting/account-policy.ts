@@ -4,6 +4,10 @@ import { AccountRole, JournalSourceType } from '@prisma/client';
  *  touch. Pure data + pure check — the DB reads live in PostingService. */
 export interface AccountPolicy {
   readonly forbiddenRoles: readonly AccountRole[];
+  /** Skip the isActive check (exists / postable / not-deleted still apply).
+   *  Only CLOSING: a P&L account deactivated mid-year still carries FY movement
+   *  the year-end close must zero into Laba Ditahan. */
+  readonly allowInactive?: boolean;
 }
 
 /** AR/AP control balances must only move through documents (invoice, bill,
@@ -16,8 +20,17 @@ export const MANUAL_ENTRY_POLICY: AccountPolicy = {
 
 export const UNRESTRICTED_POLICY: AccountPolicy = { forbiddenRoles: [] };
 
+/** Year-end close: role-unrestricted AND tolerant of inactive accounts (see
+ *  AccountPolicy.allowInactive). Every other source type keeps isActive. */
+export const CLOSING_POLICY: AccountPolicy = {
+  forbiddenRoles: [],
+  allowInactive: true,
+};
+
 export function accountPolicyFor(sourceType: JournalSourceType): AccountPolicy {
-  return sourceType === 'MANUAL' ? MANUAL_ENTRY_POLICY : UNRESTRICTED_POLICY;
+  if (sourceType === 'MANUAL') return MANUAL_ENTRY_POLICY;
+  if (sourceType === 'CLOSING') return CLOSING_POLICY;
+  return UNRESTRICTED_POLICY;
 }
 
 /** The first account (in the given order) whose role the policy forbids, or null. */

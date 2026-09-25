@@ -43,6 +43,12 @@ export const TRANSIENT_CONFLICT = {
   details: { retryable: true },
 } as const;
 
+/** Prisma codes for a rolled-back transaction: P2034 (write conflict /
+ *  serialization failure) and P2028 (transaction-API error — the interactive
+ *  tx could not start within `maxWait`, or ran past `timeout` and was closed by
+ *  the client). Nothing committed, so both are retryable like a deadlock. */
+const TRANSIENT_PRISMA_CODES = new Set(['P2034', 'P2028']);
+
 /** SQLSTATE carried by a Prisma 7 driver-adapter error (`{ name:
  *  'DriverAdapterError', cause: { originalCode, code, … } }`), if any. */
 function driverAdapterCode(e: unknown): string | undefined {
@@ -56,14 +62,15 @@ function driverAdapterCode(e: unknown): string | undefined {
 }
 
 /**
- * True for a deadlock / serialization failure / lock timeout, however Prisma 7 + the pg
- * adapter surfaces it: P2034 (a 40001 on a model query), P2010 with
+ * True for a deadlock / serialization failure / lock timeout / transaction-API
+ * timeout, however Prisma 7 + the pg adapter surfaces it: P2034 (a 40001 on a
+ * model query), P2028 (interactive-tx maxWait/timeout expired), P2010 with
  * `meta.driverAdapterError` (a raw query), or a bare DriverAdapterError (a
  * 40P01 on a model query — the client rethrows it unwrapped). Pure.
  */
 export function isTransientConflict(err: unknown): boolean {
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
-    if (err.code === 'P2034') return true;
+    if (TRANSIENT_PRISMA_CODES.has(err.code)) return true;
     const code = driverAdapterCode(
       (err.meta as { driverAdapterError?: unknown } | undefined)
         ?.driverAdapterError,

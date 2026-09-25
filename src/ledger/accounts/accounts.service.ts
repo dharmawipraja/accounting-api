@@ -12,6 +12,7 @@ import { mapUniqueViolation } from '../../common/errors/map-unique-violation';
 import { CHART_OF_ACCOUNTS } from './chart-of-accounts.seed';
 import { Money } from '../../common/money/money';
 import { POSTED_JE } from '../balances/posted-entry.sql';
+import { assertCashAssignable } from './cash-role';
 
 /**
  * Transaction-scoped advisory lock serializing CASH-account retirements, so
@@ -174,6 +175,15 @@ export class AccountsService implements OnModuleInit {
       });
     }
 
+    // CASH: the same shape rule as PATCH role=CASH (postable, debit-normal ASSET).
+    if (input.role === 'CASH')
+      assertCashAssignable({
+        type: input.type,
+        normalBalance: input.normalBalance,
+        isPostable: input.isPostable ?? true,
+        role: null,
+      });
+
     // Singleton roles (everything except CASH) may be held by at most one account.
     // This CASH carve-out MUST stay in sync with the partial-unique index in
     // migration 20260618000000_account_role (`WHERE role IS NOT NULL AND role <> 'CASH'`):
@@ -236,7 +246,7 @@ export class AccountsService implements OnModuleInit {
         // A deactivation — same lock + role rule as POST :id/deactivate.
         if (data.isActive === false)
           await this.lockForRetire(tx, id, 'deactivate');
-        if (role !== undefined) await this.assertCashAssignable(tx, id);
+        if (role !== undefined) await this.lockCashCandidate(tx, id);
         return tx.account.update({
           where: { id },
           data: role !== undefined ? { ...data, role } : data,
@@ -248,9 +258,9 @@ export class AccountsService implements OnModuleInit {
   }
 
   /** CASH may be added to an existing account (e.g. a bank account created
-   *  before roles existed) so payments can use it — but only to a postable,
-   *  debit-normal ASSET, and never over a singleton system role. */
-  private async assertCashAssignable(tx: LedgerTx, id: string): Promise<void> {
+   *  before roles existed) so payments can use it. Locks the row FOR UPDATE and
+   *  applies the shared shape rule (`assertCashAssignable`, also used by create). */
+  private async lockCashCandidate(tx: LedgerTx, id: string): Promise<void> {
     const rows = await tx.$queryRaw<
       {
         type: string;
@@ -265,17 +275,13 @@ export class AccountsService implements OnModuleInit {
     if (rows.length === 0)
       throw new NotFoundDomainError('Account not found', { id });
     const a = rows[0];
-    if (a.role === 'CASH') return;
-    if (a.role !== null)
-      throw new ValidationFailedError(
-        `Account already holds the system role ${a.role}; system roles cannot be changed`,
-        { id, role: a.role },
-      );
-    if (a.type !== 'ASSET' || a.normal_balance !== 'DEBIT' || !a.is_postable)
-      throw new ValidationFailedError(
-        'The CASH role requires a postable, debit-normal ASSET account',
-        { id, type: a.type, normalBalance: a.normal_balance },
-      );
+    assertCashAssignable({
+      id,
+      type: a.type,
+      normalBalance: a.normal_balance,
+      isPostable: a.is_postable,
+      role: a.role,
+    });
   }
 
   /** Deactivate under a FOR UPDATE row lock: posting re-reads its accounts
@@ -349,8 +355,9 @@ export class AccountsService implements OnModuleInit {
 
   /** A CASH account may be retired only when (a) its posted balance is zero —
    *  read under the row lock, which a concurrent post's FOR SHARE re-read
-   *  serializes against — and (b) at least one OTHER active CASH account
-   *  remains, checked under CASH_RETIRE_LOCK_KEY so two concurrent
+   *  serializes against — and (b) at least one OTHER active, postable CASH
+   *  account remains (a non-postable legacy CASH row can't take payments, so it
+   *  doesn't count), checked under CASH_RETIRE_LOCK_KEY so two concurrent
    *  retirements can't both see the other as the survivor. */
   private async assertCashRetirable(
     tx: LedgerTx,
@@ -371,7 +378,8 @@ export class AccountsService implements OnModuleInit {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(${CASH_RETIRE_LOCK_KEY})`;
     const [{ n }] = await tx.$queryRaw<{ n: number }[]>`
       SELECT COUNT(*)::int AS n FROM accounts
-      WHERE role = 'CASH' AND id <> ${id} AND is_active AND deleted_at IS NULL`;
+      WHERE role = 'CASH' AND id <> ${id} AND is_active AND is_postable
+        AND deleted_at IS NULL`;
     if (n === 0)
       throw new ValidationFailedError(
         `Cannot ${action} the last active CASH account; payments need at least one`,

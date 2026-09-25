@@ -166,7 +166,9 @@ Prisma-level failures are normalized too: a unique conflict surfaces as `409 CON
 a missing row as `404 NOT_FOUND`, malformed input as `400 INVALID_INPUT`.
 A database **deadlock, serialization failure or lock timeout** (a concurrent
 transaction won, or held a lock too long — e.g. a company start-month change waits at
-most 5s for its table locks) surfaces as `409 CONFLICT` with `details: { retryable: true }`: nothing was
+most 5s for its table locks), or a **transaction that could not start or finish in time**
+(posting/reversal/draft-post/year-end transactions wait at most 5s for a connection and run
+at most 20s), surfaces as `409 CONFLICT` with `details: { retryable: true }`: nothing was
 committed and the idempotency key was released, so retry the same request (same
 `Idempotency-Key`) after a short back-off.
 
@@ -473,6 +475,10 @@ DELETE /ledger/journal-entries/:id      delete a DRAFT          (ACCOUNTANT+)
   `"AR/AP control accounts can only be posted through sales invoices, purchase bills and payments"`
   and `details: { accountId, role }`. Hide those accounts from the manual-entry account
   picker. Opening balances (`POST /ledger/opening-balances`) are still allowed on them.
+- **Opening balances are balance-sheet only.** A `REVENUE` or `EXPENSE` account in
+  `balances` → `422 VALIDATION_FAILED` with `details: { accountId, reason: 'PNL_IN_OPENING' }`
+  (nothing is written). Enter mid-year year-to-date revenue/expense as a normal MANUAL
+  journal entry instead; hide P&L accounts from the opening-balance account picker.
 - **Discover drafts awaiting approval** via `GET /v1/ledger/journal-entries?status=DRAFT`
   — this is your approval queue.
 - `POST /v1/ledger/journal-entries`, `/:id/post`, `/:id/reverse`, and
@@ -597,7 +603,9 @@ GET  /close/year-end/:fy          close status for a fiscal year (any auth; 404 
 ```
 
 - Posting into a **closed period** → `409 CLOSED_PERIOD`; into a **closed year** →
-  `409 CLOSED_YEAR`. After year-end close, the year is locked against new posting.
+  `409 CLOSED_YEAR`. After year-end close, the year is locked against new posting. The
+  code is the same whether the period was already closed or closed while your request
+  was in flight.
 - Periods for the **current and next** fiscal year (judged on today's WIB date) exist
   from server start. Posting (or previewing with a `date` — the preview may create them
   too) into the **current or next** fiscal year when it has no periods generates its 12
@@ -606,6 +614,14 @@ GET  /close/year-end/:fy          close status for a fiscal year (any auth; 404 
   `POST /ledger/periods/generate`). A date in an existing but closed period is never
   regenerated.
 - Year-end close zeroes the cumulative P&L into Laba Ditahan (retained earnings).
+- **Year-end close (and reopen) need the fiscal year's LAST period OPEN**: the closing
+  entry is dated on the fiscal year-end and its reopen reversal on the same date. Close
+  the year first, then close the last month — or reopen that month before running
+  close/reopen; otherwise → `409 CLOSED_PERIOD`.
+- **Deactivated P&L accounts are still closed.** A revenue/expense account deactivated
+  mid-year keeps its movement in the closing entry (close, reopen and re-close all work);
+  only the year-end close may post to an inactive account — any other post → `422
+  INVALID_ACCOUNT`.
 
 ### Tax preview
 
@@ -784,9 +800,9 @@ no auth.
 - `GET    /v1/ledger/accounts` · any · list chart of accounts (**envelope** `{data,total,limit,offset}`; supports `?limit`/`?offset`)
 - `GET    /v1/ledger/accounts/:id` · any · get one account
 - `GET    /v1/ledger/accounts/:id/balance` · any · account balance (`?asOf=`)
-- `POST   /v1/ledger/accounts` · ACCOUNTANT+ · create account
-- `PATCH  /v1/ledger/accounts/:id` · ACCOUNTANT+ · update account `{name?, cashFlowCategory?, isActive?, role?}` (`isActive: false` follows the deactivate rules). `role` accepts **only `'CASH'`**: it marks an existing postable, debit-normal `ASSET` account with no role as a cash/bank account so payments can use it; any other role value → `400`, a credit-normal/non-ASSET/header account or one that already holds a singleton role → `422 VALIDATION_FAILED`. Singleton roles (AR/AP control, retained earnings, opening-balance equity, tax expense) are create-only.
-- `POST   /v1/ledger/accounts/:id/deactivate` · ADMIN · soft-deactivate account. Singleton system accounts (non-null `role` other than `CASH`) → `422`. A `CASH` account → `422` unless its balance is zero (`details.balance`) **and** another active `CASH` account remains (`details.otherActiveCashAccounts: 0`)
+- `POST   /v1/ledger/accounts` · ACCOUNTANT+ · create account. With `role: 'CASH'` the same rule as PATCH applies: the account must be a postable (`isPostable` not `false`), debit-normal `ASSET` → otherwise `422 VALIDATION_FAILED`
+- `PATCH  /v1/ledger/accounts/:id` · ACCOUNTANT+ · update account `{name?, cashFlowCategory?, isActive?, role?}` (`isActive: false` follows the deactivate rules). `role` accepts **only `'CASH'`**: it marks an existing postable, debit-normal `ASSET` account with no role as a cash/bank account so payments can use it; any other role value — including `null` (a role cannot be cleared) — → `400`, a credit-normal/non-ASSET/header account or one that already holds a singleton role → `422 VALIDATION_FAILED`. Singleton roles (AR/AP control, retained earnings, opening-balance equity, tax expense) are create-only.
+- `POST   /v1/ledger/accounts/:id/deactivate` · ADMIN · soft-deactivate account. Singleton system accounts (non-null `role` other than `CASH`) → `422`. A `CASH` account → `422` unless its balance is zero (`details.balance`) **and** another active, postable `CASH` account remains (`details.otherActiveCashAccounts: 0`). A reversal or document void may still post to an already-deactivated `CASH` account (it only undoes an earlier movement), which can leave it with a non-zero balance; move that balance with a manual entry after reactivating it (`PATCH { isActive: true }`)
 - `DELETE /v1/ledger/accounts/:id` · ADMIN · soft-delete account (same system-account / `CASH` rules as deactivate; accounts with posted lines → `422`)
 
 ### Ledger — journal

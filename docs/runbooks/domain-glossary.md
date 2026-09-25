@@ -76,7 +76,10 @@ be a set (multiple bank/cash accounts); the other five are singletons. New code 
 identify system accounts via `account.role`, never by code string.
 - Singleton roles are create-only. `CASH` may also be assigned later with
   `PATCH /ledger/accounts/:id {role: 'CASH'}` — only to a postable, debit-normal `ASSET`
-  with no role (e.g. a bank account created before roles existed).
+  with no role (e.g. a bank account created before roles existed). Create with
+  `role: 'CASH'` applies the same shape rule; both go through the single pure check
+  `assertCashAssignable` (`src/ledger/accounts/cash-role.ts`). A role cannot be cleared
+  (`{role: null}` → `400`).
 - `Account.role` (nullable) in `prisma/schema.prisma`. Examples: year-end close looks up
   `role: 'RETAINED_EARNINGS'`; cash flow sums `role === 'CASH'`; the income statement pulls
   the `role === 'TAX_EXPENSE'` line out separately.
@@ -110,8 +113,22 @@ rule keys off `posted_at`, not `status`.
   deactivate/delete take the account row `FOR UPDATE`, so they serialize with posting;
   accounts with a singleton `role` can never be deactivated or deleted. A `CASH` account
   can, but only when its posted balance is zero (read under that row lock) and at least
-  one OTHER active `CASH` account remains (checked under advisory lock `71_003_001`);
-  otherwise `422` with `details.balance` / `details.otherActiveCashAccounts`.
+  one OTHER active, postable `CASH` account remains (checked under advisory lock
+  `71_003_001`); otherwise `422` with `details.balance` / `details.otherActiveCashAccounts`.
+- **Inactive accounts.** Every post requires active accounts (`422 INVALID_ACCOUNT`)
+  **except** a `CLOSING` entry (`CLOSING_POLICY.allowInactive` in
+  `src/ledger/posting/account-policy.ts`): a P&L account deactivated mid-year still has
+  movement the year-end close must zero. Reversals (incl. document voids) skip the account
+  re-check entirely — they only undo an already-posted movement — so a void may post to a
+  deactivated `CASH` account and leave it with a non-zero balance. That is accepted and
+  recoverable: reactivate it and move the balance with a manual entry.
+- **Opening balances are balance-sheet only.** `JournalService.postOpeningBalances`
+  rejects `REVENUE`/`EXPENSE` accounts (`422 { accountId, reason: 'PNL_IN_OPENING' }`);
+  mid-year YTD P&L is entered as a `MANUAL` journal.
+- The in-tx period re-check throws the same `ClosedPeriodError` (`409 CLOSED_PERIOD`) as
+  the pre-tx check. Direct post / postDraft / reversal transactions run with
+  `POSTING_TX_OPTIONS` (`maxWait 5s`, `timeout 20s`); a breach is Prisma `P2028` → `409
+  CONFLICT { retryable: true }` (`isTransientConflict`).
 
 ### Gapless entry number (nomor jurnal)
 Posted entries get a per-fiscal-year sequential `entryNumber` and a human ref
@@ -171,12 +188,21 @@ Net income is computed from **this year's movement** (`movementsBetween`), so cl
 later year before an earlier one does not double-count; close years **in order**.
 - `YearEndCloseService.close` in `src/close/year-end-close.service.ts`; `RETAINED_EARNINGS`
   role account; `YearEndClosing` model (`status`, `closingEntryId`, `netIncome`).
+- **Requires the fiscal year's LAST period OPEN.** The closing entry is dated on the
+  fiscal year-end (and reopen's reversal on the same date), so both go through the normal
+  open-period guard → `409 CLOSED_PERIOD` if the last month is closed. Close the year
+  before closing its last month (or reopen that month first).
+- Deactivated P&L accounts are included (the `CLOSING` policy skips the `isActive`
+  check); close → reopen → re-close all work.
 
 ### Reopen
 Undoes a close by **reversing** the closing entry and flipping the year back to `OPEN`.
 Reopening is allowed to write into a year that is still flagged CLOSED (it passes
 `allowClosedYear` so the normal closed-year guard does not block its own reversal).
 - `YearEndCloseService.reopen` (uses `prepareReversal`/`reverseInTx` with `allowClosedYear`).
+  The `closingEntryId` to reverse is re-read **under the exclusive year lock** (inside the
+  reopen tx), never taken from the unlocked pre-check — a reopen + re-close that committed
+  in between replaced it.
 
 ### Advisory-lock serialization
 Both close and reopen take a Postgres transaction-level advisory lock keyed on the

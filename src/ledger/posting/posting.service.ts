@@ -34,6 +34,12 @@ import {
 import type { LedgerTx } from '../../common/prisma/prisma.service';
 export type { LedgerTx };
 
+/** Explicit interactive-tx bounds for the posting writes (direct post,
+ *  postDraft, reversal): wait up to 5s for a pool connection, run up to 20s
+ *  (lock waits behind a year close / period close / concurrent post). A breach
+ *  surfaces as Prisma P2028 → 409 CONFLICT { retryable: true } (rolled back). */
+export const POSTING_TX_OPTIONS = { maxWait: 5000, timeout: 20000 } as const;
+
 /** Module-private mint key — external code cannot import it, so it cannot
  *  satisfy the token constructors' first parameter. */
 const PROTOCOL_MINT = Symbol('posting.protocol.mint');
@@ -91,8 +97,9 @@ export class PostingService {
 
   async post(input: PostEntryInput, postedBy: string): Promise<JournalEntry> {
     const prepared = await this.preparePosting(input, postedBy);
-    return this.prisma.transaction((tx) =>
-      this.createPostedEntryInTx(tx, prepared),
+    return this.prisma.transaction(
+      (tx) => this.createPostedEntryInTx(tx, prepared),
+      POSTING_TX_OPTIONS,
     );
   }
 
@@ -276,7 +283,9 @@ export class PostingService {
     const p = await tx.$queryRaw<{ status: string }[]>`
       SELECT status FROM accounting_periods WHERE id = ${periodId} FOR SHARE`;
     if (p.length === 0 || p[0].status !== 'OPEN') {
-      throw new ValidationFailedError(
+      // Same error as the pre-tx check (409 CLOSED_PERIOD): the client sees
+      // one contract whether the period closed before or during the request.
+      throw new ClosedPeriodError(
         'No open accounting period contains this date',
         { periodId },
       );
@@ -290,8 +299,9 @@ export class PostingService {
   ): Promise<JournalEntry> {
     const prepared = await this.prepareReversal(entryId, reversedBy, date);
     try {
-      return await this.prisma.transaction((tx) =>
-        this.reverseInTx(tx, prepared),
+      return await this.prisma.transaction(
+        (tx) => this.reverseInTx(tx, prepared),
+        POSTING_TX_OPTIONS,
       );
     } catch (err) {
       // The unique on reversal_of_id means a concurrent/retried reverse of the
@@ -536,7 +546,7 @@ export class PostingService {
           postedAt: new Date(),
         },
       });
-    });
+    }, POSTING_TX_OPTIONS);
   }
 
   /** Human-readable posted-entry reference, e.g. JE/2026/000123. */
@@ -628,8 +638,9 @@ export class PostingService {
   }
 
   /** The postable-account rule set, shared by the pre-tx and in-tx checks:
-   *  every id exists (live), is a postable leaf, is active, and its role is
-   *  allowed by the source-type policy. */
+   *  every id exists (live), is a postable leaf, is active (unless the policy
+   *  allows inactive — CLOSING only), and its role is allowed by the
+   *  source-type policy. */
   private assertAccountsValid(
     unique: string[],
     byId: Map<
@@ -654,7 +665,7 @@ export class PostingService {
             accountId: id,
           },
         );
-      if (!a.isActive)
+      if (!a.isActive && !policy.allowInactive)
         throw new InvalidAccountError('Account is inactive', { accountId: id });
     }
     this.throwIfForbiddenRole(

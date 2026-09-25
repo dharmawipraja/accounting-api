@@ -71,7 +71,7 @@ One stable error envelope, no leaked internals.
   unchanged. `P2025` → 404 is handled by the filter automatically.
 - **Deadlock / serialization failure / lock timeout → 409 `CONFLICT` `{ retryable: true }`.**
   `isTransientConflict()` (`src/common/errors/exception-status.ts`) recognises
-  P2034 and PG `40P01`/`40001`/`55P03` (`lock_not_available`, e.g. a
+  P2034, P2028 (interactive-tx `maxWait`/`timeout` expired — rolled back) and PG `40P01`/`40001`/`55P03` (`lock_not_available`, e.g. a
   `SET LOCAL lock_timeout` expiring before a `LOCK TABLE`) in every shape Prisma 7 + the pg adapter surfaces
   them (P2010 meta, bare `DriverAdapterError`). Still: take row locks in a
   deterministic order (e.g. sort ids before a `FOR UPDATE` loop).

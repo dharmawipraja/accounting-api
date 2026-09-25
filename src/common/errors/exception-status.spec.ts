@@ -112,6 +112,13 @@ describe('isTransientConflict (deadlock / serialization failure)', () => {
     expect(statusFromException(adapterErr('55P03'))).toBe(409);
   });
 
+  it('P2028 (transaction API error: maxWait/timeout expired, tx already closed) is transient → 409', () => {
+    // The interactive tx was rolled back by Prisma, so nothing committed and a
+    // same-key retry is safe.
+    expect(isTransientConflict(known('P2028'))).toBe(true);
+    expect(statusFromException(known('P2028'))).toBe(409);
+  });
+
   it('other codes and errors are not transient', () => {
     expect(isTransientConflict(known('P2002'))).toBe(false);
     expect(

@@ -1,4 +1,11 @@
-import { IsBoolean, IsEnum, IsIn, IsOptional, IsString } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsIn,
+  IsOptional,
+  IsString,
+  ValidateIf,
+} from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { CashFlowCategory } from '@prisma/client';
 
@@ -13,7 +20,10 @@ export class UpdateAccountDto {
     description:
       'Assign the CASH role to an existing postable, debit-normal ASSET account that has no role (e.g. a pre-existing bank account). Singleton roles are create-only.',
   })
-  @IsOptional()
+  // Not @IsOptional: that also skips validation for `null`, which would let
+  // `{ role: null }` through and clear the role. Only an absent key is skipped;
+  // null (or anything but 'CASH') is a 400.
+  @ValidateIf((_o, v) => v !== undefined)
   @IsIn(['CASH'])
   role?: 'CASH';
 }

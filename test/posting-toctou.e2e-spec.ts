@@ -56,7 +56,7 @@ describe('PostingService TOCTOU guard (e2e)', () => {
     createdBy: 'creator',
   });
 
-  it('in-tx guard rejects a post into a CLOSED period (ValidationFailedError)', async () => {
+  it('in-tx guard rejects a post into a CLOSED period (ClosedPeriodError, 409 CLOSED_PERIOD like the pre-tx check)', async () => {
     const periods = await app.get(PeriodsService).list(2026);
     const may = periods.find((p) => p.name === '2026-05')!;
     await app.get(PeriodsService).close(may.id, 'admin');
@@ -74,7 +74,7 @@ describe('PostingService TOCTOU guard (e2e)', () => {
       prisma.client.$transaction((tx) =>
         posting.createPostedEntryInTx(tx, preparedOk),
       ),
-    ).rejects.toBeInstanceOf(ValidationFailedError);
+    ).rejects.toBeInstanceOf(ClosedPeriodError);
   });
 
   it('sequence updated_at is written in UTC even when the session time zone is not UTC', async () => {
@@ -208,10 +208,10 @@ describe('PostingService TOCTOU guard (e2e)', () => {
     expect(
       (await periods.list(2026)).find((p) => p.name === '2026-09')!.status,
     ).toBe('CLOSED');
-    // The post either committed or was rejected with ValidationFailedError (in-tx guard).
+    // The post either committed or was rejected with ClosedPeriodError (in-tx guard).
     if (!postRes.ok)
       expect((postRes as { err: unknown }).err).toBeInstanceOf(
-        ValidationFailedError,
+        ClosedPeriodError,
       );
     // A fresh post into the now-closed period is rejected by the pre-tx check (ClosedPeriodError).
     await expect(

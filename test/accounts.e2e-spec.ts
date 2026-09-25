@@ -467,6 +467,57 @@ describe('Accounts (e2e)', () => {
         .expect(400);
     });
 
+    it.each([
+      [
+        'a credit-normal (contra) asset',
+        '1-1901',
+        { subtype: 'ACCUMULATED_DEPRECIATION', normalBalance: 'CREDIT' },
+      ],
+      [
+        'a non-ASSET account',
+        '2-1901',
+        {
+          type: 'LIABILITY',
+          subtype: 'CURRENT_LIABILITY',
+          normalBalance: 'CREDIT',
+          parentCode: '2-0000',
+        },
+      ],
+      ['a non-postable header', '1-1902', { isPostable: false }],
+    ])(
+      'rejects CREATE with role=CASH on %s (422, same rule as PATCH)',
+      async (_label, code, patch) => {
+        const res = await request(server())
+          .post('/v1/ledger/accounts')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            parentCode: '1-0000',
+            code,
+            name: `Bad cash ${code}`,
+            type: 'ASSET',
+            subtype: 'CURRENT_ASSET',
+            normalBalance: 'DEBIT',
+            role: 'CASH',
+            ...patch,
+          })
+          .expect(422);
+        expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+        expect(await prisma.client.account.count({ where: { code } })).toBe(0);
+      },
+    );
+
+    it('rejects PATCH role=null with 400 (role cannot be cleared)', async () => {
+      const id = await cashAccount('1-1860');
+      await request(server())
+        .patch(`/v1/ledger/accounts/${id}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ role: null })
+        .expect(400);
+      expect(
+        (await prisma.client.account.findFirst({ where: { id } }))!.role,
+      ).toBe('CASH');
+    });
+
     it('rejects retiring the last active CASH account (422)', async () => {
       const kas = (await prisma.client.account.findFirst({
         where: { code: '1-1000' },
@@ -480,6 +531,19 @@ describe('Accounts (e2e)', () => {
           .set('Authorization', `Bearer ${adminToken}`)
           .expect(200);
       }
+      // A legacy non-postable CASH row (unreachable through the API now) must
+      // not count as the "other active CASH account" — payments can't use it.
+      await prisma.client.account.create({
+        data: {
+          code: '1-1899',
+          name: 'Legacy header cash',
+          type: 'ASSET',
+          subtype: 'CURRENT_ASSET',
+          normalBalance: 'DEBIT',
+          role: 'CASH',
+          isPostable: false,
+        },
+      });
       const res = await request(server())
         .post(`/v1/ledger/accounts/${kas}/deactivate`)
         .set('Authorization', `Bearer ${adminToken}`)

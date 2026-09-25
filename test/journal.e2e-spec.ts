@@ -344,6 +344,41 @@ describe('JournalEntries (e2e)', () => {
     expect(plug!.credit.toString()).toBe('5000000');
   });
 
+  it.each([
+    ['REVENUE', '4-1000'],
+    ['EXPENSE', '5-2000'],
+  ])(
+    'rejects opening balances on a %s account (422 PNL_IN_OPENING) and writes nothing',
+    async (_type, code) => {
+      const { data: accounts } = await app.get(AccountsService).list();
+      const pnlId = accounts.find((a) => a.code === code)!.id;
+      const before = await prisma.client.journalEntry.count({
+        where: { sourceType: 'OPENING' },
+      });
+      const res = await request(app.getHttpServer() as App)
+        .post('/v1/ledger/opening-balances')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          date: '2026-01-05',
+          balances: [
+            { accountId: kasId, debit: '1000' },
+            { accountId: pnlId, credit: '1000' },
+          ],
+        })
+        .expect(422);
+      expect(res.body).toMatchObject({
+        code: 'VALIDATION_FAILED',
+        details: { accountId: pnlId, reason: 'PNL_IN_OPENING' },
+      });
+      expect(
+        await prisma.client.journalEntry.count({
+          where: { sourceType: 'OPENING' },
+        }),
+      ).toBe(before);
+    },
+  );
+
   it('balanced opening balances produce no equity plug line (200)', async () => {
     // L-14: JournalService.postOpeningBalances — plug is zero, no OBE line emitted
     const res = await request(app.getHttpServer() as App)
