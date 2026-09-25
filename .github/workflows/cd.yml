@@ -6,8 +6,10 @@ on:
   # ref; it does NOT run automatically on push to main.
   #
   # Gated on CI: the `ci-gate` job refuses to build/deploy a commit unless the CI
-  # workflow (ci.yml) has a SUCCESSFUL run for that exact commit SHA. CI runs on
-  # push to main and on PRs, so a tag/branch cut from a green main commit passes.
+  # workflow (ci.yml) has a SUCCESSFUL *push-to-main* run for that exact commit
+  # SHA — a green PR run for an unmerged head does NOT qualify. So only commits
+  # that landed on main (or tags cut from them) can be released. Pair this with
+  # a GitHub Environment + deployment branch policy (see deploy.md §CD).
   workflow_dispatch:
 
 concurrency:
@@ -26,12 +28,14 @@ jobs:
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
         run: |
-          n=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&status=success&per_page=1" --jq '.total_count')
+          # event=push&branch=main: only CI runs for a push to main count, so a
+          # PR head (or any branch) that never merged cannot pass the gate.
+          n=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SHA&status=success&event=push&branch=main&per_page=1" --jq '.total_count')
           if [ "${n:-0}" -lt 1 ]; then
-            echo "::error::CI has no successful run for $SHA — refusing to build/deploy. Run CI (push to main / PR) first."
+            echo "::error::CI has no successful push-to-main run for $SHA — refusing to build/deploy. Merge to main and let CI pass first."
             exit 1
           fi
-          echo "CI passed for $SHA ($n successful run(s))."
+          echo "CI passed on main for $SHA ($n successful run(s))."
 
   push:
     needs: [ci-gate]
@@ -45,11 +49,16 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       # GHCR repository names must be lowercase; github.repository may not be.
+      # A ref name may contain `/` (e.g. release/1.2) or other characters that
+      # are invalid in a Docker tag: map everything outside [A-Za-z0-9_.-] to
+      # `-` (tags are also capped at 128 chars).
       - id: names
         run: |
           repo="ghcr.io/${GITHUB_REPOSITORY,,}"
+          ref_tag=$(printf '%s' "$GITHUB_REF_NAME" | tr -c 'A-Za-z0-9_.-' '-' | cut -c1-128)
           {
             echo "repo=$repo"
+            echo "ref_tag=$ref_tag"
             echo "api_image=$repo:${GITHUB_SHA}"
             echo "migrate_image=$repo-migrate:${GITHUB_SHA}"
           } >> "$GITHUB_OUTPUT"
@@ -65,7 +74,7 @@ jobs:
           target: production
           push: true
           tags: |
-            ${{ steps.names.outputs.repo }}:${{ github.ref_name }}
+            ${{ steps.names.outputs.repo }}:${{ steps.names.outputs.ref_tag }}
             ${{ steps.names.outputs.repo }}:${{ github.sha }}
             ${{ steps.names.outputs.repo }}:latest
       # Migrate image (Dockerfile `build` stage: has the prisma CLI + migrations +
@@ -76,7 +85,7 @@ jobs:
           target: build
           push: true
           tags: |
-            ${{ steps.names.outputs.repo }}-migrate:${{ github.ref_name }}
+            ${{ steps.names.outputs.repo }}-migrate:${{ steps.names.outputs.ref_tag }}
             ${{ steps.names.outputs.repo }}-migrate:${{ github.sha }}
             ${{ steps.names.outputs.repo }}-migrate:latest
   # The `secrets` context cannot be used in a job-level `if:` (GitHub errors with
@@ -126,7 +135,12 @@ jobs:
               git checkout --quiet --detach "$DEPLOY_SHA"
             fi
             export API_IMAGE MIGRATE_IMAGE
+            COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
             # Pull the images CI just pushed, then start WITHOUT building so the
             # host never runs a stale locally-built image.
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build
+            $COMPOSE pull
+            # Stop the OLD api before migrate runs: old code against the new
+            # schema can hit new CHECKs/triggers (e.g. a void without voided_on
+            # -> 500). up then runs migrate to completion and starts the new api.
+            $COMPOSE stop api
+            $COMPOSE up -d --no-build

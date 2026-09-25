@@ -1,6 +1,8 @@
 import { INestApplication } from '@nestjs/common';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Client } from 'pg';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
@@ -181,6 +183,40 @@ describe('DB app role — accounting_app is least-privilege and runs the app (e2
       await expectDenied('TRUNCATE future_migration_tbl');
     } finally {
       await db.prisma.$executeRawUnsafe('DROP TABLE future_migration_tbl');
+    }
+  });
+
+  it('a failing CREATE/ALTER ROLE never echoes the password in the error (message, detail or CONTEXT)', async () => {
+    const secret = `leak-${randomUUID()}`;
+    // A role that may run the script but lacks CREATEROLE: ALTER ROLE fails.
+    await db.prisma.$executeRawUnsafe(
+      "CREATE ROLE weak_owner LOGIN PASSWORD 'weak-pw'",
+    );
+    const u = new URL(db.url);
+    u.username = 'weak_owner';
+    u.password = 'weak-pw';
+    const weak = new Client({ connectionString: u.toString() });
+    await weak.connect();
+    try {
+      await weak.query(
+        "SELECT set_config('accounting.app_db_password', $1, false)",
+        [secret],
+      );
+      const sql = readFileSync(
+        join(__dirname, '..', 'scripts', 'db', 'app-role.sql'),
+        'utf8',
+      );
+      const err = (await weak.query(sql).catch((e: unknown) => e)) as {
+        message: string;
+        detail?: string;
+        where?: string;
+      };
+      expect(err.message).toMatch(/accounting_app role create\/alter failed/);
+      const surfaced = [err.message, err.detail, err.where].join(' | ');
+      expect(surfaced).not.toContain(secret);
+    } finally {
+      await weak.end();
+      await db.prisma.$executeRawUnsafe('DROP ROLE weak_owner');
     }
   });
 });

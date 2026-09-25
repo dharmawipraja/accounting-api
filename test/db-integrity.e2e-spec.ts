@@ -310,6 +310,39 @@ describe('DB integrity — ledger invariants enforced by Postgres (e2e)', () => 
       },
     );
 
+    it('restore hardening snippet (backup-and-restore.md): posted_xid backfilled to 0 keeps the entry immutable', async () => {
+      const je = await postEntry();
+      // Exactly the documented post-restore statement, run as the owner.
+      await inTx(async (tx) => {
+        await tx.$executeRawUnsafe(
+          `SET LOCAL session_replication_role = replica`,
+        );
+        await tx.$executeRawUnsafe(
+          `UPDATE journal_entries SET posted_xid = '0'::xid8 WHERE posted_xid IS NOT NULL AND posted_xid <> '0'::xid8`,
+        );
+      });
+      const [{ x }] = await prisma.client.$queryRaw<{ x: string }[]>`
+        SELECT posted_xid::text AS x FROM journal_entries WHERE id = ${je.id}`;
+      expect(x).toBe('0');
+      await expect(
+        runSql(
+          `INSERT INTO journal_lines (id, journal_entry_id, line_no, account_id, debit, credit)
+           VALUES (gen_random_uuid()::text, '${je.id}', 3, '${acc['1-1000']}', 5, 0),
+                  (gen_random_uuid()::text, '${je.id}', 4, '${acc['4-1000']}', 0, 5)`,
+        ),
+      ).rejects.toThrow(LINES_AFTER_POSTING);
+      await expect(
+        runSql(
+          `UPDATE journal_entries SET description = 'x' WHERE id = '${je.id}'`,
+        ),
+      ).rejects.toThrow(IMMUTABLE_ENTRY);
+      // New posts are stamped normally afterwards.
+      const fresh = await postEntry();
+      const [{ y }] = await prisma.client.$queryRaw<{ y: string }[]>`
+        SELECT posted_xid::text AS y FROM journal_entries WHERE id = ${fresh.id}`;
+      expect(y).not.toBe('0');
+    });
+
     it('rejects DELETE of a posted entry', async () => {
       const je = await postEntry();
       await expect(

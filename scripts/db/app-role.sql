@@ -24,17 +24,25 @@ BEGIN
   IF pw IS NULL OR pw = '' THEN
     RAISE EXCEPTION 'accounting.app_db_password is not set (APP_DB_PASSWORD is required)';
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'accounting_app') THEN
-    EXECUTE format(
-      'CREATE ROLE accounting_app WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD %L',
-      pw);
-  ELSE
-    -- Re-assert attributes and (re)set the password: rotating APP_DB_PASSWORD
-    -- and redeploying is the rotation procedure.
-    EXECUTE format(
-      'ALTER ROLE accounting_app WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD %L',
-      pw);
-  END IF;
+  -- The dynamic statement text carries the password, and Postgres puts a
+  -- failing EXECUTE's full statement in the error CONTEXT (client error and
+  -- server log). Re-raise any failure with only its SQLSTATE so the password
+  -- can never surface.
+  BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'accounting_app') THEN
+      EXECUTE format(
+        'CREATE ROLE accounting_app WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD %L',
+        pw);
+    ELSE
+      -- Re-assert attributes and (re)set the password: rotating APP_DB_PASSWORD
+      -- and redeploying is the rotation procedure.
+      EXECUTE format(
+        'ALTER ROLE accounting_app WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD %L',
+        pw);
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE EXCEPTION 'accounting_app role create/alter failed: %', SQLSTATE;
+  END;
   EXECUTE format('GRANT CONNECT ON DATABASE %I TO accounting_app', current_database());
 END
 $$;

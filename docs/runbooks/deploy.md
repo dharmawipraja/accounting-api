@@ -29,22 +29,83 @@
 
 ## Deploy / upgrade
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+COMPOSE='docker compose -f docker-compose.yml -f docker-compose.prod.yml'
+$COMPOSE build              # new api + migrate images (nothing restarts yet)
+$COMPOSE stop api           # the OLD api must not run against the NEW schema
+$COMPOSE up -d --no-build   # migrate → new api → caddy/backup
 ```
-This builds the images (tagged `accounting-api:local` / `accounting-api-migrate:local`
-unless `API_IMAGE` / `MIGRATE_IMAGE` are set), runs `migrate` (prisma migrate deploy,
-then the idempotent `accounting_app` grants step) to completion, then
+`build` tags the images `accounting-api:local` / `accounting-api-migrate:local`
+(unless `API_IMAGE` / `MIGRATE_IMAGE` are set); `up` then runs `migrate` (prisma
+migrate deploy, then the idempotent `accounting_app` grants step) to completion and
 starts `api` (gated on `migrate` succeeding), `caddy`, and `backup`. `migrate` runs
 **before** the app and never in-process.
+
+**Why `stop api` first:** without it the previous api keeps serving while `migrate`
+changes the schema underneath it. Old code is not guaranteed to satisfy new
+constraints — e.g. before `20260925100000_add_voided_on`, a void wrote no
+`voided_on`, which the new `*_voided_on_iff_void` CHECK rejects (a 500 to the user).
+The api is down (Caddy returns 502) for the length of the migration; deploy in a
+quiet window. CD does the same `stop api` → `up`.
 
 To deploy the images CI published instead of building on the VM (what CD does):
 ```bash
 export API_IMAGE=ghcr.io/<owner>/<repo>:<sha> MIGRATE_IMAGE=ghcr.io/<owner>/<repo>-migrate:<sha>
-docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build
+$COMPOSE pull
+$COMPOSE stop api
+$COMPOSE up -d --no-build
 ```
 `--no-build` matters: `api`/`migrate` keep a `build:` section for local builds, and
 without it compose could reuse a stale locally-built image.
+
+## First deploy of the audit-3 release (checklist)
+
+This release adds schema invariants, a least-privilege DB role and token changes.
+Work through this **once**, on the first deploy that includes migrations
+`20260925100000_add_voided_on` … `20260928000000_idempotency_reservation_token`:
+
+1. **Rehearse the migration on a restored production backup first.** Restore the
+   latest dump into a scratch database (`backup-and-restore.md` → *Test your
+   restore*, but skip the `dropdb`), then run the NEW migrate image against it —
+   after `$COMPOSE build` (or `pull` with `MIGRATE_IMAGE` set), without touching the
+   live database:
+   ```bash
+   $COMPOSE run --rm --no-deps \
+     -e DATABASE_URL="postgresql://accounting:${POSTGRES_PASSWORD}@db:5432/scratch?schema=public" \
+     migrate npx prisma migrate deploy
+   ```
+   (`set -a; . ./.env; set +a` first so `POSTGRES_PASSWORD` is set; drop the scratch
+   database afterwards). These migrations **abort (nothing applied) on legacy data** and name the rows:
+   - `20260926100000_auth_hardening` — emails that differ only by case/whitespace;
+   - `20260926200000_purchase_bill_vendor_invoice_unique` — duplicate live
+     (partner, vendor invoice no.) bills;
+   - `20260926300000_ledger_integrity` pre-flight — unbalanced / < 2-line posted
+     entries, inconsistent status/posted fields, soft-deleted posted entries,
+     payments with amount ≤ 0, allocations without exactly one target,
+     `amount_paid` outside `[0, total]`, negative line quantity/price, bad or
+     overlapping periods, and orphaned references (lines/documents/payments/tax
+     codes pointing at missing accounts, partners, periods or journal entries);
+   - `20260927000000_journal_link_fks` — `year_end_closings.closing_entry_id` /
+     `reversal_of_id` / `reversed_by_id` pointing at missing journal entries.
+   Fix the data by hand, mark a failed attempt with
+   `npx prisma migrate resolve --rolled-back <migration>`, and re-run. Only deploy to
+   production once the rehearsal applies cleanly.
+2. **`APP_DB_PASSWORD` must be in `.env`** (compose refuses to start `db`,
+   `migrate` and `api` without it). The `accounting_app` role does not exist on an
+   existing volume until the `migrate` step of this deploy creates it — so `api`
+   (which connects as `accounting_app`) can only start after `migrate` succeeded,
+   which the compose `depends_on` enforces.
+3. **`db` is recreated on this deploy** (its service definition gained the
+   `APP_DB_PASSWORD` env and the init-hook mounts): expect a brief database
+   restart. The init hook does not run on an existing volume — `migrate` covers it.
+4. **Stop `api` before `migrate`** — use the sequence in *Deploy / upgrade* above
+   (CD does it). The old code's void path lacks `voided_on` and would 500 against
+   the new CHECK.
+5. **Every user must log in again once**: tokens now carry a `typ` claim, so all
+   access/refresh tokens issued before the deploy are rejected (`401`). Tell users
+   (and the frontend team) beforehand.
+6. After the deploy: `/ready` is 200, `docker compose logs migrate` ends with
+   `ensure-app-role: accounting_app role + grants are up to date`, and a login +
+   one read works.
 
 ## Database roles (least privilege)
 
@@ -65,12 +126,19 @@ without it compose could reuse a stale locally-built image.
   `DATABASE_URL` stays the owner URL (`POSTGRES_PASSWORD`). The password is never
   hard-coded or echoed to logs.
 - **Rotate `APP_DB_PASSWORD`:** change it in `.env` and redeploy — `migrate` re-sets
-  the role's password before `api` restarts with the new one.
+  the role's password before `api` restarts with the new one. The `db` service
+  carries the variable too (for its init hook), so a changed value **recreates the
+  `db` container — a brief database restart**; rotate in a quiet window.
 - **First deploy on an existing volume:** nothing manual — `migrate` creates the role.
+  Until that step has run, `accounting_app` does not exist and `api` cannot connect
+  (compose starts `api` only after `migrate` succeeds). If the grants step fails it
+  reports only `accounting_app role create/alter failed: <SQLSTATE>` — the password
+  is never echoed into the error or the server log.
 - **Restore:** a `pg_dump` contains GRANTs to `accounting_app`; restoring into a fresh
   volume is fine (the init hook creates the role first). Restoring elsewhere, create
   the role first (run the grants step) or ignore the `role does not exist` GRANT
-  warnings and run the grants step afterwards.
+  warnings and run the grants step afterwards. See also
+  [`backup-and-restore.md`](./backup-and-restore.md) (role + `posted_xid` notes).
 - **Local dev is unaffected:** `.env.development` keeps connecting as the owner
   (see `local-development.md`). Tests (testcontainers) use the container superuser;
   `test/db-app-role.e2e-spec.ts` proves the app runs as `accounting_app` and that
@@ -273,22 +341,33 @@ with `age -d -i <key> file.dump.age > file.dump`, then follow `backup-and-restor
 `.github/workflows/cd.yml` is **manual** (`workflow_dispatch`) — it does NOT run on push.
 To release: GitHub → **Actions** → **CD** → **Run workflow** → pick the **tag** (or branch)
 from the ref dropdown → **Run**. It builds/deploys exactly the selected ref.
-0. **CI gate** — the run fails immediately unless `ci.yml` has a **successful run for
-   the exact commit SHA** being released (checked via the Actions API). CI runs on push
-   to `main` and on PRs, so tag a commit that is green on `main`.
+0. **CI gate** — the run fails immediately unless `ci.yml` has a **successful
+   push-to-`main` run for the exact commit SHA** being released (Actions API query with
+   `event=push&branch=main`). A green PR run for an unmerged head does not qualify, so
+   only commits that landed on `main` (or tags cut from them) can be released.
+   **Recommended hardening (GitHub settings, not code):** create a GitHub
+   **Environment** (e.g. `production`) holding the `DEPLOY_SSH_*` secrets, with a
+   *deployment branch/tag policy* allowing only `main` and your release tag pattern
+   (e.g. `v*`) and, optionally, required reviewers; then add `environment: production`
+   to the `deploy` job. Environment secrets are only released to runs whose ref
+   passes the policy, so a dispatch from an arbitrary branch cannot reach the VM.
 1. **Publish** — builds and pushes TWO images using the built-in `GITHUB_TOKEN` (no
    extra secret; ensure the repo's Package settings allow Actions to write packages):
    - runtime (`production` stage) → `ghcr.io/<owner>/<repo>:<sha>` (+ `:<tag>`, `:latest`)
    - migrate (`build` stage — prisma CLI + migrations + `scripts/db`) →
      `ghcr.io/<owner>/<repo>-migrate:<sha>` (+ `:<tag>`, `:latest`)
 
-   (`<tag>` = the selected ref name, e.g. `v1.2.0`.) Tip: create an annotated tag first
+   (`<tag>` = the selected ref name, e.g. `v1.2.0`, with every character outside
+   `[A-Za-z0-9_.-]` — e.g. the `/` in `release/1.2` — replaced by `-`, since Docker
+   tags can't contain it.) Tip: create an annotated tag first
    (`git tag -a v1.2.0 -m ... && git push origin v1.2.0`), then select it in the dropdown.
 2. **Deploy (optional, gated)** — runs ONLY if a `DEPLOY_SSH_HOST` secret is set. Add
    `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_PATH` (repo dir on the
    VM) as Actions secrets. Over SSH it checks the repo out at the released SHA (if
    `DEPLOY_PATH` is a git checkout), exports `API_IMAGE` / `MIGRATE_IMAGE` = the
-   immutable `:<sha>` images, and runs `compose pull` + `compose up -d --no-build`.
+   immutable `:<sha>` images, and runs `compose pull`, `compose stop api` (the old api
+   must not run against the new schema) and `compose up -d --no-build` (migrate, then
+   the new api).
    The VM must be logged in to GHCR if the packages are private
    (`docker login ghcr.io` with a `read:packages` token) and its `.env` must contain
    `APP_DB_PASSWORD`. Until the secrets exist, CD only publishes.
