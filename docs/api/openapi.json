@@ -6465,6 +6465,9 @@
           },
           "buckets": {
             "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
             "description": "Outstanding per bucket, keyed by bucket name (money strings).",
             "example": {
               "Current": "0.0000",
@@ -6472,9 +6475,6 @@
               "31-60": "0.0000",
               "61-90": "0.0000",
               ">90": "0.0000"
-            },
-            "additionalProperties": {
-              "type": "string"
             }
           }
         },
@@ -6511,10 +6511,10 @@
           },
           "totalsByBucket": {
             "type": "object",
-            "description": "Grand totals per bucket (money strings).",
             "additionalProperties": {
               "type": "string"
-            }
+            },
+            "description": "Grand totals per bucket (money strings)."
           },
           "totalOutstanding": {
             "type": "string",
@@ -6755,13 +6755,13 @@
           },
           "params": {
             "type": "object",
-            "nullable": true,
-            "additionalProperties": true
+            "additionalProperties": true,
+            "nullable": true
           },
           "body": {
             "type": "object",
-            "nullable": true,
-            "additionalProperties": true
+            "additionalProperties": true,
+            "nullable": true
           },
           "statusCode": {
             "type": "number",
