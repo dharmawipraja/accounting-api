@@ -290,18 +290,22 @@ model JournalLine {
 model IdempotencyKey {
   // Namespaced per user so one caller can never replay (or squat on) another
   // caller's key. No FK on purpose: this is a short-TTL cache table.
-  userId      String    @map("user_id")
-  key         String
-  method      String
-  path        String
-  requestHash String    @map("request_hash")
-  response    Json?
-  httpStatus  Int?      @map("http_status")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  completedAt DateTime? @map("completed_at")
+  userId           String    @map("user_id")
+  key              String
+  method           String
+  path             String
+  requestHash      String    @map("request_hash")
+  response         Json?
+  httpStatus       Int?      @map("http_status")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  completedAt      DateTime? @map("completed_at")
   // Set inside the business tx (PrismaService.transaction) — durable iff the
   // write committed. Such a row is never released or stale-reclaimed.
-  committedAt DateTime? @map("committed_at")
+  committedAt      DateTime? @map("committed_at")
+  // Fencing token, fresh per reservation (a stale reclaim rotates it). Every
+  // write to the row after reserve() matches on it, so a reclaimed attempt can
+  // never mark/complete/release the newer owner's reservation.
+  reservationToken String    @default(dbgenerated("gen_random_uuid()")) @map("reservation_token") @db.Uuid
 
   @@id([userId, key])
   @@map("idempotency_keys")

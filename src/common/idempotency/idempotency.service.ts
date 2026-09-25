@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   ConflictDomainError,
@@ -8,7 +9,7 @@ import {
 } from '../errors/domain-errors';
 
 export type ReserveResult =
-  | { replay: false }
+  | { replay: false; token: string }
   | { replay: true; response: unknown; httpStatus: number };
 
 /**
@@ -59,11 +60,22 @@ export class IdempotencyService {
     requestHash: string,
     allowReclaim: boolean,
   ): Promise<ReserveResult> {
+    // A fresh fencing token per reservation: a stale reclaim deletes the row
+    // and re-inserts through here, so the token rotates and the reclaimed
+    // attempt's token no longer matches anything.
+    const token = randomUUID();
     try {
       await this.prisma.client.idempotencyKey.create({
-        data: { userId, key, method, path, requestHash },
+        data: {
+          userId,
+          key,
+          method,
+          path,
+          requestHash,
+          reservationToken: token,
+        },
       });
-      return { replay: false };
+      return { replay: false, token };
     } catch (err) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
@@ -173,14 +185,18 @@ export class IdempotencyService {
     return Date.now() - new Date(createdAt).getTime() > this.inflightTtlMs;
   }
 
+  /** Record the response on THIS attempt's reservation (matched by token).
+   *  Throws if the reservation is no longer ours (reclaimed), so the caller's
+   *  never-release fallback runs instead of overwriting another owner's row. */
   async complete(
     userId: string,
     key: string,
+    token: string,
     response: unknown,
     httpStatus: number,
   ): Promise<void> {
-    await this.prisma.client.idempotencyKey.update({
-      where: { userId_key: { userId, key } },
+    const { count } = await this.prisma.client.idempotencyKey.updateMany({
+      where: { userId, key, reservationToken: token },
       data: {
         // Round-trip to a pure JSON value so Dates serialize exactly as the HTTP
         // response would, and Prisma accepts it as Json.
@@ -191,27 +207,41 @@ export class IdempotencyService {
         completedAt: new Date(),
       },
     });
+    if (count === 0) {
+      throw new Error(
+        `idempotency reservation for key ${key} is no longer held by this request`,
+      );
+    }
   }
 
-  /** Drop a reservation after a failed request so a retry can re-attempt —
-   *  unless its write committed (committedAt set), in which case the row stays
-   *  and a retry gets the committed-409. One atomic statement; best-effort. */
-  async release(userId: string, key: string): Promise<void> {
+  /** Drop THIS attempt's reservation after a failed request so a retry can
+   *  re-attempt — unless its write committed (committedAt set), in which case
+   *  the row stays and a retry gets the committed-409. Matches the token, so a
+   *  reclaimed attempt never releases the newer owner's row. One atomic
+   *  statement; best-effort. */
+  async release(userId: string, key: string, token: string): Promise<void> {
     await this.prisma.client.idempotencyKey
-      .deleteMany({ where: { userId, key, committedAt: null } })
+      .deleteMany({
+        where: { userId, key, reservationToken: token, committedAt: null },
+      })
       .catch(() => undefined);
   }
 
   /** Best-effort out-of-tx committed mark, for when the handler succeeded but
    *  complete() failed: covers a handler whose write didn't go through
-   *  PrismaService.transaction. Swallows errors (the DB may be the failure). */
-  async markCommitted(userId: string, key: string): Promise<void> {
-    await this.prisma.client.idempotencyKey
-      .updateMany({
-        where: { userId, key, committedAt: null },
-        data: { committedAt: new Date() },
-      })
-      .catch(() => undefined);
+   *  PrismaService.transaction. Same token predicate and UTC clock as the
+   *  in-tx mark. Swallows errors (the DB may be the failure). */
+  async markCommitted(
+    userId: string,
+    key: string,
+    token: string,
+  ): Promise<void> {
+    await this.prisma.client.$executeRaw`
+        UPDATE idempotency_keys SET committed_at = now() AT TIME ZONE 'UTC'
+        WHERE user_id = ${userId} AND "key" = ${key}
+          AND reservation_token = ${token}::uuid AND committed_at IS NULL`.catch(
+      () => undefined,
+    );
   }
 
   /**

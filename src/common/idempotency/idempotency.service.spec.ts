@@ -17,6 +17,7 @@ function makeService(ttlMs?: number) {
     create: jest.fn(),
     findUnique: jest.fn(),
     update: jest.fn(),
+    updateMany: jest.fn(),
     delete: jest.fn(),
     deleteMany: jest.fn(),
   };
@@ -31,7 +32,7 @@ describe('IdempotencyService', () => {
     idempotencyKey.create.mockResolvedValue({});
     await expect(
       service.reserve('u1', 'k', 'POST', '/v1/partners', 'h'),
-    ).resolves.toEqual({ replay: false });
+    ).resolves.toEqual({ replay: false, token: expect.any(String) as string });
   });
 
   it('replays a completed key with its stored response + status', async () => {
@@ -108,17 +109,18 @@ describe('IdempotencyService', () => {
     ).rejects.toBeInstanceOf(ConflictDomainError);
   });
 
-  it('complete() stores a JSON snapshot + status', async () => {
+  it("complete() stores a JSON snapshot + status on this attempt's reservation", async () => {
     const { service, idempotencyKey } = makeService();
-    idempotencyKey.update.mockResolvedValue({});
+    idempotencyKey.updateMany.mockResolvedValue({ count: 1 });
     await service.complete(
       'u1',
       'k',
+      't1',
       { id: 'abc', when: new Date('2026-01-01') },
       201,
     );
-    expect(idempotencyKey.update).toHaveBeenCalledWith({
-      where: { userId_key: { userId: 'u1', key: 'k' } },
+    expect(idempotencyKey.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'u1', key: 'k', reservationToken: 't1' },
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data: expect.objectContaining({
         response: { id: 'abc', when: '2026-01-01T00:00:00.000Z' },
@@ -130,21 +132,34 @@ describe('IdempotencyService', () => {
   it('complete() serialises a null/undefined response as JSON null (line 155)', async () => {
     // Exercises the `response ?? null` branch in complete().
     const { service, idempotencyKey } = makeService();
-    idempotencyKey.update.mockResolvedValue({});
-    await service.complete('u1', 'k', undefined, 204);
-    expect(idempotencyKey.update).toHaveBeenCalledWith({
-      where: { userId_key: { userId: 'u1', key: 'k' } },
+    idempotencyKey.updateMany.mockResolvedValue({ count: 1 });
+    await service.complete('u1', 'k', 't1', undefined, 204);
+    expect(idempotencyKey.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'u1', key: 'k', reservationToken: 't1' },
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data: expect.objectContaining({ response: null, httpStatus: 204 }),
     });
   });
 
+  it('complete() throws when the reservation is no longer held by this attempt (token rotated)', async () => {
+    const { service, idempotencyKey } = makeService();
+    idempotencyKey.updateMany.mockResolvedValue({ count: 0 });
+    await expect(
+      service.complete('u1', 'k', 'stale', { id: 'x' }, 201),
+    ).rejects.toThrow(/no longer held/);
+  });
+
   it('release() deletes only an uncommitted row and swallows errors', async () => {
     const { service, idempotencyKey } = makeService();
     idempotencyKey.deleteMany.mockRejectedValue(new Error('gone'));
-    await expect(service.release('u1', 'k')).resolves.toBeUndefined();
+    await expect(service.release('u1', 'k', 't1')).resolves.toBeUndefined();
     expect(idempotencyKey.deleteMany).toHaveBeenCalledWith({
-      where: { userId: 'u1', key: 'k', committedAt: null },
+      where: {
+        userId: 'u1',
+        key: 'k',
+        reservationToken: 't1',
+        committedAt: null,
+      },
     });
   });
 
@@ -166,7 +181,7 @@ describe('IdempotencyService', () => {
     idempotencyKey.deleteMany.mockResolvedValue({ count: 1 });
     await expect(
       service.reserve('u1', 'k', 'POST', '/v1/partners', 'h'),
-    ).resolves.toEqual({ replay: false });
+    ).resolves.toEqual({ replay: false, token: expect.any(String) as string });
     expect(idempotencyKey.deleteMany).toHaveBeenCalled();
   });
 

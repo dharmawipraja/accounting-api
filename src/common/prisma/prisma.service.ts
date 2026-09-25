@@ -9,6 +9,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
 import { idempotencyContext } from '../idempotency/idempotency-context';
+import { ConflictDomainError } from '../errors/domain-errors';
 import { applySoftDelete, ExtendedPrismaClient } from './soft-delete.extension';
 
 /** The interactive-transaction view of the soft-delete-extended client — what a
@@ -65,23 +66,37 @@ export class PrismaService
    * The ONLY way to open an interactive transaction in src/ (ESLint forbids a
    * raw `$transaction(` elsewhere). Identical to `client.$transaction(fn, opts)`
    * except that, when the request runs under an Idempotency-Key, the key row is
-   * marked `committed_at = now()` as the LAST statement of the transaction —
-   * so the mark is durable iff the business write committed. The interceptor
-   * then never releases (and reserve() never reclaims) a committed key, so a
+   * marked `committed_at` (UTC) as the LAST statement of the transaction — so
+   * the mark is durable iff the business write committed. The interceptor then
+   * never releases (and reserve() never reclaims) a committed key, so a
    * same-key retry after a lost response gets 409 instead of re-executing the
    * write. A rolled-back attempt (e.g. a restart loop) discards its mark.
+   *
+   * The mark is fenced by the reservation token: if this attempt's reservation
+   * was stale-reclaimed by a newer attempt (token rotated), it matches 0 rows
+   * and the transaction is rolled back with a 409 — the newer owner executes
+   * the request, this one never double-writes it.
    */
   async transaction<T>(
     fn: (tx: LedgerTx) => Promise<T>,
     opts?: TransactionOptions,
   ): Promise<T> {
+    // Captured synchronously, before $transaction: the callback may run in an
+    // async context Prisma/the driver created, where getStore() could differ.
+    const ctx = idempotencyContext.getStore();
     return this.client.$transaction(async (tx) => {
       const result = await fn(tx);
-      const ctx = idempotencyContext.getStore();
       if (ctx) {
-        await tx.$executeRaw`
-          UPDATE idempotency_keys SET committed_at = now()
-          WHERE user_id = ${ctx.userId} AND "key" = ${ctx.key}`;
+        const marked = await tx.$executeRaw`
+          UPDATE idempotency_keys SET committed_at = now() AT TIME ZONE 'UTC'
+          WHERE user_id = ${ctx.userId} AND "key" = ${ctx.key}
+            AND reservation_token = ${ctx.token}::uuid`;
+        if (marked === 0) {
+          throw new ConflictDomainError(
+            'The idempotency reservation for this request was taken over by a newer attempt with the same key; this attempt was rolled back',
+            { key: ctx.key, reclaimed: true },
+          );
+        }
       }
       return result;
     }, opts);

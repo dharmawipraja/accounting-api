@@ -9,7 +9,9 @@ import { PeriodsService } from '../src/ledger/periods/periods.service';
 import { BusinessPartnersService } from '../src/invoicing/business-partners.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
-import { bootstrapTestApp } from './e2e-helpers';
+import { bootstrapTestApp, makePrismaOverride } from './e2e-helpers';
+import { TestDb } from './testcontainers';
+import { idempotencyContext } from '../src/common/idempotency/idempotency-context';
 import { IdempotencyService } from '../src/common/idempotency/idempotency.service';
 import { ConflictDomainError } from '../src/common/errors/domain-errors';
 import { PostingService } from '../src/ledger/posting/posting.service';
@@ -20,6 +22,7 @@ describe('Idempotency (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let cleanup: () => Promise<void>;
+  let db: TestDb;
   let acct: string;
   let acc: Record<string, string>;
   let code: Record<string, string>;
@@ -48,7 +51,7 @@ describe('Idempotency (e2e)', () => {
   });
 
   beforeAll(async () => {
-    ({ app, prisma, cleanup } = await bootstrapTestApp());
+    ({ app, prisma, db, cleanup } = await bootstrapTestApp());
     await app.get(AccountsService).seedIfEmpty();
     await app.get(TaxCodesService).seedIfEmpty();
     await app.get(PeriodsService).generatePeriods(2026);
@@ -269,7 +272,7 @@ describe('Idempotency (e2e)', () => {
     it('reclaims a stale in-flight row (SQL-NULL response) and returns replay:false', async () => {
       const key = 'reclaim-stale-' + randomUUID();
       // Insert a reservation without a response value → SQL NULL (the real in-flight state).
-      await prisma.client.idempotencyKey.create({
+      const stale = await prisma.client.idempotencyKey.create({
         data: {
           userId: 'u-reclaim',
           key,
@@ -287,11 +290,20 @@ describe('Idempotency (e2e)', () => {
       // reserve() must delete the stale SQL-NULL row and re-insert → replay:false.
       // If the DbNull predicate were wrong (JsonNull), deleteMany would match 0
       // rows and this would throw ConflictDomainError (409) instead.
-      await expect(
-        idem.reserve('u-reclaim', key, 'POST', '/v1/x', 'h'),
-      ).resolves.toEqual({
-        replay: false,
+      const reserved = await idem.reserve(
+        'u-reclaim',
+        key,
+        'POST',
+        '/v1/x',
+        'h',
+      );
+      expect(reserved.replay).toBe(false);
+      // The reclaim rotates the fencing token: the dead owner's token is void.
+      const row = await prisma.client.idempotencyKey.findFirstOrThrow({
+        where: { key },
       });
+      expect(row.reservationToken).not.toBe(stale.reservationToken);
+      expect(reserved).toEqual({ replay: false, token: row.reservationToken });
     });
 
     it('keeps a fresh in-flight row as ConflictDomainError (not reclaimed)', async () => {
@@ -474,6 +486,95 @@ describe('Idempotency (e2e)', () => {
       expect(
         await prisma.client.journalEntry.count({ where: { description } }),
       ).toBe(1);
+    });
+
+    it('a reservation reclaimed mid-request (new owner) rolls the original tx back: 409, no write, new owner keeps the key', async () => {
+      const description = `idem-reclaimed-${randomUUID()}`;
+      const key = randomUUID();
+      const body = {
+        date: '2026-02-10',
+        description,
+        lines: [
+          { accountId: acc['1-1000'], debit: '1000000' },
+          { accountId: acc['3-1000'], credit: '1000000' },
+        ],
+      };
+      const posting = app.get(PostingService);
+      const original = posting.createPostedEntryInTx.bind(posting);
+      // While this request is inside its business tx, another attempt
+      // stale-reclaims the key: reserve() deletes the row and inserts a fresh
+      // reservation of its own (exactly what resolveExisting's reclaim does).
+      jest
+        .spyOn(posting, 'createPostedEntryInTx')
+        .mockImplementationOnce(async (...args) => {
+          const row = await prisma.client.idempotencyKey.findFirstOrThrow({
+            where: { key },
+          });
+          await prisma.client.idempotencyKey.deleteMany({ where: { key } });
+          await prisma.client.idempotencyKey.create({
+            data: {
+              userId: row.userId,
+              key,
+              method: row.method,
+              path: row.path,
+              requestHash: row.requestHash,
+            },
+          });
+          return original(...args);
+        });
+      const res = await request(server())
+        .post('/v1/ledger/journal-entries?post=true')
+        .set('Authorization', `Bearer ${approver}`)
+        .set('Idempotency-Key', key)
+        .send(body);
+      expect(res.status).toBe(409);
+      expect((res.body as { code: string }).code).toBe('CONFLICT');
+      expect(
+        await prisma.client.journalEntry.count({ where: { description } }),
+      ).toBe(0);
+      // The loser neither marked nor released the new owner's reservation.
+      const row = await prisma.client.idempotencyKey.findFirst({
+        where: { key },
+      });
+      expect(row).not.toBeNull();
+      expect(row?.committedAt).toBeNull();
+    });
+
+    it('committed_at is stored in UTC even when the DB session time zone is not UTC', async () => {
+      const key = 'tz-' + randomUUID();
+      const created = await prisma.client.idempotencyKey.create({
+        data: {
+          userId: 'u-tz',
+          key,
+          method: 'POST',
+          path: '/v1/x',
+          requestHash: 'h',
+        },
+      });
+      await prisma.$executeRawUnsafe(
+        `ALTER ROLE CURRENT_USER SET timezone = 'Asia/Jakarta'`,
+      );
+      // A fresh pool so its sessions pick up the non-UTC time zone.
+      const jakarta = makePrismaOverride(db.url);
+      try {
+        await jakarta.$connect();
+        await idempotencyContext.run(
+          { userId: 'u-tz', key, token: created.reservationToken },
+          () => jakarta.transaction(() => Promise.resolve(null)),
+        );
+      } finally {
+        await jakarta.onApplicationShutdown();
+        await prisma.$executeRawUnsafe(
+          `ALTER ROLE CURRENT_USER RESET timezone`,
+        );
+      }
+      const row = await prisma.client.idempotencyKey.findFirstOrThrow({
+        where: { key },
+      });
+      expect(row.committedAt).toBeInstanceOf(Date);
+      expect(Math.abs(row.committedAt!.getTime() - Date.now())).toBeLessThan(
+        60_000,
+      );
     });
 
     it('stale reclaim never reclaims a committed row (409 committed, not a re-run)', async () => {

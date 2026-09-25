@@ -91,14 +91,15 @@ export class IdempotencyInterceptor implements NestInterceptor {
         // AsyncResource.bind) to the async context current when handle() is
         // CALLED, so calling it inside run() carries the context into the
         // controller and service layer.
-        const handled = idempotencyContext.run({ userId, key }, () =>
+        const { token } = reserved;
+        const handled = idempotencyContext.run({ userId, key, token }, () =>
           next.handle(),
         );
         return handled.pipe(
           // Handler failed: release the key so a retry can re-attempt — release()
           // keeps it if the write had already committed (retry then gets 409).
           catchError((err: unknown) =>
-            from(this.idempotency.release(userId, key)).pipe(
+            from(this.idempotency.release(userId, key, token)).pipe(
               switchMap(() => {
                 throw err;
               }),
@@ -108,9 +109,11 @@ export class IdempotencyInterceptor implements NestInterceptor {
           // response fails, NEVER release (a retry would re-execute the write):
           // leave the committed reservation so the retry gets 409.
           switchMap((data: unknown) =>
-            from(this.idempotency.complete(userId, key, data, httpStatus)).pipe(
+            from(
+              this.idempotency.complete(userId, key, token, data, httpStatus),
+            ).pipe(
               catchError((err: unknown) =>
-                from(this.idempotency.markCommitted(userId, key)).pipe(
+                from(this.idempotency.markCommitted(userId, key, token)).pipe(
                   switchMap(() => {
                     throw err;
                   }),
