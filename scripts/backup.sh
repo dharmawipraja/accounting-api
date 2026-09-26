@@ -28,9 +28,10 @@ esac
 [ "$BACKUP_INTERVAL" -ge 60 ] || invalid_config "BACKUP_INTERVAL must be >= 60 seconds, got '$BACKUP_INTERVAL'"
 
 mkdir -p "$BACKUP_DIR"
-# A `*.dump.tmp` is an interrupted dump from an earlier run (container killed
-# mid-pg_dump): never a restorable backup. One sidecar, so none is in progress.
-find "$BACKUP_DIR" -name 'accounting-*.dump.tmp' -delete
+# A `*.dump.tmp` / `*.dump.age.tmp` is an interrupted dump / encryption from an
+# earlier run (container killed mid-pg_dump / mid-age): never a restorable
+# backup. One sidecar, so none is in progress.
+find "$BACKUP_DIR" \( -name 'accounting-*.dump.tmp' -o -name 'accounting-*.dump.age.tmp' \) -delete
 while true; do
   ts=$(date +%Y%m%dT%H%M%SZ)
   dump="$BACKUP_DIR/accounting-$ts.dump"
@@ -47,10 +48,13 @@ while true; do
   # Encrypt (gated): age recipient + age binary both required, else keep plaintext.
   if [ -n "${BACKUP_AGE_RECIPIENT:-}" ]; then
     if command -v age >/dev/null 2>&1; then
-      if age -r "$BACKUP_AGE_RECIPIENT" -o "$dump.age" "$dump"; then
+      # Same tmp+rename as the dump: an interrupted/failed age run never leaves a
+      # truncated `.dump.age` that looks like a complete encrypted backup.
+      if age -r "$BACKUP_AGE_RECIPIENT" -o "$dump.age.tmp" "$dump"; then
+        mv "$dump.age.tmp" "$dump.age"
         rm -f "$dump"; dump="$dump.age"; echo "backup encrypted: $(basename "$dump")"
       else
-        echo "WARN: age encryption failed — keeping plaintext local dump" >&2; rm -f "$dump.age"
+        echo "WARN: age encryption failed — keeping plaintext local dump" >&2; rm -f "$dump.age.tmp"
       fi
     else
       echo "WARN: BACKUP_AGE_RECIPIENT set but 'age' not on PATH — unencrypted local dump kept" >&2

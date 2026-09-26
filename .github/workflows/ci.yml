@@ -55,6 +55,18 @@ jobs:
       - run: npm ci
       - run: npm run audit:ci
 
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      # shellcheck is preinstalled on ubuntu runners. Covers every committed shell
+      # script, incl. scripts/deploy-remote.sh (the exact commands CD runs on the
+      # VM over SSH — cd.yml sends that file, so there is no inline copy to drift).
+      - name: Lint shell scripts (shellcheck)
+        run: |
+          shellcheck --version
+          find scripts -name '*.sh' -print0 | xargs -0 shellcheck
+
   docker:
     runs-on: ubuntu-latest
     steps:
@@ -65,6 +77,24 @@ jobs:
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: accounting-api:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+  # The migrate image (Dockerfile `build` stage: prisma CLI + migrations +
+  # scripts/db, and the base image's bundled npm for `npx prisma`) is what CD's
+  # one-shot `migrate` service runs against prod — same pinned action and scan
+  # policy as the runtime image. Its own job so each image's result is separate.
+  docker-migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Build migrate image
+        run: docker build --target build -t accounting-api-migrate:ci .
+      - name: Scan migrate image for vulnerabilities (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: accounting-api-migrate:ci
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '1'

@@ -190,6 +190,10 @@ must pass green. Prerequisite: Docker running (for the e2e leg).
   Dependabot bumps were reverted (the codebase is not TS6-compatible). Do not
   re-merge those major bumps without a migration, or `typecheck`/`lint` will
   break.
+- Shell scripts (`scripts/**/*.sh`, incl. the CD deploy commands in
+  `scripts/deploy-remote.sh`) are linted by CI's `shellcheck` job, not by
+  `lint:ci`. Locally: `find scripts -name '*.sh' -print0 | xargs -0 shellcheck`
+  (and `actionlint` after editing `.github/workflows/*.yml`).
 
 ```bash
 npm run verify       # pre-merge gate — must be green

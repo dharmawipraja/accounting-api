@@ -119,13 +119,9 @@ See [`docs/runbooks/deploy.md`](docs/runbooks/deploy.md) and [`docs/runbooks/bac
 
 ## Database backups
 
-This API holds financial records. For production deployments, schedule regular `pg_dump` backups of the Postgres volume. Example:
+This API holds financial records. The production stack already backs it up: the `backup` sidecar in `docker-compose.prod.yml` (started by the deploy above) writes a custom-format `pg_dump -Fc` to the `backups` volume every `BACKUP_INTERVAL` and prunes dumps older than `RETENTION_DAYS` — do not schedule a separate plain-SQL `pg_dump`. Restore uses `pg_restore` from a one-off `backup` container, never `psql < file`.
 
-```bash
-docker compose exec db pg_dump -U accounting accounting > backup.sql
-```
-
-Store backups off-host and test restores periodically.
+See [`docs/runbooks/backup-and-restore.md`](docs/runbooks/backup-and-restore.md) for where the dumps live, the restore procedure and periodic restore tests, and `docs/runbooks/deploy.md` (*Activate offsite + encrypted backups*) to encrypt dumps and ship them off-host — until then the backups live on the same VM as the database.
 
 ## Development & CI
 

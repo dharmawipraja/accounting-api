@@ -14,6 +14,13 @@ after changing them recreate only the sidecar:
 Each dump is written to `accounting-<ts>.dump.tmp` and renamed only once `pg_dump` succeeded, so an
 interrupted or failed dump never looks like the newest backup: a `*.dump.tmp` is **never** restorable
 (a failed one is deleted at once; one left by a killed container is deleted when the sidecar next starts).
+With encryption on (`BACKUP_AGE_RECIPIENT`, deploy.md *Activate offsite + encrypted backups*) the
+same applies to the encrypted copy: `age` writes `accounting-<ts>.dump.age.tmp`, which is renamed to
+`accounting-<ts>.dump.age` (and the plaintext `.dump` removed) only once `age` succeeded — a
+`*.dump.age.tmp` is never restorable and is cleaned up the same way. If `age` fails, the plaintext
+`.dump` is kept. Retention prunes `.dump` and `.dump.age` alike. Before restoring a `.dump.age`,
+decrypt it with the private key, wherever that key is kept (`age -d -i <key> file.dump.age > file.dump`),
+and restore the resulting `.dump` as below.
 
 Every command in this runbook uses the same `$COMPOSE` as `deploy.md`:
 ```bash

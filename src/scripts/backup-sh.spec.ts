@@ -115,9 +115,20 @@ describe('scripts/backup.sh atomic dump', () => {
 
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-  const run = (pgDumpExit: number) => {
+  /** age stub: writes "partial" to its `-o` file, then exits `code`. */
+  const ageStub = (code: number) =>
+    `#!/bin/sh\necho "age $*" >> "${calls}"\nout=""\nwhile [ $# -gt 0 ]; do [ "$1" = "-o" ] && out="$2"; shift; done\nprintf partial > "$out"\nexit ${code}\n`;
+
+  const run = (
+    pgDumpExit: number,
+    opts: { ageExit?: number; env?: Record<string, string> } = {},
+  ) => {
     writeFileSync(join(bin, 'pg_dump'), pgDumpStub(pgDumpExit));
     chmodSync(join(bin, 'pg_dump'), 0o755);
+    if (opts.ageExit !== undefined) {
+      writeFileSync(join(bin, 'age'), ageStub(opts.ageExit));
+      chmodSync(join(bin, 'age'), 0o755);
+    }
     const res = spawnSync('sh', [SCRIPT], {
       env: {
         PATH: `${bin}:/usr/bin:/bin`,
@@ -126,12 +137,14 @@ describe('scripts/backup.sh atomic dump', () => {
         PGDATABASE: 'accounting',
         BACKUP_DIR: backups,
         BACKUP_METRICS_DIR: metrics,
+        ...opts.env,
       },
       encoding: 'utf8',
       timeout: 10_000,
     });
     return {
       status: res.status,
+      stderr: res.stderr,
       files: readdirSync(backups),
       log: readFileSync(calls, 'utf8'),
     };
@@ -158,5 +171,39 @@ describe('scripts/backup.sh atomic dump', () => {
     const { files } = run(0);
     expect(files.filter((f) => f.endsWith('.tmp'))).toEqual([]);
     expect(files).toHaveLength(1);
+  });
+
+  // age encryption uses the same tmp+rename: `age -o <name>.dump.age.tmp`, then
+  // mv — an interrupted/failed age run never leaves a truncated `.dump.age`.
+  const AGE = { BACKUP_AGE_RECIPIENT: 'age1testrecipient' };
+
+  it('age encrypts to <name>.dump.age.tmp; success renames it and drops the plaintext', () => {
+    const { status, files, log } = run(0, { ageExit: 0, env: AGE });
+    expect(log).toMatch(
+      /^age -r age1testrecipient -o \S+\/accounting-\d{8}T\d{6}Z\.dump\.age\.tmp \S+\/accounting-\d{8}T\d{6}Z\.dump$/m,
+    );
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatch(/^accounting-\d{8}T\d{6}Z\.dump\.age$/);
+    expect(existsSync(join(metrics, 'backup.prom'))).toBe(true);
+    expect(status).toBe(3);
+  });
+
+  it('a failed age run leaves no .age / .age.tmp and keeps the plaintext dump', () => {
+    const { status, files, stderr } = run(0, { ageExit: 1, env: AGE });
+    expect(stderr).toContain('age encryption failed');
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatch(/^accounting-\d{8}T\d{6}Z\.dump$/);
+    expect(status).toBe(3);
+  });
+
+  it('a stale .dump.age.tmp from an interrupted earlier encryption is removed at start', () => {
+    writeFileSync(
+      join(backups, 'accounting-20260101T000000Z.dump.age.tmp'),
+      'x',
+    );
+    const { files } = run(0, { ageExit: 0, env: AGE });
+    expect(files.filter((f) => f.endsWith('.tmp'))).toEqual([]);
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatch(/\.dump\.age$/);
   });
 });

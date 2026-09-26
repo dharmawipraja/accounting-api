@@ -510,6 +510,15 @@ from one source while rotating a forged `X-Forwarded-For`; it should still 429
 
 ## Rollback
 
+**Roll back manually on the VM (below) — never by re-dispatching the CD workflow on an
+older ref.** A `workflow_dispatch` run executes the workflow file *of the selected ref*:
+an older tag runs that tag's older `cd.yml` and `scripts/deploy-remote.sh`, which lack
+every deploy step added since (e.g. `stop api` before `migrate`, the content-based
+`caddy` / `backup` recreate) — so it can start old code against the current schema or
+leave containers on stale config. The manual steps below keep today's procedure
+while pinning the older images (`ghcr.io/<owner>/<repo>[-migrate]:<prior-sha>`, still
+in GHCR from that release's CD run).
+
 1. **App-only rollback (no schema change):** redeploy the previous image tag/commit —
    check out the prior commit and export its `API_IMAGE` / `MIGRATE_IMAGE`
    (`ghcr.io/<owner>/<repo>[-migrate]:<prior-sha>`), then `pull` +
@@ -745,7 +754,9 @@ with `age -d -i <key> file.dump.age > file.dump`, then follow `backup-and-restor
 
 `.github/workflows/cd.yml` is **manual** (`workflow_dispatch`) — it does NOT run on push.
 To release: GitHub → **Actions** → **CD** → **Run workflow** → pick the **tag** (or branch)
-from the ref dropdown → **Run**. It builds/deploys exactly the selected ref.
+from the ref dropdown → **Run**. It builds/deploys exactly the selected ref — using
+that ref's own `cd.yml`, so it is for releasing forward only; to go back to an older
+release follow *Rollback* (manual), never dispatch CD on the older ref.
 0. **CI gate** — the run fails immediately unless `ci.yml` has a **successful
    push-to-`main` run for the exact commit SHA** being released (Actions API query with
    `event=push&branch=main`). A green PR run for an unmerged head does not qualify, so
@@ -775,7 +786,9 @@ from the ref dropdown → **Run**. It builds/deploys exactly the selected ref.
    `production`. Add `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_KEY`,
    `DEPLOY_PATH` (repo dir on the VM) as **`production` Environment secrets**, then
    set `DEPLOY_ENABLED=true`. With the variable set but a secret missing, the SSH
-   step fails loudly (it never skips). Over SSH it checks the repo out at the released SHA (if
+   step fails loudly (it never skips). The remote commands are the committed
+   `scripts/deploy-remote.sh` (sent by `appleboy/ssh-action`'s `script_path` from a
+   checkout of the released commit, and shellcheck-linted by CI). Over SSH it checks the repo out at the released SHA (if
    `DEPLOY_PATH` is a git checkout), exports `API_IMAGE` / `MIGRATE_IMAGE` = the
    immutable `:<sha>` images, and runs `compose pull`, `compose stop api` (the old api
    must not run against the new schema) and `compose up -d --no-build` (migrate, then
@@ -800,9 +813,13 @@ git remote add origin git@github.com:<org>/accounting-api.git
 # 2. Push main (this triggers CI on push):
 git push -u origin main
 ```
-On push/PR to `main`, CI runs three jobs: `verify` (Prisma generate + typecheck +
+On push/PR to `main`, CI runs five jobs: `verify` (Prisma generate + typecheck +
 lint + unit + e2e with coverage), `audit` (`npm run audit:ci`, fails on a
-moderate-or-higher advisory in prod deps), and `docker` (production image build +
-Trivy HIGH/CRITICAL vulnerability scan, `exit-code 1`).
+moderate-or-higher advisory in prod deps), `shellcheck` (every `scripts/**/*.sh`,
+incl. `scripts/deploy-remote.sh` — the commands CD runs on the VM), `docker`
+(production image build + Trivy HIGH/CRITICAL vulnerability scan, unfixed ignored,
+`exit-code 1`) and `docker-migrate` (the same Trivy scan of the migrate image, the
+Dockerfile `build` stage). CD's `ci-gate` needs the whole run green, so a failing
+scan blocks releases until the base image (or dependency) is bumped.
 Recommended next step: enable branch protection on `main` requiring the `verify`
 and `audit` checks to pass before merge.
