@@ -105,10 +105,12 @@ Deploy a tagged release on a single Docker host (Caddy auto-HTTPS, migrate-on-de
 
 ```bash
 git checkout v1.0.0
-COMPOSE='docker compose -f docker-compose.yml -f docker-compose.prod.yml'
+COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
 $COMPOSE build              # new api + migrate images (nothing restarts yet)
 $COMPOSE stop api           # the OLD api must not run against the NEW schema
 $COMPOSE up -d --no-build   # migrate → new api → caddy/backup
+# Caddyfile / scripts/backup.sh changed? up does NOT pick that up — recreate it:
+#   $COMPOSE up -d --no-build --no-deps --force-recreate caddy   (deploy.md)
 ```
 
 Stop `api` before `migrate` runs on every upgrade — the old api must not serve against the new schema (details in the deploy runbook).

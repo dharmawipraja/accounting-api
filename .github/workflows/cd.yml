@@ -125,7 +125,10 @@ jobs:
             set -eu
             cd "$DEPLOY_PATH"
             # Keep the compose files / Caddyfile / scripts in step with the images.
+            # PREV_SHA = what the VM ran before, for the bind-mount refresh below.
+            PREV_SHA=""
             if [ -d .git ]; then
+              PREV_SHA=$(git rev-parse HEAD)
               git fetch --quiet origin
               git checkout --quiet --detach "$DEPLOY_SHA"
             fi
@@ -139,3 +142,19 @@ jobs:
             # -> 500). up then runs migrate to completion and starts the new api.
             $COMPOSE stop api
             $COMPOSE up -d --no-build
+            # Single-file bind mounts pin the file's inode: git checkout replaces
+            # a changed file with a NEW inode, so a running container keeps
+            # reading the OLD content (`caddy reload` inside it re-reads the old
+            # file too), and `up` recreates a service only when its compose
+            # definition changed. So when a mounted file changed between the
+            # previous and this checkout, recreate just that service (--no-deps
+            # leaves api/db alone; caddy: a few seconds of refused connections,
+            # certs persist in caddy_data). A failing git diff also recreates.
+            if [ -n "$PREV_SHA" ]; then
+              for pair in Caddyfile:caddy scripts/backup.sh:backup; do
+                if ! git diff --quiet "$PREV_SHA" "$DEPLOY_SHA" -- "${pair%%:*}"; then
+                  echo "${pair%%:*} changed: recreating ${pair#*:}"
+                  $COMPOSE up -d --no-build --no-deps --force-recreate "${pair#*:}"
+                fi
+              done
+            fi

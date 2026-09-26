@@ -15,6 +15,48 @@ import { bootstrapTestApp } from './e2e-helpers';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Bounded poll: re-evaluate `probe` every 25 ms until it returns a value,
+ *  failing after `timeoutMs` — no fixed sleep gates an assertion. */
+async function pollFor<T>(
+  probe: () => Promise<T | null | undefined | false>,
+  what: string,
+  timeoutMs = 5_000,
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const v = await probe();
+    if (v) return v;
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    await sleep(25);
+  }
+}
+
+/** A stub that outlives REQUEST_TIMEOUT_MS (1500) and then throws, exposing
+ *  `settled` so the spec awaits the late completion instead of guessing. */
+function slowFailingStub(): {
+  impl: () => Promise<never>;
+  settled: Promise<void>;
+} {
+  let markSettled!: () => void;
+  const settled = new Promise<void>((r) => (markSettled = r));
+  return {
+    settled,
+    impl: async () => {
+      try {
+        await sleep(2_500);
+        throw new Error('stub handler should have been cut off');
+      } finally {
+        markSettled();
+      }
+    },
+  };
+}
+
+/** After the stub settled: a few event-loop turns for any (erroneous) late
+ *  audit write to surface before the exactly-one assertion. Not a gate on a
+ *  positive condition — those poll. */
+const LATE_WRITE_GRACE_MS = 300;
+
 /** AUDIT3-IT2: a request cut off by RequestTimeoutInterceptor (408) must still
  *  write exactly ONE audit row; a normal success must also write exactly one. */
 describe('Audit covers timed-out requests (e2e)', () => {
@@ -41,18 +83,26 @@ describe('Audit covers timed-out requests (e2e)', () => {
 
   it('a 408 mutating request writes exactly one audit row with status 408', async () => {
     const partners = app.get(BusinessPartnersService);
-    jest.spyOn(partners, 'create').mockImplementation(async () => {
-      await sleep(2_500); // slower than REQUEST_TIMEOUT_MS (1500)
-      throw new Error('stub handler should have been cut off');
-    });
+    const stub = slowFailingStub();
+    jest.spyOn(partners, 'create').mockImplementation(stub.impl);
     const before = await prisma.client.auditLog.count();
     await request(app.getHttpServer() as App)
       .post('/v1/partners')
       .set('Authorization', `Bearer ${token}`)
+      .set('X-Request-Id', 'tmo-partner-408')
       .send({ code: 'TMO-1', name: 'Slow', isCustomer: true })
       .expect(408);
-    // Let the stub settle — a late handler completion must not add a 2nd row.
-    await sleep(1_500);
+    await pollFor(
+      () =>
+        prisma.client.auditLog.findFirst({
+          where: { clientRequestId: 'tmo-partner-408' },
+        }),
+      'the 408 audit row',
+    );
+    // A late handler completion must not add a 2nd row: wait for the stub to
+    // actually settle, then give any late write a moment to land.
+    await stub.settled;
+    await sleep(LATE_WRITE_GRACE_MS);
     const rows = await prisma.client.auditLog.findMany({
       where: { path: '/v1/partners', method: 'POST' },
       orderBy: { timestamp: 'asc' },
@@ -76,10 +126,8 @@ describe('Audit covers timed-out requests (e2e)', () => {
     // A slow handler that never writes anything: the stub sleeps past
     // REQUEST_TIMEOUT_MS and then throws (nothing is committed) — only the
     // interceptor's 408 audit row, carrying the accepted body, is under test.
-    jest.spyOn(journal, 'createDraft').mockImplementation(async () => {
-      await sleep(2_500);
-      throw new Error('stub handler should have been cut off');
-    });
+    const stub = slowFailingStub();
+    jest.spyOn(journal, 'createDraft').mockImplementation(stub.impl);
     const acct = '11111111-1111-4111-8111-111111111111';
     const body = {
       date: '2026-07-01',
@@ -100,12 +148,16 @@ describe('Audit covers timed-out requests (e2e)', () => {
       .set('X-Request-Id', 'tmo-full-body')
       .send(body)
       .expect(408);
-    await sleep(1_500);
-    const row = await prisma.client.auditLog.findFirst({
-      where: { clientRequestId: 'tmo-full-body' },
-    });
+    const row = await pollFor(
+      () =>
+        prisma.client.auditLog.findFirst({
+          where: { clientRequestId: 'tmo-full-body' },
+        }),
+      'the 408 audit row',
+    );
+    await stub.settled; // don't leak the stub's timer into the next test
     expect(row).toMatchObject({ statusCode: 408 });
-    expect(row!.body).toEqual(body);
+    expect(row.body).toEqual(body);
   }, 20_000);
 
   it('iter6: a 400 from the ValidationPipe (never accepted) keeps the 8 KiB tier', async () => {
@@ -124,12 +176,16 @@ describe('Audit covers timed-out requests (e2e)', () => {
       .set('X-Request-Id', 'tmo-invalid-body')
       .send(body)
       .expect(400);
-    const row = await prisma.client.auditLog.findFirst({
-      where: { clientRequestId: 'tmo-invalid-body' },
-    });
+    const row = await pollFor(
+      () =>
+        prisma.client.auditLog.findFirst({
+          where: { clientRequestId: 'tmo-invalid-body' },
+        }),
+      'the 400 audit row',
+    );
     expect(row).toMatchObject({ statusCode: 400 });
-    expect(row!.body).toMatchObject({ _truncated: true });
-    expect(Buffer.byteLength(JSON.stringify(row!.body))).toBeLessThanOrEqual(
+    expect(row.body).toMatchObject({ _truncated: true });
+    expect(Buffer.byteLength(JSON.stringify(row.body))).toBeLessThanOrEqual(
       AUDIT_SMALL_BODY_MAX_BYTES,
     );
   });

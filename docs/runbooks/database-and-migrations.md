@@ -122,7 +122,8 @@ the Prisma schema cannot express:
     the documents' `journal_entry_id` and `year_end_closings.closing_entry_id`),
     and `business_partners_customer_or_vendor` (`is_customer OR is_vendor`;
     `20261004000000_business_partner_customer_or_vendor_check` — the service
-    re-checks it on update against the row locked FOR UPDATE).
+    re-checks it on update against the row locked FOR NO KEY UPDATE — NO KEY so
+    concurrent FK checks' FOR KEY SHARE on the partner are not blocked).
   - **Hard DELETE is an allow-list** for the runtime role `accounting_app`
     (`scripts/db/app-role.sql`): only `sales_invoice_lines`,
     `purchase_bill_lines` (draft line replacement), `accounting_periods`
@@ -235,10 +236,12 @@ itself. See [`./deploy.md`](./deploy.md):
 
 ```bash
 # Same sequence as deploy.md "Deploy / upgrade":
-COMPOSE='docker compose -f docker-compose.yml -f docker-compose.prod.yml'
+COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
 $COMPOSE build              # new api + migrate images (nothing restarts yet)
 $COMPOSE stop api           # the OLD api must not run against the NEW schema
 $COMPOSE up -d --no-build   # migrate → new api → caddy/backup
+# Caddyfile / scripts/backup.sh changed? up does NOT pick that up — recreate it:
+#   $COMPOSE up -d --no-build --no-deps --force-recreate caddy   (deploy.md)
 # `up` runs `migrate` (prisma migrate deploy + accounting_app grants), THEN api/caddy/backup
 ```
 
@@ -305,7 +308,7 @@ no separate seed command for the core reference data:
   the service's own `DATABASE_URL` (`accounting_app`, which has every privilege the
   script needs: SELECT/INSERT/UPDATE on `users`, UPDATE on `refresh_tokens`, locks):
   ```bash
-  COMPOSE='docker compose -f docker-compose.yml -f docker-compose.prod.yml'
+  COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
   read -rs ADMIN_PASSWORD && export ADMIN_PASSWORD
   $COMPOSE exec -e ADMIN_PASSWORD api \
     node dist/scripts/create-admin.js admin@acme.co "Budi Admin"

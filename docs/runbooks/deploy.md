@@ -69,10 +69,12 @@
 
 ## Deploy / upgrade
 ```bash
-COMPOSE='docker compose -f docker-compose.yml -f docker-compose.prod.yml'
+COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
 $COMPOSE build              # new api + migrate images (nothing restarts yet)
 $COMPOSE stop api           # the OLD api must not run against the NEW schema
 $COMPOSE up -d --no-build   # migrate → new api → caddy/backup
+# Caddyfile / scripts/backup.sh changed? up does NOT pick that up — recreate it:
+#   $COMPOSE up -d --no-build --no-deps --force-recreate caddy   (see below)
 ```
 `build` tags the images `accounting-api:local` / `accounting-api-migrate:local`
 (unless `API_IMAGE` / `MIGRATE_IMAGE` are set); `up` then runs `migrate` (prisma
@@ -93,9 +95,48 @@ export API_IMAGE=ghcr.io/<owner>/<repo>:<sha> MIGRATE_IMAGE=ghcr.io/<owner>/<rep
 $COMPOSE pull
 $COMPOSE stop api
 $COMPOSE up -d --no-build
+# + the Caddyfile / backup.sh recreate below when either changed (CD does it)
 ```
 `--no-build` matters: `api`/`migrate` keep a `build:` section for local builds, and
 without it compose could reuse a stale locally-built image.
+
+### Changed `Caddyfile` / `scripts/backup.sh`: recreate that service
+`caddy` mounts `./Caddyfile` and `backup` mounts `./scripts/backup.sh` as
+**single-file bind mounts**, which pin the file's inode. `git checkout` / `git pull`
+replaces a changed file with a **new** inode, so the running container keeps
+reading the **old** content — and `up -d` recreates a service only when its compose
+*definition* changed, which a Caddyfile edit does not do. `caddy reload` does not
+help either: inside the container `/etc/caddy/Caddyfile` is still the old file
+(on a Linux host the mount keeps the old inode's content; Docker Desktop shows the
+file as missing) (verified on Docker Compose v5.1.2: after a `git checkout` that added the `/ready`
+block, `/ready` kept answering 200 through `up -d --no-build` and `caddy reload`,
+and switched to 404 only after the recreate below). So whenever a deploy changes
+one of them, recreate just that service:
+```bash
+$COMPOSE up -d --no-build --no-deps --force-recreate caddy    # Caddyfile changed
+$COMPOSE up -d --no-build --no-deps --force-recreate backup   # scripts/backup.sh changed
+```
+`--no-deps` leaves `api`/`migrate`/`db` alone (no image pin needed — neither
+service uses `API_IMAGE`/`MIGRATE_IMAGE`). Recreating `caddy` is safe on a live VM:
+connections are refused for about a second while the container restarts, and the
+certificates persist in the `caddy_data` volume (no re-issue). Recreating `backup`
+aborts a dump in progress and takes a fresh one on start. Then verify from
+**outside** the VM:
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://$DOMAIN/ready    # 404
+curl -s -o /dev/null -w '%{http_code}\n' https://$DOMAIN/metrics  # 404
+curl -s -o /dev/null -w '%{http_code}\n' https://$DOMAIN/health   # 200
+```
+**CD does this automatically:** it records the commit the VM was on before its
+`git checkout` and, after `up -d --no-build`, force-recreates `caddy` / `backup`
+when `git diff <previous> <deployed> -- Caddyfile` / `-- scripts/backup.sh` is
+non-empty. It only compares against the commit it found checked out, so after a
+**manual** `git checkout` / `git pull` on the VM (e.g. a rollback) run the recreate
+yourself. CD never touches the monitoring overlay, whose config files
+(`monitoring/prometheus.yml`, `alerts.yml`, `alertmanager*.yml`, `loki.yml`,
+`alloy.alloy`) are single-file mounts too: after a change to one, recreate that
+overlay service the same way (`$COMPOSE -f docker-compose.monitoring.yml up -d
+--no-build --no-deps --force-recreate <service>`).
 
 ### Operator commands on a CD-managed VM
 CD exports `API_IMAGE` / `MIGRATE_IMAGE` **only inside its own SSH session**. In your
@@ -107,7 +148,7 @@ recreates the container from it), a fresh build of whatever is checked out (if
 `up` / `run` that touches `api` or `migrate` on a VM that CD deploys, pin the
 images that are actually deployed:
 ```bash
-COMPOSE='docker compose -f docker-compose.yml -f docker-compose.prod.yml'
+COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
 export API_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$($COMPOSE ps -a -q api)")
 export MIGRATE_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$($COMPOSE ps -a -q migrate)")
 echo "api=$API_IMAGE migrate=$MIGRATE_IMAGE"   # must be ghcr.io/<owner>/<repo>[-migrate]:<sha>
@@ -140,7 +181,7 @@ the deployed image — the same commands work unchanged.
    dotenv file, no host DB port needed). Pass the password via `ADMIN_PASSWORD` so
    it stays out of shell history and `ps`:
    ```bash
-   COMPOSE='docker compose -f docker-compose.yml -f docker-compose.prod.yml'
+   COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
    read -rs ADMIN_PASSWORD && export ADMIN_PASSWORD     # 8-128 chars (login's limits)
    $COMPOSE exec -e ADMIN_PASSWORD api \
      node dist/scripts/create-admin.js admin@acme.co "Budi Admin"
@@ -238,9 +279,22 @@ skips those — the list below still applies to the ones that remain):
    `20260925100000_add_voided_on` backfills `voided_on` before adding its CHECK, `20260929000000` only replaces a
    trigger function, and `20260926000000` / `20260928000000` / `20261001000000` /
    `20261003000000` (index on `payment_allocations(payment_id)`) are additive.
-   Fix the data by hand, mark a failed attempt with
-   `npx prisma migrate resolve --rolled-back <migration>`, and re-run. Only deploy to
-   production once the rehearsal applies cleanly.
+   Fix the data by hand, mark the failed attempt as rolled back, and re-run. There
+   is no host `node`/`npx` on the VM and `db` is not published, so run `resolve`
+   **in the migrate image** — after pinning `MIGRATE_IMAGE` (*Operator commands on a
+   CD-managed VM*; for the rehearsal, the NEW image you just ran) — with the same
+   `DATABASE_URL` as the failed run:
+   ```bash
+   # rehearsal (scratch database):
+   $COMPOSE run --rm --no-deps \
+     -e DATABASE_URL="postgresql://accounting:${POSTGRES_PASSWORD}@db:5432/scratch?schema=public" \
+     migrate npx prisma migrate resolve --rolled-back <migration>
+   # production (the live database — the service's own DATABASE_URL):
+   $COMPOSE run --rm --no-deps migrate npx prisma migrate resolve --rolled-back <migration>
+   ```
+   Without it the next `migrate deploy` refuses with `P3009` (failed migrations in
+   the target database). Only deploy to production once the rehearsal applies
+   cleanly.
 2. **`APP_DB_PASSWORD` must be in `.env`** (compose refuses to start `db`,
    `migrate` and `api` without it). The `accounting_app` role does not exist on an
    existing volume until the `migrate` step of this deploy creates it — so `api`
@@ -278,7 +332,20 @@ skips those — the list below still applies to the ones that remain):
    `/targets` shows `api` **UP**. Skipping this leaves Prometheus reading the old
    config until its next restart, after which the api target goes `down` and
    `ApiDown` fires.
-8. After the deploy: `/ready` is 200, `docker compose logs migrate` ends with
+8. **Recreate Caddy** — this release changes the `Caddyfile` (`/ready*` joins
+   `/metrics*` in the edge 404) but not the `caddy` service definition, so the
+   deploy's `up -d --no-build` leaves the old Caddy running with the old file and
+   `/ready` stays **public** (see *Changed `Caddyfile` / `scripts/backup.sh`*).
+   CD does it automatically when the VM's previous checkout had the old Caddyfile;
+   on a VM-built deploy, or if in doubt, run it by hand (safe on a live VM — about
+   a second of refused connections, certificates kept):
+   ```bash
+   $COMPOSE up -d --no-build --no-deps --force-recreate caddy
+   ```
+   Verify from **outside** the VM: `curl -s -o /dev/null -w '%{http_code}\n'
+   https://$DOMAIN/ready` → `404`, and the same for `/health` → `200`.
+9. After the deploy: `/ready` is 200 **from inside** (*Health & shutdown* →
+   *Edge exposure*), `$COMPOSE logs migrate` ends with
    `ensure-app-role: accounting_app role + grants are up to date`, and a login +
    one read works.
 
@@ -359,21 +426,23 @@ skips those — the list below still applies to the ones that remain):
   proxy in front, so trusting a hop would let a local client forge its `req.ip`);
   while the api runs under it, traffic that does come through Caddy shares Caddy's
   IP for the per-IP login ceiling — never leave the api on it on a VM serving users.
-- **Edge exposure:** Caddy answers `404` for `/ready*` and `/metrics*` (dependency state and metrics are internal). The container healthcheck (`127.0.0.1:3000/ready`) and Prometheus (`api:3000/metrics`) bypass Caddy, so they are unaffected; external uptime probes use `https://$DOMAIN/health`. Check readiness from the VM with `docker compose exec api node -e "require('http').get('http://127.0.0.1:3000/ready',r=>console.log(r.statusCode))"`.
+- **Edge exposure:** Caddy answers `404` for `/ready*` and `/metrics*` (dependency state and metrics are internal) — once the running `caddy` container has the current `Caddyfile`: after a deploy that changed it, recreate `caddy` (*Changed `Caddyfile` / `scripts/backup.sh`*; CD does it) or `/ready` stays public. The container healthcheck (`127.0.0.1:3000/ready`) and Prometheus (`api:3000/metrics`) bypass Caddy, so they are unaffected; external uptime probes use `https://$DOMAIN/health`. Check readiness from the VM with `$COMPOSE exec api node -e "require('http').get('http://127.0.0.1:3000/ready',r=>console.log(r.statusCode))"`.
 - One-time caveat (AUDIT3-7, `20260926100000_auth_hardening`): the migration
   lowercases `users.email` and adds a unique index on `lower(email)`. It **aborts
   with a clear error listing the emails** if two accounts differ only by
   case/whitespace — nothing is applied (the check runs first). Resolve those
-  accounts by hand (rename/tombstone one), mark the failed attempt with
-  `npx prisma migrate resolve --rolled-back 20260926100000_auth_hardening`, and
-  re-run the deploy. Tokens now carry a `typ` claim: every access/refresh token issued
+  accounts by hand (rename/tombstone one), mark the failed attempt — in the
+  migrate image, after pinning `MIGRATE_IMAGE` (*Operator commands on a CD-managed
+  VM*; no host `npx`, `db` is not published) — with
+  `$COMPOSE run --rm --no-deps migrate npx prisma migrate resolve --rolled-back 20260926100000_auth_hardening`,
+  and re-run the deploy. Tokens now carry a `typ` claim: every access/refresh token issued
   before the deploy is rejected, so all users log in again once.
 - One-time caveat: migration `20260705163429_scope_idempotency_keys_by_user`
   clears the `idempotency_keys` cache to add the NOT NULL `user_id` column. On
   the deploy that first applies it, a client retrying a write completed in the
   previous ~24h with the same `Idempotency-Key` re-executes instead of
   replaying — apply it in a low-traffic window.
-- `SIGTERM` (e.g. `docker compose ... stop api`) triggers a graceful Nest shutdown
+- `SIGTERM` (e.g. `$COMPOSE stop api`) triggers a graceful Nest shutdown
   (idle keep-alive sockets close, in-flight requests finish within `stop_grace_period` = 45s, THEN Prisma/Redis disconnect).
 
 ## X-Forwarded-For / client IP trust (SEC-3)
@@ -402,7 +471,9 @@ reverse_proxy api:3000 {
 ```
 Add the global option `trusted_proxies_strict` for right-to-left XFF parsing when
 the upstream appends to the right (CloudFlare, AWS ALB, HAProxy) — this prevents
-leftmost-IP spoofing.
+leftmost-IP spoofing. Commit the `Caddyfile` change and deploy it; the running
+Caddy picks it up only when recreated (*Changed `Caddyfile` / `scripts/backup.sh`*
+— CD does it).
 
 **Deploy-time verification:** against a deployed instance, hammer the login limit
 from one source while rotating a forged `X-Forwarded-For`; it should still 429
@@ -414,15 +485,18 @@ from one source while rotating a forged `X-Forwarded-For`; it should still 429
    check out the prior commit and export its `API_IMAGE` / `MIGRATE_IMAGE`
    (`ghcr.io/<owner>/<repo>[-migrate]:<prior-sha>`), then `pull` +
    `up -d --no-build` (or `up -d --build` for a VM-built image). Caddy/api/backup
-   restart against the unchanged DB.
+   restart against the unchanged DB. If the rollback changes the `Caddyfile` or
+   `scripts/backup.sh`, recreate that service too (*Changed `Caddyfile` /
+   `scripts/backup.sh`* — CD only handles its own checkouts).
 2. **Migrations are forward-only.** Rolling back the image does NOT undo a migration.
    If a bad migration shipped:
-   a. Stop the API: `docker compose ... stop api`.
+   a. Stop the API: `$COMPOSE stop api`.
    b. Prefer a **corrective forward migration** (a new migration that fixes the bad
       one) over editing history — never edit an already-applied migration.
    c. If data is corrupted, **restore from backup**: follow `backup-and-restore.md`
-      (stop `api`, restore the latest good `pg_dump -Fc` into the `db` volume, then
-      bring `api` back up). Accept the data delta since that backup.
+      (stop `api`, `migrate` **and `backup`** — so no dump of the half-restored
+      database is taken — restore the latest good `pg_dump -Fc` into the `db` volume
+      from a one-off `backup` container, then bring `api` and `backup` back up). Accept the data delta since that backup.
 3. After any rollback, verify `/health` (200) and `/ready` (200 — DB + Redis reachable).
 
 ## Monitoring (optional)

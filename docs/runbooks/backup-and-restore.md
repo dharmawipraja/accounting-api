@@ -10,36 +10,54 @@ bare integers only — `RETENTION_DAYS` ≥ 1, `BACKUP_INTERVAL` ≥ 60 — othe
 `scripts/backup.sh` logs the problem and exits 64 **before** `pg_dump`, so a
 restart loop never fills the disk);
 after changing them recreate only the sidecar:
-`docker compose $COMPOSE up -d --no-build --no-deps backup` (`$COMPOSE` as in *Restore*). Files are named `accounting-<UTC-timestamp>.dump`.
+`$COMPOSE up -d --no-build --no-deps backup` (`$COMPOSE` as below). Files are named `accounting-<UTC-timestamp>.dump`.
+
+Every command in this runbook uses the same `$COMPOSE` as `deploy.md`:
+```bash
+COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+```
 
 ## Where the dumps live
 The `backups` named volume (inspect: `docker volume inspect accounting-api_backups`).
-Copy a dump to the host: `docker compose -f docker-compose.yml -f docker-compose.prod.yml cp backup:/backups/<file> ./`.
+Copy a dump to the host: `$COMPOSE cp backup:/backups/<file> ./`.
 
 ## Restore
-Run `pg_restore` **from inside the `backup` sidecar** — it is the only container
-that mounts the `backups` volume, it has the Postgres client tools, and its
-`PGPASSWORD`/`PGUSER`/`PGDATABASE` env let it reach `db` over the compose network.
+Run `pg_restore` **in a container of the `backup` service** (a one-off `run`, step 2)
+— it is the only service that mounts the `backups` volume, it has the Postgres
+client tools, and its `PGPASSWORD`/`PGUSER`/`PGDATABASE` env let it reach `db` over
+the compose network.
 In production `db` is **not published on the host** (only Caddy is), so a host-side
 `psql`/`pg_restore` against `127.0.0.1:5432` fails by design — stay inside the
 containers, or add the opt-in `-f docker-compose.hostport.yml` for a one-off
 (see `deploy.md` → *Health & shutdown*).
-(`COMPOSE='-f docker-compose.yml -f docker-compose.prod.yml'`.)
 
 0. **On a CD-managed VM, pin the deployed images first** — CD exports
    `API_IMAGE`/`MIGRATE_IMAGE` only in its own session, so steps 3–4 would otherwise
    start a stale `accounting-api[-migrate]:local` image
    (`deploy.md` → *Operator commands on a CD-managed VM*):
-   `export API_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$(docker compose $COMPOSE ps -a -q api)")`
+   `export API_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$($COMPOSE ps -a -q api)")`
    and the same with `MIGRATE_IMAGE` / `migrate`. (A VM that builds its own images
    resolves to `:local`, which is then correct.)
-1. Stop writers: `docker compose $COMPOSE stop api migrate`.
-2. Restore (drops & recreates objects from the dump; `db` and `backup` stay up):
-   `docker compose $COMPOSE exec backup \
-     pg_restore --clean --if-exists --no-owner -h db -U accounting -d accounting /backups/<file>`
-   (the dump path is a positional arg — custom-format dumps are not read from stdin).
-3. Re-apply any newer migrations (no-op if the dump is current): `docker compose $COMPOSE up -d --no-build migrate`.
-4. Start the app: `docker compose $COMPOSE up -d --no-build`.
+1. Stop the writers **and the backup loop**: `$COMPOSE stop api migrate backup`.
+   The sidecar dumps on start and then every `BACKUP_INTERVAL`, and prunes dumps
+   older than `RETENTION_DAYS`: left running, it could take a dump of the
+   half-restored database mid-`pg_restore` (a "latest" backup that is neither the
+   old nor the restored state) and keep pruning the good ones.
+2. Restore (drops & recreates objects from the dump; `db` stays up) from a
+   **one-off container of the `backup` service** — same image, `backups` volume
+   and `PG*` env as the sidecar, but it runs only `pg_restore` (not the backup
+   loop) and is removed afterwards:
+   ```bash
+   $COMPOSE run --rm --no-deps --entrypoint pg_restore backup \
+     --clean --if-exists --no-owner -h db -U accounting -d accounting /backups/<file>
+   ```
+   (the dump path is a positional arg — custom-format dumps are not read from
+   stdin. `$COMPOSE exec backup …` does not work here: the sidecar is stopped.)
+3. Re-apply any newer migrations (no-op if the dump is current): `$COMPOSE up -d --no-build migrate`.
+4. Start the app **and the backup loop again**: `$COMPOSE up -d --no-build` (starts
+   `api`, `caddy` and `backup`; the sidecar immediately takes a fresh dump of the
+   restored database). Check it is back: `$COMPOSE ps backup` shows `running` and
+   `$COMPOSE logs --tail 5 backup` ends with `backup written: …`.
 
 ### Database role after a restore
 The dump contains `GRANT … TO accounting_app` (the api's least-privilege role —
@@ -85,8 +103,8 @@ restored verbatim.
 Restore the latest dump into a scratch database **inside the sidecar** and
 spot-check row counts (a backup you have never restored is not a backup):
 ```sh
-COMPOSE='-f docker-compose.yml -f docker-compose.prod.yml'
-docker compose $COMPOSE exec backup sh -c '
+COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+$COMPOSE exec backup sh -c '
   createdb -h db -U accounting scratch &&
   pg_restore --no-owner -h db -U accounting -d scratch /backups/<file> &&
   psql -h db -U accounting -d scratch -c "SELECT count(*) FROM journal_entries;" &&

@@ -271,10 +271,12 @@ snippet below:
 ```bash
 # Same sequence as deploy.md "Deploy / upgrade" — build, stop the old api, then
 # migrate (prisma migrate deploy + accounting_app grants) → api/caddy/backup:
-COMPOSE='docker compose -f docker-compose.yml -f docker-compose.prod.yml'
+COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
 $COMPOSE build              # new api + migrate images (nothing restarts yet)
 $COMPOSE stop api           # the OLD api must not run against the NEW schema
 $COMPOSE up -d --no-build   # migrate → new api → caddy/backup
+# Caddyfile / scripts/backup.sh changed? up does NOT pick that up — recreate it:
+#   $COMPOSE up -d --no-build --no-deps --force-recreate caddy   (deploy.md)
 ```
 
 - Migrations in prod run as a dedicated `migrate` service (`prisma migrate

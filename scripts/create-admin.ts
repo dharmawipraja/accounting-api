@@ -31,7 +31,7 @@
  * DATABASE_URL comes from the api service's compose environment). Run it
  * inside the RUNNING api container — the exact deployed image and env; the
  * bare `-e ADMIN_PASSWORD` forwards the EXPORTED shell value:
- *   COMPOSE='docker compose -f docker-compose.yml -f docker-compose.prod.yml'
+ *   COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
  *   read -rs ADMIN_PASSWORD && export ADMIN_PASSWORD
  *   $COMPOSE exec -e ADMIN_PASSWORD api \
  *     node dist/scripts/create-admin.js <email> "<name>"

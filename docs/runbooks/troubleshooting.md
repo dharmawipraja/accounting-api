@@ -308,6 +308,21 @@ mechanics, and [`./deploy.md`](./deploy.md) for production deploys.
   only `/health` is public. Healthchecks and Prometheus reach `api:3000` directly.
 - **Fix:** Probe readiness from inside the network (see deploy.md "Edge exposure").
 
+### `/ready` (or `/metrics/`) still answers from outside after an upgrade
+
+- **Symptom:** after deploying a release whose `Caddyfile` blocks `/ready*`,
+  `https://$DOMAIN/ready` still returns `200` (or `/metrics/…` still reaches the api).
+- **Cause:** `caddy` bind-mounts the single file `./Caddyfile`. `git checkout` / `git
+  pull` replaced it with a new inode, but the running container still reads the
+  old one, and `up -d` did not recreate `caddy` because its service definition did
+  not change (`caddy reload` re-reads the same stale file).
+- **Fix:** `$COMPOSE up -d --no-build --no-deps --force-recreate caddy` (about a
+  second of refused connections; certificates are kept), then
+  `curl -s -o /dev/null -w '%{http_code}\n' https://$DOMAIN/ready` → `404` and
+  `/health` → `200`. CD does this automatically when the Caddyfile changed between
+  the VM's previous and new checkout (deploy.md → *Changed `Caddyfile` /
+  `scripts/backup.sh`*).
+
 ### `migrate` fails: "APP_DB_PASSWORD / POSTGRES_PASSWORD must be URL-safe"
 
 - **Cause:** The password contains a character outside `A-Z a-z 0-9 . _ ~ -`. Compose
@@ -384,9 +399,16 @@ mechanics, and [`./deploy.md`](./deploy.md) for production deploys.
   would reject. It deliberately repairs nothing.
 - **Fix:** Correct the listed rows by hand (as the DB owner). The pre-check is
   the migration's first statement, so nothing was applied, but Prisma records the
-  migration as failed: mark it with
-  `npx prisma migrate resolve --rolled-back <migration_name>`, then re-run
-  `prisma migrate deploy`.
+  migration as failed (the next deploy stops with `P3009`). Mark it rolled back
+  **in the migrate image** — the prod VM has no host `node`/`npx` and `db` is not
+  published; pin `MIGRATE_IMAGE` first on a CD-managed VM (deploy.md → *Operator
+  commands on a CD-managed VM*):
+  `$COMPOSE run --rm --no-deps migrate npx prisma migrate resolve --rolled-back <migration_name>`
+  (`COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"`; add
+  `-e DATABASE_URL=…` when the failed run targeted another database, e.g. the
+  rehearsal's `scratch`), then re-run the deploy (deploy.md → *Deploy / upgrade*).
+  Locally (dev DB) `npx prisma migrate resolve --rolled-back <migration_name>` works
+  directly.
 
 ### `migrate dev` says `20260926300000_ledger_integrity` "was modified after it was applied"
 
