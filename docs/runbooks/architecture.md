@@ -75,7 +75,12 @@ service inventory.
    every route in `AppModule.configure`, so it runs after body parsing and before
    guards) rejects a body nested deeper than **32** levels with `400` — before the
    recursive audit sanitizer / class-transformer could overflow the stack (→ 500).
-   The check itself is iterative. A 400 here writes no audit row.
+   The check itself is iterative. Because this middleware runs **before every
+   guard, including the throttler**, a too-deep body gets `400` **even when the
+   request is also unauthenticated** (400-before-401 precedence), and deep-body
+   400s are **neither rate-limited nor audited** (no interceptor or guard-rejection
+   row is written). The exposure is bounded by the 1 MB body cap (Caddy edge +
+   `useBodyParser` above) and the cheap iterative check.
 8. Swagger served at `/docs` except in production (unless `ENABLE_SWAGGER=true`).
 
 ### Guard chain (global, `src/app.module.ts` `APP_GUARD` order)
@@ -342,6 +347,18 @@ post cash vs. control and reconcile allocations). The **year-end close**
 `pg_advisory_xact_lock(fiscalYear)`, zeroes cumulative P&L into the
 `RETAINED_EARNINGS` (Laba Ditahan) account via a `CLOSING` entry, and posts through
 the same `PostingService`.
+
+**Close/reopen borrow a second pool connection (accepted trade-off).** Inside the
+tx that holds the exclusive year lock, `preparePosting` (close) / `prepareReversal`
+(reopen) run their plain validation reads on the **base client**, i.e. on a second
+pool connection. Close/reopen are rare and ADMIN-only, so this cannot exhaust the pool
+in normal operation, and those reads never wait on the tx's own locks. Under extreme
+contention — the pool full of posts that are themselves queued on the year's shared
+advisory lock — the second connection cannot be acquired: the close/reopen fails after
+the pool's `connectionTimeoutMillis` (5s) or the tx timeout (a `500`, or a retryable
+`409` for a transient tx abort), its tx rolls back and releases the lock, and the
+queued posts proceed. It is **self-healing** — nothing half-commits; the admin simply
+retries.
 
 ---
 
