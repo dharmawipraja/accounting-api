@@ -15,6 +15,11 @@
  *    anonymous global ceiling, so an anonymous flood cannot hide an
  *    authenticated user's forbidden attempts from the audit trail.
  *
+ * The anonymous global ceiling ALSO bounds anonymous rows written by
+ * AuditInterceptor (login / refresh / logout 4xx — `allowAnonymousGlobal`):
+ * the login throttle is per IP, so rotating addresses must not multiply those
+ * rows either. Both writers share ONE limiter instance (AuditModule provider).
+ *
  * Suppressed rows are counted and reported ONCE per window (when that key's
  * window rolls over, is swept, or is evicted; the global count on the first
  * call after its window rolls). Memory is bounded: at most `maxKeys` keys per
@@ -142,13 +147,7 @@ export class RejectionAuditLimiter {
       return true;
     }
 
-    if (now - this.global.windowStart >= this.windowMs) {
-      if (this.global.suppressed > 0)
-        this.onGlobalSuppressed(this.global.suppressed);
-      this.global.windowStart = now;
-      this.global.count = 0;
-      this.global.suppressed = 0;
-    }
+    this.rollGlobal(now);
     const bucket = this.ips.bucket(ip, now);
     if (bucket.count >= this.limit) {
       bucket.suppressed++;
@@ -162,4 +161,49 @@ export class RejectionAuditLimiter {
     this.global.count++;
     return true;
   }
+
+  /** True if an ANONYMOUS interceptor-written row (a login / refresh / logout
+   *  4xx) may be written now: only the anonymous GLOBAL ceiling applies (the
+   *  routes carry their own per-IP throttles). Consumes the same budget as
+   *  anonymous guard rejections. */
+  allowAnonymousGlobal(): boolean {
+    this.rollGlobal(this.now());
+    if (this.global.count >= this.globalLimit) {
+      this.global.suppressed++;
+      return false;
+    }
+    this.global.count++;
+    return true;
+  }
+
+  private rollGlobal(now: number): void {
+    if (now - this.global.windowStart < this.windowMs) return;
+    if (this.global.suppressed > 0)
+      this.onGlobalSuppressed(this.global.suppressed);
+    this.global.windowStart = now;
+    this.global.count = 0;
+    this.global.suppressed = 0;
+  }
+}
+
+/** A limiter that reports suppressed rows through `logger.warn` — the shared
+ *  instance (AuditModule) and AllExceptionsFilter's fallback. */
+export function loggingRejectionAuditLimiter(
+  logger: { warn(message: string): unknown },
+  opts: Omit<
+    RejectionAuditLimiterOptions,
+    'onSuppressed' | 'onGlobalSuppressed'
+  > = {},
+): RejectionAuditLimiter {
+  return new RejectionAuditLimiter({
+    ...opts,
+    onSuppressed: (key, n) =>
+      logger.warn(
+        `Suppressed ${n} rejection audit row(s) from ${key} (per-caller cap)`,
+      ),
+    onGlobalSuppressed: (n) =>
+      logger.warn(
+        `Suppressed ${n} anonymous rejection audit row(s) across all IPs (global cap)`,
+      ),
+  });
 }

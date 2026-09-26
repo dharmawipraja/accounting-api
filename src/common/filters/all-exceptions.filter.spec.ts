@@ -168,6 +168,72 @@ describe('AllExceptionsFilter', () => {
     expect(Sentry.captureException as jest.Mock).not.toHaveBeenCalled();
   });
 
+  it('maps a CHECK violation (P2010 + 23514) to 422 VALIDATION_FAILED without leaking SQL, no Sentry', () => {
+    (Sentry.captureException as jest.Mock).mockClear();
+    const m = mockHost();
+    const adapterErr = Object.assign(new Error('adapter'), {
+      name: 'DriverAdapterError',
+      cause: {
+        kind: 'postgres',
+        originalCode: '23514',
+        originalMessage:
+          'new row for relation "payment_allocations" violates check constraint "payment_allocations_amount_positive"',
+      },
+    });
+    const err = new Prisma.PrismaClientKnownRequestError(
+      'Database error. Code: `23514`. payment_allocations_amount_positive',
+      {
+        code: 'P2010',
+        clientVersion: Prisma.prismaVersion.client,
+        meta: { driverAdapterError: adapterErr },
+      },
+    );
+    filter.catch(err, m.host);
+    expect(m.code()).toBe(422);
+    expect(m.payload()).toEqual({
+      code: 'VALIDATION_FAILED',
+      message: 'The request violates a data constraint',
+      traceId: 'req-1',
+    });
+    expect(Sentry.captureException as jest.Mock).not.toHaveBeenCalled();
+  });
+
+  it('maps a NOT NULL violation (P2011 / bare DriverAdapterError 23502) to 422', () => {
+    const p2011 = new Prisma.PrismaClientKnownRequestError('null', {
+      code: 'P2011',
+      clientVersion: Prisma.prismaVersion.client,
+    });
+    const bare = Object.assign(new Error('null value'), {
+      name: 'DriverAdapterError',
+      cause: { kind: 'NullConstraintViolation', originalCode: '23502' },
+    });
+    for (const err of [p2011, bare]) {
+      const m = mockHost();
+      filter.catch(err, m.host);
+      expect(m.code()).toBe(422);
+      expect((m.payload() as { code: string }).code).toBe('VALIDATION_FAILED');
+    }
+  });
+
+  it('maps a body-parser entity.too.large to 413 PAYLOAD_TOO_LARGE, no Sentry', () => {
+    (Sentry.captureException as jest.Mock).mockClear();
+    const m = mockHost();
+    const err = Object.assign(new Error('request entity too large'), {
+      type: 'entity.too.large',
+      status: 413,
+      statusCode: 413,
+      expose: true,
+    });
+    filter.catch(err, m.host);
+    expect(m.code()).toBe(413);
+    expect(m.payload()).toEqual({
+      code: 'PAYLOAD_TOO_LARGE',
+      message: 'Request body is too large',
+      traceId: 'req-1',
+    });
+    expect(Sentry.captureException as jest.Mock).not.toHaveBeenCalled();
+  });
+
   it('maps Prisma P2034 (write conflict) to 409 CONFLICT retryable', () => {
     const m = mockHost();
     const err = new Prisma.PrismaClientKnownRequestError('conflict', {

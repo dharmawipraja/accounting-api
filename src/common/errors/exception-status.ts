@@ -109,6 +109,67 @@ export function isTransientConflict(err: unknown): boolean {
   return code !== undefined && TRANSIENT_PG_CODES.has(code);
 }
 
+/** Postgres SQLSTATEs for a CHECK (23514) or NOT NULL (23502) violation that
+ *  reached the database: a service-validation gap, answered as the generic
+ *  422 below (no SQL / constraint names leak). Primary validation stays in
+ *  the services — this is only a backstop. */
+const CONSTRAINT_PG_CODES = new Set(['23514', '23502']);
+
+/** Envelope for a CHECK / NOT NULL violation (see CONSTRAINT_PG_CODES). */
+export const CONSTRAINT_VIOLATION = {
+  status: 422,
+  code: 'VALIDATION_FAILED',
+  message: 'The request violates a data constraint',
+} as const;
+
+/**
+ * True for a Postgres CHECK / NOT NULL violation however Prisma 7 + the pg
+ * adapter surfaces it: P2011 (a NOT NULL on a model query — the adapter maps
+ * 23502 to NullConstraintViolation), P2010 / P2039 carrying
+ * `meta.driverAdapterError` with originalCode 23514/23502 (raw / model
+ * query), or a bare DriverAdapterError (the client rethrows some unwrapped).
+ * Pure.
+ */
+export function isConstraintViolation(err: unknown): boolean {
+  if (err instanceof Prisma.PrismaClientKnownRequestError) {
+    if (err.code === 'P2011') return true;
+    const code = driverAdapterCode(
+      (err.meta as { driverAdapterError?: unknown } | undefined)
+        ?.driverAdapterError,
+    );
+    return code !== undefined && CONSTRAINT_PG_CODES.has(code);
+  }
+  const code = driverAdapterCode(err);
+  return code !== undefined && CONSTRAINT_PG_CODES.has(code);
+}
+
+/** Envelope for a request body over the parser's size cap (1 MB, main.ts). */
+export const PAYLOAD_TOO_LARGE = {
+  status: 413,
+  code: 'PAYLOAD_TOO_LARGE',
+  message: 'Request body is too large',
+} as const;
+
+/** body-parser error types for an over-limit request: the body exceeds the
+ *  byte `limit` (`entity.too.large`) or the urlencoded parameter count
+ *  (`parameters.too.many`). */
+const PAYLOAD_TOO_LARGE_TYPES = new Set([
+  'entity.too.large',
+  'parameters.too.many',
+]);
+
+/** True for body-parser's over-limit error (an `http-errors` 413, not an
+ *  HttpException: Nest passes it to the filter unmapped). Pure. */
+export function isPayloadTooLarge(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const { type, status } = err as { type?: unknown; status?: unknown };
+  return (
+    typeof type === 'string' &&
+    PAYLOAD_TOO_LARGE_TYPES.has(type) &&
+    status === 413
+  );
+}
+
 /**
  * The HTTP status an exception maps to — the single source shared by
  * `AllExceptionsFilter` (the client response) and `AuditInterceptor` (the recorded
@@ -119,9 +180,11 @@ export function statusFromException(err: unknown): number {
   if (err instanceof DomainError) return err.status;
   if (err instanceof HttpException) return err.getStatus();
   if (isTransientConflict(err)) return TRANSIENT_CONFLICT.status;
+  if (isConstraintViolation(err)) return CONSTRAINT_VIOLATION.status;
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     return PRISMA_STATUS[err.code]?.status ?? 500;
   }
   if (err instanceof Prisma.PrismaClientValidationError) return 400;
+  if (isPayloadTooLarge(err)) return PAYLOAD_TOO_LARGE.status;
   return 500;
 }

@@ -59,17 +59,21 @@ function capParams(params: Record<string, unknown> | undefined): unknown {
     : truncateCodePoints(json, AUDIT_PARAMS_MAX);
 }
 
-/** Serialized-body byte cap (UTF-8) for AUTHENTICATED rows. It sits above the
- *  largest DTO-valid body (forbidNonWhitelisted bounds every accepted write):
- *  a 100-line JE whose 500-char descriptions are all JSON-escaped control
- *  characters (6 bytes/unit) serializes to ~317 KB, a maximal bill ~210 KB —
- *  so a legitimate write is never truncated in the append-only log. Only an
- *  already-rejected oversized body (bounded by the 1 MB parser cap) is
- *  replaced by the marker. Asserted by audit-request.spec.ts. */
+/** Serialized-body byte cap (UTF-8) for an AUTHENTICATED 2xx row on a handler
+ *  that binds a `@Body()` DTO — the only rows whose body passed validation
+ *  (forbidNonWhitelisted bounds every accepted write). It sits above the
+ *  largest DTO-valid body: a 100-line JE whose 500-char descriptions are all
+ *  JSON-escaped control characters (6 bytes/unit) serializes to ~317 KB, a
+ *  maximal bill ~210 KB — so a legitimate write is never truncated in the
+ *  append-only log. Asserted by audit-request.spec.ts. */
 export const AUDIT_BODY_MAX_BYTES = 512 * 1024;
-/** Byte cap for ANONYMOUS rows that may store a body (success / 5xx):
- *  unauthenticated input stays small (disk-fill DoS, AUDIT3-17). */
-export const AUDIT_ANON_BODY_MAX_BYTES = 8192;
+/** Byte cap for every OTHER row that stores a body: authenticated rejections
+ *  (status >= 400 — a guard 403, a 400 on an any-role route: the body never
+ *  passed validation) and anonymous success / 5xx rows. Junk input stays small
+ *  (disk-fill DoS, AUDIT3-17 / iteration-4). */
+export const AUDIT_SMALL_BODY_MAX_BYTES = 8192;
+/** Byte cap for ANONYMOUS rows that may store a body (success / 5xx). */
+export const AUDIT_ANON_BODY_MAX_BYTES = AUDIT_SMALL_BODY_MAX_BYTES;
 /** Preview length (code points of the JSON text) kept when a body is capped. */
 export const AUDIT_BODY_PREVIEW_CODE_POINTS = 1024;
 
@@ -99,6 +103,34 @@ export function capBody(
     preview: truncateCodePoints(json, AUDIT_BODY_PREVIEW_CODE_POINTS),
   };
   return marker;
+}
+
+/** The body byte cap for a row: `AUDIT_BODY_MAX_BYTES` only for an
+ *  authenticated success (status < 300) — the caller must also have checked
+ *  that the handler binds a body (`auditBodyOf`); `AUDIT_SMALL_BODY_MAX_BYTES`
+ *  for everything else. Pure. */
+export function auditBodyCap(
+  req: Pick<AuditableRequest, 'user'>,
+  status: number,
+): number {
+  return req.user && status < 300
+    ? AUDIT_BODY_MAX_BYTES
+    : AUDIT_SMALL_BODY_MAX_BYTES;
+}
+
+/** Route-argument paramtypes (Nest `RouteParamtypes`) that hand the handler
+ *  the request body: BODY (3), the whole REQUEST (0) and RAW_BODY (12). */
+const BODY_PARAMTYPES = new Set([0, 3, 12]);
+
+/** Whether a handler's Nest route-argument metadata (`ROUTE_ARGS_METADATA`,
+ *  keys `"<paramtype>:<index>"`) binds the request body. A handler with no
+ *  such argument (e.g. `POST /auth/logout-all`) never reads the body, so any
+ *  body sent to it is junk. Pure. */
+export function bindsRequestBody(routeArgs: unknown): boolean {
+  if (!routeArgs || typeof routeArgs !== 'object') return false;
+  return Object.keys(routeArgs).some((key) =>
+    BODY_PARAMTYPES.has(Number(key.split(':')[0])),
+  );
 }
 
 /** Whether an audit row for this outcome may store the request body. An
@@ -147,13 +179,28 @@ export function markAudited(req: AuditableRequest): void {
   req[AUDITED] = true;
 }
 
+/** The stored body for a row with outcome `status`:
+ *  - a handler that binds no body (`bindsBody: false`) → `{}`, whatever the status;
+ *  - an anonymous 4xx → `withheldBody` (`{}`, or `{ email }` on a login attempt);
+ *  - otherwise the sanitized body, size-capped (`capBody`) at `auditBodyCap`:
+ *    512 KiB only for an authenticated 2xx, 8 KiB for every other row. Pure. */
+export function auditBodyOf(
+  req: AuditableRequest,
+  status: number,
+  bindsBody: boolean,
+): unknown {
+  if (!bindsBody) return {};
+  if (!auditBodyAllowed(req, status)) return withheldBody(req);
+  return capBody(sanitize(req.body), auditBodyCap(req, status));
+}
+
 /** The request-derived audit fields shared by the interceptor and the
- *  exception filter. `withBody: false` stores `withheldBody` (anonymous 4xx:
- *  `{}`, or `{ email }` on a login attempt); a stored body is sanitized, then
- *  size-capped (`capBody`) — 512 KiB authenticated, 8 KiB anonymous. */
+ *  exception filter, for a row with outcome `status`. `bindsBody` (default
+ *  true: the exception filter has no handler; its guard rejections are >= 400
+ *  and so take the small cap anyway) — see `auditBodyOf`. */
 export function auditBaseOf(
   req: AuditableRequest,
-  opts: { withBody: boolean },
+  opts: { status: number; bindsBody?: boolean },
 ): AuditBase {
   return {
     userId: req.user?.id ?? null,
@@ -161,12 +208,7 @@ export function auditBaseOf(
     method: req.method,
     path: truncateCodePoints(req.originalUrl ?? req.url, AUDIT_PATH_MAX),
     params: capParams(req.params),
-    body: opts.withBody
-      ? capBody(
-          sanitize(req.body),
-          req.user ? AUDIT_BODY_MAX_BYTES : AUDIT_ANON_BODY_MAX_BYTES,
-        )
-      : withheldBody(req),
+    body: auditBodyOf(req, opts.status, opts.bindsBody ?? true),
     ip: req.ip ?? null,
     requestId:
       typeof req.id === 'string' || typeof req.id === 'number'

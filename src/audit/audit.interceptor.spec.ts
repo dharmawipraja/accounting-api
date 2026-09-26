@@ -1,7 +1,20 @@
-import { CallHandler, ExecutionContext, HttpException } from '@nestjs/common';
+import {
+  Body,
+  CallHandler,
+  ExecutionContext,
+  HttpException,
+  Param,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { firstValueFrom, of, throwError } from 'rxjs';
-import { AuditInterceptor, entityIdOf } from './audit.interceptor';
+import {
+  AuditInterceptor,
+  entityIdOf,
+  handlerBindsBody,
+} from './audit.interceptor';
+import { RejectionAuditLimiter } from './rejection-audit-limiter';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuditService } from './audit.service';
 import {
   ConflictDomainError,
@@ -134,6 +147,130 @@ describe('AuditInterceptor', () => {
     expect(record).toHaveBeenCalledWith(
       expect.objectContaining({ requestId: 'trace-1', entityId: 'e-1' }),
     );
+  });
+});
+
+class RouteFixture {
+  withBody(@Param('id') _id: string, @Body() _dto: unknown): void {}
+  bodyless(@CurrentUser() _user: unknown, @Param('id') _id: string): void {}
+}
+
+/** A routed context for a RouteFixture method (looked up by name, as Nest's
+ *  router does). */
+function routedCtx(
+  method: keyof RouteFixture,
+  req: Record<string, unknown>,
+  statusCode = 201,
+): ExecutionContext {
+  const handler = (
+    RouteFixture.prototype as unknown as Record<string, unknown>
+  )[method];
+  return {
+    getHandler: () => handler,
+    getClass: () => RouteFixture,
+    switchToHttp: () => ({
+      getRequest: () => req,
+      getResponse: () => ({ statusCode }),
+    }),
+  } as unknown as ExecutionContext;
+}
+
+describe('AuditInterceptor body cap (iteration-4 ruling)', () => {
+  const setup = (limiter?: RejectionAuditLimiter) => {
+    const record = jest.fn().mockResolvedValue(undefined);
+    const interceptor = new AuditInterceptor(
+      { record } as unknown as AuditService,
+      limiter,
+    );
+    return { record, interceptor };
+  };
+  const bigReq = (user?: { id: string; role: string }) => ({
+    method: 'POST',
+    url: '/v1/x',
+    params: {},
+    body: { junk: 'q'.repeat(500 * 1024) },
+    ip: '1.2.3.4',
+    user,
+  });
+  const viewer = { id: 'u1', role: 'VIEWER' };
+
+  it('handlerBindsBody reads @Body() from Nest route-arg metadata', () => {
+    expect(handlerBindsBody(routedCtx('withBody', {}))).toBe(true);
+    expect(handlerBindsBody(routedCtx('bodyless', {}))).toBe(false);
+    // Unknown handler (no getClass) → conservative true.
+    expect(handlerBindsBody(makeCtx())).toBe(true);
+  });
+
+  it('a bodyless handler 2xx stores {} even for a 500 KB body', async () => {
+    const { record, interceptor } = setup();
+    await firstValueFrom(
+      interceptor.intercept(routedCtx('bodyless', bigReq(viewer)), {
+        handle: () => of({ ok: true }),
+      }),
+    );
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({ statusCode: 201, body: {} }),
+    );
+  });
+
+  it('an authenticated 4xx on a body-binding handler stores <= 8 KiB', async () => {
+    const { record, interceptor } = setup();
+    await expect(
+      firstValueFrom(
+        interceptor.intercept(
+          routedCtx('withBody', bigReq(viewer)),
+          handlerThatThrows(new HttpException('bad', 400)),
+        ),
+      ),
+    ).rejects.toBeInstanceOf(HttpException);
+    const [[row]] = record.mock.calls as [[{ body: unknown }]];
+    expect(row.body).toMatchObject({ _truncated: true });
+    expect(Buffer.byteLength(JSON.stringify(row.body))).toBeLessThanOrEqual(
+      8192,
+    );
+  });
+
+  it('an authenticated 2xx on a body-binding handler keeps a 300 KB body', async () => {
+    const { record, interceptor } = setup();
+    const req = { ...bigReq(viewer), body: { note: 'n'.repeat(300 * 1024) } };
+    await firstValueFrom(
+      interceptor.intercept(routedCtx('withBody', req), {
+        handle: () => of({ id: 'e1' }),
+      }),
+    );
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({ body: req.body }),
+    );
+  });
+
+  it('anonymous 4xx rows count against the anonymous global ceiling', async () => {
+    const limiter = new RejectionAuditLimiter({ globalLimit: 2 });
+    const { record, interceptor } = setup(limiter);
+    const fail = () =>
+      expect(
+        firstValueFrom(
+          interceptor.intercept(
+            routedCtx('withBody', bigReq()),
+            handlerThatThrows(new UnauthorizedException()),
+          ),
+        ),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    await fail();
+    await fail();
+    await fail(); // over the ceiling: the error still propagates, no row
+    expect(record).toHaveBeenCalledTimes(2);
+    // …and the shared budget is spent for guard rejections too.
+    expect(limiter.allow('9.9.9.9')).toBe(false);
+    // Authenticated rows are never subject to it.
+    await expect(
+      firstValueFrom(
+        interceptor.intercept(
+          routedCtx('withBody', bigReq(viewer)),
+          handlerThatThrows(new HttpException('bad', 400)),
+        ),
+      ),
+    ).rejects.toBeInstanceOf(HttpException);
+    expect(record).toHaveBeenCalledTimes(3);
   });
 });
 

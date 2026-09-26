@@ -10,7 +10,11 @@ import type { Response } from 'express';
 import * as Sentry from '@sentry/node';
 import { DomainError } from '../errors/domain-errors';
 import {
+  CONSTRAINT_VIOLATION,
+  isConstraintViolation,
+  isPayloadTooLarge,
   isTransientConflict,
+  PAYLOAD_TOO_LARGE,
   PRISMA_STATUS,
   statusFromException,
   TRANSIENT_CONFLICT,
@@ -18,12 +22,14 @@ import {
 import type { AuditService } from '../../audit/audit.service';
 import {
   auditBaseOf,
-  auditBodyAllowed,
   markAudited,
   shouldAuditRejection,
   type AuditableRequest,
 } from '../../audit/audit-request';
-import { RejectionAuditLimiter } from '../../audit/rejection-audit-limiter';
+import {
+  loggingRejectionAuditLimiter,
+  RejectionAuditLimiter,
+} from '../../audit/rejection-audit-limiter';
 
 interface ErrorEnvelope {
   code: string;
@@ -43,23 +49,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
    *  body when anonymous (unauthenticated input is not trusted into the log).
    *  The row is written fire-and-forget AFTER the response, and capped per
    *  caller: anonymous per client IP + a global ceiling (anonymous 401s are not
-   *  throttled — JwtAuthGuard runs first); authenticated per user. */
+   *  throttled — JwtAuthGuard runs first); authenticated per user. Pass the
+   *  app's shared `RejectionAuditLimiter` (AuditModule) so AuditInterceptor's
+   *  anonymous rows count against the same global ceiling. */
   constructor(
     private readonly audit?: Pick<AuditService, 'record'>,
     limiter?: RejectionAuditLimiter,
   ) {
     this.rejectionLimiter =
-      limiter ??
-      new RejectionAuditLimiter({
-        onSuppressed: (key, n) =>
-          this.logger.warn(
-            `Suppressed ${n} guard-rejection audit row(s) from ${key} (per-caller cap)`,
-          ),
-        onGlobalSuppressed: (n) =>
-          this.logger.warn(
-            `Suppressed ${n} anonymous guard-rejection audit row(s) across all IPs (global cap)`,
-          ),
-      });
+      limiter ?? loggingRejectionAuditLimiter(this.logger);
   }
 
   catch(exception: unknown, host: ArgumentsHost): void {
@@ -116,6 +114,19 @@ export class AllExceptionsFilter implements ExceptionFilter {
           exception instanceof Error ? exception.message : String(exception)
         }`,
       );
+    } else if (isConstraintViolation(exception)) {
+      // CHECK / NOT NULL violation that escaped service validation: a generic
+      // 422 backstop (no SQL / constraint names in the response); warn so the
+      // validation gap is visible, no Sentry.
+      envelope = {
+        code: CONSTRAINT_VIOLATION.code,
+        message: CONSTRAINT_VIOLATION.message,
+      };
+      this.logger.warn(
+        `Constraint violation -> ${status} on ${url}: ${
+          exception instanceof Error ? exception.message : String(exception)
+        }`,
+      );
     } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       const mapped = PRISMA_STATUS[exception.code];
       if (mapped) {
@@ -137,6 +148,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
     } else if (exception instanceof Prisma.PrismaClientValidationError) {
       envelope = { code: 'INVALID_INPUT', message: 'Invalid input' };
       this.logger.warn(`Prisma validation error -> 400 on ${url}`);
+    } else if (isPayloadTooLarge(exception)) {
+      // body-parser rejected an over-limit body before routing: a client
+      // error, not an incident (no Sentry, no audit row — no guard ran).
+      envelope = {
+        code: PAYLOAD_TOO_LARGE.code,
+        message: PAYLOAD_TOO_LARGE.message,
+      };
     } else {
       this.logger.error(
         `Unhandled exception on ${url}`,
@@ -162,7 +180,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let pending: Promise<void>;
     try {
       pending = this.audit.record({
-        ...auditBaseOf(req, { withBody: auditBodyAllowed(req, status) }),
+        // No handler here: guard rejections are >= 400, so an authenticated
+        // row takes the 8 KiB cap and an anonymous one stores {}.
+        ...auditBaseOf(req, { status }),
         entityId: null,
         statusCode: status,
         durationMs: 0, // rejected before any handler work

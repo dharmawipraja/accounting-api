@@ -156,4 +156,22 @@ describe('RejectionAuditLimiter', () => {
       false,
     ]);
   });
+
+  it('allowAnonymousGlobal (interceptor rows) shares the anonymous global ceiling', () => {
+    const { limiter, globalReports, advance } = setup({
+      limit: 100,
+      globalLimit: 3,
+    });
+    expect(limiter.allowAnonymousGlobal()).toBe(true);
+    expect(limiter.allow('1.1.1.1')).toBe(true);
+    expect(limiter.allowAnonymousGlobal()).toBe(true);
+    // Ceiling reached by the two writers together.
+    expect(limiter.allowAnonymousGlobal()).toBe(false);
+    expect(limiter.allow('2.2.2.2')).toBe(false);
+    // Authenticated rejections are never blocked by it.
+    expect(limiter.allow('3.3.3.3', 'u1')).toBe(true);
+    advance(60_000);
+    expect(limiter.allowAnonymousGlobal()).toBe(true);
+    expect(globalReports).toEqual([2]);
+  });
 });

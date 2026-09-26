@@ -120,7 +120,10 @@ One stable error envelope, no leaked internals.
   asserted in `src/common/validators/dto-null-and-caps.spec.ts`.
 - **Audit coverage:** one row per mutating request (interceptor), plus guard
   rejections 401/403/429 from `AllExceptionsFilter` (fire-and-forget, capped 60/min
-  per IP and 600/min globally). A 503 from an unavailable throttler store and 404s are **not** audited.
+  per IP and 600/min globally — anonymous interceptor 4xx rows share that global
+  ceiling). A 503 from an unavailable throttler store and 404s are **not** audited.
+  Stored bodies: `{}` for a handler with no `@Body()` (and anonymous 4xx), 512 KiB
+  cap only for an authenticated 2xx on a `@Body()` handler, 8 KiB for every other row.
 - **Trace ids are server-generated.** `req.id` / `X-Request-Id` response header /
   error `traceId` / `audit_log.request_id` is always a fresh UUID (`genReqId` in
   `app.module.ts`); a safe inbound `X-Request-Id` is only `clientRequestId`.

@@ -1,6 +1,9 @@
 import { HttpException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
+  CONSTRAINT_VIOLATION,
+  isConstraintViolation,
+  isPayloadTooLarge,
   isTransientConflict,
   statusFromException,
   PRISMA_STATUS,
@@ -190,5 +193,83 @@ describe('isTransientConflict (deadlock / serialization failure)', () => {
       code: 'CONFLICT',
       details: { retryable: true },
     });
+  });
+});
+
+describe('isConstraintViolation (23514 / 23502 backstop → 422)', () => {
+  const known = (code: string, meta?: Record<string, unknown>) =>
+    new Prisma.PrismaClientKnownRequestError('m', {
+      code,
+      clientVersion: Prisma.prismaVersion.client,
+      meta,
+    });
+  const adapter = (originalCode: string, kind = 'postgres') => {
+    const e = new Error('adapter') as Error & { cause: unknown };
+    e.name = 'DriverAdapterError';
+    e.cause = { kind, originalCode, originalMessage: 'violates check' };
+    return e;
+  };
+
+  it('matches P2011 (NOT NULL on a model query)', () => {
+    expect(isConstraintViolation(known('P2011'))).toBe(true);
+    expect(statusFromException(known('P2011'))).toBe(422);
+  });
+
+  it('matches P2010 / P2039 carrying a 23514 or 23502 driverAdapterError', () => {
+    for (const code of ['P2010', 'P2039']) {
+      for (const pg of ['23514', '23502']) {
+        const err = known(code, { driverAdapterError: adapter(pg) });
+        expect(isConstraintViolation(err)).toBe(true);
+        expect(statusFromException(err)).toBe(CONSTRAINT_VIOLATION.status);
+      }
+    }
+  });
+
+  it('matches a bare DriverAdapterError 23514 / 23502', () => {
+    expect(isConstraintViolation(adapter('23514'))).toBe(true);
+    expect(
+      isConstraintViolation(adapter('23502', 'NullConstraintViolation')),
+    ).toBe(true);
+    expect(statusFromException(adapter('23514'))).toBe(422);
+  });
+
+  it('does not match other SQLSTATEs / codes (23505, 23000, P2002, plain Error)', () => {
+    expect(isConstraintViolation(adapter('23505'))).toBe(false);
+    expect(isConstraintViolation(adapter('23000'))).toBe(false);
+    expect(
+      isConstraintViolation(
+        known('P2010', { driverAdapterError: adapter('23000') }),
+      ),
+    ).toBe(false);
+    expect(isConstraintViolation(known('P2002'))).toBe(false);
+    expect(isConstraintViolation(new Error('x'))).toBe(false);
+    expect(statusFromException(adapter('23000'))).toBe(500);
+  });
+});
+
+describe('isPayloadTooLarge (body-parser over-limit → 413)', () => {
+  const parserError = (type: string, status: number) =>
+    Object.assign(new Error('request entity too large'), {
+      type,
+      status,
+      statusCode: status,
+      expose: true,
+    });
+
+  it('matches entity.too.large and parameters.too.many (413)', () => {
+    expect(isPayloadTooLarge(parserError('entity.too.large', 413))).toBe(true);
+    expect(isPayloadTooLarge(parserError('parameters.too.many', 413))).toBe(
+      true,
+    );
+    expect(statusFromException(parserError('entity.too.large', 413))).toBe(413);
+  });
+
+  it('does not match other shapes', () => {
+    expect(isPayloadTooLarge(parserError('entity.parse.failed', 400))).toBe(
+      false,
+    );
+    expect(isPayloadTooLarge(parserError('entity.too.large', 400))).toBe(false);
+    expect(isPayloadTooLarge(null)).toBe(false);
+    expect(isPayloadTooLarge('entity.too.large')).toBe(false);
   });
 });

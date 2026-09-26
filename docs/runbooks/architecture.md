@@ -111,14 +111,19 @@ Guards run in registration order:
   blanket 500), exactly once — including a `408` (rxjs `timeout` unsubscribes from
   everything inside it, so an inner audit would miss it). Guard rejections
   (`401/403/429`) happen before any interceptor; `AllExceptionsFilter` (given the
-  `AuditService` in `main.ts`) writes their row **after** sending
+  `AuditService` and the shared `RejectionAuditLimiter` in `main.ts`) writes their row **after** sending
   the response, fire-and-forget (a failed write is logged at warn), capped
   (`src/audit/rejection-audit-limiter.ts`, in-process, ≤ 10k keys per key space;
   suppressed counts logged once per window): **anonymous** rejections at **60 rows
   per client IP per minute** plus **600 per minute across all IPs** (the global
   ceiling stops IPv6 address rotation from multiplying the per-IP budget);
   **authenticated** rejections (403/429 with `req.user`) at **60 per user per
-  minute**, never counted against — nor blocked by — the anonymous global ceiling. Only
+  minute**, never counted against — nor blocked by — the anonymous global ceiling.
+  The limiter is ONE instance (an `AuditModule` provider) shared with
+  `AuditInterceptor`: its **anonymous 4xx rows** (login / refresh / logout 400/401)
+  also consume — and are dropped past — the same **600/min anonymous global
+  ceiling** (`allowAnonymousGlobal`; the routes' own per-IP throttles bound the
+  per-IP rate), so IPv6 rotation cannot multiply them either. Only
   401/403/429 are audited this way — a throttler-storage outage `503` and route 404s
   are not. A request-level `AUDITED` marker (`src/audit/audit-request.ts`) prevents
   a second row. Every row caps `path` (incl. query string) and serialized `params`
@@ -132,16 +137,30 @@ Guards run in registration order:
     throttlers run and by `AuditInterceptor`, so the filter-written 429 row sees
     it too) the anonymous 400/401/429 row stores `{ "email": <trimmed,
     lowercased, ≤ 254 code points> }` — never the password or any other field
-    (`withheldBody` / `loginAttemptBody`). Every other row stores the sanitized
-    body, **capped** (`capBody` in `audit-request.ts`): if its serialized JSON
-    exceeds **512 KiB** (authenticated rows) or **8192 bytes** (anonymous rows,
-    e.g. a login 200 / a 5xx) of UTF-8 it is replaced by the object `{ "_truncated": true, "bytes": <n>, "preview": "<first
-    1024 code points of the JSON text>" }` — still a JSON object in the jsonb
-    column (never a string cut mid-JSON), surrogate-safe. The authenticated cap
-    sits above the largest DTO-valid body (worst case ≈ 317 KB: a 100-line JE whose
-    500-char descriptions are all JSON-escaped control characters; asserted in
-    `audit-request.spec.ts`), so an **accepted write is never truncated**; only an
-    already-rejected oversized body (≤ the 1 MB parser cap) becomes the marker.
+    (`withheldBody` / `loginAttemptBody`). A **bodyless handler** — one whose
+    Nest route-argument metadata (`ROUTE_ARGS_METADATA`) binds no `@Body()` /
+    `@Req()` / `@RawBody()`, e.g. `POST /auth/logout-all`, `/:id/post`, `DELETE`
+    — stores `{}` whatever the status (`handlerBindsBody` in
+    `audit.interceptor.ts`): nothing it received was used. Every other row stores
+    the sanitized body, **capped** (`auditBodyOf` / `capBody` in
+    `audit-request.ts`) at **512 KiB** only for an **authenticated 2xx on a
+    body-binding handler** (the body passed DTO validation), and at **8192 bytes**
+    for every other row — authenticated rejections (a guard 403 — the filter has
+    no handler, but guard statuses are ≥ 400 — any 400/409/422/5xx), anonymous
+    success / 5xx rows. So no caller, whatever its role, can park more than 8 KiB
+    of unvalidated junk per row. An over-cap body is replaced by the object
+    `{ "_truncated": true, "bytes": <n>, "preview": "<first 1024 code points of
+    the JSON text>" }` — still a JSON object in the jsonb column (never a string
+    cut mid-JSON), surrogate-safe. The 512 KiB cap sits above the largest
+    DTO-valid body (worst case ≈ 317 KB: a 100-line JE whose 500-char
+    descriptions are all JSON-escaped control characters; asserted in
+    `audit-request.spec.ts`), so an **accepted write is never truncated**.
+  - **Over-limit bodies:** a body over the 1 MB parser cap (`main.ts`) is
+    answered by `AllExceptionsFilter` as **413 `PAYLOAD_TOO_LARGE`** (body-parser
+    `entity.too.large` / `parameters.too.many`; `isPayloadTooLarge` in
+    `exception-status.ts`) — a client error: no Sentry event, no audit row (the
+    parser runs before guards, interceptors and the request-id middleware, so the
+    envelope has no `traceId`). Malformed JSON is Nest's own 400 (`HTTP_400`).
   - **408-then-commit (for auditors):** a `408` row means the *response* timed out
     at 35s, **not** that nothing happened. The rxjs timeout only stops observing
     the handler; its DB transaction keeps running and may still **commit** after
@@ -175,13 +194,20 @@ Guards run in registration order:
 ### Error → envelope
 
 All thrown errors funnel through **`AllExceptionsFilter`**
-(`src/common/filters/all-exceptions.filter.ts`), which classifies four ways:
+(`src/common/filters/all-exceptions.filter.ts`), which classifies:
 
 - `DomainError` → its own `status` + `code` + `details` (the normal 4xx path).
 - `HttpException` (incl. ValidationPipe) → `HTTP_<status>`; class-validator arrays
   become `details.errors`.
 - `Prisma.PrismaClientKnownRequestError` → mapped table (`P2025`→404, `P2002`→409,
   `P2003`→409, …); unmapped codes stay 500 and are Sentry-captured.
+- A Postgres **CHECK (23514) / NOT NULL (23502) violation** that escaped service
+  validation (`P2011`, `P2010`/`P2039` + `meta.driverAdapterError`, or a bare
+  `DriverAdapterError`; `isConstraintViolation`) → a generic **422
+  `VALIDATION_FAILED`** "The request violates a data constraint" — a backstop
+  (warn-logged, no Sentry, no SQL/constraint name in the response); primary
+  validation stays in the services.
+- A body-parser over-limit error → **413 `PAYLOAD_TOO_LARGE`** (no Sentry).
 - Anything else → 500 `INTERNAL_ERROR`, logged + Sentry-captured (no stack leak).
 
 Every envelope gets a `traceId` (the server-generated `X-Request-Id`) when present.

@@ -359,6 +359,90 @@ describe('Audit log (e2e)', () => {
     expect(row.body).toEqual(body);
   });
 
+  // Iteration-4 ruling: 512 KiB only for an authenticated 2xx on a handler
+  // that binds @Body(); every other authenticated row caps at 8 KiB, and a
+  // bodyless handler stores {} whatever the status.
+  const JUNK_CAP = 8192;
+  const bigJunk = () => 'q'.repeat(500 * 1024);
+
+  it('iter4: a VIEWER guard 403 with a 500 KB body stores <= 8 KiB', async () => {
+    await request(app.getHttpServer() as App)
+      .post('/v1/partners')
+      .set('Authorization', `Bearer ${viewerToken}`)
+      .set('X-Request-Id', 'audit-403-junk')
+      .send({ code: 'AUD-J403', name: 'J', isCustomer: true, junk: bigJunk() })
+      .expect(403);
+    const [row] = await waitForRows({ clientRequestId: 'audit-403-junk' });
+    expect(row.statusCode).toBe(403);
+    expect(Buffer.byteLength(JSON.stringify(row.body))).toBeLessThanOrEqual(
+      JUNK_CAP,
+    );
+    expect(row.body).toMatchObject({ _truncated: true });
+  });
+
+  it('iter4: a bodyless handler (logout-all 201) with a 500 KB body stores {}', async () => {
+    const token = (
+      await app.get(AuthService).login('view@audit.test', 'secret123')
+    ).accessToken;
+    await request(app.getHttpServer() as App)
+      .post('/v1/auth/logout-all')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Request-Id', 'audit-logout-all-junk')
+      .send({ junk: bigJunk() })
+      .expect(201);
+    const [row] = await waitForRows({
+      clientRequestId: 'audit-logout-all-junk',
+    });
+    expect(row.statusCode).toBe(201);
+    expect(row.body).toEqual({});
+  });
+
+  it('iter4: an any-role 400 (/tax/calculate junk) stores <= 8 KiB', async () => {
+    await request(app.getHttpServer() as App)
+      .post('/v1/tax/calculate')
+      .set('Authorization', `Bearer ${viewerToken}`)
+      .set('X-Request-Id', 'audit-tax-400-junk')
+      .send({ junk: bigJunk() })
+      .expect(400);
+    const [row] = await waitForRows({ clientRequestId: 'audit-tax-400-junk' });
+    expect(row.statusCode).toBe(400);
+    expect(Buffer.byteLength(JSON.stringify(row.body))).toBeLessThanOrEqual(
+      JUNK_CAP,
+    );
+  });
+
+  it('iter4: a body over the 1 MB parser cap is a 413 PAYLOAD_TOO_LARGE envelope (not a 500)', async () => {
+    const res = await request(app.getHttpServer() as App)
+      .post('/v1/partners')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('Content-Type', 'application/json')
+      .set('X-Request-Id', 'audit-413')
+      .send(JSON.stringify({ junk: 'x'.repeat(1024 * 1024 + 16) }));
+    expect(res.status).toBe(413);
+    // The parser runs before the request-id (pino) middleware, so the
+    // envelope carries no traceId; it is never a 500 / Sentry event.
+    expect(res.body).toMatchObject({
+      code: 'PAYLOAD_TOO_LARGE',
+      message: 'Request body is too large',
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(
+      await prisma.client.auditLog.count({
+        where: { clientRequestId: 'audit-413' },
+      }),
+    ).toBe(0);
+  });
+
+  it('iter4: malformed JSON (entity.parse.failed) is already a clean 400, not a 500', async () => {
+    const res = await request(app.getHttpServer() as App)
+      .post('/v1/partners')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('Content-Type', 'application/json')
+      .send('{"code": "AUD-BAD",');
+    expect(res.status).toBe(400);
+    expect((res.body as { code: string }).code).toBe('HTTP_400');
+  });
+
   it('I2: a failed login (401) keeps only the normalized email, never the password', async () => {
     await request(app.getHttpServer() as App)
       .post('/v1/auth/login')

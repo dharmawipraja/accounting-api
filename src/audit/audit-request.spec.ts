@@ -4,8 +4,12 @@ import {
   AUDIT_ANON_BODY_MAX_BYTES,
   AUDIT_BODY_MAX_BYTES,
   AUDIT_LOGIN_EMAIL_MAX,
+  AUDIT_SMALL_BODY_MAX_BYTES,
   auditBaseOf,
   auditBodyAllowed,
+  auditBodyCap,
+  auditBodyOf,
+  bindsRequestBody,
   capBody,
   markAudited,
   loginAttemptBody,
@@ -38,7 +42,7 @@ const req = (over: Partial<AuditableRequest> = {}): AuditableRequest => ({
 
 describe('auditBaseOf', () => {
   it('builds the shared audit fields with a sanitized body', () => {
-    expect(auditBaseOf(req(), { withBody: true })).toEqual({
+    expect(auditBaseOf(req(), { status: 201 })).toEqual({
       userId: 'u1',
       userRole: 'ADMIN',
       method: 'POST',
@@ -51,7 +55,7 @@ describe('auditBaseOf', () => {
     });
   });
 
-  it('omits the body when asked and tolerates missing fields', () => {
+  it('an anonymous 4xx withholds the body and tolerates missing fields', () => {
     const base = auditBaseOf(
       {
         method: 'DELETE',
@@ -59,7 +63,7 @@ describe('auditBaseOf', () => {
         params: undefined as unknown as Record<string, unknown>,
         body: { a: 1 },
       },
-      { withBody: false },
+      { status: 400 },
     );
     expect(base).toMatchObject({
       userId: null,
@@ -74,7 +78,7 @@ describe('auditBaseOf', () => {
   });
 
   it('stringifies a numeric request id', () => {
-    expect(auditBaseOf(req({ id: 7 }), { withBody: true }).requestId).toBe('7');
+    expect(auditBaseOf(req({ id: 7 }), { status: 201 }).requestId).toBe('7');
   });
 });
 
@@ -106,7 +110,7 @@ describe('auditBaseOf size caps', () => {
         originalUrl: '/v1/partners?q=' + 'x'.repeat(2_000),
         params: { a: 'y'.repeat(2_000) },
       }),
-      { withBody: true },
+      { status: 201 },
     );
     expect(base.path).toHaveLength(512);
     expect(typeof base.params).toBe('string');
@@ -121,7 +125,7 @@ describe('auditBaseOf size caps', () => {
     for (const pad of [510 - prefix, 511 - prefix, 512 - prefix]) {
       const base = auditBaseOf(
         req({ params: { a: 'x'.repeat(pad) + '😀'.repeat(300) } }),
-        { withBody: true },
+        { status: 201 },
       );
       const out = base.params as string;
       expect(typeof out).toBe('string');
@@ -133,14 +137,14 @@ describe('auditBaseOf size caps', () => {
   it('never leaves a lone surrogate at the path cap either', () => {
     const base = auditBaseOf(
       req({ originalUrl: '/' + 'x'.repeat(510) + '😀'.repeat(10) }),
-      { withBody: true },
+      { status: 201 },
     );
     expect(hasLoneSurrogate(base.path)).toBe(false);
     expect(Array.from(base.path).length).toBeLessThanOrEqual(512);
   });
 
   it('keeps small params as an object', () => {
-    expect(auditBaseOf(req(), { withBody: true }).params).toEqual({
+    expect(auditBaseOf(req(), { status: 201 }).params).toEqual({
       id: 'p1',
     });
   });
@@ -203,7 +207,7 @@ describe('capBody (AUDIT3-17)', () => {
         user: undefined,
         body: { password: 'p', junk: 'y'.repeat(20_000) },
       }),
-      { withBody: true },
+      { status: 201 },
     );
     expect(base.body).toMatchObject({ _truncated: true });
     expect((base.body as { preview: string }).preview).toContain(
@@ -336,7 +340,7 @@ describe('I1: the authenticated body cap never truncates a DTO-valid write', () 
       expect(bytes).toBeGreaterThan(AUDIT_ANON_BODY_MAX_BYTES); // would have been lost
       expect(bytes).toBeLessThanOrEqual(AUDIT_BODY_MAX_BYTES);
       expect(capBody(body)).toBe(body);
-      const base = auditBaseOf(req({ body }), { withBody: true });
+      const base = auditBaseOf(req({ body }), { status: 201 });
       expect(base.body).toEqual(body);
     },
   );
@@ -344,9 +348,9 @@ describe('I1: the authenticated body cap never truncates a DTO-valid write', () 
   it('anonymous rows keep the 8 KiB cap', () => {
     const body = { note: 'x'.repeat(AUDIT_ANON_BODY_MAX_BYTES) };
     expect(
-      auditBaseOf(req({ user: undefined, body }), { withBody: true }).body,
+      auditBaseOf(req({ user: undefined, body }), { status: 201 }).body,
     ).toMatchObject({ _truncated: true });
-    expect(auditBaseOf(req({ body }), { withBody: true }).body).toEqual(body);
+    expect(auditBaseOf(req({ body }), { status: 201 }).body).toEqual(body);
   });
 });
 
@@ -389,14 +393,69 @@ describe('I2: failed-login forensic email', () => {
     expect(withheldBody(plain)).toEqual({ email: 'a@b.io' });
   });
 
-  it('auditBaseOf withBody:false stores the email for a login attempt, never the password', () => {
+  it('auditBaseOf on an anonymous 4xx stores the email for a login attempt, never the password', () => {
     const r = req({
       user: undefined,
       body: { email: 'X@Y.io', password: 'secret' },
     });
     markLoginAttempt(r);
-    const base = auditBaseOf(r, { withBody: false });
+    const base = auditBaseOf(r, { status: 400 });
     expect(base.body).toEqual({ email: 'x@y.io' });
     expect(JSON.stringify(base)).not.toContain('secret');
+  });
+});
+
+describe('iteration-4 audit body cap ruling', () => {
+  const big = { junk: 'q'.repeat(500 * 1024) };
+  const size = (v: unknown) => Buffer.byteLength(JSON.stringify(v));
+
+  it('auditBodyCap: 512 KiB only for an authenticated 2xx, 8 KiB otherwise', () => {
+    const user = { id: 'u1', role: 'VIEWER' };
+    expect(auditBodyCap({ user }, 200)).toBe(AUDIT_BODY_MAX_BYTES);
+    expect(auditBodyCap({ user }, 201)).toBe(AUDIT_BODY_MAX_BYTES);
+    for (const status of [400, 403, 408, 422, 429, 500]) {
+      expect(auditBodyCap({ user }, status)).toBe(AUDIT_SMALL_BODY_MAX_BYTES);
+    }
+    expect(auditBodyCap({}, 200)).toBe(AUDIT_SMALL_BODY_MAX_BYTES);
+    expect(auditBodyCap({}, 500)).toBe(AUDIT_SMALL_BODY_MAX_BYTES);
+  });
+
+  it('an authenticated rejection (403 / 400 / 5xx) stores <= 8 KiB of a 500 KB body', () => {
+    for (const status of [400, 403, 409, 422, 429, 500]) {
+      const body = auditBodyOf(req({ body: big }), status, true);
+      expect(body).toMatchObject({ _truncated: true });
+      expect(size(body)).toBeLessThanOrEqual(AUDIT_SMALL_BODY_MAX_BYTES);
+    }
+  });
+
+  it('a bodyless handler stores {} whatever the status / caller', () => {
+    for (const status of [200, 201, 400, 403, 500]) {
+      expect(auditBodyOf(req({ body: big }), status, false)).toEqual({});
+      expect(
+        auditBodyOf(req({ user: undefined, body: big }), status, false),
+      ).toEqual({});
+    }
+    expect(
+      auditBaseOf(req({ body: big }), { status: 201, bindsBody: false }).body,
+    ).toEqual({});
+  });
+
+  it('an authenticated 2xx on a body-binding handler keeps up to 512 KiB (default bindsBody)', () => {
+    const body = { note: 'n'.repeat(300 * 1024) };
+    expect(auditBodyOf(req({ body }), 201, true)).toEqual(body);
+    expect(auditBaseOf(req({ body }), { status: 200 }).body).toEqual(body);
+  });
+
+  it('bindsRequestBody reads Nest route-arg keys "<paramtype>:<index>"', () => {
+    expect(bindsRequestBody({ '3:0': { index: 0 } })).toBe(true); // @Body()
+    expect(bindsRequestBody({ '5:0': {}, '3:1': {} })).toBe(true);
+    expect(bindsRequestBody({ '0:0': {} })).toBe(true); // @Req()
+    expect(bindsRequestBody({ '12:0': {} })).toBe(true); // @RawBody()
+    expect(bindsRequestBody({ '5:0': {}, '4:1': {} })).toBe(false); // @Param/@Query
+    expect(
+      bindsRequestBody({ '3f2c__customRouteArgs__:0': { index: 0 } }),
+    ).toBe(false); // @CurrentUser()
+    expect(bindsRequestBody(undefined)).toBe(false);
+    expect(bindsRequestBody({})).toBe(false);
   });
 });

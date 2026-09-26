@@ -253,8 +253,14 @@ export class PostingService {
   /** Authoritative in-transaction TOCTOU guard. Serializes against a concurrent
    *  period/year close: shared advisory lock on the fiscal year (close holds the
    *  exclusive one) + re-check year_end_closings; FOR SHARE on the period row
-   *  (periods.close takes the conflicting exclusive lock) + re-check OPEN. Must be
-   *  the FIRST statement in every posted-entry write path. */
+   *  (periods.close takes the conflicting exclusive lock) + re-check OPEN. It is
+   *  the first ledger lock of every posted-entry write path, but NOT always the
+   *  first statement of the tx: document and payment posts first lock the
+   *  document row(s) FOR UPDATE and take the document number (document_sequences)
+   *  — see stampPostedInTx. That order cannot deadlock against close/reopen:
+   *  year close and period close/reopen never lock documents or
+   *  document_sequences, so the only locks both sides take are the year advisory
+   *  lock and the period row, always acquired here in the same order. */
   private async assertPostablePeriodInTx(
     tx: LedgerTx,
     periodId: string,
