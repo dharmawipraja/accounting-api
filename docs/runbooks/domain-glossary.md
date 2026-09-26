@@ -122,9 +122,11 @@ rule keys off `posted_at`, not `status`.
   re-check entirely — they only undo an already-posted movement — so a void may post to a
   deactivated `CASH` account and leave it with a non-zero balance. That is accepted and
   recoverable: reactivate it and move the balance with a manual entry.
-- **Opening balances are balance-sheet only.** `JournalService.postOpeningBalances`
-  rejects `REVENUE`/`EXPENSE` accounts (`422 { accountId, reason: 'PNL_IN_OPENING' }`);
-  mid-year YTD P&L is entered as a `MANUAL` journal.
+- **Opening balances are balance-sheet only.** `OPENING_POLICY.forbiddenTypes`
+  (`src/ledger/posting/account-policy.ts`) makes every `sourceType: 'OPENING'` post —
+  not just `JournalService.postOpeningBalances` — reject `REVENUE`/`EXPENSE` accounts
+  (`422 { accountId, reason: 'PNL_IN_OPENING' }`); mid-year YTD P&L is entered as a
+  `MANUAL` journal.
 - The in-tx period re-check throws the same `ClosedPeriodError` (`409 CLOSED_PERIOD`) as
   the pre-tx check. Direct post / postDraft / reversal transactions run with
   `POSTING_TX_OPTIONS` (`maxWait 5s`, `timeout 20s`); a breach is Prisma `P2028` → `409

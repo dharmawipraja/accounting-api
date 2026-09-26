@@ -28,6 +28,7 @@ import {
   UNRESTRICTED_POLICY,
   accountPolicyFor,
   findForbiddenRole,
+  findForbiddenType,
 } from './account-policy';
 
 /** Re-exported from PrismaService (its home) so existing imports keep working. */
@@ -618,9 +619,10 @@ export class PostingService {
         is_postable: boolean;
         is_active: boolean;
         role: Account['role'];
+        type: Account['type'];
       }[]
     >`
-      SELECT id, is_postable, is_active, role FROM accounts
+      SELECT id, is_postable, is_active, role, type FROM accounts
       WHERE id = ANY(${unique}::text[]) AND deleted_at IS NULL
       ORDER BY id FOR SHARE`;
     const byId = new Map(
@@ -631,6 +633,7 @@ export class PostingService {
           isPostable: r.is_postable,
           isActive: r.is_active,
           role: r.role,
+          type: r.type,
         },
       ]),
     );
@@ -639,8 +642,8 @@ export class PostingService {
 
   /** The postable-account rule set, shared by the pre-tx and in-tx checks:
    *  every id exists (live), is a postable leaf, is active (unless the policy
-   *  allows inactive — CLOSING only), and its role is allowed by the
-   *  source-type policy. */
+   *  allows inactive — CLOSING only), and its role and type are allowed by
+   *  the source-type policy. */
   private assertAccountsValid(
     unique: string[],
     byId: Map<
@@ -650,6 +653,7 @@ export class PostingService {
         isPostable: boolean;
         isActive: boolean;
         role: Account['role'];
+        type: Account['type'];
       }
     >,
     policy: AccountPolicy,
@@ -668,6 +672,12 @@ export class PostingService {
       if (!a.isActive && !policy.allowInactive)
         throw new InvalidAccountError('Account is inactive', { accountId: id });
     }
+    const typeHit = findForbiddenType(
+      unique.map((id) => byId.get(id)!),
+      policy,
+    );
+    if (typeHit)
+      throw new ValidationFailedError(policy.forbiddenTypes!.message, typeHit);
     this.throwIfForbiddenRole(
       unique.map((id) => byId.get(id)!),
       policy,

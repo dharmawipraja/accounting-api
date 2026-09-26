@@ -379,6 +379,36 @@ describe('JournalEntries (e2e)', () => {
     },
   );
 
+  it('PostingService.post({sourceType: OPENING}) itself rejects a P&L account (policy, not just the endpoint)', async () => {
+    const { data: accounts } = await app.get(AccountsService).list();
+    const pnlId = accounts.find((a) => a.code === '4-1000')!.id;
+    const before = await prisma.client.journalEntry.count({
+      where: { sourceType: 'OPENING' },
+    });
+    await expect(
+      app.get(PostingService).post(
+        {
+          date: new Date('2026-01-05'),
+          description: 'direct opening',
+          sourceType: 'OPENING',
+          createdBy: 'admin',
+          lines: [
+            { accountId: kasId, debit: '1000' },
+            { accountId: pnlId, credit: '1000' },
+          ],
+        },
+        'admin',
+      ),
+    ).rejects.toMatchObject({
+      details: { accountId: pnlId, reason: 'PNL_IN_OPENING' },
+    });
+    expect(
+      await prisma.client.journalEntry.count({
+        where: { sourceType: 'OPENING' },
+      }),
+    ).toBe(before);
+  });
+
   it('balanced opening balances produce no equity plug line (200)', async () => {
     // L-14: JournalService.postOpeningBalances — plug is zero, no OBE line emitted
     const res = await request(app.getHttpServer() as App)

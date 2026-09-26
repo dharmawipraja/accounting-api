@@ -2,15 +2,16 @@ import {
   CLOSING_POLICY,
   MANUAL_ENTRY_POLICY,
   UNRESTRICTED_POLICY,
+  OPENING_POLICY,
   accountPolicyFor,
   findForbiddenRole,
+  findForbiddenType,
 } from './account-policy';
 
 describe('account-policy', () => {
   it('restricts only MANUAL entries (AR/AP control forbidden)', () => {
     expect(accountPolicyFor('MANUAL')).toBe(MANUAL_ENTRY_POLICY);
     for (const t of [
-      'OPENING',
       'REVERSAL',
       'SALES_INVOICE',
       'PURCHASE_BILL',
@@ -18,6 +19,7 @@ describe('account-policy', () => {
     ] as const) {
       expect(accountPolicyFor(t)).toBe(UNRESTRICTED_POLICY);
     }
+    expect(accountPolicyFor('OPENING').forbiddenRoles).toEqual([]);
   });
 
   it('CLOSING is role-unrestricted and the ONLY policy that tolerates inactive accounts', () => {
@@ -68,5 +70,49 @@ describe('account-policy', () => {
         UNRESTRICTED_POLICY,
       ),
     ).toBeNull();
+  });
+
+  it('OPENING forbids REVENUE/EXPENSE accounts (balance-sheet positions only)', () => {
+    expect(accountPolicyFor('OPENING')).toBe(OPENING_POLICY);
+    const hit = findForbiddenType(
+      [
+        { id: 'kas', type: 'ASSET' },
+        { id: 'exp', type: 'EXPENSE' },
+        { id: 'rev', type: 'REVENUE' },
+      ],
+      OPENING_POLICY,
+    );
+    expect(hit).toEqual({ accountId: 'exp', reason: 'PNL_IN_OPENING' });
+    expect(
+      findForbiddenType(
+        [
+          { id: 'kas', type: 'ASSET' },
+          { id: 'ap', type: 'LIABILITY' },
+          { id: 'eq', type: 'EQUITY' },
+        ],
+        OPENING_POLICY,
+      ),
+    ).toBeNull();
+  });
+
+  it('no other source type forbids an account type', () => {
+    for (const t of [
+      'MANUAL',
+      'CLOSING',
+      'REVERSAL',
+      'SALES_INVOICE',
+      'PURCHASE_BILL',
+      'PAYMENT',
+    ] as const) {
+      expect(
+        findForbiddenType(
+          [
+            { id: 'rev', type: 'REVENUE' },
+            { id: 'exp', type: 'EXPENSE' },
+          ],
+          accountPolicyFor(t),
+        ),
+      ).toBeNull();
+    }
   });
 });
