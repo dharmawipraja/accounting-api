@@ -23,7 +23,11 @@ when you choose to wire it into CI (see *Not a default CI gate* below).
 1. A **running stack** reachable over HTTP. For a local baseline, bring up
    `db` + `migrate` + `api` (the opt-in `docker-compose.hostport.yml` re-publishes
    the api on `127.0.0.1:3000` — the prod overlay alone exposes only Caddy):
+   The start command is spelled out on purpose (it adds the local-only
+   `docker-compose.hostport.yml` overlay); every later command uses the prod pair as
+   `$COMPOSE`, the same form as `deploy.md`:
    ```bash
+   COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
    export DOMAIN=localhost   # any value; api/db/migrate don't use Caddy
    export CORS_ORIGIN=       # k6 needs no CORS; a dev .env's localhost value fails prod startup validation
    docker compose -f docker-compose.yml -f docker-compose.prod.yml \
@@ -36,7 +40,7 @@ when you choose to wire it into CI (see *Not a default CI gate* below).
    bootstrap one ADMIN against a live container is a Nest standalone context that
    reuses the compiled `UsersService` (same argon2 hashing as the app):
    ```bash
-   docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T api node -e '
+   $COMPOSE exec -T api node -e '
      const { NestFactory } = require("@nestjs/core");
      const { AppModule } = require("./dist/src/app.module");
      const { UsersService } = require("./dist/src/users/users.service");
@@ -185,6 +189,7 @@ flake PRs.
 ## Teardown
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+$COMPOSE down
 # add -v to also drop the pgdata volume
 ```

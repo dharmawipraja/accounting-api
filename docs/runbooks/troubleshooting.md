@@ -83,7 +83,9 @@ mechanics, and [`./deploy.md`](./deploy.md) for production deploys.
 - **Fix:** Start Redis and point `REDIS_URL` at it (default
   `redis://localhost:6379`; the prod compose stack ships a `redis` service, not
   published on the host — check it with
-  `docker compose -f docker-compose.yml -f docker-compose.prod.yml exec redis redis-cli ping`). Then
+  `$COMPOSE exec redis redis-cli ping`, with
+  `COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"` as in
+  `deploy.md`). Then
   check `/ready` — it pings the DB and Redis and the `503` message **names the
   failed dependency** ("Database unavailable" / "Redis unavailable"). See the
   Redis prerequisite note in [`./deploy.md`](./deploy.md).
@@ -319,9 +321,12 @@ mechanics, and [`./deploy.md`](./deploy.md) for production deploys.
 - **Fix:** `$COMPOSE up -d --no-build --no-deps --force-recreate caddy` (about a
   second of refused connections; certificates are kept), then
   `curl -s -o /dev/null -w '%{http_code}\n' https://$DOMAIN/ready` → `404` and
-  `/health` → `200`. CD does this automatically when the Caddyfile changed between
-  the VM's previous and new checkout (deploy.md → *Changed `Caddyfile` /
-  `scripts/backup.sh`*).
+  `/health` → `200`. CD does this automatically: it recreates `caddy` whenever the
+  running container's `/etc/caddy/Caddyfile` differs from the checked-out file
+  (`$COMPOSE exec -T caddy cat /etc/caddy/Caddyfile | cmp -s - Caddyfile || …` —
+  content-based, so a re-run after a failed deploy also fixes it). If you see this
+  symptom, the VM was changed outside CD (manual checkout / rollback) — run that
+  check (deploy.md → *Changed `Caddyfile` / `scripts/backup.sh`*).
 
 ### `migrate` fails: "APP_DB_PASSWORD / POSTGRES_PASSWORD must be URL-safe"
 

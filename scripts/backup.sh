@@ -2,6 +2,9 @@
 set -eu
 : "${RETENTION_DAYS:=7}"
 : "${BACKUP_INTERVAL:=86400}"
+# Container paths (docker-compose.prod.yml volumes); overridable for tests only.
+: "${BACKUP_DIR:=/backups}"
+: "${BACKUP_METRICS_DIR:=/backup-metrics}"
 
 # Validate BEFORE doing any work. A bad value (non-numeric, quoted "30", 0)
 # would otherwise make `find -mtime` / `sleep` fail AFTER pg_dump under set -e,
@@ -24,12 +27,22 @@ case "$BACKUP_INTERVAL" in
 esac
 [ "$BACKUP_INTERVAL" -ge 60 ] || invalid_config "BACKUP_INTERVAL must be >= 60 seconds, got '$BACKUP_INTERVAL'"
 
-mkdir -p /backups
+mkdir -p "$BACKUP_DIR"
+# A `*.dump.tmp` is an interrupted dump from an earlier run (container killed
+# mid-pg_dump): never a restorable backup. One sidecar, so none is in progress.
+find "$BACKUP_DIR" -name 'accounting-*.dump.tmp' -delete
 while true; do
   ts=$(date +%Y%m%dT%H%M%SZ)
-  pg_dump -Fc -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" -f "/backups/accounting-$ts.dump"
+  dump="$BACKUP_DIR/accounting-$ts.dump"
+  # Dump to <name>.tmp and rename only on success (atomic on one filesystem):
+  # an interrupted or failed dump never looks like the newest backup.
+  if ! pg_dump -Fc -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" -f "$dump.tmp"; then
+    rm -f "$dump.tmp"
+    echo "backup: pg_dump failed — no backup written" >&2
+    exit 1
+  fi
+  mv "$dump.tmp" "$dump"
   echo "backup written: accounting-$ts.dump"
-  dump="/backups/accounting-$ts.dump"
 
   # Encrypt (gated): age recipient + age binary both required, else keep plaintext.
   if [ -n "${BACKUP_AGE_RECIPIENT:-}" ]; then
@@ -61,9 +74,9 @@ while true; do
     fi
   fi
 
-  mkdir -p /backup-metrics
-  printf 'backup_last_success_timestamp_seconds %s\n' "$(date +%s)" > /backup-metrics/backup.prom.tmp
-  mv /backup-metrics/backup.prom.tmp /backup-metrics/backup.prom
-  find /backups -name 'accounting-*.dump*' -mtime +"$RETENTION_DAYS" -delete
+  mkdir -p "$BACKUP_METRICS_DIR"
+  printf 'backup_last_success_timestamp_seconds %s\n' "$(date +%s)" > "$BACKUP_METRICS_DIR/backup.prom.tmp"
+  mv "$BACKUP_METRICS_DIR/backup.prom.tmp" "$BACKUP_METRICS_DIR/backup.prom"
+  find "$BACKUP_DIR" -name 'accounting-*.dump*' -mtime +"$RETENTION_DAYS" -delete
   sleep "$BACKUP_INTERVAL"
 done

@@ -60,7 +60,7 @@
   startup validation); the empty-means-off vars (`CORS_ORIGIN`, `METRICS_TOKEN`,
   `SENTRY_*`) default to `''`, which the app treats exactly like unset. Check what
   the api will receive with
-  `docker compose -f docker-compose.yml -f docker-compose.prod.yml config api`.
+  `$COMPOSE config api` (`$COMPOSE` = the prod pair, defined in *Deploy / upgrade* below).
 - **Redis** must be running and reachable at `REDIS_URL` before the API starts. The
   rate limiter is **fail-closed**: without Redis the API returns `503` on every
   throttled route, so a deploy can come up "running" (container healthy) yet 503 all
@@ -127,12 +127,23 @@ curl -s -o /dev/null -w '%{http_code}\n' https://$DOMAIN/ready    # 404
 curl -s -o /dev/null -w '%{http_code}\n' https://$DOMAIN/metrics  # 404
 curl -s -o /dev/null -w '%{http_code}\n' https://$DOMAIN/health   # 200
 ```
-**CD does this automatically:** it records the commit the VM was on before its
-`git checkout` and, after `up -d --no-build`, force-recreates `caddy` / `backup`
-when `git diff <previous> <deployed> -- Caddyfile` / `-- scripts/backup.sh` is
-non-empty. It only compares against the commit it found checked out, so after a
-**manual** `git checkout` / `git pull` on the VM (e.g. a rollback) run the recreate
-yourself. CD never touches the monitoring overlay, whose config files
+**CD does this automatically**, keyed on what is actually running: after
+`up -d --no-build` it compares the file each **running** container reads with the
+checked-out one and force-recreates only the service whose content differs — or
+whose file it cannot read (service not running, file missing):
+```bash
+$COMPOSE exec -T caddy cat /etc/caddy/Caddyfile | cmp -s - Caddyfile \
+  || $COMPOSE up -d --no-build --no-deps --force-recreate caddy
+$COMPOSE exec -T backup cat /backup.sh | cmp -s - scripts/backup.sh \
+  || $COMPOSE up -d --no-build --no-deps --force-recreate backup
+```
+Because it does not depend on git history, a **re-run** after a failed deploy
+still converges (the VM is already on the new commit, yet the stale container is
+caught), and a second run is a no-op (nothing differs). Run the same two lines
+yourself after a **manual** `git checkout` / `git pull` on the VM (e.g. a rollback)
+— they are safe to run any time (verified with a local prod-like Caddy: the
+Caddyfile replaced by `mv` → recreated, `/ready` 404; the next run printed no
+recreate). CD never touches the monitoring overlay, whose config files
 (`monitoring/prometheus.yml`, `alerts.yml`, `alertmanager*.yml`, `loki.yml`,
 `alloy.alloy`) are single-file mounts too: after a change to one, recreate that
 overlay service the same way (`$COMPOSE -f docker-compose.monitoring.yml up -d
@@ -336,11 +347,14 @@ skips those — the list below still applies to the ones that remain):
    `/metrics*` in the edge 404) but not the `caddy` service definition, so the
    deploy's `up -d --no-build` leaves the old Caddy running with the old file and
    `/ready` stays **public** (see *Changed `Caddyfile` / `scripts/backup.sh`*).
-   CD does it automatically when the VM's previous checkout had the old Caddyfile;
-   on a VM-built deploy, or if in doubt, run it by hand (safe on a live VM — about
-   a second of refused connections, certificates kept):
+   CD does it automatically (it recreates `caddy` whenever the running container's
+   `/etc/caddy/Caddyfile` differs from the checked-out file — also on a re-run);
+   on a VM-built deploy, or if in doubt, run the same check by hand (safe on a live
+   VM — about a second of refused connections, certificates kept; a no-op when
+   Caddy already has the file):
    ```bash
-   $COMPOSE up -d --no-build --no-deps --force-recreate caddy
+   $COMPOSE exec -T caddy cat /etc/caddy/Caddyfile | cmp -s - Caddyfile \
+     || $COMPOSE up -d --no-build --no-deps --force-recreate caddy
    ```
    Verify from **outside** the VM: `curl -s -o /dev/null -w '%{http_code}\n'
    https://$DOMAIN/ready` → `404`, and the same for `/health` → `200`.
@@ -485,9 +499,9 @@ from one source while rotating a forged `X-Forwarded-For`; it should still 429
    check out the prior commit and export its `API_IMAGE` / `MIGRATE_IMAGE`
    (`ghcr.io/<owner>/<repo>[-migrate]:<prior-sha>`), then `pull` +
    `up -d --no-build` (or `up -d --build` for a VM-built image). Caddy/api/backup
-   restart against the unchanged DB. If the rollback changes the `Caddyfile` or
-   `scripts/backup.sh`, recreate that service too (*Changed `Caddyfile` /
-   `scripts/backup.sh`* — CD only handles its own checkouts).
+   restart against the unchanged DB. Then run the `Caddyfile` / `scripts/backup.sh`
+   compare-and-recreate lines (*Changed `Caddyfile` / `scripts/backup.sh`*): a manual
+   checkout is not a CD run, and they recreate only what differs.
 2. **Migrations are forward-only.** Rolling back the image does NOT undo a migration.
    If a bad migration shipped:
    a. Stop the API: `$COMPOSE stop api`.
@@ -497,7 +511,10 @@ from one source while rotating a forged `X-Forwarded-For`; it should still 429
       (stop `api`, `migrate` **and `backup`** — so no dump of the half-restored
       database is taken — restore the latest good `pg_dump -Fc` into the `db` volume
       from a one-off `backup` container, then bring `api` and `backup` back up). Accept the data delta since that backup.
-3. After any rollback, verify `/health` (200) and `/ready` (200 — DB + Redis reachable).
+3. After any rollback, verify `/health` (200, from outside: `curl -s -o /dev/null -w '%{http_code}\n' https://$DOMAIN/health`)
+   and `/ready` **from inside** the VM — externally Caddy answers `/ready` with `404` by design:
+   `$COMPOSE exec api node -e "require('http').get('http://127.0.0.1:3000/ready',r=>console.log(r.statusCode))"` → `200`
+   (DB + Redis reachable).
 
 ## Monitoring (optional)
 
@@ -560,8 +577,7 @@ activation, in order:
    recreate `api`/`migrate`, from a stale `:local` image on a CD-managed VM):
 
    ```bash
-   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
-     -f docker-compose.monitoring.yml up -d --no-build --no-deps \
+   $COMPOSE -f docker-compose.monitoring.yml up -d --no-build --no-deps \
      prometheus alertmanager node-exporter loki alloy grafana
    ```
 
@@ -569,7 +585,7 @@ activation, in order:
    these containers (they are not in its project files, and compose does not
    remove them without `--remove-orphans`).
 
-4. **Confirm delivery is armed:** `docker compose logs alertmanager | head`
+4. **Confirm delivery is armed:** `$COMPOSE -f docker-compose.monitoring.yml logs alertmanager | head`
    must show `alert delivery ACTIVE (...)` — a `WARN: no ALERT_*_URL set`
    means step 1's variable didn't reach the container. Also confirm the scrape:
    `http://127.0.0.1:9090/targets` (via the tunnel in the next step) shows `api` **UP**.
@@ -586,9 +602,9 @@ activation, in order:
    auto-provisioned; logs live under **Explore → Loki**.
 
 6. **Fire-drill the alerting** (do this once — an alert channel you've never
-   seen a message in is not activated): `docker compose stop api`, wait ~3
+   seen a message in is not activated): `$COMPOSE stop api`, wait ~3
    minutes, confirm `ApiDown` lands in the channel, then
-   `docker compose start api` and confirm the resolved notice.
+   `$COMPOSE start api` and confirm the resolved notice.
 
 7. **Create the external uptime check** (OPS-OBS-5): a free UptimeRobot /
    healthchecks.io / Better Stack probe on `https://$DOMAIN/health`, 1-minute
@@ -687,7 +703,8 @@ Don't edit the committed `Caddyfile` (it would dirty the repo and risk shipping 
 non-prod TLS setting). Instead either:
 - **Skip Caddy:** smoke-test `db`+`migrate`+`api` only and curl `http://127.0.0.1:3000/health`
   (`docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.hostport.yml up -d db migrate api`
-  — the prod overlay alone publishes nothing but Caddy); or
+  — the prod overlay alone publishes nothing but Caddy; spelled out rather than
+  `$COMPOSE` on purpose: it adds the local-only `hostport` overlay, never used on a VM); or
 - **Throwaway internal TLS:** copy the Caddyfile with `tls internal` inserted **inside the
   site block**, right after its first line (`{$DOMAIN} {`). Do not append it after the
   closing `}`: Caddy then refuses to start with "parsed 'tls' as a site address". Mount
@@ -747,7 +764,10 @@ from the ref dropdown → **Run**. It builds/deploys exactly the selected ref.
    `DEPLOY_PATH` is a git checkout), exports `API_IMAGE` / `MIGRATE_IMAGE` = the
    immutable `:<sha>` images, and runs `compose pull`, `compose stop api` (the old api
    must not run against the new schema) and `compose up -d --no-build` (migrate, then
-   the new api).
+   the new api). Finally it force-recreates `caddy` / `backup` when the file the
+   running container reads differs from the checked-out `Caddyfile` /
+   `scripts/backup.sh` (*Changed `Caddyfile` / `scripts/backup.sh`* — content-based,
+   so a re-run converges and an unchanged file recreates nothing).
    The VM must be logged in to GHCR if the packages are private
    (`docker login ghcr.io` with a `read:packages` token) and its `.env` must contain
    `APP_DB_PASSWORD`. Until `DEPLOY_ENABLED` is `true`, CD only publishes.

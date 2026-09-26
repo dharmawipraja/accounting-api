@@ -11,6 +11,9 @@ bare integers only — `RETENTION_DAYS` ≥ 1, `BACKUP_INTERVAL` ≥ 60 — othe
 restart loop never fills the disk);
 after changing them recreate only the sidecar:
 `$COMPOSE up -d --no-build --no-deps backup` (`$COMPOSE` as below). Files are named `accounting-<UTC-timestamp>.dump`.
+Each dump is written to `accounting-<ts>.dump.tmp` and renamed only once `pg_dump` succeeded, so an
+interrupted or failed dump never looks like the newest backup: a `*.dump.tmp` is **never** restorable
+(a failed one is deleted at once; one left by a killed container is deleted when the sidecar next starts).
 
 Every command in this runbook uses the same `$COMPOSE` as `deploy.md`:
 ```bash

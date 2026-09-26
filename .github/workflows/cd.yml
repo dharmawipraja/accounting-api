@@ -125,10 +125,7 @@ jobs:
             set -eu
             cd "$DEPLOY_PATH"
             # Keep the compose files / Caddyfile / scripts in step with the images.
-            # PREV_SHA = what the VM ran before, for the bind-mount refresh below.
-            PREV_SHA=""
             if [ -d .git ]; then
-              PREV_SHA=$(git rev-parse HEAD)
               git fetch --quiet origin
               git checkout --quiet --detach "$DEPLOY_SHA"
             fi
@@ -146,15 +143,20 @@ jobs:
             # a changed file with a NEW inode, so a running container keeps
             # reading the OLD content (`caddy reload` inside it re-reads the old
             # file too), and `up` recreates a service only when its compose
-            # definition changed. So when a mounted file changed between the
-            # previous and this checkout, recreate just that service (--no-deps
-            # leaves api/db alone; caddy: a few seconds of refused connections,
-            # certs persist in caddy_data). A failing git diff also recreates.
-            if [ -n "$PREV_SHA" ]; then
-              for pair in Caddyfile:caddy scripts/backup.sh:backup; do
-                if ! git diff --quiet "$PREV_SHA" "$DEPLOY_SHA" -- "${pair%%:*}"; then
-                  echo "${pair%%:*} changed: recreating ${pair#*:}"
-                  $COMPOSE up -d --no-build --no-deps --force-recreate "${pair#*:}"
-                fi
-              done
-            fi
+            # definition changed. So compare what each RUNNING container reads
+            # with the checked-out file and recreate just that service when they
+            # differ (--no-deps leaves api/db alone; caddy: a few seconds of
+            # refused connections, certs persist in caddy_data). Keyed on the
+            # live content, not on git history: a re-run after a failed deploy
+            # still converges, and a second run is a no-op. Any failure to read
+            # (service not running, file missing) also recreates.
+            refresh_bind_mount() { # <service> <path in container> <checked-out file>
+              if $COMPOSE exec -T "$1" cat "$2" 2>/dev/null | cmp -s - "$3"; then
+                echo "$3: running $1 already has this content"
+              else
+                echo "$3 differs from (or is unreadable in) the running $1: recreating $1"
+                $COMPOSE up -d --no-build --no-deps --force-recreate "$1"
+              fi
+            }
+            refresh_bind_mount caddy /etc/caddy/Caddyfile Caddyfile
+            refresh_bind_mount backup /backup.sh scripts/backup.sh

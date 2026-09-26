@@ -6,6 +6,8 @@ import {
   rmSync,
   writeFileSync,
   existsSync,
+  mkdirSync,
+  readdirSync,
 } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -44,6 +46,7 @@ describe('scripts/backup.sh config guard', () => {
         PGHOST: 'db',
         PGUSER: 'accounting',
         PGDATABASE: 'accounting',
+        BACKUP_DIR: bin, // exists (mkdir is stubbed)
         ...env,
       },
       encoding: 'utf8',
@@ -82,5 +85,78 @@ describe('scripts/backup.sh config guard', () => {
     expect(log).toContain('pg_dump -Fc -h db -U accounting -d accounting');
     expect(log).not.toContain('sleep 60');
     expect(status).toBe(1); // the stubbed pg_dump failure, under set -e
+  });
+});
+
+// The dump is written to `<name>.tmp` and renamed only once pg_dump succeeded,
+// so an interrupted / failed dump never looks like the newest backup.
+describe('scripts/backup.sh atomic dump', () => {
+  let root: string;
+  let bin: string;
+  let backups: string;
+  let metrics: string;
+  let calls: string;
+
+  /** pg_dump stub: writes "partial" to its `-f` file, then exits `code`. */
+  const pgDumpStub = (code: number) =>
+    `#!/bin/sh\necho "pg_dump $*" >> "${calls}"\nout=""\nwhile [ $# -gt 0 ]; do [ "$1" = "-f" ] && out="$2"; shift; done\nprintf partial > "$out"\nexit ${code}\n`;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'backup-atomic-'));
+    bin = join(root, 'bin');
+    backups = join(root, 'backups');
+    metrics = join(root, 'metrics');
+    calls = join(root, 'calls.log');
+    for (const d of [bin, backups, metrics]) mkdirSync(d);
+    // `sleep <interval>` fails to end the loop after one full iteration.
+    writeFileSync(join(bin, 'sleep'), `#!/bin/sh\nexit 3\n`);
+    chmodSync(join(bin, 'sleep'), 0o755);
+  });
+
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  const run = (pgDumpExit: number) => {
+    writeFileSync(join(bin, 'pg_dump'), pgDumpStub(pgDumpExit));
+    chmodSync(join(bin, 'pg_dump'), 0o755);
+    const res = spawnSync('sh', [SCRIPT], {
+      env: {
+        PATH: `${bin}:/usr/bin:/bin`,
+        PGHOST: 'db',
+        PGUSER: 'accounting',
+        PGDATABASE: 'accounting',
+        BACKUP_DIR: backups,
+        BACKUP_METRICS_DIR: metrics,
+      },
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    return {
+      status: res.status,
+      files: readdirSync(backups),
+      log: readFileSync(calls, 'utf8'),
+    };
+  };
+
+  it('pg_dump writes to <name>.tmp; success renames it to accounting-<ts>.dump', () => {
+    const { status, files, log } = run(0);
+    expect(log).toMatch(/-f \S+\/accounting-\d{8}T\d{6}Z\.dump\.tmp$/m);
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatch(/^accounting-\d{8}T\d{6}Z\.dump$/);
+    expect(existsSync(join(metrics, 'backup.prom'))).toBe(true);
+    expect(status).toBe(3); // the stubbed `sleep <interval>`
+  });
+
+  it('a failed dump leaves no dump file behind (neither .dump nor .tmp) and no success metric', () => {
+    const { status, files } = run(1);
+    expect(status).not.toBe(0);
+    expect(files).toEqual([]);
+    expect(existsSync(join(metrics, 'backup.prom'))).toBe(false);
+  });
+
+  it('a stale .tmp from an interrupted earlier run is removed at start', () => {
+    writeFileSync(join(backups, 'accounting-20260101T000000Z.dump.tmp'), 'x');
+    const { files } = run(0);
+    expect(files.filter((f) => f.endsWith('.tmp'))).toEqual([]);
+    expect(files).toHaveLength(1);
   });
 });
