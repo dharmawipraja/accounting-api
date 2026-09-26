@@ -457,6 +457,73 @@ describe('Invoicing rules (e2e)', () => {
     });
   });
 
+  describe('purchase lines exclude contra-expense accounts', () => {
+    let contraId: string;
+    const contraDetails = () => ({
+      accountId: contraId,
+      reason: 'CONTRA_EXPENSE',
+    });
+
+    beforeAll(async () => {
+      const parent = await prisma.client.account.findFirstOrThrow({
+        where: { code: '5-0000' },
+      });
+      contraId = (
+        await prisma.client.account.create({
+          data: {
+            code: '5-8100',
+            name: 'Potongan Pembelian',
+            type: 'EXPENSE',
+            subtype: 'OPERATING_EXPENSE',
+            normalBalance: 'CREDIT',
+            parentId: parent.id,
+          },
+        })
+      ).id;
+    });
+
+    const contraLine = () => ({
+      description: 'potongan',
+      accountId: contraId,
+      quantity: '1',
+      unitPrice: '1000',
+      taxCodeIds: [],
+    });
+
+    it('rejects a contra-expense line on create (422 CONTRA_EXPENSE)', async () => {
+      const res = await createBill({
+        lines: [line('5-2000', '500000'), contraLine()],
+      }).expect(422);
+      expect(codeOf(res)).toBe('VALIDATION_FAILED');
+      expect(detailsOf(res)).toEqual(contraDetails());
+    });
+
+    it('rejects posting a stored draft that carries one (422, stays DRAFT)', async () => {
+      const id = ((await createBill().expect(201)).body as { id: string }).id;
+      await prisma.client.purchaseBillLine.updateMany({
+        where: { purchaseBillId: id },
+        data: { accountId: contraId },
+      });
+      const res = await postDoc('purchase-bills', id).expect(422);
+      expect(detailsOf(res)).toEqual(contraDetails());
+      expect(
+        (await prisma.client.purchaseBill.findFirst({ where: { id } }))!.status,
+      ).toBe('DRAFT');
+    });
+
+    it('rejects it in the PURCHASE preview (422)', async () => {
+      const res = await request(server())
+        .post('/v1/journal-entries/preview')
+        .set('Authorization', `Bearer ${acct}`)
+        .send({
+          nature: 'PURCHASE',
+          lines: [{ accountId: contraId, amount: '1000', taxCodeIds: [] }],
+        })
+        .expect(422);
+      expect(detailsOf(res)).toEqual(contraDetails());
+    });
+  });
+
   /** Audit3 iteration-2 Task 13: invoicing & tax fixes. */
   describe('iteration-2 invoicing/tax fixes', () => {
     let admin: string;

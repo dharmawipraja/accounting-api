@@ -251,7 +251,10 @@ the same total from the subledger and must reconcile to the control balance.
   The journal preview resolves it the same way (a client `settlementAccountId` is
   deprecated and ignored). Sales lines may not use a **contra-revenue** account
   (`REVENUE` with a `DEBIT` normal balance) → `422 {accountId, reason: 'CONTRA_REVENUE'}`
-  — returns belong to credit notes (backlog).
+  — returns belong to credit notes (backlog). Symmetrically, purchase lines may not use a
+  **contra-expense** account (`EXPENSE` with a `CREDIT` normal balance, e.g. Potongan/Retur
+  Pembelian) → `422 {accountId, reason: 'CONTRA_EXPENSE'}` — purchase returns/discounts
+  belong to debit notes (backlog).
 - **Control accounts are document-only.** A `MANUAL` journal entry (direct post, draft
   create, draft post) may not touch an `AR_CONTROL`/`AP_CONTROL` account → `422
   VALIDATION_FAILED` `{ accountId, role }` (`src/ledger/posting/account-policy.ts`, enforced

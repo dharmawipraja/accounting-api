@@ -58,7 +58,7 @@ describe('documentLineAccountViolation', () => {
     expect(
       documentLineAccountViolation(
         'PURCHASE',
-        acct({ type: 'EXPENSE', subtype: 'COGS' }),
+        acct({ type: 'EXPENSE', subtype: 'COGS', normalBalance: 'DEBIT' }),
         false,
       ),
     ).toBeNull();
@@ -114,6 +114,35 @@ describe('documentLineAccountViolation — contra revenue', () => {
   });
   it('keeps accepting a credit-normal revenue account on a sale', () => {
     expect(documentLineAccountViolation('SALE', acct({}), false)).toBeNull();
+  });
+});
+
+describe('documentLineAccountViolation — contra expense', () => {
+  it('rejects a contra-expense (EXPENSE with CREDIT normal balance) on a purchase with reason CONTRA_EXPENSE', () => {
+    const v = documentLineAccountViolation(
+      'PURCHASE',
+      acct({
+        type: 'EXPENSE',
+        subtype: 'OPERATING_EXPENSE',
+        normalBalance: 'CREDIT',
+      }),
+      false,
+    );
+    expect(v?.details).toEqual({ accountId: 'a1', reason: 'CONTRA_EXPENSE' });
+    expect(v?.message).toMatch(/contra-expense/);
+  });
+  it('keeps accepting a debit-normal expense account on a purchase', () => {
+    expect(
+      documentLineAccountViolation(
+        'PURCHASE',
+        acct({
+          type: 'EXPENSE',
+          subtype: 'OPERATING_EXPENSE',
+          normalBalance: 'DEBIT',
+        }),
+        false,
+      ),
+    ).toBeNull();
   });
 });
 

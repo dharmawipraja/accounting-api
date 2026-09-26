@@ -29,7 +29,8 @@ export interface AccountRuleViolation {
           | 'TAX_ACCOUNT'
           | 'ACCOUNT_TYPE'
           | 'CONTRA_ASSET'
-          | 'CONTRA_REVENUE';
+          | 'CONTRA_REVENUE'
+          | 'CONTRA_EXPENSE';
       };
 }
 
@@ -48,7 +49,10 @@ const LINE_FORBIDDEN_ROLES: readonly AccountRole[] = [
  *  with a CREDIT normal balance such as Akumulasi Penyusutan, which only moves
  *  via depreciation/disposal journals; sales → never a contra-revenue, a
  *  REVENUE with a DEBIT normal balance such as Retur/Potongan Penjualan —
- *  returns belong to credit notes, not negative-meaning invoice lines). */
+ *  returns belong to credit notes, not negative-meaning invoice lines;
+ *  purchase → never a contra-expense, an EXPENSE with a CREDIT normal balance
+ *  such as Potongan/Retur Pembelian — purchase returns/discounts belong to
+ *  debit notes, a feature backlog item). */
 export function documentLineAccountViolation(
   nature: 'SALE' | 'PURCHASE',
   account: RuleAccount,
@@ -79,6 +83,17 @@ export function documentLineAccountViolation(
       message:
         'Purchase bill lines cannot post to a contra-asset account (e.g. accumulated depreciation)',
       details: { accountId: account.id, reason: 'CONTRA_ASSET' },
+    };
+  }
+  if (
+    nature === 'PURCHASE' &&
+    account.type === 'EXPENSE' &&
+    account.normalBalance === 'CREDIT'
+  ) {
+    return {
+      message:
+        'Purchase bill lines cannot post to a contra-expense account (e.g. purchase returns/discounts)',
+      details: { accountId: account.id, reason: 'CONTRA_EXPENSE' },
     };
   }
   if (

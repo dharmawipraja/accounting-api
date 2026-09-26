@@ -566,6 +566,7 @@ violations return `422 VALIDATION_FAILED`:
 | Line on a tax account (used by any tax code, e.g. PPN Keluaran/Masukan) — apply a tax code instead | `{ accountId, reason: "TAX_ACCOUNT" }` |
 | Sales line not a revenue account (`type` `REVENUE` or subtype `OTHER_INCOME`); purchase line not `EXPENSE`/`ASSET` | `{ accountId, reason: "ACCOUNT_TYPE" }` |
 | Purchase line on a **contra-asset** (`ASSET` with `normalBalance` `CREDIT`, e.g. Akumulasi Penyusutan) | `{ accountId, reason: "CONTRA_ASSET" }` |
+| Purchase line on a **contra-expense** (`EXPENSE` with `normalBalance` `CREDIT`, e.g. Potongan/Retur Pembelian) — purchase returns/discounts need debit notes (not yet supported) | `{ accountId, reason: "CONTRA_EXPENSE" }` |
 | Sales line on a **contra-revenue** (`REVENUE` with `normalBalance` `DEBIT`, e.g. Retur/Potongan Penjualan) — returns need credit notes (not yet supported) | `{ accountId, reason: "CONTRA_REVENUE" }` |
 
 **Other document rules** (create, `PATCH` and — where noted — `/post`):
