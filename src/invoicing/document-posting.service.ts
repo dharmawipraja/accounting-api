@@ -6,7 +6,6 @@ import {
   LedgerTx,
   POSTING_TX_OPTIONS,
 } from '../ledger/posting/posting.service';
-import { accountPolicyFor } from '../ledger/posting/account-policy';
 import {
   TaxService,
   TaxableLineInput,
@@ -15,10 +14,8 @@ import {
 import { DocumentNumberService } from './document-number.service';
 import { ValidationFailedError } from '../common/errors/domain-errors';
 import { Money } from '../common/money/money';
-import {
-  assertDocumentLineAccounts,
-  assertTaxLineAccounts,
-} from './document-account-rules';
+import { assertTaxLineAccounts } from './document-account-rules';
+import { assertDocumentLineAccountsPostable } from './document-account-checks';
 import { sameTaxCalculation } from './document-helpers';
 
 /** Internal signal: the locked draft (or the tax state its entry was derived
@@ -175,13 +172,12 @@ export class DocumentPostingService {
       // postable, active (422 INVALID_ACCOUNT), then the document line rules
       // (catches drafts written before the rules existed). Draft and post
       // therefore agree on every line.
-      const lineAccountIds = params.lines.map((l) => l.accountId);
-      await this.posting.resolvePostableAccounts(
-        lineAccountIds,
-        accountPolicyFor(params.sourceType),
+      await assertDocumentLineAccountsPostable(
+        this.posting,
         tx,
+        params,
+        params.lines.map((l) => l.accountId),
       );
-      await assertDocumentLineAccounts(tx, params.nature, lineAccountIds);
       // ...and every account a (non-zero) tax line posts to must still pass
       // the tax-account rule for its code's kind.
       await assertTaxLineAccounts(

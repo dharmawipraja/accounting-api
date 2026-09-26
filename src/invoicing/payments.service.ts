@@ -28,7 +28,7 @@ import {
 } from './document-helpers';
 import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
 import { assertCashAccount } from './document-account-rules';
-import { accountPolicyFor } from '../ledger/posting/account-policy';
+import { assertPaymentCashAccountPostable } from './document-account-checks';
 import { lockLivePartnerForShare } from './partner-lock';
 import {
   AllocationInput,
@@ -87,11 +87,11 @@ export class PaymentsService {
     // live, postable, active (422 INVALID_ACCOUNT { accountId }, the posting
     // path's own check under the PAYMENT policy), then the CASH role (422
     // VALIDATION_FAILED).
-    await this.posting.resolvePostableAccounts(
-      [input.cashAccountId],
-      accountPolicyFor('PAYMENT'),
+    await assertPaymentCashAccountPostable(
+      this.posting,
+      this.prisma.client,
+      input.cashAccountId,
     );
-    await assertCashAccount(this.prisma.client, input.cashAccountId);
 
     let total = Money.zero();
     const allocatedByDoc = new Map<string, Money>();

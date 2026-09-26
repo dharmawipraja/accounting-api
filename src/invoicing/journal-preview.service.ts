@@ -3,7 +3,6 @@ import { businessDate } from '../common/dates/business-date';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { TaxService } from '../tax/tax.service';
 import { PostingService } from '../ledger/posting/posting.service';
-import { accountPolicyFor } from '../ledger/posting/account-policy';
 import { ValidationFailedError } from '../common/errors/domain-errors';
 import { Money } from '../common/money/money';
 import { findControlAccountId } from './document-helpers';
@@ -19,9 +18,9 @@ import {
 } from './journal-preview.projection';
 import { PreviewJournalEntryDto } from './dto/preview-journal-entry.dto';
 import {
-  assertCashAccount,
-  assertDocumentLineAccounts,
-} from './document-account-rules';
+  assertDocumentLineAccountsPostable,
+  assertPaymentCashAccountPostable,
+} from './document-account-checks';
 
 @Injectable()
 export class JournalPreviewService {
@@ -50,23 +49,15 @@ export class JournalPreviewService {
   private async taxedLines(
     dto: PreviewJournalEntryDto,
   ): Promise<PreviewSourceLine[]> {
-    // Same line-account rules, in the same order and with the same errors,
-    // as the draft create/PATCH and post paths (assertDraftLineAccounts):
-    // EVERY line account — incl. a free (zero-amount) line that leaves no
-    // journal line — exists, is live, postable and active (422
-    // INVALID_ACCOUNT, under the document source type's policy), then the
-    // document line rules (422 VALIDATION_FAILED). So preview == draft/post.
-    const lineAccountIds = dto.lines!.map((l) => l.accountId);
-    await this.posting.resolvePostableAccounts(
-      lineAccountIds,
-      accountPolicyFor(
-        dto.nature === 'SALE' ? 'SALES_INVOICE' : 'PURCHASE_BILL',
-      ),
-    );
-    await assertDocumentLineAccounts(
+    // The shared draft / preview / post line-account check (see
+    // assertDocumentLineAccountsPostable), so preview == draft/post.
+    await assertDocumentLineAccountsPostable(
+      this.posting,
       this.prisma.client,
-      dto.nature as 'SALE' | 'PURCHASE',
-      lineAccountIds,
+      dto.nature === 'SALE'
+        ? { nature: 'SALE', sourceType: 'SALES_INVOICE' }
+        : { nature: 'PURCHASE', sourceType: 'PURCHASE_BILL' },
+      dto.lines!.map((l) => l.accountId),
     );
     // The settlement (AR/AP control) is resolved by role exactly as the
     // invoice/bill post does; a client `settlementAccountId` is deprecated and
@@ -96,11 +87,11 @@ export class JournalPreviewService {
     const target = PAYMENT_TARGETS[dto.direction!];
     // Same cash-account order and errors as create / post: postable-account
     // check (422 INVALID_ACCOUNT) first, then the CASH role.
-    await this.posting.resolvePostableAccounts(
-      [dto.cashAccountId!],
-      accountPolicyFor('PAYMENT'),
+    await assertPaymentCashAccountPostable(
+      this.posting,
+      this.prisma.client,
+      dto.cashAccountId!,
     );
-    await assertCashAccount(this.prisma.client, dto.cashAccountId!);
     let total = Money.zero();
     for (const a of dto.allocations! as AllocationInput[]) {
       // Same allocation type-shape check as loadTarget (no DB read needed for the JE shape).
