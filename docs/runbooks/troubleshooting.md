@@ -186,9 +186,15 @@ mechanics, and [`./deploy.md`](./deploy.md) for production deploys.
 
 - **Symptom:** A write returns `409 CONFLICT`, message "…conflicted with a
   concurrent transaction and was rolled back; retry it", `details.retryable: true`.
-- **Cause:** Postgres aborted the transaction with a deadlock (`40P01`) or
-  serialization failure (`40001`; Prisma `P2034`). Occasional occurrences under
-  contention are expected; the filter logs a warning (not Sentry).
+- **Cause:** Postgres aborted the transaction with a deadlock (`40P01`),
+  serialization failure (`40001`; Prisma `P2034`), lock timeout (`55P03`), or a
+  statement cancelled by `statement_timeout` (`57014` query_canceled — surfaces
+  as Prisma `P2010` for raw queries, `P2039` for model queries); or the
+  interactive transaction ran past `maxWait`/`timeout` (Prisma `P2028`).
+  Occasional occurrences under contention are expected; the filter logs a
+  warning (not Sentry). A recurring `57014`/`P2028` on a report GET means the
+  query is too heavy for the 30s DB budget (report snapshot tx: 5s wait + 25s)
+  — narrow the range or look at the query plan.
 - **Fix:** The client retries with the same `Idempotency-Key` (the aborted tx
   committed nothing and its key was released). If it recurs for one flow, look
   for inconsistent lock ordering — e.g. payment post/void lock allocation

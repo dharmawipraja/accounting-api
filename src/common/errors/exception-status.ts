@@ -27,10 +27,14 @@ export const PRISMA_STATUS: Record<
   P2020: { status: 400, code: 'INVALID_INPUT', message: 'Value out of range' },
 };
 
-/** Postgres SQLSTATEs for a transaction aborted by a concurrent one: deadlock
- *  (40P01), serialization failure (40001), and a lock wait that hit
- *  `lock_timeout` (55P03 lock_not_available). Safe to retry as-is. */
-const TRANSIENT_PG_CODES = new Set(['40P01', '40001', '55P03']);
+/** Postgres SQLSTATEs for a transaction aborted by a concurrent one or by a
+ *  server-side timeout: deadlock (40P01), serialization failure (40001), a lock
+ *  wait that hit `lock_timeout` (55P03 lock_not_available), and a statement
+ *  cancelled by `statement_timeout` (57014 query_canceled — the transaction is
+ *  rolled back, like P2028). Safe to retry as-is. Prisma 7 surfaces 57014 as
+ *  P2010 (raw query) or P2039 (model query), each carrying
+ *  `meta.driverAdapterError.cause.originalCode`. */
+const TRANSIENT_PG_CODES = new Set(['40P01', '40001', '55P03', '57014']);
 
 /** Envelope for a transient transaction conflict. The tx rolled back, so
  *  nothing committed and the idempotency key was released — a retry (same key)
@@ -62,8 +66,8 @@ function driverAdapterCode(e: unknown): string | undefined {
 }
 
 /**
- * True for a deadlock / serialization failure / lock timeout / transaction-API
- * timeout, however Prisma 7 + the pg adapter surfaces it: P2034 (a 40001 on a
+ * True for a deadlock / serialization failure / lock timeout / statement
+ * timeout / transaction-API timeout, however Prisma 7 + the pg adapter surfaces it: P2034 (a 40001 on a
  * model query), P2028 (interactive-tx maxWait/timeout expired), P2010 with
  * `meta.driverAdapterError` (a raw query), or a bare DriverAdapterError (a
  * 40P01 on a model query — the client rethrows it unwrapped). Pure.

@@ -36,15 +36,19 @@ export interface TransactionOptions {
  * sees ONE consistent snapshot (REPEATABLE READ), so a post committing
  * mid-request can't make it internally inconsistent. READ ONLY: takes only
  * ACCESS SHARE locks, never blocks posting, and a read-only RR transaction can
- * never hit a serialization failure. timeout = the pool's 30s statement
- * timeout (< the 35s request timeout); maxWait bounds the wait for a pooled
- * connection.
+ * never hit a serialization failure.
+ *
+ * Budget is ADDITIVE: maxWait (waiting for a pooled connection) + timeout
+ * (the transaction itself) must stay < REQUEST_TIMEOUT_MS (35s) so a slow
+ * report fails as a clean retryable 409 (P2028) before the interceptor's 408 —
+ * preserving the escalation order DB 30s → 408 35s → socket 40s (main.ts).
+ * 5s + 25s = 30s (asserted in tx-timeout-budget.spec.ts).
  */
 export const REPORT_SNAPSHOT_TX: TransactionOptions = {
   isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
   readOnly: true,
   maxWait: 5_000,
-  timeout: 30_000,
+  timeout: 25_000,
 };
 
 @Injectable()

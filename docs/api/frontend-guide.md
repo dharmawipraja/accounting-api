@@ -168,9 +168,12 @@ A database **deadlock, serialization failure or lock timeout** (a concurrent
 transaction won, or held a lock too long — e.g. a company start-month change waits at
 most 5s for its table locks), or a **transaction that could not start or finish in time**
 (posting/reversal/draft-post/year-end transactions wait at most 5s for a connection and run
-at most 20s), surfaces as `409 CONFLICT` with `details: { retryable: true }`: nothing was
-committed and the idempotency key was released, so retry the same request (same
-`Idempotency-Key`) after a short back-off.
+at most 20s; report snapshots wait at most 5s and run at most 25s), or a **statement
+cancelled by the database's 30s statement timeout**, surfaces as `409 CONFLICT` with
+`details: { retryable: true }`: nothing was committed and the idempotency key was
+released, so retry the same request (same `Idempotency-Key`) after a short back-off.
+This also applies to GET reports (retry the GET; if a heavy report keeps timing out,
+narrow its date range).
 
 ### Money
 

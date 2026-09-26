@@ -112,6 +112,21 @@ describe('isTransientConflict (deadlock / serialization failure)', () => {
     expect(statusFromException(adapterErr('55P03'))).toBe(409);
   });
 
+  it('a statement timeout (57014 query_canceled) is transient → 409: raw (P2010), model (P2039) or bare', () => {
+    // Shapes observed from Prisma 7.8 + adapter-pg against real Postgres with
+    // `SET LOCAL statement_timeout`: raw → P2010, model query → P2039, both with
+    // meta.driverAdapterError.
+    const raw = known('P2010', { driverAdapterError: adapterErr('57014') });
+    const model = known('P2039', {
+      modelName: 'Account',
+      driverAdapterError: adapterErr('57014'),
+    });
+    for (const err of [raw, model, adapterErr('57014')]) {
+      expect(isTransientConflict(err)).toBe(true);
+      expect(statusFromException(err)).toBe(409);
+    }
+  });
+
   it('P2028 (transaction API error: maxWait/timeout expired, tx already closed) is transient → 409', () => {
     // The interactive tx was rolled back by Prisma, so nothing committed and a
     // same-key retry is safe.

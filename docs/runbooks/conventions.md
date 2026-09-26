@@ -74,8 +74,10 @@ One stable error envelope, no leaked internals.
 - **Deadlock / serialization failure / lock timeout → 409 `CONFLICT` `{ retryable: true }`.**
   `isTransientConflict()` (`src/common/errors/exception-status.ts`) recognises
   P2034, P2028 (interactive-tx `maxWait`/`timeout` expired — rolled back) and PG `40P01`/`40001`/`55P03` (`lock_not_available`, e.g. a
-  `SET LOCAL lock_timeout` expiring before a `LOCK TABLE`) in every shape Prisma 7 + the pg adapter surfaces
-  them (P2010 meta, bare `DriverAdapterError`). Still: take row locks in a
+  `SET LOCAL lock_timeout` expiring before a `LOCK TABLE`)/`57014` (`statement_timeout` cancel) in every shape Prisma 7 + the pg adapter surfaces
+  them (P2010/P2039 meta, bare `DriverAdapterError`). Interactive-tx budgets are
+  additive — `maxWait + timeout` must stay < `REQUEST_TIMEOUT_MS` (asserted in
+  `src/config/tx-timeout-budget.spec.ts`). Still: take row locks in a
   deterministic order (e.g. sort ids before a `FOR UPDATE` loop).
 
 ## 3. API conventions
@@ -128,7 +130,9 @@ One stable error envelope, no leaked internals.
   reads in `BalancesService.snapshot(async (tx) => …)` and pass `tx` to every
   query (`BalanceQueryOpts.tx`, `accountBalance(id, asOf, { tx })`, raw
   `tx.$queryRaw`) — never mix in a query on the base client, which would read
-  outside the snapshot (and hold a second pooled connection).
+  outside the snapshot (and hold a second pooled connection). Single-query,
+  single-figure endpoints (e.g. `GET /v1/accounts/:id/balance`, trial balance)
+  intentionally don't snapshot — one statement is already consistent.
 
 ## 4. Idempotency
 

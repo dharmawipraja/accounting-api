@@ -100,7 +100,7 @@ describe('PrismaService.transaction idempotency mark', () => {
     expect(txOptions[0]).toEqual({
       isolationLevel: 'RepeatableRead',
       maxWait: 5_000,
-      timeout: 30_000,
+      timeout: 25_000,
     });
   });
 });
