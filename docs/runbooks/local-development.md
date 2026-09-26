@@ -136,7 +136,11 @@ npm run create-admin -- admin@acme.co 's3cret-pw' "Budi Admin"
 ```
 
 This hashes the password with argon2 and upserts an `ADMIN`; it loads `DATABASE_URL`
-from `.env.development`. Run it after the DB is migrated.
+from `.env.development`. Run it after the DB is migrated. The password is a
+**temporary** one (`mustChangePassword`): after logging in, call
+`POST /v1/auth/change-password` (`currentPassword` / `newPassword`) — until then every
+other route answers `403 PASSWORD_CHANGE_REQUIRED`. Re-running it for an existing
+email resets that user and revokes its refresh tokens.
 
 > **`create-admin` is bootstrap-only** — use it once to seed the first ADMIN on a
 > fresh database. Day-to-day user administration (creating ACCOUNTANT/APPROVER/

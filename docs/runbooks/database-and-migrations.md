@@ -282,7 +282,12 @@ no separate seed command for the core reference data:
   ```
   `scripts/create-admin.ts` argon2-hashes the password and upserts the user via the
   adapter-pg client (password 8-128 chars, the login endpoint's bounds; optionally
-  from `ADMIN_PASSWORD` instead of argv: `create-admin <email> "<name>"`).
+  from `ADMIN_PASSWORD` instead of argv: `create-admin <email> "<name>"`). The
+  password is a **temporary** one: `mustChangePassword` is set, so the first login
+  must `POST /v1/auth/change-password` before any other route (403
+  `PASSWORD_CHANGE_REQUIRED`). Re-running it for an existing email resets that user
+  (temp password, ADMIN, active) and revokes all its refresh tokens in one
+  transaction — the break-glass reset.
   **In production** there is no npm/npx in the api image and no host DB port, so run
   the compiled copy the api image ships (`dist/scripts/create-admin.js`) in a one-off
   api container — it uses the service's own `DATABASE_URL` (`accounting_app`; the
@@ -292,6 +297,7 @@ no separate seed command for the core reference data:
   read -rs ADMIN_PASSWORD && export ADMIN_PASSWORD
   $COMPOSE run --rm --no-deps -e ADMIN_PASSWORD api \
     node dist/scripts/create-admin.js admin@acme.co "Budi Admin"
+  unset ADMIN_PASSWORD
   ```
   See `deploy.md` → *First install on a fresh VM*.
 

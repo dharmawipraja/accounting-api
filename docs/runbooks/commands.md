@@ -238,11 +238,14 @@ npm run create-admin -- admin@acme.co 's3cret!' "Budi Admin"
 **Why it exists:** the API has **no public registration endpoint**, so
 `create-admin` is the **only way to create a user** — the first ADMIN must be
 inserted directly. It hashes the password with argon2 (matching `UsersService`)
-and upserts by email, so re-running with the same email updates that user.
+and upserts by email, so re-running with the same email resets that user.
 
 **Prerequisites:** `.env.development` present (it supplies `DATABASE_URL` via
 `dotenv-cli`) and the dev Postgres reachable. The password may instead come from
 `ADMIN_PASSWORD` (then pass only `<email> "<name>"`); it must be 8-128 characters.
+It is a temporary password (`mustChangePassword`): the first login must call
+`POST /v1/auth/change-password` before anything else. An existing email is reset
+(ADMIN, active, temp password) and all its refresh tokens are revoked.
 Production has no npm in the image — see `deploy.md` → *First install on a fresh VM*
 (`$COMPOSE run --rm --no-deps -e ADMIN_PASSWORD api node dist/scripts/create-admin.js …`).
 

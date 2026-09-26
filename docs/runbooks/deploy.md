@@ -111,12 +111,18 @@ without it compose could reuse a stale locally-built image.
      node dist/scripts/create-admin.js admin@acme.co "Budi Admin"
    unset ADMIN_PASSWORD
    ```
-   It prints `✓ ADMIN ready: <email> (id …)`. The email is trimmed + lower-cased; an
-   existing user with that email is **updated** (new password, role ADMIN,
-   re-activated) — so the same command is the break-glass reset for a locked-out
-   last admin. Every further user is created by that ADMIN via `POST /v1/users`.
-3. Log in once (`POST https://$DOMAIN/v1/auth/login`) and do one read, e.g.
-   `GET /v1/users`, to confirm the stack end to end.
+   It prints `✓ ADMIN ready: <email> (id …; created)`. The email is trimmed +
+   lower-cased. The password you chose is a **temporary** one, exactly like an
+   admin-issued temp password: `mustChangePassword` is set, so login works but every
+   other route answers `403 PASSWORD_CHANGE_REQUIRED` until
+   `POST /v1/auth/change-password`. An existing live user with that email is **reset**
+   instead (new temp password, role ADMIN, re-activated, and **all its refresh tokens
+   revoked** in the same transaction) — so the same command is the break-glass reset
+   for a locked-out last admin, and any stale session dies with it. Every further
+   user is created by that ADMIN via `POST /v1/users`.
+3. Log in once (`POST https://$DOMAIN/v1/auth/login`), change the password
+   (`POST /v1/auth/change-password` with `currentPassword` / `newPassword`), then do
+   one read, e.g. `GET /v1/users`, to confirm the stack end to end.
 
 ## First deploy of the audit-3 release (checklist)
 
@@ -365,8 +371,9 @@ activation, in order:
 
    The file is re-read on every scrape: to rotate, change `METRICS_TOKEN` in `.env`,
    rewrite the file (with `sudo`), and recreate the api (`up -d api`) — no Prometheus
-   restart. A missing file does not stop Prometheus from starting; the api target is
-   just `down` (`unable to read authorization credentials`) and `ApiDown` fires.
+   restart. **The overlay needs this file for the api scrape to succeed** — without it
+   Prometheus still starts, but the api target is `down` (`unable to read
+   authorization credentials`) and `ApiDown` fires.
    (`promtool check config`, by contrast, reports `FAILED … metrics_token: no such
    file` until the file exists — so a green check also proves the file is in place:
    `$COMPOSE -f docker-compose.monitoring.yml exec prometheus promtool check config /etc/prometheus/prometheus.yml`.)
@@ -442,7 +449,10 @@ resume instead of re-reading.
 > hard-coded `accounting-api_backup_metrics` name; it merges into the prod file's
 > volume of the same key, i.e. `<project>_backup_metrics` for whatever the checkout
 > directory (compose project) is called. An existing install in a directory named
-> `accounting-api` keeps using the same volume — nothing to do. (If you had created
+> `accounting-api` keeps using the same volume — nothing to do. A project name that
+> differs from the directory (`COMPOSE_PROJECT_NAME` or `-p`) yields a differently-named
+> volume (`<that name>_backup_metrics`); that is harmless — the next backup run
+> rewrites the metrics into it, and the old volume can be removed. (If you had created
 > that volume by hand with `docker volume create`, compose warns it "was not created
 > by Docker Compose" but uses it; to silence that, `docker volume rm` it while the
 > `backup`/`node-exporter` containers are stopped — it only holds the last backup's

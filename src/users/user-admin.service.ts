@@ -15,9 +15,9 @@ import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 
-/** Advisory-lock key serializing admin-pool mutations (role/isActive/delete).
- *  Far outside the fiscal-year key space used by year-end close (~2000-2200). */
-export const USER_ADMIN_LOCK_KEY = 71_001_001;
+import { USER_ADMIN_LOCK_KEY } from '../common/concurrency/advisory-lock-keys';
+// Re-exported for existing importers; defined in the dependency-free keys module.
+export { USER_ADMIN_LOCK_KEY };
 
 export function toUserResponse(u: SafeUser): UserResponseDto {
   return {

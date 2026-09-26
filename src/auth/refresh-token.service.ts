@@ -7,14 +7,9 @@ import { RefreshTokenStatus } from '@prisma/client';
 import { LedgerTx, PrismaService } from '../common/prisma/prisma.service';
 import { UnauthorizedDomainError } from '../common/errors/domain-errors';
 
-/**
- * Namespace (classid) of the per-user refresh-session advisory lock, taken with
- * the TWO-int4-key form `pg_advisory_xact_lock(ns, hashtext(user_id))`. Postgres
- * keeps the two-key space disjoint from the single-bigint space, so this can
- * never collide with the bigint keys 71_00x_001 or the fiscal-year keys. A
- * hashtext collision between two users only over-serializes (harmless).
- */
-export const REFRESH_SESSION_LOCK_NS = 71_002;
+import { REFRESH_SESSION_LOCK_NS } from '../common/concurrency/advisory-lock-keys';
+// Re-exported for existing importers; defined in the dependency-free keys module.
+export { REFRESH_SESSION_LOCK_NS };
 
 /**
  * Per-user serialization point for every refresh-token writer (issue, rotate,
@@ -23,8 +18,12 @@ export const REFRESH_SESSION_LOCK_NS = 71_002;
  * successor would survive the revoke. Holding this lock first means the revoke's
  * UPDATE statement starts only after the rotate committed (READ COMMITTED → a
  * fresh snapshot that sees the successor). Lock order: this lock → token rows.
- * Revokes run AFTER (never inside) the user-admin tx that holds 71_001_001, so
- * no path holds both — no lock-order cycle.
+ * The app's revokes run AFTER (never inside) the user-admin tx that holds
+ * 71_001_001 and the user row lock. The one path holding them together
+ * (scripts/create-admin.ts, break-glass reset) takes 71_001_001 → THIS lock →
+ * the user row FOR UPDATE → token rows: a holder of this lock can wait on a user
+ * row (issue/rotate INSERT a refresh token, whose FK check takes FOR KEY SHARE on
+ * the user row), so the row lock must never be held while waiting for this one.
  */
 async function lockUserSessions(tx: LedgerTx, userId: string): Promise<void> {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(${REFRESH_SESSION_LOCK_NS}::int4, hashtext(${userId}))`;
