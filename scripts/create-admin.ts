@@ -28,10 +28,21 @@
  *   e.g.  npm run create-admin -- admin@acme.co 's3cret-pw' "Budi Admin"
  *
  * Production (compiled into the api image as dist/scripts/create-admin.js;
- * DATABASE_URL comes from the api service's compose environment):
+ * DATABASE_URL comes from the api service's compose environment). Run it
+ * inside the RUNNING api container — the exact deployed image and env; the
+ * bare `-e ADMIN_PASSWORD` forwards the EXPORTED shell value:
+ *   COMPOSE='docker compose -f docker-compose.yml -f docker-compose.prod.yml'
  *   read -rs ADMIN_PASSWORD && export ADMIN_PASSWORD
+ *   $COMPOSE exec -e ADMIN_PASSWORD api \
+ *     node dist/scripts/create-admin.js <email> "<name>"
+ *   unset ADMIN_PASSWORD
+ * Only if the api is not running: a one-off container, after pointing compose
+ * at the deployed tag (unset API_IMAGE falls back to a possibly stale
+ * accounting-api:local):
+ *   export API_IMAGE=ghcr.io/<owner>/<repo>:<sha>
  *   $COMPOSE run --rm --no-deps -e ADMIN_PASSWORD api \
  *     node dist/scripts/create-admin.js <email> "<name>"
+ * See docs/runbooks/deploy.md -> "First install on a fresh VM".
  */
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, Role } from '@prisma/client';

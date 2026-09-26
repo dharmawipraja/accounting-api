@@ -307,7 +307,9 @@ no separate seed command for the core reference data:
   ```
   If the api is not running, `$COMPOSE run --rm --no-deps …` works too, but only
   after `export API_IMAGE=<the deployed image tag>` — otherwise compose falls back to
-  `accounting-api:local`, a possibly stale image.
+  `accounting-api:local`, a possibly stale image (`deploy.md` → *Operator commands on
+  a CD-managed VM* reads the tag from the stopped container). `ADMIN_PASSWORD` must be
+  **exported**: the bare `-e ADMIN_PASSWORD` forwards it from your environment.
   See `deploy.md` → *First install on a fresh VM*.
 
 > **Hand-authored partial unique** `purchase_bills_partner_vendor_invoice_norm_live_key`

@@ -6,12 +6,25 @@
 #     -f docker-compose.hostport.yml up -d db migrate api
 # On a production VM prefer `docker compose … exec db psql -U accounting` /
 # `exec redis redis-cli` — applying this overlay to a running db/redis changes
-# its definition, so compose RECREATES it (a brief restart). Re-run `up -d`
-# without this file afterwards to close the ports again.
+# its definition, so compose RECREATES it (a brief restart). Re-run the same
+# `up -d --no-build --no-deps <service>` without this file afterwards to close
+# the ports again (on a CD-managed VM export the deployed API_IMAGE first —
+# deploy.md -> "Operator commands on a CD-managed VM").
+#
+# TRUST_PROXY_HOPS is forced to 0 for the api: a loopback-published api has no
+# proxy in front on that path, so trusting one hop would let any local client
+# pick its own req.ip with a forged X-Forwarded-For (per-IP login ceiling, audit
+# IPs). The flip side: requests that DO come through Caddy while this overlay is
+# applied all share Caddy's container IP for the per-IP login ceiling — so never
+# leave the api under this overlay on a VM serving real traffic (for a host
+# psql/redis-cli there, apply it to that one service only:
+# `up -d --no-build --no-deps db`).
 services:
   api:
     ports:
       - '127.0.0.1:3000:3000'
+    environment:
+      TRUST_PROXY_HOPS: 0
   db:
     ports:
       - '127.0.0.1:5432:5432'

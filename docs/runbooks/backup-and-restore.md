@@ -4,7 +4,10 @@
 A logical `pg_dump -Fc` (custom format) of the `accounting` database, written by
 the `backup` sidecar to the `backups` Docker volume every `BACKUP_INTERVAL`
 seconds (default 86400 = daily). Dumps older than `RETENTION_DAYS` (default 7)
-are pruned automatically. Files are named `accounting-<UTC-timestamp>.dump`.
+are pruned automatically. Both are read from the VM's `.env`
+(`docker-compose.prod.yml` passes `${RETENTION_DAYS:-7}` / `${BACKUP_INTERVAL:-86400}`);
+after changing them recreate only the sidecar:
+`docker compose $COMPOSE up -d --no-build --no-deps backup` (`$COMPOSE` as in *Restore*). Files are named `accounting-<UTC-timestamp>.dump`.
 
 ## Where the dumps live
 The `backups` named volume (inspect: `docker volume inspect accounting-api_backups`).
@@ -20,19 +23,26 @@ containers, or add the opt-in `-f docker-compose.hostport.yml` for a one-off
 (see `deploy.md` → *Health & shutdown*).
 (`COMPOSE='-f docker-compose.yml -f docker-compose.prod.yml'`.)
 
+0. **On a CD-managed VM, pin the deployed images first** — CD exports
+   `API_IMAGE`/`MIGRATE_IMAGE` only in its own session, so steps 3–4 would otherwise
+   start a stale `accounting-api[-migrate]:local` image
+   (`deploy.md` → *Operator commands on a CD-managed VM*):
+   `export API_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$(docker compose $COMPOSE ps -a -q api)")`
+   and the same with `MIGRATE_IMAGE` / `migrate`. (A VM that builds its own images
+   resolves to `:local`, which is then correct.)
 1. Stop writers: `docker compose $COMPOSE stop api migrate`.
 2. Restore (drops & recreates objects from the dump; `db` and `backup` stay up):
    `docker compose $COMPOSE exec backup \
      pg_restore --clean --if-exists --no-owner -h db -U accounting -d accounting /backups/<file>`
    (the dump path is a positional arg — custom-format dumps are not read from stdin).
-3. Re-apply any newer migrations (no-op if the dump is current): `docker compose $COMPOSE up -d migrate`.
-4. Start the app: `docker compose $COMPOSE up -d`.
+3. Re-apply any newer migrations (no-op if the dump is current): `docker compose $COMPOSE up -d --no-build migrate`.
+4. Start the app: `docker compose $COMPOSE up -d --no-build`.
 
 ### Database role after a restore
 The dump contains `GRANT … TO accounting_app` (the api's least-privilege role —
 see [`deploy.md` → Database roles](./deploy.md#database-roles-least-privilege)).
 Restoring into the existing `db` volume (the procedure above) keeps the role; step 3
-(`up -d migrate`) re-runs the idempotent grants step anyway. Restoring into a
+(`up -d --no-build migrate`) re-runs the idempotent grants step anyway. Restoring into a
 **fresh** cluster/volume: the postgres init hook creates `accounting_app` first
 (`APP_DB_PASSWORD` must be set on `db`); anywhere else, either run
 `node scripts/db/ensure-app-role.js` (via the `migrate` service) before

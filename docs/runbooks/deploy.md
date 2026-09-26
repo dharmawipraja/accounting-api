@@ -93,6 +93,32 @@ $COMPOSE up -d --no-build
 `--no-build` matters: `api`/`migrate` keep a `build:` section for local builds, and
 without it compose could reuse a stale locally-built image.
 
+### Operator commands on a CD-managed VM
+CD exports `API_IMAGE` / `MIGRATE_IMAGE` **only inside its own SSH session**. In your
+shell they are unset, so any compose command that (re)creates `api` or `migrate`
+resolves them to `accounting-api:local` / `accounting-api-migrate:local` — a
+**stale** image from some earlier VM build (with a changed definition compose
+recreates the container from it), a fresh build of whatever is checked out (if
+`--no-build` is missing), or a failed pull (if no such tag exists). Before any
+`up` / `run` that touches `api` or `migrate` on a VM that CD deploys, pin the
+images that are actually deployed:
+```bash
+COMPOSE='docker compose -f docker-compose.yml -f docker-compose.prod.yml'
+export API_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$($COMPOSE ps -a -q api)")
+export MIGRATE_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$($COMPOSE ps -a -q migrate)")
+echo "api=$API_IMAGE migrate=$MIGRATE_IMAGE"   # must be ghcr.io/<owner>/<repo>[-migrate]:<sha>
+```
+(`-a` also finds the exited `migrate` / a stopped `api`. If either is empty, no such
+container exists — export the tags of the last CD run by hand.) Then:
+- always pass **`--no-build`** to `up` (`run` never builds an image that exists);
+- restart a single service with **`--no-deps`** — `$COMPOSE up -d --no-build --no-deps api`
+  — otherwise `up -d api` also re-runs its `migrate` dependency;
+- never recreate everything with a bare `up -d` / `up -d --build`.
+
+On a VM where you build the images yourself (`$COMPOSE build`, no CD), the pin
+resolves to `accounting-api:local` / `accounting-api-migrate:local`, which then IS
+the deployed image — the same commands work unchanged.
+
 ## First install on a fresh VM (checklist)
 
 1. Clone the repo into `$DEPLOY_PATH`, write the `.env` (see *Prerequisites*), and
@@ -126,7 +152,16 @@ without it compose could reuse a stale locally-built image.
    unset ADMIN_PASSWORD
    ```
    (When you built on the VM with `$COMPOSE build`, `accounting-api:local` IS the
-   deployed image and no export is needed.)
+   deployed image and no export is needed. On a CD-managed VM whose api container
+   exists but is stopped, the pin in *Operator commands on a CD-managed VM* reads
+   the tag from it.)
+   `exec -e ADMIN_PASSWORD` (a bare key, no `=value`) forwards the value from your
+   shell's environment — it must be **exported** (`read -rs` alone sets a shell
+   variable that `exec` does not see, and the script then fails with its
+   missing-password usage error, touching nothing). Verified on Docker Compose
+   v5.1.2; the `-e ADMIN_PASSWORD="$ADMIN_PASSWORD"` form works too, but prefer the
+   bare key: the expanded value would show up in `ps` on the host while the
+   command runs.
    It prints `✓ ADMIN ready: <email> (id …; created)`. The email is trimmed +
    lower-cased. The password you chose is a **temporary** one, exactly like an
    admin-issued temp password: `mustChangePassword` is set, so login works but every
@@ -219,7 +254,19 @@ skips those — the list below still applies to the ones that remain):
    that local edit **before** deploying — `git checkout -- monitoring/prometheus.yml`
    — or CD's `git checkout --detach` aborts on it; then put the token in
    `monitoring/secrets/metrics_token` (*Monitoring* step 2 below; *Metrics auth
-   coupling* note).
+   coupling* note). Prometheus only sees that file through the overlay's
+   `monitoring/secrets` mount, which a Prometheus container created by an older
+   release does not have — so once the file is written, **recreate Prometheus**
+   with the monitoring overlay (third-party image, nothing to build, `--no-deps`
+   leaves the api alone):
+   ```bash
+   $COMPOSE -f docker-compose.monitoring.yml up -d --no-build --no-deps prometheus
+   ```
+   and check the scrape: `$COMPOSE -f docker-compose.monitoring.yml exec prometheus
+   promtool check config /etc/prometheus/prometheus.yml` is green and
+   `/targets` shows `api` **UP**. Skipping this leaves Prometheus reading the old
+   config until its next restart, after which the api target goes `down` and
+   `ApiDown` fires.
 8. After the deploy: `/ready` is 200, `docker compose logs migrate` ends with
    `ensure-app-role: accounting_app role + grants are up to date`, and a login +
    one read works.
@@ -292,8 +339,15 @@ skips those — the list below still applies to the ones that remain):
   `$COMPOSE exec redis redis-cli ping`. For a one-off host-side smoke/perf run or
   a host `psql`/`redis-cli`, add `-f docker-compose.hostport.yml` (opt-in, never in
   a real deploy; it re-publishes api/db/redis on loopback only, and applying it to
-  a running `db`/`redis` recreates that container — a brief restart; run `up -d`
-  without it afterwards to close the ports again).
+  a running `db`/`redis` recreates that container — a brief restart). On a live VM
+  apply it to the one service you need — `$COMPOSE -f docker-compose.hostport.yml
+  up -d --no-build --no-deps db` — and run the same `up -d --no-build --no-deps db`
+  without it afterwards to close the port again (pin the images first if the
+  service is `api`/`migrate` — *Operator commands on a CD-managed VM*). The overlay
+  also sets the api's `TRUST_PROXY_HOPS` to **0** (a loopback-published api has no
+  proxy in front, so trusting a hop would let a local client forge its `req.ip`);
+  while the api runs under it, traffic that does come through Caddy shares Caddy's
+  IP for the per-IP login ceiling — never leave the api on it on a VM serving users.
 - **Edge exposure:** Caddy answers `404` for `/ready*` and `/metrics*` (dependency state and metrics are internal). The container healthcheck (`127.0.0.1:3000/ready`) and Prometheus (`api:3000/metrics`) bypass Caddy, so they are unaffected; external uptime probes use `https://$DOMAIN/health`. Check readiness from the VM with `docker compose exec api node -e "require('http').get('http://127.0.0.1:3000/ready',r=>console.log(r.statusCode))"`.
 - One-time caveat (AUDIT3-7, `20260926100000_auth_hardening`): the migration
   lowercases `users.email` and adds a unique index on `lower(email)`. It **aborts
@@ -322,7 +376,8 @@ right-most `X-Forwarded-For` entry — the one Caddy wrote — so the per-IP log
 ceiling (`THROTTLE_LOGIN_IP_LIMIT`) and audit IPs use the true client address and
 cannot be bypassed with a forged header. **If you add a CDN/LB in front of Caddy,
 raise `TRUST_PROXY_HOPS` to the number of proxies** (and configure Caddy as below);
-if the API is ever exposed without Caddy, set it to 0.
+if the API is ever exposed without Caddy, set it to 0 (the opt-in
+`docker-compose.hostport.yml` does exactly that for its loopback-published api).
 No Caddy directive is required; this is the default behavior of `reverse_proxy`.
 (The app-side per-account login throttle — keyed by the submitted email — is the
 complementary defense already in place.)
@@ -400,19 +455,34 @@ activation, in order:
    set -a; . ./.env; set +a
    printf '%s\n' "$METRICS_TOKEN" | sudo tee monitoring/secrets/metrics_token >/dev/null
    ```
-   then recreate the api (`up -d api`) — no Prometheus restart. **The overlay needs this file for the api scrape to succeed** — without it
+   then recreate **only** the api so it picks up the new `METRICS_TOKEN` — on a
+   CD-managed VM pin the deployed image first (*Operator commands on a CD-managed
+   VM*; a bare `up -d api` would recreate it from a stale `accounting-api:local`
+   and re-run `migrate` from a stale `accounting-api-migrate:local`):
+   ```bash
+   export API_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$($COMPOSE ps -a -q api)")
+   $COMPOSE up -d --no-build --no-deps api
+   ```
+   No Prometheus restart. **The overlay needs this file for the api scrape to succeed** — without it
    Prometheus still starts, but the api target is `down` (`unable to read
    authorization credentials`) and `ApiDown` fires.
    (`promtool check config`, by contrast, reports `FAILED … metrics_token: no such
    file` until the file exists — so a green check also proves the file is in place:
    `$COMPOSE -f docker-compose.monitoring.yml exec prometheus promtool check config /etc/prometheus/prometheus.yml`.)
 
-3. **Deploy with the overlay added** (same command as always, one more `-f`):
+3. **Start the overlay's services** (all third-party images — never `--build`).
+   Name them, so the api/migrate/db are not touched (a bare `up -d` would also
+   recreate `api`/`migrate`, from a stale `:local` image on a CD-managed VM):
 
    ```bash
    docker compose -f docker-compose.yml -f docker-compose.prod.yml \
-     -f docker-compose.monitoring.yml up -d --build
+     -f docker-compose.monitoring.yml up -d --no-build --no-deps \
+     prometheus alertmanager node-exporter loki alloy grafana
    ```
+
+   CD keeps deploying without the monitoring overlay; its `up -d` does not touch
+   these containers (they are not in its project files, and compose does not
+   remove them without `--remove-orphans`).
 
 4. **Confirm delivery is armed:** `docker compose logs alertmanager | head`
    must show `alert delivery ACTIVE (...)` — a `WARN: no ALERT_*_URL set`
@@ -472,7 +542,10 @@ resume instead of re-reading.
 > that local edit because this release changes the file: `git checkout --
 > monitoring/prometheus.yml` (drops the local edit), then after the checkout create
 > `monitoring/secrets/metrics_token` as in step 2 (the directory arrives with the new
-> commit; `mkdir -p monitoring/secrets` if you create the file first).
+> commit; `mkdir -p monitoring/secrets` if you create the file first), and recreate
+> Prometheus so it gains the secrets mount:
+> `$COMPOSE -f docker-compose.monitoring.yml up -d --no-build --no-deps prometheus`
+> (audit-3 checklist step 7).
 >
 > **`backup_metrics` volume:** the overlay no longer declares it `external` with a
 > hard-coded `accounting-api_backup_metrics` name; it merges into the prod file's
@@ -490,7 +563,9 @@ resume instead of re-reading.
 ### Activate alert delivery (OPS-OBS-1)
 
 Delivery is **env-driven** — no YAML editing. Set ONE variable in the `.env` next
-to the compose files and restart alertmanager:
+to the compose files and recreate alertmanager (a plain `restart` keeps the old
+environment):
+`$COMPOSE -f docker-compose.monitoring.yml up -d --no-build --no-deps alertmanager`.
 
 - `ALERT_SLACK_WEBHOOK_URL` — native Slack receiver (optional
   `ALERT_SLACK_CHANNEL`, default `#alerts`). Use this for Slack: incoming
