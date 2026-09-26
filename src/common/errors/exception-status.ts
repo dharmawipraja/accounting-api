@@ -31,7 +31,7 @@ export const PRISMA_STATUS: Record<
  *  server-side timeout: deadlock (40P01), serialization failure (40001), a lock
  *  wait that hit `lock_timeout` (55P03 lock_not_available), and a statement
  *  cancelled by `statement_timeout` (57014 query_canceled — the transaction is
- *  rolled back, like P2028). Safe to retry as-is. Prisma 7 surfaces 57014 as
+ *  rolled back, like an expired-timeout P2028). Safe to retry as-is. Prisma 7 surfaces 57014 as
  *  P2010 (raw query) or P2039 (model query), each carrying
  *  `meta.driverAdapterError.cause.originalCode`. */
 const TRANSIENT_PG_CODES = new Set(['40P01', '40001', '55P03', '57014']);
@@ -47,11 +47,34 @@ export const TRANSIENT_CONFLICT = {
   details: { retryable: true },
 } as const;
 
-/** Prisma codes for a rolled-back transaction: P2034 (write conflict /
- *  serialization failure) and P2028 (transaction-API error — the interactive
- *  tx could not start within `maxWait`, or ran past `timeout` and was closed by
- *  the client). Nothing committed, so both are retryable like a deadlock. */
-const TRANSIENT_PRISMA_CODES = new Set(['P2034', 'P2028']);
+/** Prisma code for a write conflict / serialization failure: the tx rolled
+ *  back, nothing committed, retryable like a deadlock. */
+const TRANSIENT_PRISMA_CODES = new Set(['P2034']);
+
+/**
+ * P2028 is the catch-all "Transaction API error". Only two of its subtypes
+ * mean "rolled back, nothing committed":
+ *  - the tx could not start within `maxWait` ("Unable to start a transaction
+ *    in the given time.", empty meta) — it never began;
+ *  - the tx ran past `timeout` and Prisma closed + rolled it back — any later
+ *    query or the COMMIT itself fails with "… cannot be executed on an expired
+ *    transaction" and `meta: { operation, timeout, timeTaken }`.
+ * The others (use of an already-closed/committed/rolled-back tx, tx not
+ * found, internal consistency, bad isolation level) are programming errors or
+ * ambiguous about whether work committed, so they stay a 500. Shapes verified
+ * against Prisma 7.8 + @prisma/adapter-pg on real Postgres.
+ */
+function isRetryableP2028(err: Prisma.PrismaClientKnownRequestError): boolean {
+  const meta = err.meta as
+    | { timeout?: unknown; timeTaken?: unknown }
+    | undefined;
+  if (typeof meta?.timeout === 'number' && typeof meta.timeTaken === 'number')
+    return true;
+  return (
+    err.message.includes('Unable to start a transaction in the given time') ||
+    err.message.includes('cannot be executed on an expired transaction')
+  );
+}
 
 /** SQLSTATE carried by a Prisma 7 driver-adapter error (`{ name:
  *  'DriverAdapterError', cause: { originalCode, code, … } }`), if any. */
@@ -68,13 +91,14 @@ function driverAdapterCode(e: unknown): string | undefined {
 /**
  * True for a deadlock / serialization failure / lock timeout / statement
  * timeout / transaction-API timeout, however Prisma 7 + the pg adapter surfaces it: P2034 (a 40001 on a
- * model query), P2028 (interactive-tx maxWait/timeout expired), P2010 with
+ * model query), P2028 only for its maxWait / expired-timeout subtypes, P2010 with
  * `meta.driverAdapterError` (a raw query), or a bare DriverAdapterError (a
  * 40P01 on a model query — the client rethrows it unwrapped). Pure.
  */
 export function isTransientConflict(err: unknown): boolean {
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     if (TRANSIENT_PRISMA_CODES.has(err.code)) return true;
+    if (err.code === 'P2028') return isRetryableP2028(err);
     const code = driverAdapterCode(
       (err.meta as { driverAdapterError?: unknown } | undefined)
         ?.driverAdapterError,

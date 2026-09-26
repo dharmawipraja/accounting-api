@@ -73,7 +73,7 @@ One stable error envelope, no leaked internals.
   unchanged. `P2025` → 404 is handled by the filter automatically.
 - **Deadlock / serialization failure / lock timeout → 409 `CONFLICT` `{ retryable: true }`.**
   `isTransientConflict()` (`src/common/errors/exception-status.ts`) recognises
-  P2034, P2028 (interactive-tx `maxWait`/`timeout` expired — rolled back) and PG `40P01`/`40001`/`55P03` (`lock_not_available`, e.g. a
+  P2034, P2028 **only** for its interactive-tx `maxWait` ("Unable to start…") / `timeout`-expired (`meta.timeout`+`timeTaken`, "expired transaction") subtypes — rolled back; other P2028s (use of a closed/committed tx, tx not found) stay 500 — and PG `40P01`/`40001`/`55P03` (`lock_not_available`, e.g. a
   `SET LOCAL lock_timeout` expiring before a `LOCK TABLE`)/`57014` (`statement_timeout` cancel) in every shape Prisma 7 + the pg adapter surfaces
   them (P2010/P2039 meta, bare `DriverAdapterError`). Interactive-tx budgets are
   additive — `maxWait + timeout` must stay < `REQUEST_TIMEOUT_MS` (asserted in

@@ -127,11 +127,47 @@ describe('isTransientConflict (deadlock / serialization failure)', () => {
     }
   });
 
-  it('P2028 (transaction API error: maxWait/timeout expired, tx already closed) is transient → 409', () => {
-    // The interactive tx was rolled back by Prisma, so nothing committed and a
-    // same-key retry is safe.
-    expect(isTransientConflict(known('P2028'))).toBe(true);
-    expect(statusFromException(known('P2028'))).toBe(409);
+  // Shapes observed from Prisma 7.8 + @prisma/adapter-pg against real Postgres.
+  const p2028 = (message: string, meta?: Record<string, unknown>) =>
+    new Prisma.PrismaClientKnownRequestError(message, {
+      code: 'P2028',
+      clientVersion: 'test',
+      meta,
+    });
+
+  it('P2028 expired interactive tx (query or commit past `timeout`) is transient → 409', () => {
+    // Prisma closed and rolled back the tx; nothing committed, a same-key retry is safe.
+    for (const operation of ['query', 'commit']) {
+      const e = p2028(
+        `Transaction API error: A ${operation} cannot be executed on an expired transaction. The timeout for this transaction was 100 ms, however 303 ms passed since the start of the transaction.`,
+        { operation, timeout: 100, timeTaken: 303 },
+      );
+      expect(isTransientConflict(e)).toBe(true);
+      expect(statusFromException(e)).toBe(409);
+    }
+  });
+
+  it('P2028 unable to start within `maxWait` is transient → 409', () => {
+    const e = p2028(
+      'Transaction API error: Unable to start a transaction in the given time.',
+      {},
+    );
+    expect(isTransientConflict(e)).toBe(true);
+    expect(statusFromException(e)).toBe(409);
+  });
+
+  it('other P2028 subtypes are NOT retryable (a closed/committed tx may have committed)', () => {
+    for (const msg of [
+      'Transaction API error: Transaction already closed: A query cannot be executed on a committed transaction.',
+      'Transaction API error: Transaction already closed: A query cannot be executed on a transaction that was rolled back.',
+      "Transaction API error: Transaction not found. Transaction ID is invalid, refers to an old closed transaction Prisma doesn't have information about anymore, or was obtained before disconnecting.",
+      'Transaction API error: Internal Consistency Error: x',
+    ]) {
+      const e = p2028(msg, {});
+      expect(isTransientConflict(e)).toBe(false);
+      expect(statusFromException(e)).toBe(500);
+    }
+    expect(isTransientConflict(known('P2028'))).toBe(false);
   });
 
   it('other codes and errors are not transient', () => {
