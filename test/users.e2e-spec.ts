@@ -16,6 +16,11 @@ describe('UsersService (e2e)', () => {
     users = new UsersService(prisma);
   }, 120_000);
 
+  /** Tombstone a user the way the soft-delete extension does (the app's only
+   *  deletion path is UserAdminService.remove, covered in users-management e2e). */
+  const tombstone = (id: string, email: string) =>
+    prisma.client.user.tombstoneDelete(id, 'email', email, 'admin-id');
+
   afterAll(async () => {
     await prisma.$disconnect();
     await db?.stop();
@@ -57,7 +62,7 @@ describe('UsersService (e2e)', () => {
       name: 'Del',
       role: 'VIEWER',
     });
-    await users.softDelete(user.id, 'admin-id');
+    await tombstone(user.id, user.email);
     expect(await users.findByEmailWithHash('del@example.com')).toBeNull();
   });
 
@@ -68,7 +73,7 @@ describe('UsersService (e2e)', () => {
       name: 'First',
       role: 'VIEWER',
     });
-    await users.softDelete(first.id, 'admin-id');
+    await tombstone(first.id, first.email);
     const second = await users.create({
       email: 'reuse@example.com',
       password: 'x12345678',

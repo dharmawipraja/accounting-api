@@ -198,9 +198,10 @@ export class UserAdminService {
       // admin-pool count above — releasing the lock before writing would open
       // a window where a concurrent update() demotion, whose own count still
       // sees this row as an active admin, could drain the pool to zero.
-      // Replicates UsersService.softDelete()'s tombstoneDelete() semantics
+      // Replicates the soft-delete extension's tombstoneDelete() semantics
       // (email suffixed via tombstoneValue, deletedAt/deletedBy set) since
-      // the extension's model-level helper isn't available on `tx`.
+      // the extension's model-level helper isn't available on `tx`. This is
+      // the ONLY user-deletion path (it holds the admin-pool lock).
       await tx.user.update({
         where: { id },
         data: {

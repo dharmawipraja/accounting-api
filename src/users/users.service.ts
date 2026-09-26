@@ -4,7 +4,6 @@ import { Role, User } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import {
   ConflictDomainError,
-  NotFoundDomainError,
   ValidationFailedError,
 } from '../common/errors/domain-errors';
 import { mapUniqueViolation } from '../common/errors/map-unique-violation';
@@ -154,19 +153,5 @@ export class UsersService {
         data: { passwordHash, mustChangePassword: false },
       });
     });
-  }
-
-  async softDelete(id: string, deletedBy: string): Promise<void> {
-    const user = await this.prisma.client.user.findFirst({ where: { id } });
-    if (!user) {
-      throw new NotFoundDomainError('User not found', { id });
-    }
-    // Tombstone the unique email so it can be reused, and mark soft-deleted.
-    await this.prisma.client.user.tombstoneDelete(
-      id,
-      'email',
-      user.email,
-      deletedBy,
-    );
   }
 }
