@@ -9,8 +9,10 @@ alerting:
 scrape_configs:
   - job_name: api
     metrics_path: /metrics
-    # If you set METRICS_TOKEN on the api, the scrape needs the matching bearer
-    # token or it will 401 (and ApiDown would fire). Uncomment:
+    # PRODUCTION: METRICS_TOKEN MUST be set on the api and this block MUST be
+    # uncommented with the same token. /metrics is fail-closed — unset token in
+    # production, or a set token with this block commented, both 401 the
+    # scrape and ApiDown fires. Only a non-production stack may leave both off.
     # authorization:
     #   credentials: '<METRICS_TOKEN>'
     static_configs:

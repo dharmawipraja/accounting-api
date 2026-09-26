@@ -370,9 +370,12 @@ window are dropped with a one-time burst of `400 timestamp too old` in alloy
 logs — harmless. Positions persist in the `alloy_data` volume, so restarts
 resume instead of re-reading.
 
-> **Metrics auth coupling (OPS-OBS-4):** if you set `METRICS_TOKEN` on the api, you MUST
-> uncomment the `authorization.credentials` block in `monitoring/prometheus.yml` with the
-> same token, or scrapes get `401` and the `ApiDown` alert false-fires.
+> **Metrics auth coupling (OPS-OBS-4):** in production `METRICS_TOKEN` MUST be set on
+> the api AND the `authorization.credentials` block in `monitoring/prometheus.yml` MUST be
+> uncommented with the same token. `/metrics` is fail-closed: with the token unset it
+> answers `401` in production, and with the token set but the Prometheus credentials still
+> commented out the scrape also gets `401` — either way `up == 0` and the `ApiDown` alert
+> fires. (Only a non-production stack may leave both unset.)
 
 ### Activate alert delivery (OPS-OBS-1)
 

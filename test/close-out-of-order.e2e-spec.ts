@@ -9,8 +9,8 @@ import { bootstrapTestApp } from './e2e-helpers';
 
 /**
  * P0-2: net income for a close must be that year's OWN P&L movement, not the
- * cumulative all-history balance. Closing years out of order (FY2027 before
- * FY2026) must still attribute each year only its own earnings — otherwise the
+ * cumulative all-history balance. Closing years out of order (FY2007 before
+ * FY2006) must still attribute each year only its own earnings — otherwise the
  * earlier year is swept twice into Laba Ditahan.
  *
  * 2006 net income = 2,000,000 − 500,000 = 1,500,000
@@ -73,13 +73,13 @@ describe('Year-end close — out-of-order close (e2e)', () => {
 
   afterAll(() => cleanup());
 
-  it('closing FY2027 before FY2026 attributes each year only its own net income', async () => {
+  it('closing FY2007 before FY2006 attributes each year only its own net income', async () => {
     // Close the LATER year first — the out-of-order case.
-    const rec2027 = await close.close(2007, 'admin');
-    expect(rec2027.netIncome.toFixed(4)).toBe('2000000.0000'); // 2007 only, not 3,500,000 cumulative
+    const rec2007 = await close.close(2007, 'admin');
+    expect(rec2007.netIncome.toFixed(4)).toBe('2000000.0000'); // 2007 only, not 3,500,000 cumulative
 
-    const rec2026 = await close.close(2006, 'admin');
-    expect(rec2026.netIncome.toFixed(4)).toBe('1500000.0000');
+    const rec2006 = await close.close(2006, 'admin');
+    expect(rec2006.netIncome.toFixed(4)).toBe('1500000.0000');
 
     // Laba Ditahan holds the sum of both years' earnings — counted once each.
     const ret = await balances.accountBalance(

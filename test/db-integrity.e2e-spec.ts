@@ -8,6 +8,8 @@ import { PeriodsService } from '../src/ledger/periods/periods.service';
 import { CompanyService } from '../src/company/company.service';
 import { PostingService } from '../src/ledger/posting/posting.service';
 import { JournalService } from '../src/ledger/journal/journal.service';
+import { statusFromException } from '../src/common/errors/exception-status';
+import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
 import { bootstrapTestApp } from './e2e-helpers';
 
 /**
@@ -105,6 +107,55 @@ describe('DB integrity — ledger invariants enforced by Postgres (e2e)', () => 
                    (gen_random_uuid()::text, 'dbi-unbal', 2, ${acc['4-1000']}, 0, 90)`;
         }),
       ).rejects.toThrow(/unbalanced|journal_entry_balanced/i);
+    });
+
+    it('a commit-time journal_entry_balanced failure via prisma.transaction maps to the generic 422 backstop', async () => {
+      let caught: unknown;
+      try {
+        await prisma.transaction(async (tx) => {
+          await tx.$executeRaw`
+            INSERT INTO journal_entries (id, entry_number, entry_ref, fiscal_year, date, period_id,
+              description, source_type, status, created_by, posted_by, posted_at, updated_at)
+            VALUES ('dbi-unbal-422', 90009, 'JE/2026/090009', 2026, '2026-02-10', ${periodId},
+              'unbalanced', 'MANUAL', 'POSTED', 'a', 'p', now(), now())`;
+          await tx.$executeRaw`
+            INSERT INTO journal_lines (id, journal_entry_id, line_no, account_id, debit, credit)
+            VALUES (gen_random_uuid()::text, 'dbi-unbal-422', 1, ${acc['1-1000']}, 100, 0),
+                   (gen_random_uuid()::text, 'dbi-unbal-422', 2, ${acc['4-1000']}, 0, 90)`;
+        });
+      } catch (err) {
+        caught = err;
+      }
+      // At COMMIT Prisma 7 rethrows the pg adapter's bare DriverAdapterError
+      // (originalCode 23514) — isConstraintViolation's bare-adapter arm.
+      expect(caught).toBeDefined();
+      expect(statusFromException(caught)).toBe(422);
+      let status = 0;
+      let body: unknown;
+      const res = {
+        status(c: number) {
+          status = c;
+          return this;
+        },
+        json(b: unknown) {
+          body = b;
+          return this;
+        },
+      };
+      new AllExceptionsFilter().catch(caught, {
+        switchToHttp: () => ({
+          getResponse: () => res,
+          getRequest: () => ({ url: '/test' }),
+        }),
+      } as never);
+      expect(status).toBe(422);
+      expect(body).toEqual({
+        code: 'VALIDATION_FAILED',
+        message: 'The request violates a data constraint',
+      });
+      const [{ n }] = await prisma.client.$queryRaw<{ n: bigint }[]>`
+        SELECT count(*) AS n FROM journal_entries WHERE id = 'dbi-unbal-422'`;
+      expect(Number(n)).toBe(0);
     });
 
     it('rejects committing a posted entry with a single line / no lines', async () => {
