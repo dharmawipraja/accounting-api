@@ -1053,7 +1053,13 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing).
   bills / DISBURSEMENTs — → `422 VALIDATION_FAILED` `details: { id, reason: "OPEN_ITEMS",
   role: "CUSTOMER" | "VENDOR", draftDocuments, outstandingDocuments, draftPayments }`
   (the `DELETE` shape plus `role`). Items of the other role never block; re-sending the
-  current value (`true`) never checks.
+  current value (`true`) never checks. **Caveat (documented, not blocked):** once the role
+  is removed (no open items at that moment), **voiding** an already-posted RECEIPT
+  (DISBURSEMENT) of that partner still works and **reopens** the invoice (bill) balance it
+  had settled — but that balance cannot receive a new receipt (disbursement) until the
+  role is re-enabled (`PATCH isCustomer: true` / `isVendor: true`): the payment is refused
+  with "Receipt requires a customer" / "Disbursement requires a vendor". Offer to
+  re-enable the role when voiding such a payment.
 - **Deactivating a partner that still has open items is allowed** (`deactivate`, or
   `PATCH` `isActive: false`). Its posted documents stay open in AR/AP and aging, but new
   receipts (disbursements) against them — create **and** `/post` of an existing draft —

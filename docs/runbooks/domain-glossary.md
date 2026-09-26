@@ -474,5 +474,10 @@ appear on sales vs purchase documents; `npwp` is the Indonesian tax ID.
 - **Removing a role with open items is refused** (`PATCH isCustomer/isVendor: false` →
   `422 OPEN_ITEMS` `{ …, role }` while that role has drafts, outstanding POSTED
   documents or draft payments of its direction), and so is deletion (`OPEN_ITEMS`).
+  Caveat (documented, not blocked): after the role is removed, **voiding** a posted
+  receipt (disbursement) of that partner still works and reopens the invoice (bill)
+  balance it settled, which then cannot receive a new payment of that direction
+  ("Receipt requires a customer" / "Disbursement requires a vendor") until the role is
+  re-enabled.
   `code` / `name` are stored trimmed.
 - `BusinessPartner` model in `prisma/schema.prisma`.
