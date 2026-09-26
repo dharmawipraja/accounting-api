@@ -6,6 +6,10 @@ import { PrismaService } from '../src/common/prisma/prisma.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
 import { AuditService } from '../src/audit/audit.service';
+import { AUDIT_BODY_MAX_BYTES } from '../src/audit/audit-request';
+import { CompanyService } from '../src/company/company.service';
+import { AccountsService } from '../src/ledger/accounts/accounts.service';
+import { PeriodsService } from '../src/ledger/periods/periods.service';
 import type { Prisma } from '@prisma/client';
 import { bootstrapTestApp } from './e2e-helpers';
 
@@ -261,7 +265,8 @@ describe('Audit log (e2e)', () => {
   });
 
   it('AUDIT3-17: an oversized body is stored as a small _truncated marker object (authenticated 400)', async () => {
-    const junk = 'j'.repeat(50 * 1024);
+    // Above the 512 KiB authenticated cap, below the 1 MB body-parser cap.
+    const junk = 'j'.repeat(AUDIT_BODY_MAX_BYTES + 1024);
     await request(app.getHttpServer() as App)
       .post('/v1/partners')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -275,7 +280,7 @@ describe('Audit log (e2e)', () => {
       preview: string;
     };
     expect(body._truncated).toBe(true);
-    expect(body.bytes).toBeGreaterThan(50 * 1024);
+    expect(body.bytes).toBeGreaterThan(AUDIT_BODY_MAX_BYTES);
     expect(body.preview.length).toBeLessThanOrEqual(1024);
     expect(Buffer.byteLength(JSON.stringify(row.body))).toBeLessThan(2048);
 
@@ -301,7 +306,7 @@ describe('Audit log (e2e)', () => {
     expect(row.body).toEqual({});
   });
 
-  it('AUDIT3-17: a 20k-deep JSON body is a clean 400 (no 500), with at most one audit row', async () => {
+  it('AUDIT3-17: a 20k-deep JSON body is a clean 400 (no 500) and writes NO audit row', async () => {
     const depth = 20_000;
     const deep = `{"code":"AUD-DEEP","x":${'['.repeat(depth)}${']'.repeat(depth)}}`;
     for (const auth of [true, false]) {
@@ -318,7 +323,72 @@ describe('Audit log (e2e)', () => {
       const rows = await prisma.client.auditLog.findMany({
         where: { clientRequestId: id },
       });
-      expect(rows.length).toBeLessThanOrEqual(1);
+      // The depth-limit middleware answers before guards/interceptors run,
+      // so no audit row is written (see architecture.md).
+      expect(rows).toHaveLength(0);
     }
+  });
+
+  it('I1: a 100-line JE with 500-char descriptions is audited untruncated', async () => {
+    await app.get(CompanyService).seedIfEmpty();
+    await app.get(AccountsService).seedIfEmpty();
+    await app.get(PeriodsService).generatePeriods(2026);
+    const { data: accounts } = await app.get(AccountsService).list();
+    const kasId = accounts.find((a) => a.code === '1-1000')!.id;
+    const modalId = accounts.find((a) => a.code === '3-1000')!.id;
+    const text = (i: number) => `L${i} `.padEnd(500, 'd');
+    const body = {
+      date: '2026-02-10',
+      description: 'h'.repeat(500),
+      lines: Array.from({ length: 100 }, (_, i) =>
+        i % 2 === 0
+          ? { accountId: kasId, debit: '1000.0000', description: text(i) }
+          : { accountId: modalId, credit: '1000.0000', description: text(i) },
+      ),
+    };
+    expect(Buffer.byteLength(JSON.stringify(body))).toBeGreaterThan(50_000);
+    await request(app.getHttpServer() as App)
+      .post('/v1/ledger/journal-entries')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('Idempotency-Key', randomUUID())
+      .set('X-Request-Id', 'audit-je-100')
+      .send(body)
+      .expect(201);
+    const [row] = await waitForRows({ clientRequestId: 'audit-je-100' });
+    expect(row.statusCode).toBe(201);
+    expect(row.body).toEqual(body);
+  });
+
+  it('I2: a failed login (401) keeps only the normalized email, never the password', async () => {
+    await request(app.getHttpServer() as App)
+      .post('/v1/auth/login')
+      .set('X-Request-Id', 'audit-login-401')
+      .send({ email: '  Admin@Audit.TEST ', password: 'wrong-password-1' })
+      .expect(401);
+    const [row] = await waitForRows({ clientRequestId: 'audit-login-401' });
+    expect(row).toMatchObject({ statusCode: 401, userId: null });
+    expect(row.body).toEqual({ email: 'admin@audit.test' });
+    expect(JSON.stringify(row)).not.toContain('wrong-password-1');
+  });
+
+  it('I2: a rejected login body (400) keeps only the email', async () => {
+    await request(app.getHttpServer() as App)
+      .post('/v1/auth/login')
+      .set('X-Request-Id', 'audit-login-400')
+      .send({ email: 'Probe@Audit.test', password: 'short' })
+      .expect(400);
+    const [row] = await waitForRows({ clientRequestId: 'audit-login-400' });
+    expect(row.statusCode).toBe(400);
+    expect(row.body).toEqual({ email: 'probe@audit.test' });
+  });
+
+  it('I2: other anonymous routes still store {} even with an email field', async () => {
+    await request(app.getHttpServer() as App)
+      .post('/v1/auth/refresh')
+      .set('X-Request-Id', 'audit-refresh-email')
+      .send({ refreshToken: 'x', email: 'a@b.io' })
+      .expect(400);
+    const [row] = await waitForRows({ clientRequestId: 'audit-refresh-email' });
+    expect(row.body).toEqual({});
   });
 });

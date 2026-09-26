@@ -120,13 +120,23 @@ Guards run in registration order:
   at 512 characters (code points — a surrogate pair is never split, so the jsonb
   insert cannot fail on a lone surrogate).
   - **Body storage (AUDIT3-17):** an **anonymous** (no `req.user`) **4xx** row —
-    interceptor or filter, e.g. a 400/401 on `/auth/refresh`, a login 401/429 —
-    stores `{}`: unauthenticated input is never copied into the append-only log.
-    Every other row stores the sanitized body, **capped** (`capBody` in
-    `audit-request.ts`): if its serialized JSON exceeds **8192 UTF-8 bytes** it is
-    replaced by the object `{ "_truncated": true, "bytes": <n>, "preview": "<first
+    interceptor or filter, e.g. a 400/401 on `/auth/refresh` — stores `{}`:
+    unauthenticated input is never copied into the append-only log. **Exception —
+    failed-login forensics:** on the LOGIN route only (`@LoginIpThrottle()`; the
+    request is stamped `LOGIN_ATTEMPT` by `UserThrottlerGuard` before the
+    throttlers run and by `AuditInterceptor`, so the filter-written 429 row sees
+    it too) the anonymous 400/401/429 row stores `{ "email": <trimmed,
+    lowercased, ≤ 254 code points> }` — never the password or any other field
+    (`withheldBody` / `loginAttemptBody`). Every other row stores the sanitized
+    body, **capped** (`capBody` in `audit-request.ts`): if its serialized JSON
+    exceeds **512 KiB** (authenticated rows) or **8192 bytes** (anonymous rows,
+    e.g. a login 200 / a 5xx) of UTF-8 it is replaced by the object `{ "_truncated": true, "bytes": <n>, "preview": "<first
     1024 code points of the JSON text>" }` — still a JSON object in the jsonb
-    column (never a string cut mid-JSON), surrogate-safe.
+    column (never a string cut mid-JSON), surrogate-safe. The authenticated cap
+    sits above the largest DTO-valid body (worst case ≈ 317 KB: a 100-line JE whose
+    500-char descriptions are all JSON-escaped control characters; asserted in
+    `audit-request.spec.ts`), so an **accepted write is never truncated**; only an
+    already-rejected oversized body (≤ the 1 MB parser cap) becomes the marker.
   - **408-then-commit (for auditors):** a `408` row means the *response* timed out
     at 35s, **not** that nothing happened. The rxjs timeout only stops observing
     the handler; its DB transaction keeps running and may still **commit** after

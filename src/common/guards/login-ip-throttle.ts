@@ -28,6 +28,20 @@ export function isLoginIpThrottled(handler: unknown): boolean {
   );
 }
 
+/** Request marker for a LOGIN attempt. Set by UserThrottlerGuard (before the
+ *  login throttlers can reject with 429) and by AuditInterceptor, so the
+ *  exception filter — which has no handler reference — can tell a login
+ *  attempt apart from other anonymous requests (failed-login forensics). */
+export const LOGIN_ATTEMPT = Symbol('login.attempt');
+
+export function markLoginAttempt(req: object): void {
+  (req as { [LOGIN_ATTEMPT]?: boolean })[LOGIN_ATTEMPT] = true;
+}
+
+export function isLoginAttempt(req: object): boolean {
+  return (req as { [LOGIN_ATTEMPT]?: boolean })[LOGIN_ATTEMPT] === true;
+}
+
 /** The named throttler: inert (skipped) on every route not marked above. */
 export function loginIpThrottler(): ThrottlerOptions {
   return {

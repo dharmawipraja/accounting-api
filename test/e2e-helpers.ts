@@ -3,6 +3,7 @@ import {
   ValidationPipe,
   VersioningType,
 } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from '../src/app.module';
@@ -63,7 +64,10 @@ export async function bootstrapTestApp(
     .overrideProvider(PrismaService)
     .useValue(prisma)
     .compile();
-  const app = mod.createNestApplication();
+  const app = mod.createNestApplication<NestExpressApplication>();
+  // Same body caps as main.ts (the Nest default is 100 KB).
+  app.useBodyParser('json', { limit: '1mb' });
+  app.useBodyParser('urlencoded', { limit: '1mb', extended: true });
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   if (opts.pipe !== false) {
     app.useGlobalPipes(

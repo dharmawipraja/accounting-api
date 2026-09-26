@@ -20,6 +20,7 @@ function makeCtx(method = 'POST'): ExecutionContext {
   };
   const res = { statusCode: 201 };
   return {
+    getHandler: () => undefined,
     switchToHttp: () => ({ getRequest: () => req, getResponse: () => res }),
   } as unknown as ExecutionContext;
 }

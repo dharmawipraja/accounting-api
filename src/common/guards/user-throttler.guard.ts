@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { ThrottlerException, ThrottlerGuard } from '@nestjs/throttler';
 import type { ThrottlerLimitDetail, ThrottlerRequest } from '@nestjs/throttler';
-import { isLoginIpThrottled } from './login-ip-throttle';
+import { isLoginIpThrottled, markLoginAttempt } from './login-ip-throttle';
 
 /**
  * Keys the rate limit by the *verified* authenticated user (so concurrent users
@@ -20,6 +20,15 @@ import { isLoginIpThrottled } from './login-ip-throttle';
  */
 @Injectable()
 export class UserThrottlerGuard extends ThrottlerGuard {
+  /** Stamps a LOGIN request before the throttlers may reject it, so the
+   *  exception filter's 429 audit row keeps the forensic `{ email }`. */
+  override canActivate(context: ExecutionContext): Promise<boolean> {
+    if (isLoginIpThrottled(context.getHandler())) {
+      markLoginAttempt(context.switchToHttp().getRequest<object>());
+    }
+    return super.canActivate(context);
+  }
+
   protected override getTracker(
     req: {
       user?: { id?: string };

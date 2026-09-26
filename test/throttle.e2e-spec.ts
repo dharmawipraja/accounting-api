@@ -46,7 +46,8 @@ describe('Throttle policy (e2e)', () => {
     expect(statuses[10]).toBe(429); // 11th blocked by the login throttle
 
     // A guard rejection (the throttler runs before interceptors) is still
-    // audited — one row, status 429; anonymous, so no body is stored (AUDIT3-17).
+    // audited — one row, status 429; anonymous, so only the forensic email is
+    // kept (never the password).
     // (written fire-and-forget after the response — poll briefly)
     let throttled = await prisma.client.auditLog.findMany({
       where: { path: '/v1/auth/login', statusCode: 429 },
@@ -58,7 +59,15 @@ describe('Throttle policy (e2e)', () => {
       });
     }
     expect(throttled).toHaveLength(1);
-    expect(throttled[0].body).toEqual({});
+    expect(throttled[0].body).toEqual({ email: 'thr@test.io' });
+    // The interceptor-written 401 rows keep the same forensic email only.
+    const failed = await prisma.client.auditLog.findMany({
+      where: { path: '/v1/auth/login', statusCode: 401 },
+    });
+    expect(failed.length).toBeGreaterThanOrEqual(10);
+    for (const row of failed) {
+      expect(row.body).toEqual({ email: 'thr@test.io' });
+    }
   });
 
   it('SEC-3: login throttle is per-email, not bypassable by rotating X-Forwarded-For', async () => {

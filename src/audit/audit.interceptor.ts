@@ -13,8 +13,13 @@ import {
   auditBodyAllowed,
   isMutating,
   markAudited,
+  withheldBody,
   type AuditableRequest,
 } from './audit-request';
+import {
+  isLoginIpThrottled,
+  markLoginAttempt,
+} from '../common/guards/login-ip-throttle';
 
 function boundedId(id: unknown): string | null {
   return typeof id === 'string' && id.length > 0 && id.length <= 128
@@ -43,6 +48,7 @@ export class AuditInterceptor implements NestInterceptor {
     if (!isMutating(req.method)) return next.handle();
     // Claim the request: the exception filter must not write a second row.
     markAudited(req);
+    if (isLoginIpThrottled(ctx.getHandler())) markLoginAttempt(req);
     const start = Date.now();
     const res = ctx.switchToHttp().getResponse<{ statusCode: number }>();
     const base = auditBaseOf(req, { withBody: true });
@@ -65,8 +71,11 @@ export class AuditInterceptor implements NestInterceptor {
         return from(
           this.audit.record({
             ...base,
-            // Anonymous client errors (e.g. a 400 on /auth/refresh) store no body.
-            ...(auditBodyAllowed(req, statusCode) ? {} : { body: {} }),
+            // Anonymous client errors store no body (e.g. a 400 on
+            // /auth/refresh → {}); a failed LOGIN keeps only `{ email }`.
+            ...(auditBodyAllowed(req, statusCode)
+              ? {}
+              : { body: withheldBody(req) }),
             entityId: null,
             statusCode,
             durationMs: Date.now() - start,
