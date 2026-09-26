@@ -19,7 +19,7 @@ services:
     # Schema migrations run as the OWNER (accounting); then the idempotent grants
     # step (re)creates the least-privilege `accounting_app` role the api runs as
     # and grants it DML on every table — including ones this deploy just added.
-    command: ['sh', '-c', 'node scripts/db/ensure-app-role.js --check-only && npx prisma migrate deploy && node scripts/db/ensure-app-role.js']
+    command: ['sh', '-c', 'node scripts/db/ensure-app-role.js --check-only && node_modules/.bin/prisma migrate deploy && node scripts/db/ensure-app-role.js']
     environment:
       DATABASE_URL: postgresql://accounting:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/accounting?schema=public
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:?APP_DB_PASSWORD is required (password for the accounting_app DB role)}

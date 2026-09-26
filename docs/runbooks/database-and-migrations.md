@@ -187,7 +187,8 @@ the Prisma schema cannot express:
   each listed row (`UPDATE <table> SET code = '<fixed>' WHERE id = '<id>'`, or
   soft-delete it through the API), then
   `npx prisma migrate resolve --rolled-back 20261005000000_identifier_code_ci_unique`
-  and re-run `prisma migrate deploy`. Test: `test/identifier-code-migration.e2e-spec.ts`.
+  (in production: `$COMPOSE run --rm --no-deps migrate node_modules/.bin/prisma migrate resolve …`
+  — the migrate image has no npm/npx) and re-run `prisma migrate deploy`. Test: `test/identifier-code-migration.e2e-spec.ts`.
 - **Email NFC** (`20261005300000_users_email_nfc`): aborts listing users whose emails
   collide once NFC-normalized; otherwise rewrites every non-NFC (decomposed) email to
   NFC (`NOTICE` per row) and adds `CHECK users_email_nfc (email IS NFC NORMALIZED)`,
@@ -262,7 +263,8 @@ they target the local dev database. (`scripts/create-admin.ts` itself reads only
 ### Production migrations (out-of-process, never in-process)
 
 Production migrations are applied by a dedicated, one-shot **`migrate` compose
-service** that runs `npx prisma migrate deploy` to completion **before** the `api`
+service** that runs `node_modules/.bin/prisma migrate deploy` (the Prisma CLI
+directly — the image carries no npm/npx) to completion **before** the `api`
 starts. The `api` service `depends_on` `migrate` with
 `condition: service_completed_successfully`, so the app never runs migrations
 itself. See [`./deploy.md`](./deploy.md):

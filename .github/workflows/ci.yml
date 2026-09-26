@@ -82,7 +82,7 @@ jobs:
           exit-code: '1'
 
   # The migrate image (Dockerfile `build` stage: prisma CLI + migrations +
-  # scripts/db, and the base image's bundled npm for `npx prisma`) is what CD's
+  # scripts/db; npm/npx stripped like the runtime image) is what CD's
   # one-shot `migrate` service runs against prod — same pinned action and scan
   # policy as the runtime image. Its own job so each image's result is separate.
   docker-migrate:

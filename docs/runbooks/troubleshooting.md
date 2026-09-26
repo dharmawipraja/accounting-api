@@ -408,7 +408,8 @@ mechanics, and [`./deploy.md`](./deploy.md) for production deploys.
   **in the migrate image** — the prod VM has no host `node`/`npx` and `db` is not
   published; pin `MIGRATE_IMAGE` first on a CD-managed VM (deploy.md → *Operator
   commands on a CD-managed VM*):
-  `$COMPOSE run --rm --no-deps migrate npx prisma migrate resolve --rolled-back <migration_name>`
+  `$COMPOSE run --rm --no-deps migrate node_modules/.bin/prisma migrate resolve --rolled-back <migration_name>`
+  (the migrate image has no npm/npx — call the Prisma CLI directly)
   (`COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"`; add
   `-e DATABASE_URL=…` when the failed run targeted another database, e.g. the
   rehearsal's `scratch`), then re-run the deploy (deploy.md → *Deploy / upgrade*).

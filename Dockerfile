@@ -1,5 +1,5 @@
 # --- Build stage ---
-FROM node:22-bookworm-slim@sha256:813a7480f28fdadac1f7f5c824bcdad435b5bc1322a5968bbbdef8d058f9dff4 AS build
+FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS build
 WORKDIR /app
 # openssl so Prisma's engines detect libssl cleanly (this stage also runs the
 # one-shot `prisma migrate deploy` migrate service — keeps its deploy logs clean).
@@ -10,9 +10,17 @@ COPY . .
 # DATABASE_URL here is a dummy so prisma.config.ts resolves during `prisma generate`;
 # generate never connects. The real URL is supplied at runtime via the environment.
 RUN DATABASE_URL="postgresql://build:build@localhost:5432/build?schema=public" npx prisma generate && npm run build
+# This stage is also the `migrate` image. It runs the Prisma CLI directly
+# (`node_modules/.bin/prisma migrate deploy`) and `node scripts/db/*.js`, never
+# npm/npx — so drop the npm/npx/corepack CLIs as the production stage does: the
+# base image's bundled npm vendors its own deps (tar, pacote, sigstore, …) that
+# Trivy flags. Nothing after this line (nor the production stage's COPY --from)
+# needs them.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 # --- Production stage ---
-FROM node:22-bookworm-slim@sha256:813a7480f28fdadac1f7f5c824bcdad435b5bc1322a5968bbbdef8d058f9dff4 AS production
+FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS production
 ENV NODE_ENV=production
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*

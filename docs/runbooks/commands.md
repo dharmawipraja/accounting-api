@@ -119,7 +119,8 @@ dev Postgres reachable.
   schema diffing) inside the `migrate` container before the API starts:
 
   ```bash
-  npx prisma migrate deploy        # what the prod migrate service runs
+  npx prisma migrate deploy        # locally; the prod migrate service runs the same
+                                   # CLI as node_modules/.bin/prisma (no npm/npx in its image)
   ```
 
   Never run `migrate dev`/`migrate reset` against prod. See

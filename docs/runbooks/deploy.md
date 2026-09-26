@@ -254,7 +254,7 @@ skips those — the list below still applies to the ones that remain):
    ```bash
    $COMPOSE run --rm --no-deps \
      -e DATABASE_URL="postgresql://accounting:${POSTGRES_PASSWORD}@db:5432/scratch?schema=public" \
-     migrate npx prisma migrate deploy
+     migrate node_modules/.bin/prisma migrate deploy
    ```
    (`set -a; . ./.env; set +a` first so `POSTGRES_PASSWORD` is set; drop the scratch
    database afterwards). These migrations **abort (nothing applied) on legacy data** and name the rows:
@@ -314,9 +314,9 @@ skips those — the list below still applies to the ones that remain):
    # rehearsal (scratch database):
    $COMPOSE run --rm --no-deps \
      -e DATABASE_URL="postgresql://accounting:${POSTGRES_PASSWORD}@db:5432/scratch?schema=public" \
-     migrate npx prisma migrate resolve --rolled-back <migration>
+     migrate node_modules/.bin/prisma migrate resolve --rolled-back <migration>
    # production (the live database — the service's own DATABASE_URL):
-   $COMPOSE run --rm --no-deps migrate npx prisma migrate resolve --rolled-back <migration>
+   $COMPOSE run --rm --no-deps migrate node_modules/.bin/prisma migrate resolve --rolled-back <migration>
    ```
    Without it the next `migrate deploy` refuses with `P3009` (failed migrations in
    the target database). Only deploy to production once the rehearsal applies
@@ -463,7 +463,7 @@ skips those — the list below still applies to the ones that remain):
   accounts by hand (rename/tombstone one), mark the failed attempt — in the
   migrate image, after pinning `MIGRATE_IMAGE` (*Operator commands on a CD-managed
   VM*; no host `npx`, `db` is not published) — with
-  `$COMPOSE run --rm --no-deps migrate npx prisma migrate resolve --rolled-back 20260926100000_auth_hardening`,
+  `$COMPOSE run --rm --no-deps migrate node_modules/.bin/prisma migrate resolve --rolled-back 20260926100000_auth_hardening`,
   and re-run the deploy. Tokens now carry a `typ` claim: every access/refresh token issued
   before the deploy is rejected, so all users log in again once.
 - One-time caveat: migration `20260705163429_scope_idempotency_keys_by_user`
@@ -819,7 +819,8 @@ moderate-or-higher advisory in prod deps), `shellcheck` (every `scripts/**/*.sh`
 incl. `scripts/deploy-remote.sh` — the commands CD runs on the VM), `docker`
 (production image build + Trivy HIGH/CRITICAL vulnerability scan, unfixed ignored,
 `exit-code 1`) and `docker-migrate` (the same Trivy scan of the migrate image, the
-Dockerfile `build` stage). CD's `ci-gate` needs the whole run green, so a failing
+Dockerfile `build` stage — like the runtime image it ships no npm/npx, so run the
+Prisma CLI in it as `node_modules/.bin/prisma …`). CD's `ci-gate` needs the whole run green, so a failing
 scan blocks releases until the base image (or dependency) is bumped.
 Recommended next step: enable branch protection on `main` requiring the `verify`
 and `audit` checks to pass before merge.
