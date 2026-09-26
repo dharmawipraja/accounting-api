@@ -309,7 +309,8 @@ mechanics, and [`./deploy.md`](./deploy.md) for production deploys.
 - **Fix:** Generate a new one (`openssl rand -hex 24`), put it in `.env`, redeploy
   (`migrate` re-sets the role password). Changing `POSTGRES_PASSWORD` on an existing
   volume also needs `ALTER ROLE accounting PASSWORD '…'` first — the owner password
-  lives in the data volume.
+  lives in the data volume (step-by-step: `deploy.md` → *Rotate `POSTGRES_PASSWORD`
+  (owner) on an existing volume*).
 
 ### The `X-Request-Id` I sent is not echoed back / not in `audit_log.request_id`
 

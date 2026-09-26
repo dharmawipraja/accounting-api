@@ -142,6 +142,19 @@ Work through this **once**, on the first deploy that includes migrations
   the role's password before `api` restarts with the new one. The `db` service
   carries the variable too (for its init hook), so a changed value **recreates the
   `db` container — a brief database restart**; rotate in a quiet window.
+- **Rotate `POSTGRES_PASSWORD` (owner) on an existing volume** — e.g. when the new
+  URL-safe check refuses a legacy password containing `+`, `/` or `=`: the owner
+  password is stored **in the data volume**, so changing `.env` alone locks
+  `migrate`/`backup` out. First set the new (URL-safe) password in the database,
+  connecting over the container's local socket (no password needed there):
+  ```bash
+  NEW=$(openssl rand -hex 24)
+  $COMPOSE exec db psql -U accounting -d accounting \
+    -c "ALTER ROLE accounting PASSWORD '$NEW'"
+  ```
+  then put `POSTGRES_PASSWORD=$NEW` in `.env` and redeploy (`db` is recreated because
+  its env changed — a brief restart; `migrate`, `backup` and any operator URLs use
+  the new value). Keep the old `.env` until `migrate` has succeeded.
 - **First deploy on an existing volume:** nothing manual — `migrate` creates the role.
   Until that step has run, `accounting_app` does not exist and `api` cannot connect
   (compose starts `api` only after `migrate` succeeds). If the grants step fails it

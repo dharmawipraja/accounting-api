@@ -108,6 +108,14 @@ Guards run in registration order:
   a second row. Every row caps `path` (incl. query string) and serialized `params`
   at 512 characters (code points — a surrogate pair is never split, so the jsonb
   insert cannot fail on a lone surrogate).
+  - **Timeout caveat (outermost = outside the 408):** on success the response is
+    emitted only after the audit INSERT resolves, and that INSERT runs *outside*
+    `RequestTimeoutInterceptor`. A stalled audit write is therefore **not** cut
+    off by the 408 (35s): it is bounded by the pool's `connectionTimeoutMillis`
+    (5s, waiting for a connection), the DB `statement_timeout` (30s, a running
+    INSERT) and ultimately the HTTP socket timeout (40s, `main.ts`), after which
+    the client sees a connection reset rather than a 408 — the business write has
+    already committed, so the client should retry with the SAME `Idempotency-Key`.
 - **`MetricsInterceptor`** (`src/metrics/metrics.module.ts`) — HTTP-duration
   histogram labelled by method/route/status.
 - **`RequestTimeoutInterceptor`** (`src/common/interceptors/request-timeout.interceptor.ts`,
