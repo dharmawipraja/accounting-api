@@ -12,6 +12,7 @@ import { PostingService } from '../posting/posting.service';
 import { DocumentLifecycleService } from '../document-lifecycle.service';
 import { PostLineInput } from '../posting/posting.types';
 import { accountPolicyFor } from '../posting/account-policy';
+import { assertLinesOneSided } from '../posting/assert-balanced';
 import { Money } from '../../common/money/money';
 import {
   NotFoundDomainError,
@@ -65,6 +66,9 @@ export class JournalService {
   ) {}
 
   async createDraft(input: DraftInput): Promise<JournalEntry> {
+    // Per-line shape is final at create (a two-sided, empty or zero line can
+    // never post); only the debit == credit totals may still be unbalanced.
+    assertLinesOneSided(input.lines);
     // Same account rules and errors as post (unknown/deleted/header/inactive
     // → 422 INVALID_ACCOUNT; AR/AP control → 422 {accountId, role}), so a bad
     // id never reaches the FK (which would surface as a 409).

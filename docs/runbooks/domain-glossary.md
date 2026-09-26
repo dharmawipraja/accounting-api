@@ -196,6 +196,10 @@ later year before an earlier one does not double-count; close years **in order**
   before closing its last month (or reopen that month first).
 - Deactivated P&L accounts are included (the `CLOSING` policy skips the `isActive`
   check); close → reopen → re-close all work.
+- **Only an ended year.** The fiscal year-end must be on/before today (WIB, via
+  `asOfOrToday`) → else `422 { fiscalYear, yearEnd }` (`yearNotEndedViolation` in
+  `src/close/close-date-rule.ts`). E2E fixtures therefore close past years (e.g. 2006+),
+  never the current/next one.
 
 ### Reopen
 Undoes a close by **reversing** the closing entry and flipping the year back to `OPEN`.
@@ -298,6 +302,16 @@ locked `FOR UPDATE` and outstanding (`total − amount_paid`) is re-verified, so
 payments can't jointly over-pay.
 - Pre-check and in-tx `FOR UPDATE` re-check in `PaymentsService` ("Allocation exceeds /
   now exceeds the document outstanding").
+- **Backdated-void rule.** A payment voided later than its own date stays live in as-of
+  aging on `[date, voided_on)`. A new payment dated P must keep, for every day D ≥ P, the
+  aging's as-of paid sum (+ its own allocation) ≤ the document total, or aging would drop
+  the over-paid document while AR/AP control still carried the excess → `422
+  { documentId, paymentDate, conflictingVoidedOn }`. Exact check (not "no void after P"):
+  the sum only rises on payment dates, so it is evaluated at P and each later payment
+  date. `allocationHistoryAfter` / `backdatedAllocationViolation` in
+  `src/invoicing/payment-targets.ts`; pre-check at create, re-check in `settleInTx` under
+  the document `FOR UPDATE` (which payment void's `unwindInTx` also takes). Mirror of the
+  document-void guard `assertNoLaterVoidedPayment`.
 
 ### Document lifecycle: DRAFT → POST → VOID
 Documents (invoices, bills, payments) start `DRAFT` (no ledger effect), become `POSTED`
@@ -452,4 +466,10 @@ rounds to whole rupiah for tax. The currency is IDR (`CompanySettings.baseCurren
 ### Business partner (mitra bisnis / pelanggan / pemasok)
 A customer and/or vendor. Flags `isCustomer` / `isVendor` decide whether a partner can
 appear on sales vs purchase documents; `npwp` is the Indonesian tax ID.
+- **Deactivating / un-flagging with open items is allowed (by design, no guard).** Posted
+  documents stay open in AR/AP and aging, but receipts (disbursements) against them —
+  create and post — and new documents return `422` ("Partner is inactive" / "Receipt
+  requires a customer" / "Disbursement requires a vendor") until the flag is re-enabled;
+  voiding an existing payment still works. Deletion, by contrast, is refused with
+  `OPEN_ITEMS`.
 - `BusinessPartner` model in `prisma/schema.prisma`.

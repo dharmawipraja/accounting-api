@@ -31,11 +31,11 @@ describe('PostingService TOCTOU guard (e2e)', () => {
     await app.get(AccountsService).seedIfEmpty();
     await app.get(PeriodsService).generatePeriods(2026);
     await app.get(PeriodsService).generatePeriods(2027);
-    await app.get(PeriodsService).generatePeriods(2029);
-    await app.get(PeriodsService).generatePeriods(2030);
-    await app.get(PeriodsService).generatePeriods(2031);
-    await app.get(PeriodsService).generatePeriods(2032);
-    await app.get(PeriodsService).generatePeriods(2033);
+    await app.get(PeriodsService).generatePeriods(2009);
+    await app.get(PeriodsService).generatePeriods(2010);
+    await app.get(PeriodsService).generatePeriods(2011);
+    await app.get(PeriodsService).generatePeriods(2012);
+    await app.get(PeriodsService).generatePeriods(2013);
     posting = app.get(PostingService);
     const { data: accounts } = await app.get(AccountsService).list();
     kasId = accounts.find((a) => a.code === '1-1000')!.id;
@@ -144,13 +144,13 @@ describe('PostingService TOCTOU guard (e2e)', () => {
   });
 
   it('in-tx guard rejects a post into a CLOSED year (ClosedYearError)', async () => {
-    // TOCTOU: mint PreparedPosting while 2030 is open, then close the year so
+    // TOCTOU: mint PreparedPosting while 2010 is open, then close the year so
     // the in-tx guard (assertPostablePeriodInTx) is the one that fires.
     const prepared = await posting.preparePosting(
-      balanced(new Date('2030-03-15')),
+      balanced(new Date('2010-03-15')),
       'p',
     );
-    await app.get(YearEndCloseService).close(2030, 'admin');
+    await app.get(YearEndCloseService).close(2010, 'admin');
     await expect(
       prisma.client.$transaction((tx) =>
         posting.createPostedEntryInTx(tx, prepared),
@@ -159,12 +159,12 @@ describe('PostingService TOCTOU guard (e2e)', () => {
   });
 
   it('in-tx guard rejects reverseInTx into a CLOSED year (allowClosedYear=false)', async () => {
-    // TOCTOU: post an entry in 2031, mint PreparedReversal (allowClosedYear=false, the
+    // TOCTOU: post an entry in 2011, mint PreparedReversal (allowClosedYear=false, the
     // default) while the year is still open, then close the year so the in-tx guard fires.
-    const entry = await posting.post(balanced(new Date('2031-03-15')), 'p');
+    const entry = await posting.post(balanced(new Date('2011-03-15')), 'p');
     // prepareReversal with no opts — allowClosedYear defaults to false.
     const prepared = await posting.prepareReversal(entry.id, 'p', undefined);
-    await app.get(YearEndCloseService).close(2031, 'admin');
+    await app.get(YearEndCloseService).close(2011, 'admin');
     await expect(
       prisma.client.$transaction((tx) => posting.reverseInTx(tx, prepared)),
     ).rejects.toBeInstanceOf(ClosedYearError);
@@ -174,23 +174,23 @@ describe('PostingService TOCTOU guard (e2e)', () => {
     const close = app.get(YearEndCloseService);
     const [postRes] = await Promise.all([
       posting
-        .post(balanced(new Date('2029-06-15')), 'p')
+        .post(balanced(new Date('2009-06-15')), 'p')
         .then((e) => ({ ok: true as const, e }))
         .catch((err: unknown) => ({ ok: false as const, err })),
-      close.close(2029, 'admin').catch(() => null),
+      close.close(2009, 'admin').catch(() => null),
     ]);
     // Year ends CLOSED regardless of which operation won.
-    expect((await close.getStatus(2029))?.status).toBe('CLOSED');
+    expect((await close.getStatus(2009))?.status).toBe('CLOSED');
     // The post either committed (before close) or was rejected with ClosedYearError — never another error.
     if (!postRes.ok) expect(postRes.err).toBeInstanceOf(ClosedYearError);
-    // No MANUAL POSTED entry orphaned into 2029 after close: exactly 1 if post won, 0 if close won.
+    // No MANUAL POSTED entry orphaned into 2009 after close: exactly 1 if post won, 0 if close won.
     const manual = await prisma.client.journalEntry.count({
-      where: { fiscalYear: 2029, status: 'POSTED', sourceType: 'MANUAL' },
+      where: { fiscalYear: 2009, status: 'POSTED', sourceType: 'MANUAL' },
     });
     expect(manual).toBe(postRes.ok ? 1 : 0);
     // A fresh post into the now-closed year is firmly rejected.
     await expect(
-      posting.post(balanced(new Date('2029-06-16')), 'p'),
+      posting.post(balanced(new Date('2009-06-16')), 'p'),
     ).rejects.toBeInstanceOf(ClosedYearError);
   });
 
@@ -249,10 +249,10 @@ describe('PostingService TOCTOU guard (e2e)', () => {
 
   it('year-end close computes P&L under the exclusive lock: a post committing while close waits is closed too', async () => {
     const close = app.get(YearEndCloseService);
-    await posting.post(sale('2032-03-10', '1000'), 'p');
+    await posting.post(sale('2012-03-10', '1000'), 'p');
     // A post in flight: it holds the SHARED year lock with its entry inserted but
     // not yet committed when the close starts.
-    const lateOk = await posting.preparePosting(sale('2032-06-10', '250'), 'p');
+    const lateOk = await posting.preparePosting(sale('2012-06-10', '250'), 'p');
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     let inserted!: () => void;
@@ -267,8 +267,8 @@ describe('PostingService TOCTOU guard (e2e)', () => {
       { timeout: 20_000 },
     );
     await insertedP;
-    const closeP = close.close(2032, 'admin');
-    await waitForAdvisoryWaiter(2032);
+    const closeP = close.close(2012, 'admin');
+    await waitForAdvisoryWaiter(2012);
     release();
     await postTx;
     const rec = await closeP;
@@ -278,7 +278,7 @@ describe('PostingService TOCTOU guard (e2e)', () => {
     expect(rec.netIncome.toFixed(4)).toBe('1250.0000');
     const rows = await app
       .get(BalancesService)
-      .movementsBetween(new Date('2032-01-01'), new Date('2032-12-31'));
+      .movementsBetween(new Date('2012-01-01'), new Date('2012-12-31'));
     const rev = rows.find((r) => r.accountId === revenueId)!;
     expect(rev.balance).toBe('0.0000');
     const pl = rows.filter((r) => r.type === 'REVENUE' || r.type === 'EXPENSE');
@@ -288,8 +288,8 @@ describe('PostingService TOCTOU guard (e2e)', () => {
   it('concurrent closes of an empty year: exactly one wins, the other is a Conflict', async () => {
     const close = app.get(YearEndCloseService);
     const results = await Promise.allSettled([
-      close.close(2033, 'a'),
-      close.close(2033, 'b'),
+      close.close(2013, 'a'),
+      close.close(2013, 'b'),
     ]);
     const ok = results.filter((r) => r.status === 'fulfilled');
     const bad = results.filter(
@@ -300,7 +300,7 @@ describe('PostingService TOCTOU guard (e2e)', () => {
     expect(bad[0].reason).toBeInstanceOf(ConflictDomainError);
     expect(
       await prisma.client.yearEndClosing.count({
-        where: { fiscalYear: 2033, status: 'CLOSED' },
+        where: { fiscalYear: 2013, status: 'CLOSED' },
       }),
     ).toBe(1);
   });
@@ -308,12 +308,12 @@ describe('PostingService TOCTOU guard (e2e)', () => {
   it('concurrent reopens of an entry-less closed year: exactly one wins, the other is rejected', async () => {
     const close = app.get(YearEndCloseService);
     // Own fixture: an empty year closed here, independent of the test above.
-    await app.get(PeriodsService).generatePeriods(2034);
-    await close.close(2034, 'admin');
-    expect((await close.getStatus(2034))?.status).toBe('CLOSED');
+    await app.get(PeriodsService).generatePeriods(2014);
+    await close.close(2014, 'admin');
+    expect((await close.getStatus(2014))?.status).toBe('CLOSED');
     const results = await Promise.allSettled([
-      close.reopen(2034, 'a'),
-      close.reopen(2034, 'b'),
+      close.reopen(2014, 'a'),
+      close.reopen(2014, 'b'),
     ]);
     const ok = results.filter((r) => r.status === 'fulfilled');
     const bad = results.filter(
@@ -322,6 +322,6 @@ describe('PostingService TOCTOU guard (e2e)', () => {
     expect(ok).toHaveLength(1);
     expect(bad).toHaveLength(1);
     expect(bad[0].reason).toBeInstanceOf(ValidationFailedError);
-    expect((await close.getStatus(2034))?.status).toBe('OPEN');
+    expect((await close.getStatus(2014))?.status).toBe('OPEN');
   });
 });

@@ -37,6 +37,7 @@ import {
   buildPaymentLines,
   inLockOrder,
   assertPaymentDateNotBefore,
+  assertNoBackdatedOverAllocation,
 } from './payment-targets';
 
 /** A payment row with its allocations eagerly loaded — what getById always returns. */
@@ -123,6 +124,14 @@ export class PaymentsService {
           { documentId: targetRow.id },
         );
       }
+      // Backdated-void pre-check (re-done under the document lock at post).
+      await assertNoBackdatedOverAllocation(
+        this.prisma.client,
+        target,
+        targetRow,
+        input.date,
+        alreadyAllocated.add(amt).toPersistence(),
+      );
       allocatedByDoc.set(targetRow.id, alreadyAllocated.add(amt));
       total = total.add(amt);
     }
@@ -292,9 +301,21 @@ export class PaymentsService {
       // Lock each target document FOR UPDATE and re-verify outstanding (the
       // real over-allocation guard) and payment date >= document date — in
       // id order, so concurrent payments over overlapping documents can't
-      // deadlock.
+      // deadlock. settledBefore carries this payment's earlier allocations to
+      // the same document into the backdated-void check.
+      const settled = new Map<string, Money>();
       for (const a of inLockOrder(target, allocations)) {
-        await settleInTx(tx, target, a, payment.partnerId, payment.date);
+        const docId = target.allocId(a)!;
+        const before = settled.get(docId) ?? Money.zero();
+        await settleInTx(
+          tx,
+          target,
+          a,
+          payment.partnerId,
+          payment.date,
+          before,
+        );
+        settled.set(docId, before.add(Money.of(a.amount)));
       }
 
       const number = await this.docNumber.next(

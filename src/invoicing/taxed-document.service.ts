@@ -17,6 +17,7 @@ import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
 import {
   LedgerTx,
   POSTING_TX_OPTIONS,
+  PostingService,
 } from '../ledger/posting/posting.service';
 import { trigramSearch } from '../common/search/trigram-search';
 import { listPaginated } from '../common/pagination/paginated';
@@ -40,6 +41,7 @@ import {
   documentMessages,
 } from './document-presenter';
 import { assertDocumentLineAccounts } from './document-account-rules';
+import { accountPolicyFor } from '../ledger/posting/account-policy';
 
 /** Posting restarts from a fresh read at most this many times when the draft
  *  is edited (or a tax code/setting its tax derives from changes) between its
@@ -75,6 +77,7 @@ export class TaxedDocumentService {
     private readonly partners: BusinessPartnersService,
     private readonly docPosting: DocumentPostingService,
     private readonly lifecycle: DocumentLifecycleService,
+    private readonly posting: PostingService,
   ) {}
 
   async getById<
@@ -100,9 +103,9 @@ export class TaxedDocumentService {
       throw new ValidationFailedError(m.partnerInactive, {
         partnerId: input.partnerId,
       });
-    await assertDocumentLineAccounts(
+    await this.assertDraftLineAccounts(
       this.prisma.client,
-      spec.nature,
+      spec,
       input.lines.map((l) => l.accountId),
     );
     const settlementId = await findControlAccountId(
@@ -173,9 +176,9 @@ export class TaxedDocumentService {
             unitPrice: l.unitPrice.toString(),
             taxCodeIds: l.taxCodeIds,
           }));
-        await assertDocumentLineAccounts(
+        await this.assertDraftLineAccounts(
           ltx,
-          spec.nature,
+          spec,
           nextLines.map((l) => l.accountId),
         );
         const totals = await this.docPosting.computeTotals(
@@ -412,6 +415,25 @@ export class TaxedDocumentService {
           paymentVoidedOn: rows[0].voided_on.toISOString().slice(0, 10),
         },
       );
+  }
+
+  /** Draft create/PATCH line-account validation, same rules and errors as
+   *  post: every account exists, is live, postable and active (422
+   *  INVALID_ACCOUNT via PostingService.resolvePostableAccounts, the post
+   *  path's pre-tx check, under the document source type's policy), then the
+   *  document line rules (control/cash/tax/type/contra → 422
+   *  VALIDATION_FAILED). An unknown id thus never reaches the FK (409). */
+  private async assertDraftLineAccounts<
+    R extends DocumentRow,
+    C extends CreateDocumentInput,
+    U extends UpdateDocumentInput,
+  >(db: LedgerTx, spec: Spec<R, C, U>, accountIds: string[]): Promise<void> {
+    await this.posting.resolvePostableAccounts(
+      accountIds,
+      accountPolicyFor(spec.sourceType),
+      db,
+    );
+    await assertDocumentLineAccounts(db, spec.nature, accountIds);
   }
 
   /** FOR UPDATE lock for void: returns status + amount_paid for the in-tx re-check. */

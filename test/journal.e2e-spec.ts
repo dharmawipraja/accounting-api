@@ -690,4 +690,33 @@ describe('JournalEntries (e2e)', () => {
       expect((res.body as { code: string }).code).toBe('INVALID_ACCOUNT');
     });
   });
+
+  describe('draft create enforces the per-line one-sided rule (422 UNBALANCED_ENTRY)', () => {
+    const createDraft = (lines: Record<string, string>[]) =>
+      request(app.getHttpServer() as App)
+        .post('/v1/ledger/journal-entries')
+        .set('Authorization', `Bearer ${accountantToken}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({ date: '2026-03-15', description: 'one-sided rule', lines });
+
+    it.each([
+      ['both debit and credit', { debit: '100', credit: '100' }],
+      ['neither side', {}],
+      ['a zero debit only', { debit: '0' }],
+    ])('rejects a line with %s', async (_label, sides) => {
+      const res = await createDraft([
+        { accountId: kasId, ...sides },
+        { accountId: modalId, credit: '100' },
+      ]).expect(422);
+      expect((res.body as { code: string }).code).toBe('UNBALANCED_ENTRY');
+    });
+
+    it('still accepts an unbalanced (but one-sided) draft — totals are checked at post', async () => {
+      const res = await createDraft([
+        { accountId: kasId, debit: '100' },
+        { accountId: modalId, credit: '90' },
+      ]).expect(201);
+      expect((res.body as { status: string }).status).toBe('DRAFT');
+    });
+  });
 });

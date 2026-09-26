@@ -523,4 +523,53 @@ describe('PurchaseBills (e2e)', () => {
       expect422(res, { accountId: acc['2-1000'], role: 'AP_CONTROL' });
     });
   });
+
+  describe('draft create validates line accounts like post (422 INVALID_ACCOUNT)', () => {
+    const create = (accountId: string) =>
+      request(app.getHttpServer() as App)
+        .post('/v1/purchase-bills')
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          ...draftBody(),
+          lines: [
+            {
+              description: 'Beli',
+              accountId,
+              quantity: '1',
+              unitPrice: '1000',
+              taxCodeIds: [],
+            },
+          ],
+        });
+    const expectInvalid = (res: request.Response, accountId: string) => {
+      const body = res.body as { code: string; details: unknown };
+      expect(body.code).toBe('INVALID_ACCOUNT');
+      expect(body.details).toEqual({ accountId });
+    };
+
+    it('unknown account id → 422 INVALID_ACCOUNT', async () => {
+      const missing = randomUUID();
+      expectInvalid(await create(missing).expect(422), missing);
+    });
+
+    it('header (non-postable) expense account → 422 INVALID_ACCOUNT', async () => {
+      expectInvalid(await create(acc['5-0000']).expect(422), acc['5-0000']);
+    });
+
+    it('inactive expense account → 422 INVALID_ACCOUNT', async () => {
+      const a = await prisma.client.account.create({
+        data: {
+          code: '6-9811',
+          name: 'Inactive bill target',
+          type: 'EXPENSE',
+          subtype: 'OPERATING_EXPENSE',
+          normalBalance: 'DEBIT',
+          isPostable: true,
+          isActive: false,
+        },
+      });
+      expectInvalid(await create(a.id).expect(422), a.id);
+    });
+  });
 });

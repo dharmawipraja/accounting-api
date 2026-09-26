@@ -237,6 +237,9 @@ Key rules:
   so HTTP responses match production shapes.
 - List endpoints return the `{ data, total, limit, offset }` envelope for the
   transactional lists — destructure `const { data } = await ...list()`.
+- **Year-end close fixtures use PAST years** (the existing specs use 2006–2017, each
+  suite its own years; `generatePeriods(<year>)` first). Close refuses a fiscal year
+  that has not ended (WIB today), so closing the current or next year fails.
 
 ### Unit test pattern
 

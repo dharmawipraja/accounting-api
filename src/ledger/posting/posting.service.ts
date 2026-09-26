@@ -568,13 +568,17 @@ export class PostingService {
   /** Validate every id is an existing, postable, active account and return the
    *  accounts keyed by id. The single source of postable-account validation: the
    *  post path asserts through it; the preview reuses the returned map to enrich
-   *  journal lines with code/name (one fetch, one rule set). */
+   *  journal lines with code/name (one fetch, one rule set). `db` defaults to
+   *  the base client; a caller already inside a transaction (document draft
+   *  PATCH) passes its tx so the read stays on that connection. A plain
+   *  (unlocked) read: the post path re-checks under FOR SHARE. */
   async resolvePostableAccounts(
     ids: string[],
     policy: AccountPolicy = UNRESTRICTED_POLICY,
+    db: LedgerTx = this.prisma.client,
   ): Promise<Map<string, Account>> {
     const unique = [...new Set(ids)];
-    const accounts = await this.prisma.client.account.findMany({
+    const accounts = await db.account.findMany({
       where: { id: { in: unique } },
     });
     const byId = new Map(accounts.map((a) => [a.id, a]));

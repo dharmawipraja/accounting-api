@@ -10,6 +10,8 @@ import {
 import { BalancesService } from '../ledger/balances/balances.service';
 import { CompanyService } from '../company/company.service';
 import { PostLineInput } from '../ledger/posting/posting.types';
+import { asOfOrToday } from '../common/dates/query-dates';
+import { yearNotEndedViolation } from './close-date-rule';
 import {
   ConflictDomainError,
   ValidationFailedError,
@@ -41,6 +43,13 @@ export class YearEndCloseService {
     }
     const { start: fyStart, end: yearEnd } =
       await this.company.fiscalYearBounds(fiscalYear);
+    // A year still running (its end after today, WIB) cannot be closed.
+    const notEnded = yearNotEndedViolation(fiscalYear, yearEnd, asOfOrToday());
+    if (notEnded)
+      throw new ValidationFailedError(
+        'Fiscal year has not ended yet; it can be closed from its last day on',
+        notEnded,
+      );
 
     await this.prisma.transaction(
       async (tx) => {

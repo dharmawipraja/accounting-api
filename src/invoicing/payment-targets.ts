@@ -175,6 +175,123 @@ export function assertPaymentDateNotBefore(
     );
 }
 
+/** Pure backdated-void rule. The as-of aging counts a payment's allocation on
+ *  day D iff the payment is dated on/before D and is POSTED or was voided
+ *  AFTER D (a VOID payment stays live on [date, voidedOn)). A new payment
+ *  dated P adds `amount` to every day D ≥ P, so it is safe iff
+ *  max over D ≥ P of the other payments' live allocations + amount ≤ total —
+ *  otherwise, for those past days, aging would drop the (over-paid) document
+ *  while AR/AP control still carried the excess. `peakLivePaid` is that max
+ *  (see allocationHistoryAfter). Only a later-voided payment can make it
+ *  exceed what the current outstanding check allows, so without one this is
+ *  null (plain over-allocation stays the outstanding check's 409/422).
+ *  `latestVoidedOn` is the latest void date after P: a payment dated on/after
+ *  it never overlaps a voided payment's live window. */
+export function backdatedAllocationViolation(args: {
+  documentId: string;
+  paymentDate: Date;
+  total: Prisma.Decimal;
+  peakLivePaid: Prisma.Decimal;
+  amount: string;
+  latestVoidedOn: Date | null;
+}): {
+  documentId: string;
+  paymentDate: string;
+  conflictingVoidedOn: string;
+} | null {
+  if (!args.latestVoidedOn) return null;
+  const fits = !Money.of(args.total.toString())
+    .subtract(Money.of(args.peakLivePaid.toString()))
+    .subtract(Money.of(args.amount))
+    .isNegative();
+  if (fits) return null;
+  return {
+    documentId: args.documentId,
+    paymentDate: args.paymentDate.toISOString().slice(0, 10),
+    conflictingVoidedOn: args.latestVoidedOn.toISOString().slice(0, 10),
+  };
+}
+
+/** Reads, for one document, what backdatedAllocationViolation needs about the
+ *  OTHER posted/voided payments allocated to it (a DRAFT — incl. the payment
+ *  being posted — is not counted):
+ *  - peakLivePaid: max over days D ≥ paymentDate of the aging's as-of paid sum
+ *    (same predicate as AgingService). That sum only rises on a payment's
+ *    date, so the max is attained at paymentDate or at some later payment
+ *    date — those are the only days evaluated;
+ *  - latestVoidedOn: the latest voided_on after paymentDate.
+ *  Dates are bound as 'YYYY-MM-DD'::date so the session timezone never
+ *  shifts the calendar day. Runs under the document FOR UPDATE lock at post
+ *  (unwindInTx takes the same lock, so every committed void is seen) and as a
+ *  pre-check on the base client at create. */
+export async function allocationHistoryAfter(
+  db: LedgerTx,
+  target: PaymentTarget,
+  documentId: string,
+  paymentDate: Date,
+): Promise<{ peakLivePaid: Prisma.Decimal; latestVoidedOn: Date | null }> {
+  const day = paymentDate.toISOString().slice(0, 10);
+  const col = Prisma.raw(
+    target.table === 'sales_invoices' ? 'sales_invoice_id' : 'purchase_bill_id',
+  );
+  const rows = await db.$queryRaw<
+    { peak_live_paid: string; latest_voided_on: Date | null }[]
+  >(Prisma.sql`
+    WITH allocs AS (
+      SELECT q.date, q.status::text AS status, q.voided_on, pa.amount
+      FROM payment_allocations pa
+      JOIN payments q ON q.id = pa.payment_id
+      WHERE pa.${col} = ${documentId} AND q.deleted_at IS NULL
+        AND q.status IN ('POSTED', 'VOID')
+    ), days AS (
+      SELECT ${day}::date AS day
+      UNION SELECT date FROM allocs WHERE date > ${day}::date
+    )
+    SELECT
+      (SELECT COALESCE(MAX(live), 0) FROM (
+         SELECT (SELECT COALESCE(SUM(a.amount), 0) FROM allocs a
+                 WHERE a.date <= d.day
+                   AND (a.status = 'POSTED' OR a.voided_on > d.day)) AS live
+         FROM days d) s)::text AS peak_live_paid,
+      (SELECT MAX(voided_on) FROM allocs
+       WHERE status = 'VOID' AND voided_on > ${day}::date) AS latest_voided_on`);
+  return {
+    peakLivePaid: new Prisma.Decimal(rows[0].peak_live_paid),
+    latestVoidedOn: rows[0].latest_voided_on,
+  };
+}
+
+/** Throws the 422 when `amount` (this payment's cumulative allocation to the
+ *  document so far) would over-allocate it for some past as-of day. */
+export async function assertNoBackdatedOverAllocation(
+  db: LedgerTx,
+  target: PaymentTarget,
+  document: { id: string; total: Prisma.Decimal },
+  paymentDate: Date,
+  amount: string,
+): Promise<void> {
+  const history = await allocationHistoryAfter(
+    db,
+    target,
+    document.id,
+    paymentDate,
+  );
+  const v = backdatedAllocationViolation({
+    documentId: document.id,
+    paymentDate,
+    total: document.total,
+    amount,
+    ...history,
+  });
+  if (v)
+    throw new ValidationFailedError(
+      'Payment date is inside the live window of a later-voided payment on this document; ' +
+        'dated here it would over-allocate the document for past dates. ' +
+        'Date it on/after conflictingVoidedOn or lower the amount',
+      v,
+    );
+}
+
 /** The 2-line cash/control journal for a payment. */
 export function buildPaymentLines(
   target: PaymentTarget,
@@ -230,15 +347,19 @@ export function inLockOrder(
   );
 }
 
-/** Lock the target FOR UPDATE, re-verify POSTED + partner + payment date + outstanding,
- *  increment amountPaid. Call once per allocation so repeated allocations to one document
- *  see each other's increment under the lock. */
+/** Lock the target FOR UPDATE, re-verify POSTED + partner + payment date + outstanding
+ *  + the backdated-void rule, increment amountPaid. Call once per allocation so repeated
+ *  allocations to one document see each other's increment under the lock;
+ *  `settledBefore` is what THIS payment already allocated to the same document
+ *  in earlier calls (the payment is still a DRAFT, so the history read does not
+ *  count it). */
 export async function settleInTx(
   tx: LedgerTx,
   target: PaymentTarget,
   alloc: AllocationInput,
   partnerId: string,
   paymentDate: Date,
+  settledBefore: Money = Money.zero(),
 ): Promise<void> {
   const id = target.allocId(alloc)!;
   const rows = await tx.$queryRaw<
@@ -270,6 +391,13 @@ export async function settleInTx(
     )
   )
     throw new ConflictDomainError('Allocation now exceeds outstanding', { id });
+  await assertNoBackdatedOverAllocation(
+    tx,
+    target,
+    { id, total: new Prisma.Decimal(rows[0].total) },
+    paymentDate,
+    settledBefore.add(Money.of(alloc.amount)).toPersistence(),
+  );
   await target.applyPaid(tx, id, new Prisma.Decimal(alloc.amount), 1);
 }
 

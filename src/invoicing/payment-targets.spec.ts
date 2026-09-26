@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import {
   paymentDateViolation,
+  backdatedAllocationViolation,
   exceedsOutstanding,
   buildPaymentLines,
   inLockOrder,
@@ -73,5 +74,48 @@ describe('paymentDateViolation', () => {
       documentId: 'inv-1',
       documentDate: '2026-05-20',
     });
+  });
+});
+
+describe('backdatedAllocationViolation', () => {
+  const pDate = new Date('2026-03-05');
+  const voided = new Date('2026-03-10');
+  const base = {
+    documentId: 'inv',
+    paymentDate: pDate,
+    total: D('100'),
+    latestVoidedOn: voided,
+  };
+  it('null when the peak as-of paid total plus this payment fits the document total', () => {
+    expect(
+      backdatedAllocationViolation({
+        ...base,
+        peakLivePaid: D('50'),
+        amount: '50',
+      }),
+    ).toBeNull();
+  });
+  it('details when the peak plus this payment exceeds the total', () => {
+    expect(
+      backdatedAllocationViolation({
+        ...base,
+        peakLivePaid: D('100'),
+        amount: '0.0001',
+      }),
+    ).toEqual({
+      documentId: 'inv',
+      paymentDate: '2026-03-05',
+      conflictingVoidedOn: '2026-03-10',
+    });
+  });
+  it('null without a later-voided payment (plain over-allocation is the outstanding check)', () => {
+    expect(
+      backdatedAllocationViolation({
+        ...base,
+        latestVoidedOn: null,
+        peakLivePaid: D('100'),
+        amount: '1',
+      }),
+    ).toBeNull();
   });
 });

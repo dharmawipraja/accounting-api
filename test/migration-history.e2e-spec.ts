@@ -71,7 +71,7 @@ describe('Migration 20260927000000_journal_link_fks on a DB with posted history 
     await app.get(CompanyService).update({ segregationOfDutiesEnabled: false });
     await app.get(AccountsService).seedIfEmpty();
     await app.get(TaxCodesService).seedIfEmpty();
-    await app.get(PeriodsService).generatePeriods(2026);
+    await app.get(PeriodsService).generatePeriods(2006);
     const { data: accounts } = await app.get(AccountsService).list();
     const acc = Object.fromEntries(accounts.map((a) => [a.code, a.id]));
     const partners = app.get(BusinessPartnersService);
@@ -89,7 +89,7 @@ describe('Migration 20260927000000_journal_link_fks on a DB with posted history 
     // Manual entry + generic reversal.
     const je = await app.get(PostingService).post(
       {
-        date: new Date('2026-03-02'),
+        date: new Date('2006-03-02'),
         description: 'manual',
         sourceType: 'MANUAL',
         createdBy: 'a',
@@ -100,10 +100,10 @@ describe('Migration 20260927000000_journal_link_fks on a DB with posted history 
       },
       'p',
     );
-    await app.get(JournalService).reverse(je.id, 'p', new Date('2026-03-05'));
+    await app.get(JournalService).reverse(je.id, 'p', new Date('2006-03-05'));
     await app.get(PostingService).post(
       {
-        date: new Date('2026-03-06'),
+        date: new Date('2006-03-06'),
         description: 'manual kept',
         sourceType: 'MANUAL',
         createdBy: 'a',
@@ -121,7 +121,7 @@ describe('Migration 20260927000000_journal_link_fks on a DB with posted history 
       (
         await invoices.createDraft({
           partnerId: customer.id,
-          date: new Date('2026-04-01'),
+          date: new Date('2006-04-01'),
           description: 'inv',
           lines: [
             {
@@ -143,7 +143,7 @@ describe('Migration 20260927000000_journal_link_fks on a DB with posted history 
         await payments.createDraft({
           direction: 'RECEIPT',
           partnerId: customer.id,
-          date: new Date('2026-04-03'),
+          date: new Date('2006-04-03'),
           cashAccountId: acc['1-1000'],
           allocations: [{ salesInvoiceId: inv.id, amount: '400000' }],
           createdBy: 'a',
@@ -151,8 +151,8 @@ describe('Migration 20260927000000_journal_link_fks on a DB with posted history 
       ).id,
       'p',
     );
-    await payments.void(pay.id, 'p', new Date('2026-04-10'));
-    await invoices.void(inv.id, 'p', new Date('2026-04-12'));
+    await payments.void(pay.id, 'p', new Date('2006-04-10'));
+    await invoices.void(inv.id, 'p', new Date('2006-04-12'));
 
     // A voided bill too.
     const bills = app.get(PurchaseBillsService);
@@ -160,7 +160,7 @@ describe('Migration 20260927000000_journal_link_fks on a DB with posted history 
       (
         await bills.createDraft({
           partnerId: vendor.id,
-          date: new Date('2026-05-01'),
+          date: new Date('2006-05-01'),
           description: 'bill',
           lines: [
             {
@@ -180,9 +180,9 @@ describe('Migration 20260927000000_journal_link_fks on a DB with posted history 
 
     // Year closed → reopened (closing entry reversed) → re-closed.
     const close = app.get(YearEndCloseService);
-    const first = await close.close(2026, 'admin');
-    await close.reopen(2026, 'admin');
-    const second = await close.close(2026, 'admin');
+    const first = await close.close(2006, 'admin');
+    await close.reopen(2006, 'admin');
+    const second = await close.close(2006, 'admin');
     expect(first.closingEntryId).not.toBeNull();
     expect(second.closingEntryId).not.toBeNull();
     expect(second.closingEntryId).not.toBe(first.closingEntryId);
@@ -211,7 +211,7 @@ describe('Migration 20260927000000_journal_link_fks on a DB with posted history 
     ]);
 
     // The app keeps working under the FKs: reopen reverses the new closing entry.
-    const reopened = await close.reopen(2026, 'admin');
+    const reopened = await close.reopen(2006, 'admin');
     expect(reopened.status).toBe('OPEN');
   }, 180_000);
 });

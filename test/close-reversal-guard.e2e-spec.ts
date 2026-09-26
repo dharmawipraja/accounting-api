@@ -25,7 +25,7 @@ describe('Year-end close — reversal year-lock (e2e)', () => {
     ({ app, cleanup } = await bootstrapTestApp({ pipe: false }));
     await app.get(CompanyService).seedIfEmpty();
     await app.get(AccountsService).seedIfEmpty();
-    await app.get(PeriodsService).generatePeriods(2026);
+    await app.get(PeriodsService).generatePeriods(2006);
     const { data: accounts } = await app.get(AccountsService).list();
     acc = Object.fromEntries(accounts.map((a) => [a.code, a.id]));
     posting = app.get(PostingService);
@@ -33,7 +33,7 @@ describe('Year-end close — reversal year-lock (e2e)', () => {
 
     const entry = await posting.post(
       {
-        date: new Date('2026-02-10'),
+        date: new Date('2006-02-10'),
         description: 'Sale',
         sourceType: 'MANUAL',
         createdBy: 'a',
@@ -45,7 +45,7 @@ describe('Year-end close — reversal year-lock (e2e)', () => {
       'p',
     );
     entryId = entry.id;
-    await close.close(2026, 'admin');
+    await close.close(2006, 'admin');
   }, 120_000);
 
   afterAll(() => cleanup());
@@ -57,7 +57,7 @@ describe('Year-end close — reversal year-lock (e2e)', () => {
   });
 
   it('after reopening the year, the same entry can be reversed', async () => {
-    const rec = await close.reopen(2026, 'admin');
+    const rec = await close.reopen(2006, 'admin');
     expect(rec.status).toBe('OPEN');
     const reversal = await posting.reverse(entryId, 'u');
     expect(reversal.status).toBe('POSTED');

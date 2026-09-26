@@ -21,8 +21,8 @@ describe('Reporting after year-end close (e2e)', () => {
   let acc: Record<string, string>;
   let close: YearEndCloseService;
 
-  const FROM = new Date('2026-01-01');
-  const TO = new Date('2026-12-31');
+  const FROM = new Date('2006-01-01');
+  const TO = new Date('2006-12-31');
 
   const reports = async () => ({
     is: await app.get(IncomeStatementService).generate(FROM, TO),
@@ -36,8 +36,8 @@ describe('Reporting after year-end close (e2e)', () => {
     ({ app, cleanup } = await bootstrapTestApp({ pipe: false }));
     await app.get(CompanyService).seedIfEmpty();
     await app.get(AccountsService).seedIfEmpty();
-    await app.get(PeriodsService).generatePeriods(2026);
-    await app.get(PeriodsService).generatePeriods(2027);
+    await app.get(PeriodsService).generatePeriods(2006);
+    await app.get(PeriodsService).generatePeriods(2007);
     const { data: accounts } = await app.get(AccountsService).list();
     acc = Object.fromEntries(accounts.map((a) => [a.code, a.id]));
     close = app.get(YearEndCloseService);
@@ -65,11 +65,11 @@ describe('Reporting after year-end close (e2e)', () => {
       );
 
     // Opening balance inside the report range: Dr Kas / Cr Saldo Awal 1,000,000.
-    await post('2026-01-01', 'OPENING', '1-1000', '3-9000', '1000000');
+    await post('2006-01-01', 'OPENING', '1-1000', '3-9000', '1000000');
     // Cash sale 2,000,000; cash expense 500,000; depreciation 100,000.
-    await post('2026-02-10', 'MANUAL', '1-1000', '4-1000', '2000000');
-    await post('2026-02-15', 'MANUAL', '5-2000', '1-1000', '500000');
-    await post('2026-11-30', 'MANUAL', '5-4000', '1-2900', '100000');
+    await post('2006-02-10', 'MANUAL', '1-1000', '4-1000', '2000000');
+    await post('2006-02-15', 'MANUAL', '5-2000', '1-1000', '500000');
+    await post('2006-11-30', 'MANUAL', '5-4000', '1-2900', '100000');
 
     before = await reports();
   }, 120_000);
@@ -100,7 +100,7 @@ describe('Reporting after year-end close (e2e)', () => {
   });
 
   it('after close: IS / CF / pre-closing Neraca are unchanged', async () => {
-    const rec = await close.close(2026, 'admin');
+    const rec = await close.close(2006, 'admin');
     expect(rec.status).toBe('CLOSED');
     expect(rec.netIncome.toFixed(4)).toBe('1400000.0000');
     expect(await reports()).toEqual(before);
@@ -109,7 +109,7 @@ describe('Reporting after year-end close (e2e)', () => {
   it('after close: Neraca on the first day of the next year shows the earnings in Laba Ditahan', async () => {
     const bs = await app
       .get(BalanceSheetService)
-      .generate(new Date('2027-01-01'));
+      .generate(new Date('2007-01-01'));
     const equityLines = bs.equity.groups.flatMap((g) => g.lines);
     expect(equityLines).toContainEqual({
       code: '3-2000',
@@ -126,15 +126,15 @@ describe('Reporting after year-end close (e2e)', () => {
   });
 
   it('after reopen and re-close: reports still equal the before-close snapshot', async () => {
-    await close.reopen(2026, 'admin');
+    await close.reopen(2006, 'admin');
     expect(await reports()).toEqual(before);
-    const rec = await close.close(2026, 'admin');
+    const rec = await close.close(2006, 'admin');
     expect(await reports()).toEqual(before);
     // The report snapshot alone can't detect a wrong re-close: assert the ledger.
     expect(rec.netIncome.toFixed(4)).toBe('1400000.0000');
     const bs = await app
       .get(BalanceSheetService)
-      .generate(new Date('2027-01-01'));
+      .generate(new Date('2007-01-01'));
     expect(bs.equity.groups.flatMap((g) => g.lines)).toContainEqual({
       code: '3-2000',
       name: 'Laba Ditahan',

@@ -1,4 +1,4 @@
-import { assertBalanced } from './assert-balanced';
+import { assertBalanced, assertLinesOneSided } from './assert-balanced';
 import { UnbalancedEntryError } from '../../common/errors/domain-errors';
 
 describe('assertBalanced', () => {
@@ -44,5 +44,26 @@ describe('assertBalanced', () => {
         { accountId: 'c', credit: '100' },
       ]),
     ).not.toThrow();
+  });
+});
+
+describe('assertLinesOneSided', () => {
+  it('accepts one-sided lines even when totals are unbalanced', () => {
+    expect(() =>
+      assertLinesOneSided([
+        { accountId: 'a', debit: '100' },
+        { accountId: 'b', credit: '90' },
+      ]),
+    ).not.toThrow();
+  });
+  it.each([
+    [{ debit: '1', credit: '1' }],
+    [{}],
+    [{ debit: '0' }],
+    [{ debit: '0', credit: '0.0000' }],
+  ])('rejects %j', (sides) => {
+    expect(() => assertLinesOneSided([{ accountId: 'a', ...sides }])).toThrow(
+      UnbalancedEntryError,
+    );
   });
 });

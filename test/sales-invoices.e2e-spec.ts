@@ -688,4 +688,89 @@ describe('SalesInvoices (e2e)', () => {
       expect422(res, { accountId: acc['1-1200'], role: 'AR_CONTROL' });
     });
   });
+
+  describe('draft create/PATCH validate line accounts like post (422 INVALID_ACCOUNT)', () => {
+    const server = () => app.getHttpServer() as App;
+    const lines = (accountId: string) => [
+      {
+        description: 'Jasa',
+        accountId,
+        quantity: '1',
+        unitPrice: '1000',
+        taxCodeIds: [] as string[],
+      },
+    ];
+    const create = (accountId: string) =>
+      request(server())
+        .post('/v1/sales-invoices')
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({ ...draftBody(), lines: lines(accountId) });
+    const newRevenue = (codeStr: string, extra: Record<string, unknown>) =>
+      prisma.client.account.create({
+        data: {
+          code: codeStr,
+          name: `Revenue ${codeStr}`,
+          type: 'REVENUE',
+          subtype: 'REVENUE',
+          normalBalance: 'CREDIT',
+          isPostable: true,
+          ...extra,
+        },
+      });
+    const expectInvalid = (res: request.Response, accountId: string) => {
+      const body = res.body as { code: string; details: unknown };
+      expect(body.code).toBe('INVALID_ACCOUNT');
+      expect(body.details).toEqual({ accountId });
+    };
+
+    it('unknown account id → 422 INVALID_ACCOUNT (not a 409 FK violation)', async () => {
+      const missing = randomUUID();
+      expectInvalid(await create(missing).expect(422), missing);
+    });
+
+    it('header (non-postable) revenue account → 422 INVALID_ACCOUNT', async () => {
+      expectInvalid(await create(acc['4-0000']).expect(422), acc['4-0000']);
+    });
+
+    it('inactive revenue account → 422 INVALID_ACCOUNT', async () => {
+      const a = await newRevenue('4-9801', { isActive: false });
+      expectInvalid(await create(a.id).expect(422), a.id);
+    });
+
+    it('soft-deleted revenue account → 422 INVALID_ACCOUNT', async () => {
+      const a = await newRevenue('4-9802', { deletedAt: new Date() });
+      expectInvalid(await create(a.id).expect(422), a.id);
+    });
+
+    it('PATCH onto an unknown account → 422 INVALID_ACCOUNT', async () => {
+      const draft = await create(acc['4-1000']).expect(201);
+      const id = (draft.body as { id: string }).id;
+      const missing = randomUUID();
+      const res = await request(server())
+        .patch(`/v1/sales-invoices/${id}`)
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({ lines: lines(missing) })
+        .expect(422);
+      expectInvalid(res, missing);
+    });
+
+    it('PATCH (no lines) of a draft whose stored line account was deactivated → 422 INVALID_ACCOUNT', async () => {
+      const a = await newRevenue('4-9803', {});
+      const draft = await create(a.id).expect(201);
+      const id = (draft.body as { id: string }).id;
+      await prisma.client.account.update({
+        where: { id: a.id },
+        data: { isActive: false },
+      });
+      const res = await request(server())
+        .patch(`/v1/sales-invoices/${id}`)
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({ description: 'still a draft' })
+        .expect(422);
+      expectInvalid(res, a.id);
+    });
+  });
 });

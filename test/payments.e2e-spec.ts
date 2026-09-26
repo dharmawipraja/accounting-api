@@ -1169,4 +1169,157 @@ describe('Payments (e2e)', () => {
     });
     for (const i of inv) expect(i.amountPaid.toString()).toBe('16000');
   });
+
+  describe('backdated payment vs a later-voided payment (aging == control for past dates)', () => {
+    // A VOID payment still counts as live on [its date, its voidedOn) in the
+    // as-of aging. A new payment dated inside that window would push the
+    // document's as-of paid total past its total for those days, so aging
+    // would drop the document while AR control still carried the difference.
+    const createPay = (
+      partnerId: string,
+      invoiceId: string,
+      date: string,
+      amount: string,
+    ) =>
+      request(server())
+        .post('/v1/payments')
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          direction: 'RECEIPT',
+          partnerId,
+          date,
+          cashAccountId: acc['1-1000'],
+          allocations: [{ salesInvoiceId: invoiceId, amount }],
+        });
+    const postPay = (id: string) =>
+      request(server())
+        .post(`/v1/payments/${id}/post`)
+        .set('Authorization', `Bearer ${appr}`)
+        .set('Idempotency-Key', randomUUID());
+    const voidPay = (id: string, date: string) =>
+      request(server())
+        .post(`/v1/payments/${id}/void`)
+        .set('Authorization', `Bearer ${appr}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({ date })
+        .expect(200);
+    const postedPayment = async (
+      partnerId: string,
+      invoiceId: string,
+      date: string,
+      amount: string,
+    ) => {
+      const r = await createPay(partnerId, invoiceId, date, amount).expect(201);
+      const id = (r.body as { id: string }).id;
+      await postPay(id).expect(200);
+      return id;
+    };
+
+    it('full: rejects a new payment dated before the void date (422), accepts one dated on it', async () => {
+      const customerId = await newCustomer('CUST-PAY-BACKVOID-1');
+      const invoiceId = await makePostedInvoice(customerId); // 1,110,000 @ 02-10
+      const p1 = await postedPayment(
+        customerId,
+        invoiceId,
+        '2026-02-20',
+        '1110000',
+      );
+      await voidPay(p1, '2026-03-10');
+
+      const early = await createPay(
+        customerId,
+        invoiceId,
+        '2026-03-05',
+        '1110000',
+      ).expect(422);
+      const body = early.body as {
+        code: string;
+        details: Record<string, unknown>;
+      };
+      expect(body.code).toBe('VALIDATION_FAILED');
+      expect(body.details).toEqual({
+        documentId: invoiceId,
+        paymentDate: '2026-03-05',
+        conflictingVoidedOn: '2026-03-10',
+      });
+
+      await postedPayment(customerId, invoiceId, '2026-03-10', '1110000');
+    });
+
+    it('partial: accepts a backdated payment that still fits beside the voided one, rejects one that does not', async () => {
+      const customerId = await newCustomer('CUST-PAY-BACKVOID-2');
+      const invoiceId = await makePostedInvoice(customerId);
+      const p1 = await postedPayment(
+        customerId,
+        invoiceId,
+        '2026-02-20',
+        '600000',
+      );
+      await voidPay(p1, '2026-03-10');
+      // 600,000 (void, live until 03-10) + 510,000 = 1,110,000 ≤ total → OK.
+      await postedPayment(customerId, invoiceId, '2026-03-05', '510000');
+      // Another 1 dated 03-05 would make 1,110,001 live on 03-05..03-09.
+      const over = await createPay(
+        customerId,
+        invoiceId,
+        '2026-03-05',
+        '1',
+      ).expect(422);
+      expect(
+        (over.body as { details: { conflictingVoidedOn: string } }).details
+          .conflictingVoidedOn,
+      ).toBe('2026-03-10');
+      // Dated on the void day the voided payment no longer counts → OK.
+      await postedPayment(customerId, invoiceId, '2026-03-10', '600000');
+    });
+
+    it('re-checks at post: a draft that became unsafe after a later void + payment is rejected (422), stays DRAFT', async () => {
+      const customerId = await newCustomer('CUST-PAY-BACKVOID-3');
+      const invoiceId = await makePostedInvoice(customerId);
+      const p1 = await postedPayment(
+        customerId,
+        invoiceId,
+        '2026-02-20',
+        '600000',
+      );
+      // Draft dated 03-05 for 510,000: fine while P1 is posted (600k + 510k).
+      const draft = await createPay(
+        customerId,
+        invoiceId,
+        '2026-03-05',
+        '510000',
+      ).expect(201);
+      const draftId = (draft.body as { id: string }).id;
+      await voidPay(p1, '2026-03-10');
+      // 510,000 @ 03-07: live 03-07 = 600k (void) + 510k = 1.11M → OK.
+      await postedPayment(customerId, invoiceId, '2026-03-07', '510000');
+      // Posting the draft now would make 03-07 carry 1.62M against 1.11M.
+      const res = await postPay(draftId).expect(422);
+      expect(
+        (res.body as { details: Record<string, unknown> }).details,
+      ).toEqual({
+        documentId: invoiceId,
+        paymentDate: '2026-03-05',
+        conflictingVoidedOn: '2026-03-10',
+      });
+      const row = await prisma.client.payment.findFirst({
+        where: { id: draftId },
+      });
+      expect(row!.status).toBe('DRAFT');
+    });
+
+    it('a document with a same-day-voided payment (never live) is unaffected', async () => {
+      const customerId = await newCustomer('CUST-PAY-BACKVOID-4');
+      const invoiceId = await makePostedInvoice(customerId);
+      const p1 = await postedPayment(
+        customerId,
+        invoiceId,
+        '2026-02-20',
+        '1110000',
+      );
+      await voidPay(p1, '2026-02-20');
+      await postedPayment(customerId, invoiceId, '2026-02-15', '1110000');
+    });
+  });
 });

@@ -496,7 +496,11 @@ POST /ledger/journal-entries/:id/reverse  reverse a posted entry (APPROVER/ADMIN
 DELETE /ledger/journal-entries/:id      delete a DRAFT          (ACCOUNTANT+)
 ```
 
-- Debits must equal credits or you get `422 UNBALANCED_ENTRY`.
+- Debits must equal credits or you get `422 UNBALANCED_ENTRY` (checked at post /
+  `?post=true`; a plain DRAFT may still be unbalanced while it is being worked on).
+- **Every line needs exactly one side > 0** — enforced already on DRAFT create: a line
+  with both `debit` and `credit`, with neither, or with only a zero amount (`"0"`) →
+  `422 UNBALANCED_ENTRY` ("Each line must have exactly one of debit or credit > 0").
 - A manual entry may not touch the **AR/AP control accounts** (`role` `AR_CONTROL` /
   `AP_CONTROL`) — on create (draft or `?post=true`) and on `/:id/post` you get
   `422 VALIDATION_FAILED` with message
@@ -569,8 +573,13 @@ with `404 NOT_FOUND` (partner not found); a partner deleted *while* the post is 
 is caught by the in-transaction re-check and gives the `422` above. Treat both as
 "partner no longer usable".
 
-**Line accounts.** On create, `PATCH` and `/post`, each line's `accountId` is checked;
-violations return `422 VALIDATION_FAILED`:
+**Line accounts.** On create, `PATCH` and `/post`, each line's `accountId` is checked.
+First the same postable-account check as posting: an unknown / deleted account, a header
+(non-postable) account or an inactive account → `422 INVALID_ACCOUNT`
+`details: { accountId }` (never a `409` FK error). A `PATCH` re-checks the effective lines —
+also the stored ones when `lines` is omitted, so a draft whose account was deactivated
+since must have that line changed before any other edit (or post) succeeds. Then the
+document line rules; violations return `422 VALIDATION_FAILED`:
 
 | Violation | `details` |
 | --- | --- |
@@ -655,6 +664,20 @@ The payment `date` must be **on/after the date of every invoice/bill it allocate
 otherwise, on create (and re-checked on `/post`), `422 VALIDATION_FAILED` with
 `details: { paymentDate, documentId, documentDate }`.
 
+**Backdating next to a later-voided payment.** A payment voided on a later date than its
+own still counts as paid for `asOf` dates before its `voidedOn` (AR/AP aging honours
+it). A new payment dated inside such a window must still fit beside it: for every day
+from the new payment's date on, the document's as-of paid amount (posted payments plus
+voided-but-still-live ones) plus the new allocation must not exceed the document total —
+otherwise, on create (and re-checked under the document lock on `/post`; the payment
+stays `DRAFT`), `422 VALIDATION_FAILED` with `details: { documentId, paymentDate,
+conflictingVoidedOn }`. Dating the payment **on/after `conflictingVoidedOn`** (the
+latest such void date) always clears this rule; a smaller amount may too. Example:
+invoice 100 dated the 1st, payment A 100 dated the 10th voided on the 12th → a new
+payment of 100 dated the 11th is rejected, dated the 12th it is accepted. Plain
+over-allocation against the current outstanding keeps its own error (`422` on create,
+`409 CONFLICT` "Allocation now exceeds outstanding" on `/post`).
+
 The partner is re-checked on `/post` too: it must still exist, be active and carry the
 direction's flag (customer for RECEIPT, vendor for DISBURSEMENT) → else `422
 VALIDATION_FAILED` `details: { partnerId }` ("Partner is inactive" / "Receipt requires a
@@ -684,6 +707,10 @@ GET  /close/year-end/:fy          close status for a fiscal year (any auth; 404 
   `POST /ledger/periods/generate`). A date in an existing but closed period is never
   regenerated.
 - Year-end close zeroes the cumulative P&L into Laba Ditahan (retained earnings).
+- **Only a fiscal year that has ended can be closed**: its last day must be on/before
+  today (company calendar day, WIB) — closing on the year's last day itself is allowed.
+  A year still running (or a future one) → `422 VALIDATION_FAILED`
+  `details: { fiscalYear, yearEnd }` (`yearEnd` = `YYYY-MM-DD`). Reopen is unaffected.
 - **Year-end close (and reopen) need the fiscal year's LAST period OPEN**: the closing
   entry is dated on the fiscal year-end and its reopen reversal on the same date. Close
   the year first, then close the last month — or reopen that month before running
@@ -968,6 +995,15 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing).
 - `POST   /v1/partners` · ACCOUNTANT+ · create
 - `PATCH  /v1/partners/:id` · ACCOUNTANT+ · update
 - `POST   /v1/partners/:id/deactivate` · ADMIN · deactivate
+- **Deactivating or un-flagging a partner that still has open items is allowed**
+  (`deactivate`, or `PATCH` `isCustomer: false` / `isVendor: false` / `isActive: false`
+  while it has outstanding invoices/bills or drafts). Its posted documents stay open in
+  AR/AP and aging, but new receipts (disbursements) against them — create **and** `/post`
+  of an existing draft — return `422 VALIDATION_FAILED` `{ partnerId }` ("Partner is
+  inactive" / "Receipt requires a customer" / "Disbursement requires a vendor"), as do new
+  invoices/bills and posting their drafts, **until the flag is re-enabled**. Voiding an
+  already-posted payment still works for an inactive partner. Warn before un-flagging a
+  partner with an outstanding balance.
 - `DELETE /v1/partners/:id` · ADMIN · delete. Refused while the partner has **open items** — a
   draft invoice/bill, a draft payment, or a `POSTED` invoice/bill with an outstanding balance
   → `422 VALIDATION_FAILED` `details: { id, reason: "OPEN_ITEMS", draftDocuments,

@@ -249,10 +249,10 @@ describe('PostingService (e2e)', () => {
 
   it('rejects reversal into a closed fiscal year (CLOSED_YEAR)', async () => {
     // L-10: prepareReversal — fiscal year is closed
-    await app.get(PeriodsService).generatePeriods(2028);
+    await app.get(PeriodsService).generatePeriods(2008);
     const entry = await posting.post(
       {
-        date: new Date('2028-03-01'),
+        date: new Date('2008-03-01'),
         description: 'L-10 entry',
         sourceType: 'MANUAL',
         createdBy: 'a',
@@ -263,7 +263,7 @@ describe('PostingService (e2e)', () => {
       },
       'p',
     );
-    await app.get(YearEndCloseService).close(2028, 'admin');
+    await app.get(YearEndCloseService).close(2008, 'admin');
     await expect(posting.reverse(entry.id, 'p')).rejects.toMatchObject({
       code: 'CLOSED_YEAR',
     });
