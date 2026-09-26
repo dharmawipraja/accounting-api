@@ -77,7 +77,14 @@ export class PreviewJournalEntryDto {
       'Still accepted on SALE/PURCHASE (must be a UUID if sent) for backward ' +
       'compatibility; rejected (400) for PAYMENT.',
   })
-  @IsOptional()
+  // Optional (null/absent skip validation) on SALE/PURCHASE; on PAYMENT ANY
+  // sent value — `null` included — is validated and rejected, like every
+  // other foreign-nature field (cf. validateFor).
+  @ValidateIf((o: PreviewJournalEntryDto) =>
+    TAXED.includes(o.nature)
+      ? o.settlementAccountId != null
+      : o.settlementAccountId !== undefined,
+  )
   @IsUUID()
   @OnlyForNature(TAXED)
   settlementAccountId?: string;

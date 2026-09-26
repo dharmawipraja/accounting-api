@@ -24,6 +24,8 @@ describe('PreviewJournalEntryDto foreign-nature fields (iteration-5)', () => {
   it('accepts the documented SALE / PURCHASE / PAYMENT shapes', () => {
     expect(errorsFor(sale)).toEqual([]);
     expect(errorsFor({ ...sale, settlementAccountId: U })).toEqual([]);
+    // Deprecated + optional on SALE/PURCHASE: an explicit null stays accepted.
+    expect(errorsFor({ ...sale, settlementAccountId: null })).toEqual([]);
     expect(errorsFor({ ...sale, nature: 'PURCHASE' })).toEqual([]);
     expect(errorsFor(payment)).toEqual([]);
   });
@@ -44,6 +46,7 @@ describe('PreviewJournalEntryDto foreign-nature fields (iteration-5)', () => {
     ['lines', { lines: sale.lines }],
     ['lines', { lines: [] }],
     ['settlementAccountId', { settlementAccountId: U }],
+    ['settlementAccountId', { settlementAccountId: null }],
   ])('PAYMENT rejects the SALE/PURCHASE field %s', (property, extra) => {
     expect(errorsFor({ ...payment, ...extra })).toContain(property);
   });
