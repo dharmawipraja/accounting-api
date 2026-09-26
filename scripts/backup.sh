@@ -2,6 +2,28 @@
 set -eu
 : "${RETENTION_DAYS:=7}"
 : "${BACKUP_INTERVAL:=86400}"
+
+# Validate BEFORE doing any work. A bad value (non-numeric, quoted "30", 0)
+# would otherwise make `find -mtime` / `sleep` fail AFTER pg_dump under set -e,
+# and `restart: unless-stopped` would re-run pg_dump on every restart (disk
+# fills, nothing is pruned). On invalid config: no dump, exit 64 (EX_USAGE).
+# The 60s pause before exiting keeps the restart loop to ~1/min with a
+# readable log (the container then counts as "ran >10s", so Docker keeps a
+# steady cadence instead of a burst of fast restarts); the loop does no work.
+invalid_config() {
+  echo "backup: $1 — refusing to run (no dump taken); fix .env and recreate the backup service" >&2
+  sleep 60
+  exit 64
+}
+case "$RETENTION_DAYS" in
+  ''|*[!0-9]*) invalid_config "RETENTION_DAYS must be a bare positive integer (days), got '$RETENTION_DAYS'" ;;
+esac
+[ "$RETENTION_DAYS" -ge 1 ] || invalid_config "RETENTION_DAYS must be >= 1, got '$RETENTION_DAYS'"
+case "$BACKUP_INTERVAL" in
+  ''|*[!0-9]*) invalid_config "BACKUP_INTERVAL must be a bare positive integer (seconds), got '$BACKUP_INTERVAL'" ;;
+esac
+[ "$BACKUP_INTERVAL" -ge 60 ] || invalid_config "BACKUP_INTERVAL must be >= 60 seconds, got '$BACKUP_INTERVAL'"
+
 mkdir -p /backups
 while true; do
   ts=$(date +%Y%m%dT%H%M%SZ)

@@ -5,7 +5,10 @@ A logical `pg_dump -Fc` (custom format) of the `accounting` database, written by
 the `backup` sidecar to the `backups` Docker volume every `BACKUP_INTERVAL`
 seconds (default 86400 = daily). Dumps older than `RETENTION_DAYS` (default 7)
 are pruned automatically. Both are read from the VM's `.env`
-(`docker-compose.prod.yml` passes `${RETENTION_DAYS:-7}` / `${BACKUP_INTERVAL:-86400}`);
+(`docker-compose.prod.yml` passes `${RETENTION_DAYS:-7}` / `${BACKUP_INTERVAL:-86400}`;
+bare integers only — `RETENTION_DAYS` ≥ 1, `BACKUP_INTERVAL` ≥ 60 — otherwise
+`scripts/backup.sh` logs the problem and exits 64 **before** `pg_dump`, so a
+restart loop never fills the disk);
 after changing them recreate only the sidecar:
 `docker compose $COMPOSE up -d --no-build --no-deps backup` (`$COMPOSE` as in *Restore*). Files are named `accounting-<UTC-timestamp>.dump`.
 

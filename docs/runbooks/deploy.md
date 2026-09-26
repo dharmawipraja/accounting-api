@@ -20,8 +20,12 @@
   secrets); `JWT_ACCESS_TTL` must be ≤ 3600s and `JWT_REFRESH_TTL` ≤ 30d, each a whole
   number **with a unit** `s`/`m`/`h`/`d` (e.g. `900s`, `7d`) — a unitless `900` is rejected
   at startup (jsonwebtoken would read it as 900 ms).
-  Optional: `DB_POOL_MAX`, `DB_STATEMENT_TIMEOUT_MS`, `RETENTION_DAYS`,
-  `BACKUP_INTERVAL`, `THROTTLE_LIMIT` (per-user requests/min, default 300),
+  Optional: `DB_POOL_MAX`, `DB_STATEMENT_TIMEOUT_MS`, `RETENTION_DAYS` (days, bare
+  integer ≥ 1, default 7), `BACKUP_INTERVAL` (seconds, bare integer ≥ 60, default
+  86400) — anything else (`abc`, `1.5`, a value that still carries quotes after `.env`
+  parsing such as `'"30"'`) makes the `backup` sidecar log the error and exit 64
+  **without dumping** (it restarts ~once a minute until fixed; check
+  `$COMPOSE logs backup`), `THROTTLE_LIMIT` (per-user requests/min, default 300),
   `THROTTLE_LOGIN_LIMIT` (per-email login attempts/min, default 10),
   `THROTTLE_LOGIN_IP_LIMIT` (per-client-IP login attempts/min across all emails, default 30),
   `ARGON2_MAX_CONCURRENCY` (concurrent password hash/verify per process, 1-64,
@@ -109,7 +113,9 @@ export MIGRATE_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$($COMPOSE ps -a -
 echo "api=$API_IMAGE migrate=$MIGRATE_IMAGE"   # must be ghcr.io/<owner>/<repo>[-migrate]:<sha>
 ```
 (`-a` also finds the exited `migrate` / a stopped `api`. If either is empty, no such
-container exists — export the tags of the last CD run by hand.) Then:
+container exists — export the tags of the last CD run by hand: the full commit SHA
+from the last successful CD run in GitHub Actions or the GHCR package versions,
+`ghcr.io/<owner>/<repo>:<sha>` / `ghcr.io/<owner>/<repo>-migrate:<sha>`.) Then:
 - always pass **`--no-build`** to `up` (`run` never builds an image that exists);
 - restart a single service with **`--no-deps`** — `$COMPOSE up -d --no-build --no-deps api`
   — otherwise `up -d api` also re-runs its `migrate` dependency;
@@ -151,6 +157,11 @@ the deployed image — the same commands work unchanged.
      node dist/scripts/create-admin.js admin@acme.co "Budi Admin"
    unset ADMIN_PASSWORD
    ```
+   The tag is the full commit SHA CD deployed: take it from the last successful
+   **CD** workflow run in GitHub Actions (its `deploy` job's `API_IMAGE` / the run's
+   commit), or from the GHCR package's versions list (`ghcr.io/<owner>/<repo>`,
+   newest `<sha>` tag); `docker image ls ghcr.io/<owner>/<repo>` on the VM shows the
+   pulled ones.
    (When you built on the VM with `$COMPOSE build`, `accounting-api:local` IS the
    deployed image and no export is needed. On a CD-managed VM whose api container
    exists but is stopped, the pin in *Operator commands on a CD-managed VM* reads
@@ -594,6 +605,10 @@ down — the failure mode no in-VM alert can report.
 > that catches the VM itself dying.
 
 ## Staging without a public domain
+> For a staging or local machine only — **never on the CD-managed production VM**
+> (these commands start `api`/`migrate` from whatever `API_IMAGE`/`MIGRATE_IMAGE`
+> resolve to; there, use *Operator commands on a CD-managed VM*).
+
 Don't edit the committed `Caddyfile` (it would dirty the repo and risk shipping a
 non-prod TLS setting). Instead either:
 - **Skip Caddy:** smoke-test `db`+`migrate`+`api` only and curl `http://127.0.0.1:3000/health`
