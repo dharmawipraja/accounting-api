@@ -76,6 +76,11 @@ describe('shouldAuditRejection', () => {
   });
 });
 
+const hasLoneSurrogate = (s: string) =>
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(
+    s,
+  );
+
 describe('auditBaseOf size caps', () => {
   it('caps path at 512 chars and serializes oversized params to ≤ 512 chars', () => {
     const base = auditBaseOf(
@@ -88,6 +93,32 @@ describe('auditBaseOf size caps', () => {
     expect(base.path).toHaveLength(512);
     expect(typeof base.params).toBe('string');
     expect((base.params as string).length).toBeLessThanOrEqual(512);
+  });
+
+  it('truncates oversized params by code point: an emoji at the boundary is never split into a lone surrogate', () => {
+    // JSON.stringify({a: 'x'.repeat(n) + '😀…'}) puts the emoji's two UTF-16
+    // units at positions 510/511 → a UTF-16 slice(0, 511) would end on a lone
+    // high surrogate, which Postgres rejects in jsonb ("unsupported Unicode escape").
+    const prefix = '{"a":"'.length; // 6
+    for (const pad of [510 - prefix, 511 - prefix, 512 - prefix]) {
+      const base = auditBaseOf(
+        req({ params: { a: 'x'.repeat(pad) + '😀'.repeat(300) } }),
+        { withBody: true },
+      );
+      const out = base.params as string;
+      expect(typeof out).toBe('string');
+      expect(Array.from(out).length).toBeLessThanOrEqual(512);
+      expect(hasLoneSurrogate(out)).toBe(false);
+    }
+  });
+
+  it('never leaves a lone surrogate at the path cap either', () => {
+    const base = auditBaseOf(
+      req({ originalUrl: '/' + 'x'.repeat(510) + '😀'.repeat(10) }),
+      { withBody: true },
+    );
+    expect(hasLoneSurrogate(base.path)).toBe(false);
+    expect(Array.from(base.path).length).toBeLessThanOrEqual(512);
   });
 
   it('keeps small params as an object', () => {

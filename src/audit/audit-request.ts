@@ -34,6 +34,20 @@ export type AuditBase = Omit<
 export const AUDIT_PATH_MAX = 512;
 export const AUDIT_PARAMS_MAX = 512;
 
+/** First `max` code points of `s` — never splits a surrogate pair, so the
+ *  result is well-formed UTF-16 (a lone surrogate makes Postgres reject the
+ *  jsonb value and would lose the audit row). Pure. */
+export function truncateCodePoints(s: string, max: number): string {
+  if (s.length <= max) return s; // ≤ max UTF-16 units ⇒ ≤ max code points
+  let out = '';
+  let n = 0;
+  for (const ch of s) {
+    if (n++ === max) break;
+    out += ch;
+  }
+  return out;
+}
+
 function capParams(params: Record<string, unknown> | undefined): unknown {
   const value = params ?? {};
   const json = JSON.stringify(value);
@@ -41,7 +55,7 @@ function capParams(params: Record<string, unknown> | undefined): unknown {
   // JSON string (still valid JSON for the column), never the full payload.
   return json.length <= AUDIT_PARAMS_MAX
     ? value
-    : json.slice(0, AUDIT_PARAMS_MAX);
+    : truncateCodePoints(json, AUDIT_PARAMS_MAX);
 }
 
 export function isMutating(method: string): boolean {
@@ -62,7 +76,7 @@ export function auditBaseOf(
     userId: req.user?.id ?? null,
     userRole: req.user?.role ?? null,
     method: req.method,
-    path: (req.originalUrl ?? req.url).slice(0, AUDIT_PATH_MAX),
+    path: truncateCodePoints(req.originalUrl ?? req.url, AUDIT_PATH_MAX),
     params: capParams(req.params),
     body: opts.withBody ? sanitize(req.body) : {},
     ip: req.ip ?? null,

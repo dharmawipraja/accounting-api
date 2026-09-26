@@ -41,7 +41,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
    *  429 — guards run before AuditInterceptor) are audited here: one row, no
    *  body for 401 (unauthenticated input is not trusted into the log). The row
    *  is written fire-and-forget AFTER the response, and capped per client IP
-   *  (anonymous 401s are not throttled — JwtAuthGuard runs first). */
+   *  and globally (anonymous 401s are not throttled — JwtAuthGuard runs first). */
   constructor(
     private readonly audit?: Pick<AuditService, 'record'>,
     limiter?: RejectionAuditLimiter,
@@ -52,6 +52,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
         onSuppressed: (ip, n) =>
           this.logger.warn(
             `Suppressed ${n} guard-rejection audit row(s) from ${ip} (per-IP cap)`,
+          ),
+        onGlobalSuppressed: (n) =>
+          this.logger.warn(
+            `Suppressed ${n} guard-rejection audit row(s) across all IPs (global cap)`,
           ),
       });
   }

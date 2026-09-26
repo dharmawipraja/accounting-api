@@ -1,18 +1,24 @@
 import { RejectionAuditLimiter } from './rejection-audit-limiter';
 
-function setup(opts: { limit?: number; maxKeys?: number } = {}) {
+function setup(
+  opts: { limit?: number; maxKeys?: number; globalLimit?: number } = {},
+) {
   let t = 1_000_000;
   const reports: [string, number][] = [];
+  const globalReports: number[] = [];
   const limiter = new RejectionAuditLimiter({
     limit: opts.limit ?? 3,
+    globalLimit: opts.globalLimit,
     windowMs: 60_000,
     maxKeys: opts.maxKeys ?? 10_000,
     now: () => t,
     onSuppressed: (ip, n) => reports.push([ip, n]),
+    onGlobalSuppressed: (n) => globalReports.push(n),
   });
   return {
     limiter,
     reports,
+    globalReports,
     advance: (ms: number) => {
       t += ms;
     },
@@ -63,5 +69,49 @@ describe('RejectionAuditLimiter', () => {
     expect(limiter.size).toBe(2);
     expect(reports).toEqual([['a', 1]]);
     expect(limiter.allow('a')).toBe(true); // fresh budget after eviction
+  });
+
+  it('caps total rows across ALL IPs per window (IP rotation cannot bypass the per-IP cap)', () => {
+    const { limiter, globalReports, advance } = setup({
+      limit: 3,
+      globalLimit: 5,
+    });
+    const results = Array.from({ length: 10 }, (_, i) =>
+      limiter.allow(`2001:db8::${i}`),
+    );
+    expect(results).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]);
+    expect(globalReports).toEqual([]); // reported once, when the window rolls
+    advance(60_000);
+    expect(limiter.allow('2001:db8::99')).toBe(true);
+    expect(globalReports).toEqual([5]);
+    advance(60_000);
+    limiter.allow('2001:db8::98');
+    expect(globalReports).toEqual([5]); // nothing suppressed last window
+  });
+
+  it("a globally suppressed request does not consume that IP's own budget", () => {
+    const { limiter, advance } = setup({ limit: 2, globalLimit: 1 });
+    expect(limiter.allow('a')).toBe(true);
+    expect(limiter.allow('b')).toBe(false); // global cap
+    advance(60_000);
+    expect(limiter.allow('b')).toBe(true);
+  });
+
+  it('defaults the global ceiling to 600 rows per window', () => {
+    const { limiter } = setup({ limit: 1_000_000, globalLimit: undefined });
+    let allowed = 0;
+    for (let i = 0; i < 700; i++) if (limiter.allow(`ip${i}`)) allowed++;
+    expect(allowed).toBe(600);
   });
 });

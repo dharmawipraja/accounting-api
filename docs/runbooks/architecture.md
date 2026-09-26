@@ -99,12 +99,15 @@ Guards run in registration order:
   (`401/403/429`) happen before any interceptor; `AllExceptionsFilter` (given the
   `AuditService` in `main.ts`) writes their row (no body for 401) **after** sending
   the response, fire-and-forget (a failed write is logged at warn), capped at **60
-  rejection rows per client IP per minute** (`src/audit/rejection-audit-limiter.ts`,
-  in-process, ≤ 10k IPs; suppressed counts logged once per window). Only
+  rejection rows per client IP per minute** and **600 per minute across all IPs**
+  (`src/audit/rejection-audit-limiter.ts`, in-process, ≤ 10k IPs; the global
+  ceiling stops IPv6 address rotation from multiplying the per-IP budget;
+  suppressed counts logged once per window). Only
   401/403/429 are audited this way — a throttler-storage outage `503` and route 404s
   are not. A request-level `AUDITED` marker (`src/audit/audit-request.ts`) prevents
   a second row. Every row caps `path` (incl. query string) and serialized `params`
-  at 512 chars.
+  at 512 characters (code points — a surrogate pair is never split, so the jsonb
+  insert cannot fail on a lone surrogate).
 - **`MetricsInterceptor`** (`src/metrics/metrics.module.ts`) — HTTP-duration
   histogram labelled by method/route/status.
 - **`RequestTimeoutInterceptor`** (`src/common/interceptors/request-timeout.interceptor.ts`,

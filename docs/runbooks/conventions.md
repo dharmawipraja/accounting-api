@@ -115,8 +115,8 @@ One stable error envelope, no leaked internals.
   names 200, new descriptions/addresses 500; existing tighter caps stay). Both are
   asserted in `src/common/validators/dto-null-and-caps.spec.ts`.
 - **Audit coverage:** one row per mutating request (interceptor), plus guard
-  rejections 401/403/429 from `AllExceptionsFilter` (fire-and-forget, per-IP capped
-  60/min). A 503 from an unavailable throttler store and 404s are **not** audited.
+  rejections 401/403/429 from `AllExceptionsFilter` (fire-and-forget, capped 60/min
+  per IP and 600/min globally). A 503 from an unavailable throttler store and 404s are **not** audited.
 - **Trace ids are server-generated.** `req.id` / `X-Request-Id` response header /
   error `traceId` / `audit_log.request_id` is always a fresh UUID (`genReqId` in
   `app.module.ts`); a safe inbound `X-Request-Id` is only `clientRequestId`.
