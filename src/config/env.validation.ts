@@ -3,6 +3,7 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import * as ms from 'ms';
+import { productionCorsViolations } from './cors-origins';
 import type { StringValue } from 'ms';
 import {
   IsEnum,
@@ -67,6 +68,30 @@ function IsDifferentFrom(other: string, opts?: ValidationOptions) {
         validate: (value: unknown, args) =>
           value !== (args?.object as Record<string, unknown>)[other],
         defaultMessage: (args) => `${args?.property} must differ from ${other}`,
+      },
+    },
+    opts,
+  );
+}
+
+/** In production every CORS_ORIGIN entry must be a public `https://` origin
+ *  (no `*`, no localhost/loopback). Empty = CORS off, allowed. */
+function IsProductionSafeCors(opts?: ValidationOptions) {
+  return ValidateBy(
+    {
+      name: 'isProductionSafeCors',
+      validator: {
+        validate: (value: unknown, args) =>
+          (args?.object as { NODE_ENV?: string }).NODE_ENV !==
+            NodeEnv.Production ||
+          typeof value !== 'string' ||
+          productionCorsViolations(value).length === 0,
+        defaultMessage: (args) =>
+          `CORS_ORIGIN has entries not allowed in production: ${productionCorsViolations(
+            String(args?.value),
+          ).join(
+            ', ',
+          )} — each must be the real frontend's public https origin (e.g. https://app.example.com; no *, localhost or loopback), or leave CORS_ORIGIN empty to disable CORS. See docs/runbooks/deploy.md (Prerequisites → Optional).`,
       },
     },
     opts,
@@ -199,6 +224,7 @@ export class EnvVars {
 
   @IsOptional()
   @IsString()
+  @IsProductionSafeCors()
   CORS_ORIGIN?: string;
 
   @IsOptional()
@@ -230,7 +256,15 @@ export function validate(config: Record<string, unknown>): EnvVars {
     skipMissingProperties: false,
   });
   if (errors.length > 0) {
-    throw new Error(`Invalid environment configuration: ${errors.toString()}`);
+    // Include each constraint's message (class-validator's toString() lists
+    // only constraint names) so an operator sees WHY a var was rejected.
+    const details = errors
+      .map(
+        (e) =>
+          ` - ${e.property}: ${Object.values(e.constraints ?? {}).join('; ')}`,
+      )
+      .join('\n');
+    throw new Error(`Invalid environment configuration:\n${details}`);
   }
   return validated;
 }

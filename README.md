@@ -72,6 +72,10 @@ docker compose up --build
 ```
 
 `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, and `POSTGRES_PASSWORD` must be set in the environment or your `.env` file before starting.
+The compose api runs with `NODE_ENV=production`, which rejects a localhost/non-https
+`CORS_ORIGIN` at startup — if your `.env` is the dev copy of `.env.example`
+(`CORS_ORIGIN=http://localhost:5173`), run `CORS_ORIGIN= docker compose up --build`
+(the empty shell value overrides `.env` and disables CORS).
 
 ## Testing
 

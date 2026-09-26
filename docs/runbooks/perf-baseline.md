@@ -25,6 +25,7 @@ when you choose to wire it into CI (see *Not a default CI gate* below).
    the api on `127.0.0.1:3000` — the prod overlay alone exposes only Caddy):
    ```bash
    export DOMAIN=localhost   # any value; api/db/migrate don't use Caddy
+   export CORS_ORIGIN=       # k6 needs no CORS; a dev .env's localhost value fails prod startup validation
    docker compose -f docker-compose.yml -f docker-compose.prod.yml \
      -f docker-compose.hostport.yml up -d --build db migrate api
    # wait for health:

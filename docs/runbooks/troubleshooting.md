@@ -101,7 +101,12 @@ mechanics, and [`./deploy.md`](./deploy.md) for production deploys.
     `NODE_ENV=test`).
   - Out-of-range numerics (e.g. `PORT` outside 1–65535) or a non-`true|false`
     `ENABLE_SWAGGER`.
-- **Fix:** Read the error — it lists the offending vars — and fix the env. Copy
+  - `NODE_ENV=production` with a `CORS_ORIGIN` entry that is `*`, not a bare
+    `https://host[:port]` origin, or a localhost/loopback host — typically the
+    `.env.example` value `http://localhost:5173` left in a production `.env`. Set the
+    real frontend origin(s), or leave `CORS_ORIGIN` empty to disable CORS
+    ([deploy.md](./deploy.md) → Prerequisites).
+- **Fix:** Read the error — it lists each offending var with the reason — and fix the env. Copy
   [`.env.example`](../../.env.example) and fill real values
   (`.env` / `.env.development` per the loader described in
   [`./local-development.md`](./local-development.md)).

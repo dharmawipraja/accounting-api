@@ -203,4 +203,36 @@ describe('env validation', () => {
       ).toThrow();
     },
   );
+
+  describe('CORS_ORIGIN in production', () => {
+    const prod = { ...validEnv, ...composeUnsetDefaults };
+    it('rejects a localhost origin (the .env.example value)', () => {
+      expect(() =>
+        validate({ ...prod, CORS_ORIGIN: 'http://localhost:5173' }),
+      ).toThrow(/CORS_ORIGIN.*deploy\.md/s);
+    });
+    it('rejects the * wildcard', () => {
+      expect(() => validate({ ...prod, CORS_ORIGIN: '*' })).toThrow(
+        /CORS_ORIGIN/,
+      );
+    });
+    it('accepts a public https origin', () => {
+      expect(() =>
+        validate({ ...prod, CORS_ORIGIN: 'https://app.example.com' }),
+      ).not.toThrow();
+    });
+    it('accepts empty (CORS off — server-to-server only)', () => {
+      expect(() => validate({ ...prod, CORS_ORIGIN: '' })).not.toThrow();
+    });
+    it('does not restrict development', () => {
+      expect(() =>
+        validate({
+          ...validEnv,
+          NODE_ENV: 'development',
+          REDIS_URL: 'redis://localhost:6379',
+          CORS_ORIGIN: 'http://localhost:5173',
+        }),
+      ).not.toThrow();
+    });
+  });
 });

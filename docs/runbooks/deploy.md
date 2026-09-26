@@ -36,8 +36,14 @@
   `IDEMPOTENCY_INFLIGHT_TTL_MS` / `IDEMPOTENCY_COMPLETED_TTL_MS` (default 120000 /
   86400000), `LOG_LEVEL` (default `info`), `ENABLE_SWAGGER` (default `false`),
   `CORS_ORIGIN` (comma-separated browser origins, e.g. `https://app.example.com`;
-  **unset = CORS disabled** — a browser frontend on another origin cannot call the
-  API, so set it to the real frontend origin, not the `.env.example` localhost value),
+  **unset/empty = CORS disabled** — a browser frontend on another origin cannot call
+  the API. Under `NODE_ENV=production` startup validation **rejects** any entry that is
+  `*`, not an exact `https://host[:port]` origin (no `http://`, trailing `/`, path,
+  query or upper-case — the browser's `Origin` header is matched verbatim), or a
+  localhost / `127.x` / `::1` / `0.0.0.0` host — so the `.env.example` value
+  `http://localhost:5173` left in a production `.env` stops the api from booting
+  instead of silently locking the real frontend out. Set the real frontend origin(s),
+  or leave it empty for server-to-server-only use, e.g. a staging stack on `localhost`),
   `METRICS_TOKEN` (bearer token for `/metrics`; unset = `/metrics` answers `401` in
   production), `SENTRY_DSN` (unset = no error reporting), `SENTRY_ENVIRONMENT`
   (default `NODE_ENV`), `SENTRY_RELEASE`.
@@ -406,9 +412,9 @@ non-prod TLS setting). Instead either:
   (`docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.hostport.yml up -d db migrate api`
   — the prod overlay alone publishes nothing but Caddy); or
 - **Throwaway internal TLS:** copy the Caddyfile with `tls internal` inserted **inside the
-  site block** (right after its first line, `{$DOMAIN} {` — appended after the closing `}`
-  Caddy rejects it: "parsed 'tls' as a site address"), and mount the copy
-  via a one-off override file — e.g. `awk 'NR==1{print; print "\ttls internal"; next}1' Caddyfile > /tmp/Caddyfile.staging`
+  site block**, right after its first line (`{$DOMAIN} {`). Do not append it after the
+  closing `}`: Caddy then refuses to start with "parsed 'tls' as a site address". Mount
+  the copy via a one-off override file — e.g. `awk 'NR==1{print; print "\ttls internal"; next}1' Caddyfile > /tmp/Caddyfile.staging`
   (check it with `docker run --rm -e DOMAIN=localhost -v /tmp/Caddyfile.staging:/etc/caddy/Caddyfile:ro <the caddy image from docker-compose.prod.yml> caddy adapt --config /etc/caddy/Caddyfile`), then a small `docker-compose.staging.yml` that remaps `caddy.volumes` to `/tmp/Caddyfile.staging:/etc/caddy/Caddyfile:ro`, and add `-f docker-compose.staging.yml` to the up command. `DOMAIN=localhost`, then `curl -k https://localhost/health`.
 
 ### Activate offsite + encrypted backups (OPS-DB-1)

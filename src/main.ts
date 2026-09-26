@@ -29,7 +29,7 @@ async function bootstrap(): Promise<void> {
   // restarts). An unhandledRejection is logged + captured without exiting.
   const captureFatal = async (err: unknown): Promise<void> => {
     console.error(err);
-    if (process.env.SENTRY_DSN) {
+    if (sentry) {
       const Sentry = await import('@sentry/node');
       Sentry.captureException(err);
       await Sentry.flush(2000);
