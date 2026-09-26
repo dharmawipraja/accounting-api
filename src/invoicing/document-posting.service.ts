@@ -114,8 +114,12 @@ export class DocumentPostingService {
    *  the entry was derived from are the ones stored under that lock (a draft edit
    *  serializes on the same row lock) and the tax calculation is re-run through
    *  `tx` and must equal the pre-tx one (else DraftChangedError → restart),
-   *  before a number is consumed. Lock order:
-   *  document row → fiscal-year advisory lock / period FOR SHARE → sequences.
+   *  before a number is consumed. Lock / read order inside the tx:
+   *  document row FOR UPDATE → partner FOR SHARE (`verifyLockedInTx`) → tax-code
+   *  + company-settings reads and the line/tax account-rule reads (plain) →
+   *  document sequence (lock-and-increment) → fiscal-year advisory lock (shared)
+   *  + period FOR SHARE → accounts FOR SHARE → journal-entry sequence (the last
+   *  three inside `createPostedEntryInTx` / `stampPostedInTx`).
    *  `finalize` updates the document row to POSTED with the assigned number/ref +
    *  journal entry id. */
   async post(

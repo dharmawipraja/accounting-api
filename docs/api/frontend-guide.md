@@ -545,17 +545,25 @@ the document row. An edit or delete that loses to a post gets `422 VALIDATION_FA
 (`Only a DRAFT invoice can be edited` / `... can be deleted`); a post always posts the
 lines stored at that moment (it restarts internally if the draft was edited mid-post).
 If the draft keeps changing across several internal restarts the post returns
-`409 CONFLICT` (`Invoice was edited while being posted; retry`) — reload and retry.
+`409 CONFLICT` (`Invoice was changed while being posted (document, tax code or partner
+state); retry`) — reload and retry. The same `409` results when a tax code's rate/account
+keeps changing across those restarts.
 
 **Post re-validates tax and partner under the lock.** Inside the post transaction the
 tax is recomputed from the current tax codes and company settings; if a tax code's
 rate/account changed after the draft was read, the post restarts internally and posts
 the **current** rate (the posted totals may differ from the draft's stored totals —
-re-read the response). A tax code deactivated/deleted in the meantime, or `isPkp`
+re-read the response). The same applies to a **journal preview** shown earlier: if a
+tax rate changed between the preview and the post, the post uses the **new** rate, so
+always display the totals from the post response, not the preview. A tax code deactivated/deleted in the meantime, or `isPkp`
 switched off for a PPN document, → `422 VALIDATION_FAILED` (same message as create).
 The partner is re-checked too: deactivated / no longer a customer (vendor) / deleted
 → `422 VALIDATION_FAILED` `Partner is not an active customer` (`vendor`)
-`{ partnerId }`. The document stays `DRAFT` in every `422` case.
+`{ partnerId }`. The document stays `DRAFT` in every `422` case. **Deleted partner —
+404 vs 422:** a partner already soft-deleted when the post starts fails the pre-check
+with `404 NOT_FOUND` (partner not found); a partner deleted *while* the post is running
+is caught by the in-transaction re-check and gives the `422` above. Treat both as
+"partner no longer usable".
 
 **Line accounts.** On create, `PATCH` and `/post`, each line's `accountId` is checked;
 violations return `422 VALIDATION_FAILED`:
@@ -706,7 +714,10 @@ when that date falls in a closed period or closed fiscal year — send the docum
 date to catch that error at preview time instead of at post time. The request is
 discriminated by `nature`:
 
-- **`SALE` / `PURCHASE`** — same body as `POST /tax/calculate`:
+- **`SALE` / `PURCHASE`** — the `POST /tax/calculate` line shape, plus `nature`; unlike
+  `/tax/calculate` (where `settlementAccountId` is **required** and used), the preview
+  does **not** take a settlement account — `settlementAccountId` is deprecated and
+  ignored **for the preview only**:
 
   ```jsonc
   {

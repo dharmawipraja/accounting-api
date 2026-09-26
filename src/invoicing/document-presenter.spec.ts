@@ -150,6 +150,9 @@ describe('documentMessages parity', () => {
       'Invoice journal entry was already reversed',
     );
     expect(m.notPosted).toBe('Invoice is not posted');
+    expect(m.changedDuringPost).toBe(
+      'Invoice was changed while being posted (document, tax code or partner state); retry',
+    );
     expect(m.defaultDescription('abc')).toBe('Sales invoice abc');
   });
 
@@ -167,6 +170,9 @@ describe('documentMessages parity', () => {
     expect(m.voidWithPayments).toBe('Cannot void a bill with payments');
     expect(m.alreadyReversed).toBe('Bill journal entry was already reversed');
     expect(m.notPosted).toBe('Bill is not posted');
+    expect(m.changedDuringPost).toBe(
+      'Bill was changed while being posted (document, tax code or partner state); retry',
+    );
     expect(m.defaultDescription('abc')).toBe('Purchase bill abc');
   });
 });
