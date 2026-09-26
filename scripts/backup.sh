@@ -46,13 +46,21 @@ while true; do
   echo "backup written: accounting-$ts.dump"
 
   # Encrypt (gated): age recipient + age binary both required, else keep plaintext.
+  # With a recipient configured, a dump that did NOT get encrypted this run (age
+  # failed or missing) stays local-only: it is never shipped offsite (the
+  # contract is "encrypted before leaving the host"); retention prunes it. Each
+  # run decides afresh, so the next successful encryption ships normally.
+  # A plaintext `.dump` left by such a run is never re-encrypted or shipped
+  # later — it stays local-only until retention removes it.
+  ship=1
   if [ -n "${BACKUP_AGE_RECIPIENT:-}" ]; then
+    ship=0
     if command -v age >/dev/null 2>&1; then
       # Same tmp+rename as the dump: an interrupted/failed age run never leaves a
       # truncated `.dump.age` that looks like a complete encrypted backup.
       if age -r "$BACKUP_AGE_RECIPIENT" -o "$dump.age.tmp" "$dump"; then
         mv "$dump.age.tmp" "$dump.age"
-        rm -f "$dump"; dump="$dump.age"; echo "backup encrypted: $(basename "$dump")"
+        rm -f "$dump"; dump="$dump.age"; ship=1; echo "backup encrypted: $(basename "$dump")"
       else
         echo "WARN: age encryption failed — keeping plaintext local dump" >&2; rm -f "$dump.age.tmp"
       fi
@@ -62,7 +70,11 @@ while true; do
   fi
 
   # Offsite (gated): S3 (aws or rclone) takes precedence, else rsync. Failures log + continue.
-  if [ -n "${BACKUP_S3_BUCKET:-}" ]; then
+  if [ "$ship" -eq 0 ]; then
+    if [ -n "${BACKUP_S3_BUCKET:-}" ] || [ -n "${BACKUP_RSYNC_TARGET:-}" ]; then
+      echo "WARN: $(basename "$dump") not shipped offsite: encryption failed (BACKUP_AGE_RECIPIENT set) — local plaintext only" >&2
+    fi
+  elif [ -n "${BACKUP_S3_BUCKET:-}" ]; then
     if command -v aws >/dev/null 2>&1; then
       aws s3 cp "$dump" "s3://$BACKUP_S3_BUCKET/$(basename "$dump")" && echo "offsite (s3/aws): $(basename "$dump")" || echo "WARN: s3 (aws) upload failed — local dump retained" >&2
     elif command -v rclone >/dev/null 2>&1; then

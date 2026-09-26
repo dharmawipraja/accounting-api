@@ -106,6 +106,9 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     environment: production
+    # Least privilege: only the checkout below needs the token (read the repo).
+    permissions:
+      contents: read
     steps:
       # The remote commands live in scripts/deploy-remote.sh (shellcheck-linted by
       # CI). Check out the SAME commit so the script sent is the deployed ref's.

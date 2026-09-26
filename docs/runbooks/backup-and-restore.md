@@ -17,8 +17,11 @@ interrupted or failed dump never looks like the newest backup: a `*.dump.tmp` is
 With encryption on (`BACKUP_AGE_RECIPIENT`, deploy.md *Activate offsite + encrypted backups*) the
 same applies to the encrypted copy: `age` writes `accounting-<ts>.dump.age.tmp`, which is renamed to
 `accounting-<ts>.dump.age` (and the plaintext `.dump` removed) only once `age` succeeded — a
-`*.dump.age.tmp` is never restorable and is cleaned up the same way. If `age` fails, the plaintext
-`.dump` is kept. Retention prunes `.dump` and `.dump.age` alike. Before restoring a `.dump.age`,
+`*.dump.age.tmp` is never restorable and is cleaned up the same way. If `age` fails (or is not on
+PATH) while a recipient is set, the plaintext `.dump` is kept **locally only**: that run skips the
+offsite upload (WARN `not shipped offsite: encryption failed`), so plaintext never leaves the host.
+Such a plaintext `.dump` is never re-encrypted or shipped by a later run — it stays local-only until
+retention removes it; the next run whose encryption succeeds ships its own `.dump.age` as usual. Retention prunes `.dump` and `.dump.age` alike. Before restoring a `.dump.age`,
 decrypt it with the private key, wherever that key is kept (`age -d -i <key> file.dump.age > file.dump`),
 and restore the resulting `.dump` as below.
 

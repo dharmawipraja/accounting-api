@@ -740,14 +740,18 @@ non-prod TLS setting). Instead either:
 `scripts/backup.sh` writes a local `pg_dump` by default. To also encrypt and ship
 offsite, set env on the `backup` service (all optional; unset = local-only, as today):
 - `BACKUP_AGE_RECIPIENT` — an [age](https://age-encryption.org) recipient public key;
-  the dump is encrypted to `*.dump.age` before leaving the host.
+  the dump is encrypted to `*.dump.age` before leaving the host. If encryption fails
+  (or `age` is missing) that run's plaintext dump is **not** shipped offsite (WARN
+  `not shipped offsite: encryption failed`); it stays local-only until retention
+  prunes it — only `.dump.age` files ever leave the host while a recipient is set.
 - **S3:** `BACKUP_S3_BUCKET` (e.g. `my-bucket/accounting`) + AWS creds (`AWS_ACCESS_KEY_ID`/
   `AWS_SECRET_ACCESS_KEY`/`AWS_DEFAULT_REGION`) for `aws`, or an `rclone` remote config.
 - **rsync:** `BACKUP_RSYNC_TARGET` (e.g. `user@host:/backups/`) with SSH access.
 
 The default `backup` image (`postgres:16`) does NOT include `age`/`aws`/`rclone`/`rsync`.
 Provide them via a custom backup image (recommended) or a bind-mount; the script logs a
-clear WARN and keeps the local dump if a configured tool is missing. Restore: decrypt
+clear WARN and keeps the local dump if a configured tool is missing (a missing `age`
+with a recipient set also skips the offsite upload, as above). Restore: decrypt
 with `age -d -i <key> file.dump.age > file.dump`, then follow `backup-and-restore.md`.
 
 ## CD pipeline (OPS-CI-1)
@@ -820,7 +824,10 @@ incl. `scripts/deploy-remote.sh` — the commands CD runs on the VM), `docker`
 (production image build + Trivy HIGH/CRITICAL vulnerability scan, unfixed ignored,
 `exit-code 1`) and `docker-migrate` (the same Trivy scan of the migrate image, the
 Dockerfile `build` stage — like the runtime image it ships no npm/npx, so run the
-Prisma CLI in it as `node_modules/.bin/prisma …`). CD's `ci-gate` needs the whole run green, so a failing
-scan blocks releases until the base image (or dependency) is bumped.
+Prisma CLI in it as `node_modules/.bin/prisma …`). The migrate image carries the full
+lockfile install, **dev dependencies included**, so its Trivy scan can go red on a
+dev-only advisory that `audit` (prod deps only) does not flag. CD's `ci-gate` needs the
+whole run green, so a failing scan of either image blocks releases until the base
+image (or the affected dependency, e.g. via a `package.json` `overrides` bump) is bumped.
 Recommended next step: enable branch protection on `main` requiring the `verify`
 and `audit` checks to pass before merge.
