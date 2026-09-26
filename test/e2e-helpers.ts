@@ -43,7 +43,8 @@ export interface TestApp {
   app: INestApplication;
   prisma: PrismaService;
   db: TestDb;
-  /** Tear down in afterAll: app.close → prisma.$disconnect → db.stop. */
+  /** Tear down in afterAll: app.close (also closes the HTTP listener) →
+   *  prisma.$disconnect → db.stop. */
   cleanup: () => Promise<void>;
 }
 
@@ -92,6 +93,13 @@ export async function bootstrapTestApp(
   );
   opts.configure?.(app);
   await app.init();
+  // Listen ONCE on IPv4 loopback. Given an unlistened server, supertest calls
+  // listen(0) per request — binding `::` dual-stack — and then connects to
+  // 127.0.0.1:<port>; macOS lets that `::` bind succeed on a port another
+  // local process holds on 127.0.0.1, so the request reached THAT process
+  // (foreign 426 Upgrade Required / 405 responses). A bound server makes
+  // supertest reuse address().port. app.close() in cleanup closes it.
+  await app.listen(0, '127.0.0.1');
   const cleanup = async () => {
     await app.close();
     await prisma.$disconnect();
