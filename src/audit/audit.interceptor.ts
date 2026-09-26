@@ -3,7 +3,6 @@ import {
   ExecutionContext,
   Injectable,
   NestInterceptor,
-  Optional,
 } from '@nestjs/common';
 import { ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
 import { Observable, from, throwError } from 'rxjs';
@@ -61,7 +60,7 @@ export class AuditInterceptor implements NestInterceptor {
    *  (login / refresh / logout) count against its anonymous global ceiling. */
   constructor(
     private readonly audit: AuditService,
-    @Optional() private readonly limiter?: RejectionAuditLimiter,
+    private readonly limiter: RejectionAuditLimiter,
   ) {}
 
   intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
@@ -99,7 +98,6 @@ export class AuditInterceptor implements NestInterceptor {
           !req.user &&
           statusCode >= 400 &&
           statusCode < 500 &&
-          this.limiter &&
           !this.limiter.allowAnonymousGlobal()
         ) {
           return throwError(() => err);

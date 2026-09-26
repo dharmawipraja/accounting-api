@@ -143,6 +143,37 @@ export function isConstraintViolation(err: unknown): boolean {
   return code !== undefined && CONSTRAINT_PG_CODES.has(code);
 }
 
+/** The violated constraint's name for server-side logs / Sentry tags (never
+ *  the response): Postgres' `constraint "<name>"` text, or a trigger's
+ *  `<name>: …` message prefix (e.g. `journal_entry_balanced`), read from the
+ *  driver-adapter error's originalMessage or the error message. Pure. */
+export function constraintNameOf(err: unknown): string | undefined {
+  const texts: string[] = [];
+  const collect = (e: unknown) => {
+    if (typeof e !== 'object' || e === null) return;
+    const { message, cause } = e as { message?: unknown; cause?: unknown };
+    if (cause && typeof cause === 'object') {
+      const om = (cause as { originalMessage?: unknown }).originalMessage;
+      if (typeof om === 'string') texts.push(om);
+    }
+    if (typeof message === 'string') texts.push(message);
+  };
+  if (err instanceof Prisma.PrismaClientKnownRequestError) {
+    collect(
+      (err.meta as { driverAdapterError?: unknown } | undefined)
+        ?.driverAdapterError,
+    );
+  }
+  collect(err);
+  for (const t of texts) {
+    const quoted = /constraint "([^"]+)"/.exec(t);
+    if (quoted) return quoted[1];
+    const prefixed = /^([a-z_][a-z0-9_]*): /.exec(t);
+    if (prefixed) return prefixed[1];
+  }
+  return undefined;
+}
+
 /** Envelope for a request body over the parser's size cap (1 MB, main.ts). */
 export const PAYLOAD_TOO_LARGE = {
   status: 413,

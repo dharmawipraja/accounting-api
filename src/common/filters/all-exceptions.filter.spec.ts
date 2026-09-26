@@ -195,6 +195,57 @@ describe('AllExceptionsFilter', () => {
       message: 'The request violates a data constraint',
       traceId: 'req-1',
     });
+    // A backstop hit is a validation gap (code defect): reported at warning.
+    expect(Sentry.captureException as jest.Mock).toHaveBeenCalledTimes(1);
+    expect(Sentry.captureException as jest.Mock).toHaveBeenCalledWith(err, {
+      level: 'warning',
+      tags: {
+        kind: 'constraint-backstop',
+        constraint: 'payment_allocations_amount_positive',
+        traceId: 'req-1',
+      },
+      extra: { path: '/test' },
+    });
+  });
+
+  it('reports the deferred journal_entry_balanced trigger (bare 23514) with its name', () => {
+    (Sentry.captureException as jest.Mock).mockClear();
+    const m = mockHost();
+    const err = Object.assign(new Error('adapter'), {
+      name: 'DriverAdapterError',
+      cause: {
+        kind: 'postgres',
+        originalCode: '23514',
+        originalMessage:
+          'journal_entry_balanced: posted journal entry 1 is unbalanced (debit 1, credit 2)',
+      },
+    });
+    filter.catch(err, m.host);
+    expect(m.code()).toBe(422);
+    expect(JSON.stringify(m.payload())).not.toContain('journal_entry_balanced');
+    expect(Sentry.captureException as jest.Mock).toHaveBeenCalledWith(
+      err,
+      expect.objectContaining({
+        level: 'warning',
+        tags: expect.objectContaining({
+          kind: 'constraint-backstop',
+          constraint: 'journal_entry_balanced',
+        }) as unknown,
+      }),
+    );
+  });
+
+  it('ordinary 4xx (DomainError 422, HttpException 400, P2002 409) never reach Sentry', () => {
+    (Sentry.captureException as jest.Mock).mockClear();
+    const errs = [
+      new ConflictDomainError('x'),
+      new BadRequestException('bad'),
+      new Prisma.PrismaClientKnownRequestError('dup', {
+        code: 'P2002',
+        clientVersion: Prisma.prismaVersion.client,
+      }),
+    ];
+    for (const err of errs) filter.catch(err, mockHost().host);
     expect(Sentry.captureException as jest.Mock).not.toHaveBeenCalled();
   });
 

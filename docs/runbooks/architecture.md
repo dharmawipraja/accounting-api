@@ -140,8 +140,10 @@ Guards run in registration order:
     (`withheldBody` / `loginAttemptBody`). A **bodyless handler** — one whose
     Nest route-argument metadata (`ROUTE_ARGS_METADATA`) binds no `@Body()` /
     `@Req()` / `@RawBody()`, e.g. `POST /auth/logout-all`, `/:id/post`, `DELETE`
-    — stores `{}` whatever the status (`handlerBindsBody` in
-    `audit.interceptor.ts`): nothing it received was used. Every other row stores
+    — stores `{}` on every interceptor-written row whatever the status
+    (`handlerBindsBody` in `audit.interceptor.ts`): nothing it received was
+    used. (A filter-written authenticated 403/429 guard rejection on such a
+    route has no handler context, so it stores the body capped at 8 KiB.) Every other row stores
     the sanitized body, **capped** (`auditBodyOf` / `capBody` in
     `audit-request.ts`) at **512 KiB** only for an **authenticated 2xx on a
     body-binding handler** (the body passed DTO validation), and at **8192 bytes**
@@ -205,9 +207,10 @@ All thrown errors funnel through **`AllExceptionsFilter`**
   validation (`P2011`, `P2010`/`P2039` + `meta.driverAdapterError`, or a bare
   `DriverAdapterError`; `isConstraintViolation`) → a generic **422
   `VALIDATION_FAILED`** "The request violates a data constraint" — a backstop
-  (warn-logged, no Sentry, no SQL/constraint name in the response); primary
-  validation stays in the services.
-- A body-parser over-limit error → **413 `PAYLOAD_TOO_LARGE`** (no Sentry).
+  for a validation gap (a code defect): ERROR-logged with the constraint name and
+  Sentry-captured at `warning` (tag `kind: constraint-backstop`), but no
+  SQL/constraint name in the response; primary validation stays in the services.
+- A body-parser over-limit error → **413 `PAYLOAD_TOO_LARGE`** (info log, no Sentry).
 - Anything else → 500 `INTERNAL_ERROR`, logged + Sentry-captured (no stack leak).
 
 Every envelope gets a `traceId` (the server-generated `X-Request-Id`) when present.

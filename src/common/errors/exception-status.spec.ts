@@ -2,6 +2,7 @@ import { HttpException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import {
   CONSTRAINT_VIOLATION,
+  constraintNameOf,
   isConstraintViolation,
   isPayloadTooLarge,
   isTransientConflict,
@@ -271,5 +272,33 @@ describe('isPayloadTooLarge (body-parser over-limit → 413)', () => {
     expect(isPayloadTooLarge(parserError('entity.too.large', 400))).toBe(false);
     expect(isPayloadTooLarge(null)).toBe(false);
     expect(isPayloadTooLarge('entity.too.large')).toBe(false);
+  });
+});
+
+describe('constraintNameOf', () => {
+  it('reads a quoted constraint, a trigger prefix, or nothing', () => {
+    const adapter = (originalMessage: string) =>
+      Object.assign(new Error('adapter'), {
+        name: 'DriverAdapterError',
+        cause: { originalCode: '23514', originalMessage },
+      });
+    expect(
+      constraintNameOf(
+        adapter('new row violates check constraint "journal_lines_one_sided"'),
+      ),
+    ).toBe('journal_lines_one_sided');
+    expect(
+      constraintNameOf(
+        new Prisma.PrismaClientKnownRequestError('m', {
+          code: 'P2010',
+          clientVersion: Prisma.prismaVersion.client,
+          meta: {
+            driverAdapterError: adapter('journal_entry_balanced: unbalanced'),
+          },
+        }),
+      ),
+    ).toBe('journal_entry_balanced');
+    expect(constraintNameOf(new Error('Something else'))).toBeUndefined();
+    expect(constraintNameOf(null)).toBeUndefined();
   });
 });

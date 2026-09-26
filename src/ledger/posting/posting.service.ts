@@ -259,8 +259,10 @@ export class PostingService {
    *  document row(s) FOR UPDATE and take the document number (document_sequences)
    *  — see stampPostedInTx. That order cannot deadlock against close/reopen:
    *  year close and period close/reopen never lock documents or
-   *  document_sequences, so the only locks both sides take are the year advisory
-   *  lock and the period row, always acquired here in the same order. */
+   *  document_sequences, so the locks both sides take are the year advisory
+   *  lock, the period row and — after this guard, when a year close posts its
+   *  closing entry or a reopen its reversal — the journal-entry sequence row (nextNumber), always
+   *  acquired in that same order. */
   private async assertPostablePeriodInTx(
     tx: LedgerTx,
     periodId: string,

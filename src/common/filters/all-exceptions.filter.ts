@@ -11,6 +11,7 @@ import * as Sentry from '@sentry/node';
 import { DomainError } from '../errors/domain-errors';
 import {
   CONSTRAINT_VIOLATION,
+  constraintNameOf,
   isConstraintViolation,
   isPayloadTooLarge,
   isTransientConflict,
@@ -116,17 +117,29 @@ export class AllExceptionsFilter implements ExceptionFilter {
       );
     } else if (isConstraintViolation(exception)) {
       // CHECK / NOT NULL violation that escaped service validation: a generic
-      // 422 backstop (no SQL / constraint names in the response); warn so the
-      // validation gap is visible, no Sentry.
+      // 422 backstop (no SQL / constraint names in the response). It only
+      // fires on a validation gap (a code defect — e.g. the deferred
+      // journal_entry_balanced trigger), so it is logged at ERROR with the
+      // constraint name and reported to Sentry at warning level.
       envelope = {
         code: CONSTRAINT_VIOLATION.code,
         message: CONSTRAINT_VIOLATION.message,
       };
-      this.logger.warn(
-        `Constraint violation -> ${status} on ${url}: ${
+      const constraint = constraintNameOf(exception) ?? 'unknown';
+      this.logger.error(
+        `Constraint violation (${constraint}) -> ${status} on ${url}: ${
           exception instanceof Error ? exception.message : String(exception)
         }`,
       );
+      Sentry.captureException(exception, {
+        level: 'warning',
+        tags: {
+          kind: 'constraint-backstop',
+          constraint,
+          traceId: req.id,
+        },
+        extra: { path: url },
+      });
     } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       const mapped = PRISMA_STATUS[exception.code];
       if (mapped) {
@@ -155,6 +168,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         code: PAYLOAD_TOO_LARGE.code,
         message: PAYLOAD_TOO_LARGE.message,
       };
+      this.logger.log(`Request body over the parser limit -> 413 on ${url}`);
     } else {
       this.logger.error(
         `Unhandled exception on ${url}`,

@@ -45,9 +45,10 @@ const handlerThatThrows = (err: unknown): CallHandler => ({
 describe('AuditInterceptor', () => {
   const setup = () => {
     const record = jest.fn().mockResolvedValue(undefined);
-    const interceptor = new AuditInterceptor({
-      record,
-    } as unknown as AuditService);
+    const interceptor = new AuditInterceptor(
+      { record } as unknown as AuditService,
+      new RejectionAuditLimiter(),
+    );
     return { record, interceptor };
   };
 
@@ -176,7 +177,7 @@ function routedCtx(
 }
 
 describe('AuditInterceptor body cap (iteration-4 ruling)', () => {
-  const setup = (limiter?: RejectionAuditLimiter) => {
+  const setup = (limiter = new RejectionAuditLimiter()) => {
     const record = jest.fn().mockResolvedValue(undefined);
     const interceptor = new AuditInterceptor(
       { record } as unknown as AuditService,
