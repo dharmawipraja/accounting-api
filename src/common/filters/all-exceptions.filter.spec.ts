@@ -285,6 +285,26 @@ describe('AllExceptionsFilter', () => {
     expect(Sentry.captureException as jest.Mock).not.toHaveBeenCalled();
   });
 
+  it('iter6: maps an untyped http-errors 400 (zlib Z_DATA_ERROR from gzip junk) to 400, no Sentry', () => {
+    (Sentry.captureException as jest.Mock).mockClear();
+    const m = mockHost();
+    const err = Object.assign(new Error('incorrect header check'), {
+      code: 'Z_DATA_ERROR',
+      errno: -3,
+      status: 400,
+      statusCode: 400,
+      expose: true,
+    });
+    filter.catch(err, m.host);
+    expect(m.code()).toBe(400);
+    expect(m.payload()).toEqual({
+      code: 'HTTP_400',
+      message: 'incorrect header check',
+      traceId: 'req-1',
+    });
+    expect(Sentry.captureException as jest.Mock).not.toHaveBeenCalled();
+  });
+
   it('maps other body-parser client errors (415 charset/encoding, 400 aborted) to their status, no Sentry', () => {
     (Sentry.captureException as jest.Mock).mockClear();
     const cases = [

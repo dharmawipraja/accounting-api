@@ -545,24 +545,48 @@ describe('Payments (e2e)', () => {
     expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
   });
 
-  it('I-16: create payment with a non-existent cash account UUID → 422 (!cash guard in createDraft)', async () => {
-    // !cash || !cash.isPostable || !cash.isActive guard in createDraft().
+  it('I-16 / iter6: create payment with a missing, header or inactive cash account → 422 INVALID_ACCOUNT { accountId } (same as preview / post)', async () => {
     // cashAccountId must pass @IsUUID() DTO validation, so use a well-formed but non-existent UUID.
     const customerId = await newCustomer('CUST-BAD-CASH');
     const invoiceId = await makePostedInvoice(customerId);
-    const res = await request(server())
-      .post('/v1/payments')
-      .set('Authorization', `Bearer ${acct}`)
-      .set('Idempotency-Key', randomUUID())
-      .send({
-        direction: 'RECEIPT',
-        partnerId: customerId,
-        date: '2026-01-15',
-        cashAccountId: '00000000-0000-0000-0000-000000000000', // valid UUID, no such account
-        allocations: [{ salesInvoiceId: invoiceId, amount: '500000' }],
-      })
-      .expect(422);
-    expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+    const header = await prisma.client.account.findFirstOrThrow({
+      where: { isPostable: false },
+    });
+    const kas = await prisma.client.account.findUniqueOrThrow({
+      where: { id: acc['1-1000'] },
+    });
+    const inactiveCash = await prisma.client.account.create({
+      data: {
+        code: '1-1099',
+        name: 'Kas nonaktif',
+        type: kas.type,
+        subtype: kas.subtype,
+        normalBalance: kas.normalBalance,
+        isActive: false,
+      },
+    });
+    for (const cashAccountId of [
+      '00000000-0000-0000-0000-000000000000', // valid UUID, no such account
+      header.id,
+      inactiveCash.id,
+    ]) {
+      const res = await request(server())
+        .post('/v1/payments')
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          direction: 'RECEIPT',
+          partnerId: customerId,
+          date: '2026-01-15',
+          cashAccountId,
+          allocations: [{ salesInvoiceId: invoiceId, amount: '500000' }],
+        })
+        .expect(422);
+      expect(res.body).toMatchObject({
+        code: 'INVALID_ACCOUNT',
+        details: { accountId: cashAccountId },
+      });
+    }
   });
 
   it('I-17: create payment with a zero allocation amount → 422 (amt.isZero() guard in createDraft)', async () => {

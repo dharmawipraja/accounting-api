@@ -9,7 +9,7 @@ import { TaxCodesService } from '../src/tax/tax-codes.service';
 import { BusinessPartnersService } from '../src/invoicing/business-partners.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
-import { bootstrapTestApp, tomorrowWib } from './e2e-helpers';
+import { bootstrapTestApp, tomorrowWib, wibDayPlus } from './e2e-helpers';
 
 describe('SalesInvoices (e2e)', () => {
   let app: INestApplication;
@@ -586,6 +586,25 @@ describe('SalesInvoices (e2e)', () => {
         (await prisma.client.salesInvoice.findFirst({ where: { id: inv.id } }))!
           .status,
       ).toBe('POSTED');
+    });
+
+    it('iter6: a future-dated invoice voids with an explicit date equal to its own date (200); a date after both today and it → 422', async () => {
+      const own = wibDayPlus(3);
+      const inv = await postInvoice(own);
+      const tooLate = await voidReq(inv.id)
+        .send({ date: wibDayPlus(4) })
+        .expect(422);
+      expect(
+        (tooLate.body as { details: Record<string, string> }).details,
+      ).toEqual({
+        date: wibDayPlus(4),
+        today: wibDayPlus(0),
+        originalDate: own,
+      });
+      const res = await voidReq(inv.id).send({ date: own }).expect(200);
+      const body = res.body as { status: string; voidedOn: string };
+      expect(body.status).toBe('VOID');
+      expect(body.voidedOn.slice(0, 10)).toBe(own);
     });
 
     it('voids into a later open period once the invoice period is closed', async () => {

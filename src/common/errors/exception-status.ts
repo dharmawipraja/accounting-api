@@ -187,17 +187,24 @@ export const PAYLOAD_TOO_LARGE = {
  * filter unmapped — and are recognised by a string `type` (e.g.
  * `entity.too.large` / `parameters.too.many` 413, `charset.unsupported` /
  * `encoding.unsupported` 415, `request.aborted` 400) plus a numeric 4xx
- * `status` / `statusCode`. They are raised before routing (no guard ran), so
- * they are client errors, never incidents. Pure.
+ * `status` / `statusCode` — OR, without a `type`, by http-errors' own marker
+ * `expose === true` plus a numeric 4xx status: body-parser wraps a
+ * decompression failure (`Content-Encoding: gzip` + junk → zlib
+ * `Z_DATA_ERROR`) as `createError(400, err)`, which keeps the zlib error's
+ * props and adds status 400 + `expose: true` but no `type`. App errors never
+ * reach here as such (HttpException / DomainError / Prisma are classified
+ * first, and none sets `expose`). They are raised before routing (no guard
+ * ran), so they are client errors, never incidents. Pure.
  */
 export function bodyParserClientStatus(err: unknown): number | undefined {
   if (typeof err !== 'object' || err === null) return undefined;
-  const { type, status, statusCode } = err as {
+  const { type, status, statusCode, expose } = err as {
     type?: unknown;
     status?: unknown;
     statusCode?: unknown;
+    expose?: unknown;
   };
-  if (typeof type !== 'string') return undefined;
+  if (typeof type !== 'string' && expose !== true) return undefined;
   const s = typeof status === 'number' ? status : statusCode;
   return typeof s === 'number' && Number.isInteger(s) && s >= 400 && s < 500
     ? s

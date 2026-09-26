@@ -6,6 +6,11 @@ import { PrismaService } from '../src/common/prisma/prisma.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
 import { BusinessPartnersService } from '../src/invoicing/business-partners.service';
+import { JournalService } from '../src/ledger/journal/journal.service';
+import {
+  AUDIT_BODY_MAX_BYTES,
+  AUDIT_SMALL_BODY_MAX_BYTES,
+} from '../src/audit/audit-request';
 import { bootstrapTestApp } from './e2e-helpers';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -64,5 +69,66 @@ describe('Audit covers timed-out requests (e2e)', () => {
       .send({ code: 'TMO-2', name: 'Fast', isCustomer: true })
       .expect(201);
     expect(await prisma.client.auditLog.count()).toBe(before + 1);
+  });
+
+  it('iter6: a 408 on a body the ValidationPipe accepted stores the FULL body (512 KiB tier), not an 8 KiB marker', async () => {
+    const journal = app.get(JournalService);
+    // The write "commits" (stub) but the handler outlives REQUEST_TIMEOUT_MS.
+    jest.spyOn(journal, 'createDraft').mockImplementation(async () => {
+      await sleep(2_500);
+      throw new Error('stub handler should have been cut off');
+    });
+    const acct = '11111111-1111-4111-8111-111111111111';
+    const body = {
+      date: '2026-07-01',
+      description: 'timeout probe',
+      lines: Array.from({ length: 100 }, (_, i) => ({
+        accountId: acct,
+        ...(i % 2 === 0 ? { debit: '1.0000' } : { credit: '1.0000' }),
+        description: 'd'.repeat(500),
+      })),
+    };
+    const size = Buffer.byteLength(JSON.stringify(body));
+    expect(size).toBeGreaterThan(AUDIT_SMALL_BODY_MAX_BYTES);
+    expect(size).toBeLessThan(AUDIT_BODY_MAX_BYTES);
+    await request(app.getHttpServer() as App)
+      .post('/v1/ledger/journal-entries')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', 'tmo-full-body-1')
+      .set('X-Request-Id', 'tmo-full-body')
+      .send(body)
+      .expect(408);
+    await sleep(1_500);
+    const row = await prisma.client.auditLog.findFirst({
+      where: { clientRequestId: 'tmo-full-body' },
+    });
+    expect(row).toMatchObject({ statusCode: 408 });
+    expect(row!.body).toEqual(body);
+  }, 20_000);
+
+  it('iter6: a 400 from the ValidationPipe (never accepted) keeps the 8 KiB tier', async () => {
+    const body = {
+      date: '2026-07-01',
+      description: 'invalid probe',
+      lines: Array.from({ length: 100 }, () => ({
+        accountId: 'not-a-uuid',
+        description: 'd'.repeat(500),
+      })),
+    };
+    await request(app.getHttpServer() as App)
+      .post('/v1/ledger/journal-entries')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', 'tmo-invalid-body-1')
+      .set('X-Request-Id', 'tmo-invalid-body')
+      .send(body)
+      .expect(400);
+    const row = await prisma.client.auditLog.findFirst({
+      where: { clientRequestId: 'tmo-invalid-body' },
+    });
+    expect(row).toMatchObject({ statusCode: 400 });
+    expect(row!.body).toMatchObject({ _truncated: true });
+    expect(Buffer.byteLength(JSON.stringify(row!.body))).toBeLessThanOrEqual(
+      AUDIT_SMALL_BODY_MAX_BYTES,
+    );
   });
 });

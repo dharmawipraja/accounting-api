@@ -284,6 +284,43 @@ describe('isBodyParserClientError (body-parser / http-errors 4xx)', () => {
     expect(statusFromException(onlyStatusCode)).toBe(400);
   });
 
+  it('iter6: matches an untyped http-errors 4xx (zlib Z_DATA_ERROR wrapped by createError(400, err)) only with expose === true', () => {
+    // body-parser 2.x wraps a decompression failure as createError(400, err):
+    // the zlib error keeps its own props (code Z_DATA_ERROR, errno) and gains
+    // status/statusCode 400 + expose true, but NO `type`.
+    const zlib = Object.assign(new Error('incorrect header check'), {
+      code: 'Z_DATA_ERROR',
+      errno: -3,
+      status: 400,
+      statusCode: 400,
+      expose: true,
+    });
+    expect(isBodyParserClientError(zlib)).toBe(true);
+    expect(statusFromException(zlib)).toBe(400);
+    // Same shape without expose === true (an app error carrying a status) is
+    // not a parser error.
+    for (const expose of [undefined, false, 'true', 1]) {
+      const e = Object.assign(new Error('x'), {
+        status: 400,
+        statusCode: 400,
+        expose,
+      });
+      expect(isBodyParserClientError(e)).toBe(false);
+      expect(statusFromException(e)).toBe(500);
+    }
+    // expose true but a 5xx / non-integer status never matches.
+    expect(
+      isBodyParserClientError(
+        Object.assign(new Error('x'), { status: 500, expose: true }),
+      ),
+    ).toBe(false);
+    expect(
+      isBodyParserClientError(
+        Object.assign(new Error('x'), { status: 400.5, expose: true }),
+      ),
+    ).toBe(false);
+  });
+
   it('does not match non-4xx, untyped or non-object shapes', () => {
     expect(
       isBodyParserClientError(parserError('stream.not.readable', 500)),

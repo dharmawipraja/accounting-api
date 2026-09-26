@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, VersioningType } from '@nestjs/common';
+import { VersioningType } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
@@ -7,6 +7,7 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AuditService } from './audit/audit.service';
 import { RejectionAuditLimiter } from './audit/rejection-audit-limiter';
+import { globalValidationPipe } from './audit/validated-body';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { corsOptions } from './config/cors-origins';
 import { sentryOptions } from './config/sentry-options';
@@ -52,13 +53,8 @@ async function bootstrap(): Promise<void> {
   app.set('trust proxy', resolveTrustProxy(process.env));
   app.use(helmet());
   app.enableCors(corsOptions(process.env.CORS_ORIGIN));
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
+  // Strict validation + the validated-body audit mark (audit/validated-body).
+  app.useGlobalPipes(globalValidationPipe());
   app.useGlobalFilters(
     new AllExceptionsFilter(
       app.get(AuditService),

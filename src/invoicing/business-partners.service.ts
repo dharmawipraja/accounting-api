@@ -119,17 +119,33 @@ export class BusinessPartnersService {
     return p;
   }
 
+  /** PATCH a partner. The row is locked FOR UPDATE first and the
+   *  customer-and/or-vendor rule is re-checked against the LOCKED row, so two
+   *  concurrent PATCHes (one clearing isCustomer, the other isVendor) cannot
+   *  both pass against a stale read and leave a partner that is neither (the
+   *  DB CHECK `business_partners_customer_or_vendor` is the backstop). Draft
+   *  create / payment post read the partner FOR SHARE, so they serialize with
+   *  this update too. */
   async update(
     id: string,
     input: UpdatePartnerInput,
   ): Promise<BusinessPartner> {
-    const current = await this.findById(id);
-    const isCustomer = input.isCustomer ?? current.isCustomer;
-    const isVendor = input.isVendor ?? current.isVendor;
-    this.assertRole(isCustomer, isVendor);
-    return this.prisma.client.businessPartner.update({
-      where: { id },
-      data: { ...input },
+    return this.prisma.transaction(async (tx) => {
+      const rows = await tx.$queryRaw<
+        { is_customer: boolean; is_vendor: boolean }[]
+      >`
+        SELECT is_customer, is_vendor FROM business_partners
+        WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
+      if (rows.length === 0)
+        throw new NotFoundDomainError('Partner not found', { id });
+      this.assertRole(
+        input.isCustomer ?? rows[0].is_customer,
+        input.isVendor ?? rows[0].is_vendor,
+      );
+      return tx.businessPartner.update({
+        where: { id },
+        data: { ...input },
+      });
     });
   }
 

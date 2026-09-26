@@ -14,7 +14,9 @@ import {
   entityIdOf,
   handlerBindsBody,
 } from './audit.interceptor';
+import { IsString } from 'class-validator';
 import { RejectionAuditLimiter } from './rejection-audit-limiter';
+import { globalValidationPipe } from './validated-body';
 import { ReadOnlyPost } from './read-only-post';
 import { TokenGrant } from './token-grant';
 import { LoginIpThrottle } from '../common/guards/login-ip-throttle';
@@ -398,9 +400,16 @@ describe('AuditInterceptor anonymous ceiling scope (final wave I1)', () => {
     );
   });
 
-  it('ceiling exhausted: a successful refresh 2xx (@TokenGrant) is still audited', async () => {
+  it('ceiling exhausted: a successful refresh 2xx (@TokenGrant) is still audited (per-user bucket)', async () => {
     const { record, interceptor } = exhausted();
-    await expect(run(interceptor, 'refresh')).resolves.toEqual({ ok: true });
+    const pair = { accessToken: jwtWithSub('u-1'), refreshToken: 'r' };
+    await expect(
+      firstValueFrom(
+        interceptor.intercept(routedCtx('refresh', anonReq(), 200), {
+          handle: () => of(pair),
+        }),
+      ),
+    ).resolves.toEqual(pair);
     expect(record).toHaveBeenCalledTimes(1);
   });
 
@@ -420,6 +429,160 @@ describe('AuditInterceptor anonymous ceiling scope (final wave I1)', () => {
       ),
     ).rejects.toBeInstanceOf(UnauthorizedException);
     expect(record).not.toHaveBeenCalled();
+  });
+});
+
+class NoteDto {
+  @IsString() note!: string;
+}
+
+const jwtWithSub = (sub: unknown) =>
+  [
+    Buffer.from('{"alg":"HS256"}').toString('base64url'),
+    Buffer.from(JSON.stringify({ sub, typ: 'access' })).toString('base64url'),
+    'sig',
+  ].join('.');
+
+describe('AuditInterceptor iteration-6', () => {
+  const setup = (limiter = new RejectionAuditLimiter()) => {
+    const record = jest.fn().mockResolvedValue(undefined);
+    const interceptor = new AuditInterceptor(
+      { record } as unknown as AuditService,
+      limiter,
+      new Reflector(),
+    );
+    return { record, interceptor };
+  };
+  const anonReq = () => ({
+    method: 'POST',
+    url: '/v1/auth/refresh',
+    params: {},
+    body: { refreshToken: 'x' },
+    ip: '1.2.3.4',
+  });
+  const refresh = (interceptor: AuditInterceptor, sub: unknown) =>
+    firstValueFrom(
+      interceptor.intercept(routedCtx('refresh', anonReq(), 200), {
+        handle: () => of({ accessToken: jwtWithSub(sub), refreshToken: 'r' }),
+      }),
+    );
+
+  it('refresh 2xx rows: 60/min per token owner, then the anonymous global ceiling', async () => {
+    const limiter = new RejectionAuditLimiter({ globalLimit: 1 });
+    const { record, interceptor } = setup(limiter);
+    for (let i = 0; i < 60; i++) await refresh(interceptor, 'u-1');
+    expect(record).toHaveBeenCalledTimes(60);
+    await refresh(interceptor, 'u-1'); // 61st: global ceiling (1 left)
+    await refresh(interceptor, 'u-1'); // 62nd: ceiling exhausted → dropped
+    expect(record).toHaveBeenCalledTimes(61);
+    await refresh(interceptor, 'u-2'); // another owner has its own bucket
+    expect(record).toHaveBeenCalledTimes(62);
+  });
+
+  it('a refresh 2xx whose response carries no decodable subject uses the global ceiling', async () => {
+    const limiter = new RejectionAuditLimiter({ globalLimit: 0 });
+    const { record, interceptor } = setup(limiter);
+    await refresh(interceptor, 42);
+    await firstValueFrom(
+      interceptor.intercept(routedCtx('refresh', anonReq(), 200), {
+        handle: () => of({ accessToken: 'not-a-jwt' }),
+      }),
+    );
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it('anonymous 5xx rows count against the anonymous global ceiling', async () => {
+    const limiter = new RejectionAuditLimiter({ globalLimit: 1 });
+    const { record, interceptor } = setup(limiter);
+    const boom = () =>
+      expect(
+        firstValueFrom(
+          interceptor.intercept(
+            routedCtx('logout', anonReq(), 200),
+            handlerThatThrows(new Error('boom')),
+          ),
+        ),
+      ).rejects.toThrow('boom');
+    await boom();
+    await boom(); // over the ceiling: still propagates, no row
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({ statusCode: 500 }),
+    );
+  });
+
+  describe('validated-body tier', () => {
+    const viewer = { id: 'u1', role: 'VIEWER' };
+    const bigBody = () => ({ note: 'n'.repeat(300 * 1024) });
+    const authReq = (body: unknown) => ({
+      method: 'POST',
+      url: '/v1/x',
+      params: {},
+      body,
+      ip: '1.2.3.4',
+      user: viewer,
+    });
+    const fail = async (
+      method: keyof RouteFixture,
+      req: Record<string, unknown>,
+      err: unknown,
+    ) => {
+      const { record, interceptor } = setup();
+      await firstValueFrom(
+        interceptor.intercept(routedCtx(method, req), handlerThatThrows(err)),
+      ).catch(() => undefined);
+      const [[row]] = record.mock.calls as [[{ body: unknown }]];
+      return row.body;
+    };
+    const markValidated = async (body: object) => {
+      await globalValidationPipe().transform(body, {
+        type: 'body',
+        metatype: NoteDto,
+      });
+    };
+
+    it('a 408 / 500 after the pipe accepted the body keeps the full (512 KiB tier) body', async () => {
+      for (const err of [
+        new HttpException('timeout', 408),
+        new Error('boom'),
+      ]) {
+        const body = bigBody();
+        await markValidated(body);
+        expect(await fail('withBody', authReq(body), err)).toEqual(body);
+      }
+    });
+
+    it('an unvalidated body (pipe rejected / never ran) stays <= 8 KiB on a 408 / 500', async () => {
+      for (const err of [
+        new HttpException('timeout', 408),
+        new Error('boom'),
+      ]) {
+        expect(await fail('withBody', authReq(bigBody()), err)).toMatchObject({
+          _truncated: true,
+        });
+      }
+    });
+
+    it('a validated body stays small on other 4xx, read-only POSTs, and anonymous 5xx; {} when bodyless', async () => {
+      const cases: Array<[keyof RouteFixture, boolean, unknown]> = [
+        ['withBody', true, new HttpException('bad', 422)],
+        ['readOnly', true, new Error('boom')],
+        ['withBody', false, new Error('boom')],
+      ];
+      for (const [method, authed, err] of cases) {
+        const body = bigBody();
+        await markValidated(body);
+        const req = authed
+          ? authReq(body)
+          : { ...authReq(body), user: undefined };
+        expect(await fail(method, req, err)).toMatchObject({
+          _truncated: true,
+        });
+      }
+      const body = bigBody();
+      await markValidated(body);
+      expect(await fail('bodyless', authReq(body), new Error('x'))).toEqual({});
+    });
   });
 });
 

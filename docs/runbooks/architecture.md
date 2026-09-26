@@ -121,15 +121,19 @@ Guards run in registration order:
   minute**, never counted against — nor blocked by — the anonymous global ceiling.
   The limiter is ONE instance (an `AuditModule` provider) shared with
   `AuditInterceptor`: its **anonymous rows** — every 4xx (login / refresh /
-  logout 400/401) and every 2xx (e.g. logout, which always answers 200) —
-  also consume — and are dropped past — the same **600/min anonymous global
+  logout 400/401), every 5xx / 408, and every 2xx (e.g. logout, which always
+  answers 200) — also consume — and are dropped past — the same **600/min anonymous global
   ceiling** (`allowAnonymousGlobal`; the routes' own per-IP throttles bound the
   per-IP rate), so IPv6 rotation cannot multiply them either. **Exempt:** a
-  **successful login** (`@LoginIpThrottle()` handler, 2xx) and a **successful
-  refresh** (`@TokenGrant()` handler — `src/audit/token-grant.ts`, read with
-  `Reflector`, 2xx): they require valid credentials / a valid refresh token and
-  stay bounded by the per-email / per-IP / per-route throttles, so a flood of
-  cheap anonymous 401s can never starve them out of the audit trail. Every
+  **successful login** (`@LoginIpThrottle()` handler, 2xx) — it requires valid
+  credentials and stays bounded by the per-email / per-IP throttles, so a flood
+  of cheap anonymous 401s can never starve it out of the audit trail. A
+  **successful refresh** (`@TokenGrant()` handler — `src/audit/token-grant.ts`,
+  read with `Reflector`, 2xx) is written within a **per-owner budget of 60 per
+  minute** (`allowTokenGrant`, keyed on the `sub` of the access token the
+  response just issued; its own ≤ 10k-key space) that never touches the global
+  ceiling; past it (one chained refresh token replayed across rotating IPs) it
+  falls back to the anonymous global ceiling. Every
   successful login is also logged at info by `AuthService`
   (`{ event: "login", userId, ip }`). A row dropped by the ceiling leaves only
   the limiter's once-per-window **suppression log** (`RejectionAuditLimiter`,
@@ -157,8 +161,17 @@ Guards run in registration order:
     route has no handler context, so it stores the body capped at 8 KiB.) Every other row stores
     the sanitized body, **capped** (`auditBodyOf` / `capBody` in
     `audit-request.ts`) at **512 KiB** only for an **authenticated 2xx on a
-    body-binding, state-changing handler** (the body passed DTO validation), and
-    at **8192 bytes** for every other row — authenticated rejections (a guard 403
+    body-binding, state-changing handler** (the body passed DTO validation) — and
+    for an authenticated **408 / 5xx** on such a handler **when the global
+    ValidationPipe accepted its body DTO** (the write may have committed before
+    the timeout / failure). That flag is set by `AuditingValidationPipe`
+    (`src/audit/validated-body.ts`, the `globalValidationPipe()` registered in
+    `main.ts` and every e2e bootstrap): after `super.transform` succeeds for a
+    whole-body `@Body() dto` it marks the raw `req.body` object (a `WeakSet`), so a
+    pipe 400, a guard rejection, `@Body('field')`, `@Req()` and untyped bodies are
+    never marked. (A pipe, not an interceptor: interceptors run before pipes and
+    see a pipe 400 and a handler throw as the same `next.handle()` error.)
+    **8192 bytes** for every other row — authenticated rejections (a guard 403
     — the filter has no handler, but guard statuses are ≥ 400 — any
     400/409/422/5xx), anonymous success / 5xx rows, and every row of a
     **read-only POST** marked `@ReadOnlyPost()` (`src/audit/read-only-post.ts`,

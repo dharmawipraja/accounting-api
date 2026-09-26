@@ -14,6 +14,11 @@
  * Email (valid, ≤ 254), name (1-120 non-blank) and password (8-128) are
  * validated BEFORE anything touches the DB.
  *
+ * Every create / reset appends an `audit_log` row in the same transaction
+ * (method `CLI`, path `scripts/create-admin`, user + entity = the target user,
+ * body `{ email, name, action: 'created' | 'reset' }` — never the password),
+ * so a break-glass reset is as visible in the audit trail as an API reset.
+ *
  * It reads ONLY `process.env` (never a dotenv file itself): DATABASE_URL is
  * required, and the password may come from ADMIN_PASSWORD instead of argv
  * (keeps it out of shell history and `ps`).
@@ -49,6 +54,9 @@ export const PASSWORD_MAX = 128;
 // management would reject anything else.
 export const EMAIL_MAX = 254;
 export const NAME_MAX = 120;
+/** The audit_log method / path of a create-admin row. */
+export const CLI_AUDIT_METHOD = 'CLI';
+export const CLI_AUDIT_PATH = 'scripts/create-admin';
 
 export interface BootstrapAdminInput {
   email: string;
@@ -99,8 +107,25 @@ export async function bootstrapAdmin(
     throw new Error(`Name must be 1-${NAME_MAX} non-blank characters.`);
   }
   const passwordHash = await argon2.hash(input.password);
+  const started = Date.now();
 
   return prisma.$transaction(async (tx) => {
+    /** The audit row for this bootstrap (same tx: no row without the write,
+     *  no write without the row). Never carries the password. */
+    const audit = (id: string, created: boolean) =>
+      tx.auditLog.create({
+        data: {
+          userId: id,
+          userRole: Role.ADMIN,
+          method: CLI_AUDIT_METHOD,
+          path: CLI_AUDIT_PATH,
+          params: {},
+          body: { email, name, action: created ? 'created' : 'reset' },
+          statusCode: created ? 201 : 200,
+          durationMs: Date.now() - started,
+          entityId: id,
+        },
+      });
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(${USER_ADMIN_LOCK_KEY})`;
     // Email → id is stable under the admin-pool lock (tombstoning takes it too;
     // email is not updatable).
@@ -118,6 +143,7 @@ export async function bootstrapAdmin(
           mustChangePassword: true,
         },
       });
+      await audit(user.id, true);
       return { id: user.id, email: user.email, created: true };
     }
     const id = existing.id;
@@ -137,6 +163,7 @@ export async function bootstrapAdmin(
       where: { userId: id },
       data: { status: 'REVOKED' },
     });
+    await audit(user.id, false);
     return { id: user.id, email: user.email, created: false };
   });
 }

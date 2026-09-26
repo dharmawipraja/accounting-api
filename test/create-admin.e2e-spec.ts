@@ -60,6 +60,23 @@ describe('create-admin bootstrap (e2e)', () => {
       name: 'First Admin',
     });
     expect(r).toMatchObject({ email: 'first@admin.test', created: true });
+    const [auditRow] = await prisma.client.auditLog.findMany({
+      where: { method: 'CLI', entityId: r.id },
+    });
+    expect(auditRow).toMatchObject({
+      userId: r.id,
+      userRole: 'ADMIN',
+      method: 'CLI',
+      path: 'scripts/create-admin',
+      entityId: r.id,
+      statusCode: 201,
+      body: {
+        email: 'first@admin.test',
+        name: 'First Admin',
+        action: 'created',
+      },
+    });
+    expect(JSON.stringify(auditRow)).not.toContain('operator-pw-1');
     const row = await prisma.client.user.findUniqueOrThrow({
       where: { id: r.id },
     });
@@ -117,6 +134,21 @@ describe('create-admin bootstrap (e2e)', () => {
       email: 'locked@admin.test',
       created: false,
     });
+    const resetRows = await prisma.client.auditLog.findMany({
+      where: { method: 'CLI', entityId: u.id },
+    });
+    expect(resetRows).toHaveLength(1);
+    expect(resetRows[0]).toMatchObject({
+      userId: u.id,
+      path: 'scripts/create-admin',
+      statusCode: 200,
+      body: {
+        email: 'locked@admin.test',
+        name: 'Recovered Admin',
+        action: 'reset',
+      },
+    });
+    expect(JSON.stringify(resetRows[0])).not.toContain('break-glass-pw-1');
 
     const row = await prisma.client.user.findUniqueOrThrow({
       where: { id: u.id },
@@ -174,6 +206,14 @@ describe('create-admin bootstrap (e2e)', () => {
     ).rejects.toThrow(/8-128 characters/);
     expect(
       await prisma.client.user.count({ where: { email: 'short@admin.test' } }),
+    ).toBe(0);
+    expect(
+      await prisma.client.auditLog.count({
+        where: {
+          method: 'CLI',
+          body: { path: ['email'], equals: 'short@admin.test' },
+        },
+      }),
     ).toBe(0);
   });
 

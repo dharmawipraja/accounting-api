@@ -289,6 +289,62 @@ describe('Journal preview (e2e)', () => {
       .expect(422);
   });
 
+  it('iter6: a free (zero-amount) SALE line on an INACTIVE account → 422 INVALID_ACCOUNT, same as the draft/post', async () => {
+    const revenue = await prisma.client.account.findUniqueOrThrow({
+      where: { id: acc['4-1000'] },
+    });
+    const inactive = await app.get(AccountsService).create({
+      code: '4-9901',
+      name: 'Pendapatan nonaktif',
+      type: revenue.type,
+      subtype: revenue.subtype,
+      normalBalance: revenue.normalBalance,
+    });
+    await prisma.client.account.update({
+      where: { id: inactive.id },
+      data: { isActive: false },
+    });
+    const res = await request(server())
+      .post('/v1/journal-entries/preview')
+      .set('Authorization', `Bearer ${acct}`)
+      .send({
+        nature: 'SALE',
+        lines: [
+          { accountId: acc['4-1000'], amount: '1000000', taxCodeIds: [] },
+          { accountId: inactive.id, amount: '0', taxCodeIds: [] },
+        ],
+      });
+    expect(res.status).toBe(422);
+    expect((res.body as { code: string }).code).toBe('INVALID_ACCOUNT');
+    // The draft create rejects the same body with the same error.
+    const draft = await request(server())
+      .post('/v1/sales-invoices')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        partnerId: customerId,
+        date: '2026-03-10',
+        lines: [
+          {
+            description: 'Jasa',
+            accountId: acc['4-1000'],
+            quantity: '1',
+            unitPrice: '1000000',
+            taxCodeIds: [],
+          },
+          {
+            description: 'Gratis',
+            accountId: inactive.id,
+            quantity: '1',
+            unitPrice: '0',
+            taxCodeIds: [],
+          },
+        ],
+      });
+    expect(draft.status).toBe(422);
+    expect((draft.body as { code: string }).code).toBe('INVALID_ACCOUNT');
+  });
+
   it('rejects an unknown tax code with 422', async () => {
     await request(server())
       .post('/v1/journal-entries/preview')

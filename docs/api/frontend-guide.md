@@ -155,12 +155,20 @@ a short backoff.
     160, company `legalName` 200, document/line/payment descriptions 255, partner
     address 255, company address 500, journal entry and journal line descriptions
     500, `?q=` 100, refresh token 2048.
+  - **Non-blank** (`400` "`<field>` must not be blank"): partner `code` and `name` on
+    create, partner `name` on `PATCH` — an empty or whitespace-only value is rejected.
+  - **Tax-code `rate`** (create / `PATCH`): a decimal string with at most 3 integer
+    digits and 6 decimals, at most 10 characters (`^\d{1,3}(\.\d{1,6})?$`, e.g. `0.11`)
+    — else `400`; the `(0, 1)` range is still a `422` from the service.
   - **Malformed JSON body** (not parseable, e.g. a truncated `{"code": "X",`) →
     `400` `{ "code": "HTTP_400", "message": "<the JSON parser's message>" }` — the
     message is body-parser's own text (e.g. `Unexpected end of JSON input`; wording
     varies by runtime, never parse it) and there is **no** `details.errors`. It is
     raised before authentication, so it also has no field to highlight: treat it as a
     client bug (the frontend sent a broken body), not a user input error.
+  - **Corrupt compressed body** (`Content-Encoding: gzip` / `deflate` whose bytes do not
+    decompress) → the same `400` `{ "code": "HTTP_400", "message": "<zlib's message>" }`
+    (e.g. `incorrect header check`), also before authentication (never a `500`).
 - **422** = the request is _well-formed_ but breaks an **accounting rule**. Examples:
   a journal entry whose debits ≠ credits (`UNBALANCED_ENTRY`), posting to a
   non-postable / invalid account (`INVALID_ACCOUNT`), a report range where
@@ -532,8 +540,10 @@ DELETE /ledger/journal-entries/:id      delete a DRAFT          (ACCOUNTANT+)
   Omit the body (or `date`) to reverse on the original entry's date (unchanged
   behaviour). The date must be **on/after** the original date (`422 VALIDATION_FAILED`
   otherwise, `details: { entryId, date, originalDate }`), may **not be in the future** —
-  after today's company date (WIB) → `422 VALIDATION_FAILED` "Reversal date cannot be in
-  the future" `details: { date, today }` — and must fall in an OPEN period of a
+  after `max(today's company date (WIB), the entry's own date)` → `422 VALIDATION_FAILED`
+  "Reversal date cannot be in the future" `details: { date, today }` (plus
+  `originalDate` when the entry itself is future-dated: it may always be reversed on its
+  own date, exactly like a body-less reverse) — and must fall in an OPEN period of a
   non-closed year (`409 CLOSED_PERIOD` / `409 CLOSED_YEAR`); a non `YYYY-MM-DD` value is
   `400`. A body-less reverse (original date) is never refused as future. ⚠️ The document **void** endpoints use a *different* detail shape for the same
   kind of error — see [Void date](#sales-invoice--purchase-bill).
@@ -642,11 +652,14 @@ already closed: the reversal entry is posted on that date. Rules:
   `details: { id, date, documentDate }`; not `YYYY-MM-DD` → `400`. (Journal **reverse**
   reports the same rule as `details: { entryId, date, originalDate }` — two shapes, so
   key your UI off `code` + the field names, not one shared parser.)
-- `date` after **today** (the company's calendar day, WIB) → `422 VALIDATION_FAILED`
-  "Void date cannot be in the future" `details: { date, today }` (today itself is
-  fine). Only an explicit `date` is checked — a body-less void (document date) is never
-  refused as future. Default the date picker's max to `today` from the server's point
-  of view (WIB).
+- `date` after **`max(today, document date)`** (today = the company's calendar day,
+  WIB) → `422 VALIDATION_FAILED` "Void date cannot be in the future"
+  `details: { date, today }` (today itself is fine). A **future-dated** document may be
+  voided with an explicit `date` equal to (or before) its own date — the same date a
+  body-less void uses; a later `date` gets the 422 with `details: { date, today,
+  originalDate }`. Only an explicit `date` is checked — a body-less void (document date)
+  is never refused as future. Default the date picker's max to `max(today, document
+  date)` from the server's point of view (WIB).
 - `date` must fall in an OPEN period of a non-closed year → else `409 CLOSED_PERIOD` /
   `409 CLOSED_YEAR` (this is also what a body-less void of a closed-period document gets).
 - Invoice/bill only: `date` before the void date of a payment that was allocated to the
@@ -672,9 +685,12 @@ Payment void takes the same optional `{ "date" }` body and rules as invoice/bill
 A payment must allocate its full amount against open documents. RECEIPT = money in
 (against AR), DISBURSEMENT = money out (against AP).
 
-`cashAccountId` must be a **`CASH`-role** account (Kas / Bank) — otherwise, on create and
-on `/post`, `422 VALIDATION_FAILED` with `details: { accountId, role }` (`role` is the
-account's actual role, possibly `null`).
+`cashAccountId` must first be an existing, postable (not a header) and **active**
+account — otherwise, on create, on `/post` and in the journal preview,
+`422 INVALID_ACCOUNT` `details: { accountId }` (changed: payment **create** used to
+answer `422 VALIDATION_FAILED` "Cash account is not postable" `{ cashAccountId }`) — and
+then a **`CASH`-role** account (Kas / Bank) — otherwise `422 VALIDATION_FAILED` with
+`details: { accountId, role }` (`role` is the account's actual role, possibly `null`).
 
 The payment `date` must be **on/after the date of every invoice/bill it allocates to** —
 otherwise, on create (and re-checked on `/post`), `422 VALIDATION_FAILED` with
@@ -842,8 +858,11 @@ Response (`JournalPreviewResponseDto`) — each line carries a human-readable
 It validates the same way a real post does, so the user sees problems early: **`422`**
 for a non-postable/unknown account, unknown/inactive tax code, non-positive settlement
 (withholding ≥ gross), a missing AR/AP control account, or a wrong-type / non-positive
-allocation, plus the same line-account / cash-account rules as the documents (a line on a
-control/cash/tax or wrong-type account, a non-`CASH` payment `cashAccountId`); **`400`**
+allocation, plus the same line-account / cash-account rules, in the same order, as the
+documents — every SALE/PURCHASE line account (a free zero-amount line included) must
+exist, be postable and active (`422 INVALID_ACCOUNT`) before the document line rules run
+(a line on a control/cash/tax or wrong-type account → `422 VALIDATION_FAILED`); a payment
+`cashAccountId` gets `INVALID_ACCOUNT` then the `CASH`-role rule; **`400`**
 for a malformed body. It does **not** run period-lock,
 segregation-of-duties, or the deeper payment-allocation checks (partner-match /
 target-POSTED / outstanding) — those stay at real post time.

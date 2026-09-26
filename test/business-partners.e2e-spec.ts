@@ -4,15 +4,17 @@ import { type App } from 'supertest/types';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
 import { bootstrapTestApp } from './e2e-helpers';
+import { PrismaService } from '../src/common/prisma/prisma.service';
 import { BusinessPartnersService } from '../src/invoicing/business-partners.service';
 
 describe('BusinessPartners (e2e)', () => {
   let app: INestApplication;
+  let prisma: PrismaService;
   let cleanup: () => Promise<void>;
   let token: string;
 
   beforeAll(async () => {
-    ({ app, cleanup } = await bootstrapTestApp());
+    ({ app, prisma, cleanup } = await bootstrapTestApp());
     await app.get(UsersService).create({
       email: 'a@p.test',
       password: 'secret123',
@@ -45,6 +47,91 @@ describe('BusinessPartners (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ code: 'NEITHER', name: 'X', isCustomer: false, isVendor: false })
       .expect(422);
+  });
+
+  it('iter6: a blank / whitespace-only code or name is a 400 on create and update', async () => {
+    for (const bad of [
+      { code: '   ', name: 'Ok' },
+      { code: 'BLANK-1', name: '' },
+      { code: 'BLANK-2', name: ' \t\n ' },
+      { code: '', name: 'Ok' },
+    ]) {
+      await request(app.getHttpServer() as App)
+        .post('/v1/partners')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...bad, isCustomer: true })
+        .expect(400);
+    }
+    const created = await request(app.getHttpServer() as App)
+      .post('/v1/partners')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ code: 'BLANK-OK', name: 'Ok', isCustomer: true })
+      .expect(201);
+    const id = (created.body as { id: string }).id;
+    for (const name of ['', '   ']) {
+      await request(app.getHttpServer() as App)
+        .patch(`/v1/partners/${id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name })
+        .expect(400);
+    }
+  });
+
+  it('iter6: concurrent role PATCHes cannot leave a partner neither customer nor vendor (row lock re-check)', async () => {
+    const created = await request(app.getHttpServer() as App)
+      .post('/v1/partners')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        code: 'ROLE-RACE',
+        name: 'Both',
+        isCustomer: true,
+        isVendor: true,
+      })
+      .expect(201);
+    const id = (created.body as { id: string }).id;
+    // Each PATCH alone is valid against the unlocked read (the other flag is
+    // still true); together they would clear both. Hold the row lock so both
+    // are queued behind it, then release.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let locked!: () => void;
+    const isLocked = new Promise<void>((r) => (locked = r));
+    const holder = prisma.client.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM business_partners WHERE id = ${id} FOR UPDATE`;
+        locked();
+        await gate;
+      },
+      { maxWait: 5000, timeout: 20000 },
+    );
+    await isLocked;
+    const a = request(app.getHttpServer() as App)
+      .patch(`/v1/partners/${id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ isCustomer: false })
+      .then((r) => r.status);
+    const b = request(app.getHttpServer() as App)
+      .patch(`/v1/partners/${id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ isVendor: false })
+      .then((r) => r.status);
+    await new Promise((r) => setTimeout(r, 300));
+    release();
+    await holder;
+    const statuses = (await Promise.all([a, b])).sort();
+    expect(statuses).toEqual([200, 422]);
+    const row = await prisma.client.businessPartner.findUniqueOrThrow({
+      where: { id },
+    });
+    expect(row.isCustomer || row.isVendor).toBe(true);
+  });
+
+  it('iter6: the DB rejects a partner row that is neither customer nor vendor (CHECK)', async () => {
+    await expect(
+      prisma.client.$executeRaw`
+        INSERT INTO business_partners (id, code, name, is_customer, is_vendor, updated_at)
+        VALUES (gen_random_uuid()::text, 'CHK-NEITHER', 'X', false, false, now())`,
+    ).rejects.toThrow(/business_partners_customer_or_vendor/);
   });
 
   it('rejects a duplicate code (409)', async () => {

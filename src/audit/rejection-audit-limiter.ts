@@ -17,9 +17,16 @@
  *
  * The anonymous global ceiling ALSO bounds anonymous rows written by
  * AuditInterceptor (`allowAnonymousGlobal`: every anonymous 4xx and every
- * anonymous 2xx except a successful login / refresh): the login throttle is
- * per IP, so rotating addresses must not multiply those rows either. Both
- * writers share ONE limiter instance (AuditModule provider).
+ * anonymous 2xx except a successful login, and every anonymous 5xx): the
+ * login throttle is per IP, so rotating addresses must not multiply those rows
+ * either. Both writers share ONE limiter instance (AuditModule provider).
+ *
+ * A successful REFRESH (`@TokenGrant()` 2xx, `allowTokenGrant`) gets a third
+ * key space: `tokenGrantUserLimit` rows per token owner (default 60 — far
+ * above any legitimate client's refresh rate) that never touch the global
+ * ceiling, so a 401 flood cannot hide it; past that per-user budget (one
+ * stolen-and-chained refresh token across rotating IPs) the row falls back to
+ * the anonymous global ceiling instead of being unbounded.
  *
  * Suppressed rows are counted and reported ONCE per window (when that key's
  * window rolls over, is swept, or is evicted; the global count on the first
@@ -36,6 +43,9 @@ export interface RejectionAuditLimiterOptions {
   globalLimit?: number;
   /** Authenticated rows per user per window (default 60). */
   userLimit?: number;
+  /** Successful token-grant (refresh) rows per token owner per window before
+   *  falling back to the anonymous global ceiling (default 60). */
+  tokenGrantUserLimit?: number;
   windowMs?: number;
   maxKeys?: number;
   now?: () => number;
@@ -111,6 +121,8 @@ export class RejectionAuditLimiter {
   private readonly onGlobalSuppressed: (suppressed: number) => void;
   private readonly ips: KeyedWindows;
   private readonly users: KeyedWindows;
+  private readonly tokenGrantUserLimit: number;
+  private readonly grants: KeyedWindows;
   private readonly global: Bucket;
 
   constructor(opts: RejectionAuditLimiterOptions = {}) {
@@ -125,12 +137,21 @@ export class RejectionAuditLimiter {
     const start = this.now();
     this.ips = new KeyedWindows(this.windowMs, maxKeys, onSuppressed, start);
     this.users = new KeyedWindows(this.windowMs, maxKeys, onSuppressed, start);
+    this.tokenGrantUserLimit = opts.tokenGrantUserLimit ?? 60;
+    // Never reports: past its budget a grant row falls back to the global
+    // ceiling, which counts (and reports) what it suppresses.
+    this.grants = new KeyedWindows(
+      this.windowMs,
+      maxKeys,
+      () => undefined,
+      start,
+    );
     this.global = { windowStart: start, count: 0, suppressed: 0 };
   }
 
-  /** Live buckets across both key spaces. */
+  /** Live buckets across all key spaces. */
   get size(): number {
-    return this.ips.size + this.users.size;
+    return this.ips.size + this.users.size + this.grants.size;
   }
 
   /** True if a rejection row may be written now. `userId` (the verified
@@ -163,8 +184,8 @@ export class RejectionAuditLimiter {
     return true;
   }
 
-  /** True if an ANONYMOUS interceptor-written row (a login / refresh / logout
-   *  2xx or 4xx) may be written now: only the anonymous GLOBAL ceiling applies (the
+  /** True if an ANONYMOUS interceptor-written row (a logout 2xx, any 4xx /
+   *  5xx, a refresh 2xx past its per-owner budget) may be written now: only the anonymous GLOBAL ceiling applies (the
    *  routes carry their own per-IP throttles). Consumes the same budget as
    *  anonymous guard rejections. */
   allowAnonymousGlobal(): boolean {
@@ -175,6 +196,22 @@ export class RejectionAuditLimiter {
     }
     this.global.count++;
     return true;
+  }
+
+  /** True if a SUCCESSFUL token-grant (refresh) row for token owner
+   *  `subject` may be written now: within `tokenGrantUserLimit` rows per
+   *  owner per window it is always written (without consuming the global
+   *  ceiling); past that — or with no known subject — the anonymous global
+   *  ceiling decides (`allowAnonymousGlobal`). */
+  allowTokenGrant(subject: string | null | undefined): boolean {
+    if (subject) {
+      const bucket = this.grants.bucket(`grant:${subject}`, this.now());
+      if (bucket.count < this.tokenGrantUserLimit) {
+        bucket.count++;
+        return true;
+      }
+    }
+    return this.allowAnonymousGlobal();
   }
 
   private rollGlobal(now: number): void {

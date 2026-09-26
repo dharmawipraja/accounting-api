@@ -1,14 +1,11 @@
-import {
-  INestApplication,
-  ValidationPipe,
-  VersioningType,
-} from '@nestjs/common';
+import { INestApplication, VersioningType } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from '../src/app.module';
 import { AuditService } from '../src/audit/audit.service';
 import { RejectionAuditLimiter } from '../src/audit/rejection-audit-limiter';
+import { globalValidationPipe } from '../src/audit/validated-body';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { asOfOrToday } from '../src/common/dates/query-dates';
@@ -17,7 +14,12 @@ import { startTestDb, TestDb } from './testcontainers';
 /** Tomorrow's company calendar day (WIB, as asOfOrToday resolves "today"),
  *  YYYY-MM-DD — the first date a void / reversal may NOT use. */
 export function tomorrowWib(): string {
-  return new Date(asOfOrToday().getTime() + 86_400_000)
+  return wibDayPlus(1);
+}
+
+/** The WIB calendar day `days` after today, as YYYY-MM-DD. */
+export function wibDayPlus(days: number): string {
+  return new Date(asOfOrToday().getTime() + days * 86_400_000)
     .toISOString()
     .slice(0, 10);
 }
@@ -80,13 +82,7 @@ export async function bootstrapTestApp(
   app.useBodyParser('urlencoded', { limit: '1mb', extended: true });
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   if (opts.pipe !== false) {
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        transform: true,
-        forbidNonWhitelisted: true,
-      }),
-    );
+    app.useGlobalPipes(globalValidationPipe());
   }
   app.useGlobalFilters(
     new AllExceptionsFilter(

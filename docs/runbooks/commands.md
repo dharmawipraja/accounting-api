@@ -248,7 +248,10 @@ It is a temporary password (`mustChangePassword`): the first login must call
 `POST /v1/auth/change-password` before anything else. An existing email is reset
 (ADMIN, active, temp password) and all its refresh tokens are revoked.
 The email must be valid (≤ 254 chars) and the name 1-120 non-blank chars; all
-inputs are checked before the DB is touched.
+inputs are checked before the DB is touched. Each create / reset appends an
+`audit_log` row in the same transaction (method `CLI`, path
+`scripts/create-admin`, user + entity = the target user, body
+`{ email, name, action: "created" | "reset" }` — never the password).
 
 **Gotcha:** mind the `--` separator — args after it go to the script, not to
 npm. **Production** has no npm in the image: run the compiled script inside the

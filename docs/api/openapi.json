@@ -4730,8 +4730,9 @@
           },
           "rate": {
             "type": "string",
-            "description": "Numeric decimal string, max 6 dp (matches NUMERIC(9,6)); range (0,1) checked in the service.",
-            "pattern": "^\\d+(\\.\\d{1,6})?$"
+            "description": "Numeric decimal string, <= 3 integer digits and <= 6 dp, <= 10 chars (fits NUMERIC(9,6)); range (0,1) checked in the service.",
+            "maxLength": 10,
+            "pattern": "^\\d{1,3}(\\.\\d{1,6})?$"
           },
           "taxAccountId": {
             "type": "string",
@@ -4755,7 +4756,8 @@
           },
           "rate": {
             "type": "string",
-            "pattern": "^\\d+(\\.\\d{1,6})?$"
+            "maxLength": 10,
+            "pattern": "^\\d{1,3}(\\.\\d{1,6})?$"
           },
           "isActive": {
             "type": "boolean"

@@ -228,5 +228,50 @@ describe('Company settings (e2e)', () => {
           .journalEntriesExist,
       ).toBe(true);
     });
+
+    it('iter6: a same-value start-month write from a stale read cannot undo a committed change (locked re-read)', async () => {
+      // State now: month 1 in the DB and a journal entry exists (previous
+      // test). Simulate a concurrent change to 4 that already committed…
+      const company = app.get(CompanyService);
+      const stale = await company.get();
+      expect(stale.fiscalYearStartMonth).toBe(1);
+      await prisma.client.companySettings.update({
+        where: { id: stale.id },
+        data: { fiscalYearStartMonth: 4 },
+      });
+      try {
+        // …while this request's pre-lock read still saw month 1, so it
+        // "re-sends the unchanged month". Under the lock it re-reads 4: the
+        // write is a real change and is rejected (a JE exists) — the stored
+        // month is never silently reverted to 1.
+        jest.spyOn(company, 'get').mockResolvedValueOnce(stale);
+        await expect(
+          company.update({ fiscalYearStartMonth: 1, legalName: 'Stale Co' }),
+        ).rejects.toMatchObject({ status: 422 });
+        const row = await prisma.client.companySettings.findUniqueOrThrow({
+          where: { id: stale.id },
+        });
+        expect(row.fiscalYearStartMonth).toBe(4);
+        expect(row.legalName).not.toBe('Stale Co');
+      } finally {
+        jest.restoreAllMocks();
+        await prisma.client.companySettings.update({
+          where: { id: stale.id },
+          data: { fiscalYearStartMonth: 1 },
+        });
+      }
+    });
+
+    it('iter6: re-sending the unchanged month with other fields updates them under the lock (200)', async () => {
+      const res = await request(app.getHttpServer() as App)
+        .patch('/v1/company/settings')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ fiscalYearStartMonth: 1, legalName: 'Same Month Co' })
+        .expect(200);
+      expect(res.body).toMatchObject({
+        fiscalYearStartMonth: 1,
+        legalName: 'Same Month Co',
+      });
+    });
   });
 });

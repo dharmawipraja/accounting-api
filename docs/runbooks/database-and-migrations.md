@@ -53,8 +53,8 @@ applies them in lexical order, and several recent ones are future-dated. A
 `migrate dev` default timestamp of "now" may sort *before* them; name the directory
 with a timestamp greater than the newest directory in `prisma/migrations` (find it
 with `command ls prisma/migrations | grep -v migration_lock | tail -1`) — e.g. if
-that prints `20261003000000_payment_allocations_payment_id_idx`, use
-`20261004000000_<name>`. The
+that prints `20261004000000_business_partner_customer_or_vendor_check`, use
+`20261005000000_<name>`. The
 `schema.prisma` is the source of truth for **models**, but the migration SQL is
 reviewed and hand-edited — especially for ledger/numbering/trigger constructs that
 the Prisma schema cannot express:
@@ -119,7 +119,10 @@ the Prisma schema cannot express:
     (`(status = 'DRAFT') = (journal_entry_id IS NULL)` — post sets the journal
     entry, void keeps it; `20261002000000_document_journal_link_check_and_fk_indexes`,
     which also indexes the FK columns `journal_entries.{period_id,reversed_by_id}`,
-    the documents' `journal_entry_id` and `year_end_closings.closing_entry_id`).
+    the documents' `journal_entry_id` and `year_end_closings.closing_entry_id`),
+    and `business_partners_customer_or_vendor` (`is_customer OR is_vendor`;
+    `20261004000000_business_partner_customer_or_vendor_check` — the service
+    re-checks it on update against the row locked FOR UPDATE).
   - **Hard DELETE is an allow-list** for the runtime role `accounting_app`
     (`scripts/db/app-role.sql`): only `sales_invoice_lines`,
     `purchase_bill_lines` (draft line replacement), `accounting_periods`

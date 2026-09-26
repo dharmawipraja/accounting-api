@@ -505,3 +505,58 @@ describe('iteration-5: read-only POST handlers always use the 8 KiB tier', () =>
     ).toEqual(body);
   });
 });
+
+describe('iteration-6: a validated body keeps the 512 KiB tier on an authenticated 408 / 5xx', () => {
+  const user = { id: 'u1', role: 'ADMIN' };
+  const body = { note: 'n'.repeat(300 * 1024) };
+
+  it('auditBodyCap: 408 / 5xx + bodyValidated → 512 KiB; every other combination 8 KiB', () => {
+    for (const status of [408, 500, 502, 503]) {
+      expect(auditBodyCap({ user }, status, false, true)).toBe(
+        AUDIT_BODY_MAX_BYTES,
+      );
+      // not validated (pipe rejected / never ran / no DTO)
+      expect(auditBodyCap({ user }, status, false, false)).toBe(
+        AUDIT_SMALL_BODY_MAX_BYTES,
+      );
+      // read-only POST
+      expect(auditBodyCap({ user }, status, true, true)).toBe(
+        AUDIT_SMALL_BODY_MAX_BYTES,
+      );
+      // anonymous
+      expect(auditBodyCap({}, status, false, true)).toBe(
+        AUDIT_SMALL_BODY_MAX_BYTES,
+      );
+    }
+    // other rejections stay small even with a validated body
+    for (const status of [400, 401, 403, 404, 409, 422, 429]) {
+      expect(auditBodyCap({ user }, status, false, true)).toBe(
+        AUDIT_SMALL_BODY_MAX_BYTES,
+      );
+    }
+  });
+
+  it('auditBaseOf / auditBodyOf store the full validated body on a 408 / 500', () => {
+    for (const status of [408, 500]) {
+      expect(
+        auditBaseOf(req({ body }), { status, bodyValidated: true }).body,
+      ).toEqual(body);
+      expect(auditBodyOf(req({ body }), status, true, false, true)).toEqual(
+        body,
+      );
+      expect(auditBaseOf(req({ body }), { status }).body).toMatchObject({
+        _truncated: true,
+      });
+    }
+  });
+
+  it('a bodyless handler still stores {} even if flagged', () => {
+    expect(
+      auditBaseOf(req({ body }), {
+        status: 408,
+        bindsBody: false,
+        bodyValidated: true,
+      }).body,
+    ).toEqual({});
+  });
+});

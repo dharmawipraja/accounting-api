@@ -163,8 +163,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
       this.logger.warn(`Prisma validation error -> 400 on ${url}`);
     } else if (isBodyParserClientError(exception)) {
       // body-parser rejected the body before routing (over the size cap,
-      // unsupported charset / encoding, aborted upload): a client error, not
-      // an incident (info log, no Sentry, no audit row — no guard ran).
+      // unsupported charset / encoding, aborted upload, corrupt gzip/deflate
+      // stream): a client error, not an incident (info log, no Sentry, no
+      // audit row — no guard ran).
       if (status === PAYLOAD_TOO_LARGE.status) {
         envelope = {
           code: PAYLOAD_TOO_LARGE.code,
@@ -184,10 +185,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
               : 'Bad request',
         };
       }
+      const { type, code } = exception as { type?: unknown; code?: unknown };
+      const kind =
+        typeof type === 'string'
+          ? type
+          : typeof code === 'string'
+            ? code
+            : 'untyped';
       this.logger.log(
-        `Request body rejected by the parser (${
-          (exception as { type: string }).type
-        }) -> ${status} on ${url}`,
+        `Request body rejected by the parser (${kind}) -> ${status} on ${url}`,
       );
     } else {
       this.logger.error(

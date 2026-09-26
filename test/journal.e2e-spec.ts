@@ -9,7 +9,7 @@ import { CompanyService } from '../src/company/company.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
 import { PostingService } from '../src/ledger/posting/posting.service';
-import { bootstrapTestApp, tomorrowWib } from './e2e-helpers';
+import { bootstrapTestApp, tomorrowWib, wibDayPlus } from './e2e-helpers';
 
 describe('JournalEntries (e2e)', () => {
   let app: INestApplication;
@@ -522,6 +522,23 @@ describe('JournalEntries (e2e)', () => {
         where: { id },
       });
       expect(still!.status).toBe('POSTED');
+    });
+
+    it('iter6: a future-dated MANUAL entry reverses on its own explicit date (200); a date after both today and it → 422', async () => {
+      const own = wibDayPlus(3);
+      const id = await postManual(own);
+      const tooLate = await reverse(id)
+        .send({ date: wibDayPlus(4) })
+        .expect(422);
+      expect(
+        (tooLate.body as { details: Record<string, string> }).details,
+      ).toEqual({
+        date: wibDayPlus(4),
+        today: wibDayPlus(0),
+        originalDate: own,
+      });
+      const res = await reverse(id).send({ date: own }).expect(200);
+      expect((res.body as { date: string }).date.slice(0, 10)).toBe(own);
     });
 
     it('rejects a non date-only reversal date (400)', async () => {

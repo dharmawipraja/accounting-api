@@ -60,8 +60,9 @@ function capParams(params: Record<string, unknown> | undefined): unknown {
 }
 
 /** Serialized-body byte cap (UTF-8) for an AUTHENTICATED 2xx row on a handler
- *  that binds a `@Body()` DTO — the only rows whose body passed validation
- *  (forbidNonWhitelisted bounds every accepted write). It sits above the
+ *  that binds a `@Body()` DTO — or a 408 / 5xx row whose body the global
+ *  ValidationPipe accepted (`bodyValidated`): the only rows whose body passed
+ *  validation (forbidNonWhitelisted bounds every accepted write). It sits above the
  *  largest DTO-valid body: a 100-line JE whose 500-char descriptions are all
  *  JSON-escaped control characters (6 bytes/unit) serializes to ~317 KB, a
  *  maximal bill ~210 KB — so a legitimate write is never truncated in the
@@ -106,17 +107,25 @@ export function capBody(
 }
 
 /** The body byte cap for a row: `AUDIT_BODY_MAX_BYTES` only for an
- *  authenticated success (status < 300) on a state-changing handler — the
- *  caller must also have checked that the handler binds a body
- *  (`auditBodyOf`); `AUDIT_SMALL_BODY_MAX_BYTES` for everything else,
- *  including every row of a read-only POST (`readOnly`, `@ReadOnlyPost()`:
- *  it writes nothing, so its body never needs the large tier). Pure. */
+ *  authenticated request on a state-changing handler that either succeeded
+ *  (status < 300) or — when the global ValidationPipe accepted its body DTO
+ *  (`bodyValidated`, see `audit/validated-body`) — ended in a 408 (request
+ *  timeout: the write may still have committed) or a 5xx: that body is
+ *  DTO-bounded and may record a committed write, so it is never truncated.
+ *  The caller must also have checked that the handler binds a body
+ *  (`auditBodyOf`). `AUDIT_SMALL_BODY_MAX_BYTES` for everything else,
+ *  including every other 4xx and every row of a read-only POST (`readOnly`,
+ *  `@ReadOnlyPost()`: it writes nothing, so its body never needs the large
+ *  tier). Pure. */
 export function auditBodyCap(
   req: Pick<AuditableRequest, 'user'>,
   status: number,
   readOnly = false,
+  bodyValidated = false,
 ): number {
-  return req.user && status < 300 && !readOnly
+  const largeTierStatus =
+    status < 300 || (bodyValidated && (status === 408 || status >= 500));
+  return req.user && largeTierStatus && !readOnly
     ? AUDIT_BODY_MAX_BYTES
     : AUDIT_SMALL_BODY_MAX_BYTES;
 }
@@ -186,27 +195,37 @@ export function markAudited(req: AuditableRequest): void {
  *  - a handler that binds no body (`bindsBody: false`) → `{}`, whatever the status;
  *  - an anonymous 4xx → `withheldBody` (`{}`, or `{ email }` on a login attempt);
  *  - otherwise the sanitized body, size-capped (`capBody`) at `auditBodyCap`:
- *    512 KiB only for an authenticated 2xx on a state-changing handler, 8 KiB
- *    for every other row (incl. a read-only POST, `readOnly`). Pure. */
+ *    512 KiB only for an authenticated 2xx — or 408 / 5xx with a validated
+ *    body (`bodyValidated`) — on a state-changing handler, 8 KiB for every
+ *    other row (incl. a read-only POST, `readOnly`). Pure. */
 export function auditBodyOf(
   req: AuditableRequest,
   status: number,
   bindsBody: boolean,
   readOnly = false,
+  bodyValidated = false,
 ): unknown {
   if (!bindsBody) return {};
   if (!auditBodyAllowed(req, status)) return withheldBody(req);
-  return capBody(sanitize(req.body), auditBodyCap(req, status, readOnly));
+  return capBody(
+    sanitize(req.body),
+    auditBodyCap(req, status, readOnly, bodyValidated),
+  );
 }
 
 /** The request-derived audit fields shared by the interceptor and the
  *  exception filter, for a row with outcome `status`. `bindsBody` (default
  *  true: the exception filter has no handler; its guard rejections are >= 400
- *  and so take the small cap anyway; `readOnly` default false) — see
- *  `auditBodyOf`. */
+ *  and so take the small cap anyway; `readOnly` / `bodyValidated` default
+ *  false) — see `auditBodyOf`. */
 export function auditBaseOf(
   req: AuditableRequest,
-  opts: { status: number; bindsBody?: boolean; readOnly?: boolean },
+  opts: {
+    status: number;
+    bindsBody?: boolean;
+    readOnly?: boolean;
+    bodyValidated?: boolean;
+  },
 ): AuditBase {
   return {
     userId: req.user?.id ?? null,
@@ -219,6 +238,7 @@ export function auditBaseOf(
       opts.status,
       opts.bindsBody ?? true,
       opts.readOnly ?? false,
+      opts.bodyValidated ?? false,
     ),
     ip: req.ip ?? null,
     requestId:

@@ -31,7 +31,7 @@ describe('assertNotAfterToday', () => {
   it('throws a 422 ValidationFailedError carrying { date, today }', () => {
     let err: unknown;
     try {
-      assertNotAfterToday(new Date('2026-09-27'), 'Void date x', today);
+      assertNotAfterToday(new Date('2026-09-27'), 'Void date x', { today });
     } catch (e) {
       err = e;
     }
@@ -45,7 +45,7 @@ describe('assertNotAfterToday', () => {
 
   it('passes for today and defaults `today` to the WIB calendar day', () => {
     expect(() =>
-      assertNotAfterToday(new Date('2026-09-26'), 'x', today),
+      assertNotAfterToday(new Date('2026-09-26'), 'x', { today }),
     ).not.toThrow();
     expect(() =>
       assertNotAfterToday(new Date('2000-01-01'), 'x'),
@@ -53,5 +53,52 @@ describe('assertNotAfterToday', () => {
     expect(() => assertNotAfterToday(new Date('9999-01-01'), 'x')).toThrow(
       ValidationFailedError,
     );
+  });
+});
+
+describe('iter6 ruling: originalDate <= date <= max(today WIB, originalDate)', () => {
+  const today = new Date('2026-09-26T00:00:00.000Z');
+
+  it('a future-dated original: its own date (and anything up to it) is accepted', () => {
+    const originalDate = new Date('2026-10-15');
+    expect(
+      futureDateViolation(new Date('2026-10-15'), today, originalDate),
+    ).toBeNull();
+    expect(
+      futureDateViolation(new Date('2026-10-01'), today, originalDate),
+    ).toBeNull();
+    expect(() =>
+      assertNotAfterToday(new Date('2026-10-15'), 'x', {
+        today,
+        originalDate,
+      }),
+    ).not.toThrow();
+  });
+
+  it('a date after BOTH today and the original date → 422 { date, today, originalDate }', () => {
+    const originalDate = new Date('2026-10-15');
+    expect(
+      futureDateViolation(new Date('2026-10-16'), today, originalDate),
+    ).toEqual({
+      date: '2026-10-16',
+      today: '2026-09-26',
+      originalDate: '2026-10-15',
+    });
+    expect(() =>
+      assertNotAfterToday(new Date('2026-10-16'), 'x', {
+        today,
+        originalDate,
+      }),
+    ).toThrow(ValidationFailedError);
+  });
+
+  it('a past original date: the ceiling stays today (details unchanged)', () => {
+    const originalDate = new Date('2026-01-10');
+    expect(
+      futureDateViolation(new Date('2026-09-26'), today, originalDate),
+    ).toBeNull();
+    expect(
+      futureDateViolation(new Date('2026-09-27'), today, originalDate),
+    ).toEqual({ date: '2026-09-27', today: '2026-09-26' });
   });
 });

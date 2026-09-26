@@ -144,7 +144,7 @@ without it compose could reuse a stale locally-built image.
 
 This release adds schema invariants, a least-privilege DB role and token changes.
 Work through this **once**, on the first deploy that includes migrations
-`20260925000000_accum_depreciation_cash_flow` … `20261003000000_payment_allocations_payment_id_idx`
+`20260925000000_accum_depreciation_cash_flow` … `20261004000000_business_partner_customer_or_vendor_check`
 (if an earlier audit-3 deploy already applied some of them, the rehearsal simply
 skips those — the list below still applies to the ones that remain):
 
@@ -176,7 +176,9 @@ skips those — the list below still applies to the ones that remain):
      normalized (`lower(btrim(...))`, e.g. `INV-1` / `inv-1` / ` INV-1 `);
    - `20261002000000_document_journal_link_check_and_fk_indexes` — sales invoices,
      purchase bills or payments whose `journal_entry_id` does not match their
-     status (a DRAFT with a journal entry, or a POSTED/VOID one without).
+     status (a DRAFT with a journal entry, or a POSTED/VOID one without);
+   - `20261004000000_business_partner_customer_or_vendor_check` — business partners
+     (soft-deleted included) that are neither customer nor vendor.
 
    The others in the range cannot abort on data: `20260925000000_accum_depreciation_cash_flow`
    is a data-only reclassification — every credit-normal `ASSET` account (contra-asset,

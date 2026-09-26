@@ -99,11 +99,18 @@ export class CompanyService implements OnModuleInit {
    *  the period-generation lock, serialized with PeriodsService.generatePeriods)
    *  the OPEN periods — unreferenced, as only journal_entries.period_id points at
    *  periods — are deleted and the current + next fiscal year (WIB today, new
-   *  start month) are regenerated. */
+   *  start month) are regenerated.
+   *
+   *  Whenever `fiscalYearStartMonth` is PRESENT — even equal to the pre-lock
+   *  read — the write takes the locked path and compares against the row
+   *  RE-READ under the lock: an unlocked same-value write from a stale read
+   *  could otherwise silently revert a concurrent, committed change (leaving
+   *  periods sliced for the other month). Only an input without the field is
+   *  written unlocked. */
   async update(input: UpdateCompanyInput): Promise<CompanySettings> {
     const current = await this.get();
     const newMonth = input.fiscalYearStartMonth;
-    if (newMonth === undefined || newMonth === current.fiscalYearStartMonth) {
+    if (newMonth === undefined) {
       return this.prisma.client.companySettings.update({
         where: { id: current.id },
         data: input,
@@ -122,6 +129,17 @@ export class CompanyService implements OnModuleInit {
       await tx.$executeRaw`
         LOCK TABLE journal_entries, accounting_periods, year_end_closings
         IN SHARE ROW EXCLUSIVE MODE`;
+      // Re-read under the lock: every start-month writer holds it, so this
+      // sees the latest committed month.
+      const locked = await tx.companySettings.findUniqueOrThrow({
+        where: { id: current.id },
+      });
+      if (newMonth === locked.fiscalYearStartMonth) {
+        return tx.companySettings.update({
+          where: { id: current.id },
+          data: input,
+        });
+      }
       const [blockers] = await tx.$queryRaw<
         { journal: boolean; closed_period: boolean; closing: boolean }[]
       >`
@@ -132,7 +150,7 @@ export class CompanyService implements OnModuleInit {
         throw new ValidationFailedError(
           'fiscalYearStartMonth cannot change once a journal entry, a closed period or a year-end close exists',
           {
-            fiscalYearStartMonth: current.fiscalYearStartMonth,
+            fiscalYearStartMonth: locked.fiscalYearStartMonth,
             requested: newMonth,
             journalEntriesExist: blockers.journal,
             closedPeriodsExist: blockers.closed_period,

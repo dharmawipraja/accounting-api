@@ -358,8 +358,13 @@ export class TaxedDocumentService {
     // The void (reversal) date defaults to the document date; a later date lets
     // a document be voided after its own period has closed.
     const voidedOn = date ?? row.date;
-    // An explicit void date may not be in the future (WIB) — 422 { date, today }.
-    if (date) assertNotAfterToday(date, 'Void date cannot be in the future');
+    // An explicit void date may not be after max(today (WIB), own date) —
+    // 422 { date, today[, originalDate] }: a future-dated original may be
+    // voided on its own date, like the no-body void.
+    if (date)
+      assertNotAfterToday(date, 'Void date cannot be in the future', {
+        originalDate: row.date,
+      });
     assertVoidDateNotBefore(voidedOn, row.date, id);
     if (!Money.of(row.amountPaid.toString()).isZero())
       throw new ConflictDomainError(m.voidWithPaymentsFirst, { id });

@@ -28,6 +28,7 @@ import {
 } from './document-helpers';
 import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
 import { assertCashAccount } from './document-account-rules';
+import { accountPolicyFor } from '../ledger/posting/account-policy';
 import { lockLivePartnerForShare } from './partner-lock';
 import {
   AllocationInput,
@@ -82,13 +83,14 @@ export class PaymentsService {
       throw new ValidationFailedError(target.partnerRequiredMessage, {
         partnerId: input.partnerId,
       });
-    const cash = await this.prisma.client.account.findFirst({
-      where: { id: input.cashAccountId },
-    });
-    if (!cash || !cash.isPostable || !cash.isActive)
-      throw new ValidationFailedError('Cash account is not postable', {
-        cashAccountId: input.cashAccountId,
-      });
+    // Same cash-account checks, order and errors as preview / post: exists,
+    // live, postable, active (422 INVALID_ACCOUNT { accountId }, the posting
+    // path's own check under the PAYMENT policy), then the CASH role (422
+    // VALIDATION_FAILED).
+    await this.posting.resolvePostableAccounts(
+      [input.cashAccountId],
+      accountPolicyFor('PAYMENT'),
+    );
     await assertCashAccount(this.prisma.client, input.cashAccountId);
 
     let total = Money.zero();
@@ -375,8 +377,13 @@ export class PaymentsService {
     // Void (reversal) date defaults to the payment date; a later date lets a
     // payment be voided after its own period has closed.
     const voidedOn = date ?? payment.date;
-    // An explicit void date may not be in the future (WIB) — 422 { date, today }.
-    if (date) assertNotAfterToday(date, 'Void date cannot be in the future');
+    // An explicit void date may not be after max(today (WIB), own date) —
+    // 422 { date, today[, originalDate] }: a future-dated original may be
+    // voided on its own date, like the no-body void.
+    if (date)
+      assertNotAfterToday(date, 'Void date cannot be in the future', {
+        originalDate: payment.date,
+      });
     assertVoidDateNotBefore(voidedOn, payment.date, id);
     const allocations = payment.allocations.map(
       (a): AllocationInput => ({

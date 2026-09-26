@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, Logger } from '@nestjs/common';
 import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { PrismaService } from '../src/common/prisma/prisma.service';
@@ -466,6 +466,27 @@ describe('Audit log (e2e)', () => {
     expect(
       await prisma.client.auditLog.count({
         where: { clientRequestId: { in: cases.map((c) => c.id) } },
+      }),
+    ).toBe(0);
+  });
+
+  it('iter6: an anonymous gzip-encoded junk body (untyped zlib 400) is a 400 client error, not a 500 / Sentry', async () => {
+    // body-parser 2.x wraps the zlib Z_DATA_ERROR as createError(400, err) —
+    // status 400 + expose true but no `type`.
+    const errorSpy = jest.spyOn(Logger.prototype, 'error');
+    const res = await request(app.getHttpServer() as App)
+      .post('/v1/auth/login')
+      .set('Content-Type', 'application/json')
+      .set('Content-Encoding', 'gzip')
+      .set('X-Request-Id', 'audit-gzip-junk')
+      .send('definitely not gzip');
+    expect(res.status).toBe(400);
+    expect((res.body as { code: string }).code).toBe('HTTP_400');
+    expect(errorSpy).not.toHaveBeenCalled();
+    await new Promise((r) => setTimeout(r, 100));
+    expect(
+      await prisma.client.auditLog.count({
+        where: { clientRequestId: 'audit-gzip-junk' },
       }),
     ).toBe(0);
   });

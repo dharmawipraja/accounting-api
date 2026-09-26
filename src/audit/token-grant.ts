@@ -15,3 +15,32 @@ export const TOKEN_GRANT_KEY = 'audit:token-grant';
  */
 export const TokenGrant = (): MethodDecorator =>
   SetMetadata(TOKEN_GRANT_KEY, true);
+
+/** The token owner (`sub`) of a successful token-grant response
+ *  (`{ accessToken }`, a JWT the server has just signed — so its payload is
+ *  trusted without re-verifying), else null. Used only to key the per-user
+ *  audit budget for refresh rows (`RejectionAuditLimiter.allowTokenGrant`).
+ *  Pure. */
+export function tokenGrantSubject(data: unknown): string | null {
+  if (!data || typeof data !== 'object' || !('accessToken' in data)) {
+    return null;
+  }
+  const token = data.accessToken;
+  if (typeof token !== 'string') return null;
+  const payload = token.split('.')[1];
+  if (!payload) return null;
+  try {
+    const parsed: unknown = JSON.parse(
+      Buffer.from(payload, 'base64url').toString('utf8'),
+    );
+    const sub =
+      parsed && typeof parsed === 'object' && 'sub' in parsed
+        ? parsed.sub
+        : undefined;
+    return typeof sub === 'string' && sub.length > 0 && sub.length <= 128
+      ? sub
+      : null;
+  } catch {
+    return null;
+  }
+}

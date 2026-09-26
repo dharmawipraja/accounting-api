@@ -6,6 +6,7 @@ function setup(
     maxKeys?: number;
     globalLimit?: number;
     userLimit?: number;
+    tokenGrantUserLimit?: number;
   } = {},
 ) {
   let t = 1_000_000;
@@ -15,6 +16,7 @@ function setup(
     limit: opts.limit ?? 3,
     globalLimit: opts.globalLimit,
     userLimit: opts.userLimit,
+    tokenGrantUserLimit: opts.tokenGrantUserLimit,
     windowMs: 60_000,
     maxKeys: opts.maxKeys ?? 10_000,
     now: () => t,
@@ -173,5 +175,44 @@ describe('RejectionAuditLimiter', () => {
     advance(60_000);
     expect(limiter.allowAnonymousGlobal()).toBe(true);
     expect(globalReports).toEqual([2]);
+  });
+
+  it('iter6: token-grant (refresh) 2xx rows use a per-user bucket (default 60/window) that never touches the global ceiling', () => {
+    const { limiter, advance } = setup({ globalLimit: 1 });
+    for (let i = 0; i < 60; i++) {
+      expect(limiter.allowTokenGrant('u1')).toBe(true);
+    }
+    // Global ceiling untouched by those 60 rows.
+    expect(limiter.allowAnonymousGlobal()).toBe(true);
+    // Past the per-user bucket: falls back to the (now exhausted) global ceiling.
+    expect(limiter.allowTokenGrant('u1')).toBe(false);
+    // Another user has its own bucket.
+    expect(limiter.allowTokenGrant('u2')).toBe(true);
+    advance(60_000);
+    expect(limiter.allowTokenGrant('u1')).toBe(true);
+  });
+
+  it('iter6: past the per-user token-grant bucket the global ceiling still admits rows while it has budget', () => {
+    const { limiter } = setup({ globalLimit: 2, tokenGrantUserLimit: 1 });
+    expect(limiter.allowTokenGrant('u1')).toBe(true); // bucket
+    expect(limiter.allowTokenGrant('u1')).toBe(true); // global 1
+    expect(limiter.allowTokenGrant('u1')).toBe(true); // global 2
+    expect(limiter.allowTokenGrant('u1')).toBe(false);
+    expect(limiter.allowAnonymousGlobal()).toBe(false);
+  });
+
+  it('iter6: an unknown token-grant subject goes straight to the global ceiling', () => {
+    const { limiter } = setup({ globalLimit: 1 });
+    expect(limiter.allowTokenGrant(null)).toBe(true);
+    expect(limiter.allowTokenGrant(null)).toBe(false);
+    expect(limiter.allowTokenGrant('')).toBe(false);
+  });
+
+  it('iter6: the token-grant key space is memory-bounded (maxKeys) and counted in size', () => {
+    const { limiter } = setup({ maxKeys: 2, globalLimit: 0 });
+    expect(limiter.allowTokenGrant('a')).toBe(true);
+    expect(limiter.allowTokenGrant('b')).toBe(true);
+    expect(limiter.allowTokenGrant('c')).toBe(true); // evicts 'a'
+    expect(limiter.size).toBe(2);
   });
 });
