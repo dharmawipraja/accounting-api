@@ -9,7 +9,7 @@ import { TaxCodesService } from '../src/tax/tax-codes.service';
 import { BusinessPartnersService } from '../src/invoicing/business-partners.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
-import { bootstrapTestApp } from './e2e-helpers';
+import { bootstrapTestApp, tomorrowWib } from './e2e-helpers';
 
 describe('SalesInvoices (e2e)', () => {
   let app: INestApplication;
@@ -568,6 +568,24 @@ describe('SalesInvoices (e2e)', () => {
         .send({ date: '2026-02-11' })
         .expect(422);
       expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+    });
+
+    it('rejects a void date after today (WIB) with 422 { date, today }; stays POSTED', async () => {
+      const inv = await postInvoice('2026-02-12');
+      const res = await voidReq(inv.id)
+        .send({ date: tomorrowWib() })
+        .expect(422);
+      const body = res.body as {
+        code: string;
+        details: { date: string; today: string };
+      };
+      expect(body.code).toBe('VALIDATION_FAILED');
+      expect(body.details.date).toBe(tomorrowWib());
+      expect(body.details.today < body.details.date).toBe(true);
+      expect(
+        (await prisma.client.salesInvoice.findFirst({ where: { id: inv.id } }))!
+          .status,
+      ).toBe('POSTED');
     });
 
     it('voids into a later open period once the invoice period is closed', async () => {

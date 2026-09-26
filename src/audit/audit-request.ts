@@ -106,14 +106,17 @@ export function capBody(
 }
 
 /** The body byte cap for a row: `AUDIT_BODY_MAX_BYTES` only for an
- *  authenticated success (status < 300) — the caller must also have checked
- *  that the handler binds a body (`auditBodyOf`); `AUDIT_SMALL_BODY_MAX_BYTES`
- *  for everything else. Pure. */
+ *  authenticated success (status < 300) on a state-changing handler — the
+ *  caller must also have checked that the handler binds a body
+ *  (`auditBodyOf`); `AUDIT_SMALL_BODY_MAX_BYTES` for everything else,
+ *  including every row of a read-only POST (`readOnly`, `@ReadOnlyPost()`:
+ *  it writes nothing, so its body never needs the large tier). Pure. */
 export function auditBodyCap(
   req: Pick<AuditableRequest, 'user'>,
   status: number,
+  readOnly = false,
 ): number {
-  return req.user && status < 300
+  return req.user && status < 300 && !readOnly
     ? AUDIT_BODY_MAX_BYTES
     : AUDIT_SMALL_BODY_MAX_BYTES;
 }
@@ -183,24 +186,27 @@ export function markAudited(req: AuditableRequest): void {
  *  - a handler that binds no body (`bindsBody: false`) → `{}`, whatever the status;
  *  - an anonymous 4xx → `withheldBody` (`{}`, or `{ email }` on a login attempt);
  *  - otherwise the sanitized body, size-capped (`capBody`) at `auditBodyCap`:
- *    512 KiB only for an authenticated 2xx, 8 KiB for every other row. Pure. */
+ *    512 KiB only for an authenticated 2xx on a state-changing handler, 8 KiB
+ *    for every other row (incl. a read-only POST, `readOnly`). Pure. */
 export function auditBodyOf(
   req: AuditableRequest,
   status: number,
   bindsBody: boolean,
+  readOnly = false,
 ): unknown {
   if (!bindsBody) return {};
   if (!auditBodyAllowed(req, status)) return withheldBody(req);
-  return capBody(sanitize(req.body), auditBodyCap(req, status));
+  return capBody(sanitize(req.body), auditBodyCap(req, status, readOnly));
 }
 
 /** The request-derived audit fields shared by the interceptor and the
  *  exception filter, for a row with outcome `status`. `bindsBody` (default
  *  true: the exception filter has no handler; its guard rejections are >= 400
- *  and so take the small cap anyway) — see `auditBodyOf`. */
+ *  and so take the small cap anyway; `readOnly` default false) — see
+ *  `auditBodyOf`. */
 export function auditBaseOf(
   req: AuditableRequest,
-  opts: { status: number; bindsBody?: boolean },
+  opts: { status: number; bindsBody?: boolean; readOnly?: boolean },
 ): AuditBase {
   return {
     userId: req.user?.id ?? null,
@@ -208,7 +214,12 @@ export function auditBaseOf(
     method: req.method,
     path: truncateCodePoints(req.originalUrl ?? req.url, AUDIT_PATH_MAX),
     params: capParams(req.params),
-    body: auditBodyOf(req, opts.status, opts.bindsBody ?? true),
+    body: auditBodyOf(
+      req,
+      opts.status,
+      opts.bindsBody ?? true,
+      opts.readOnly ?? false,
+    ),
     ip: req.ip ?? null,
     requestId:
       typeof req.id === 'string' || typeof req.id === 'number'

@@ -13,7 +13,9 @@ import {
   entityIdOf,
   handlerBindsBody,
 } from './audit.interceptor';
+import { Reflector } from '@nestjs/core';
 import { RejectionAuditLimiter } from './rejection-audit-limiter';
+import { ReadOnlyPost } from './read-only-post';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuditService } from './audit.service';
 import {
@@ -48,6 +50,7 @@ describe('AuditInterceptor', () => {
     const interceptor = new AuditInterceptor(
       { record } as unknown as AuditService,
       new RejectionAuditLimiter(),
+      new Reflector(),
     );
     return { record, interceptor };
   };
@@ -154,6 +157,8 @@ describe('AuditInterceptor', () => {
 class RouteFixture {
   withBody(@Param('id') _id: string, @Body() _dto: unknown): void {}
   bodyless(@CurrentUser() _user: unknown, @Param('id') _id: string): void {}
+  @ReadOnlyPost()
+  readOnly(@Body() _dto: unknown): void {}
 }
 
 /** A routed context for a RouteFixture method (looked up by name, as Nest's
@@ -182,6 +187,7 @@ describe('AuditInterceptor body cap (iteration-4 ruling)', () => {
     const interceptor = new AuditInterceptor(
       { record } as unknown as AuditService,
       limiter,
+      new Reflector(),
     );
     return { record, interceptor };
   };
@@ -271,6 +277,76 @@ describe('AuditInterceptor body cap (iteration-4 ruling)', () => {
         ),
       ),
     ).rejects.toBeInstanceOf(HttpException);
+    expect(record).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('AuditInterceptor iteration-5 ruling', () => {
+  const setup = (limiter = new RejectionAuditLimiter()) => {
+    const record = jest.fn().mockResolvedValue(undefined);
+    const interceptor = new AuditInterceptor(
+      { record } as unknown as AuditService,
+      limiter,
+      new Reflector(),
+    );
+    return { record, interceptor };
+  };
+  const viewer = { id: 'u1', role: 'VIEWER' };
+  const bodyReq = (body: unknown, user?: { id: string; role: string }) => ({
+    method: 'POST',
+    url: '/v1/x',
+    params: {},
+    body,
+    ip: '1.2.3.4',
+    user,
+  });
+
+  it('a @ReadOnlyPost() handler 2xx stores <= 8 KiB of a 300 KB body', async () => {
+    const { record, interceptor } = setup();
+    const req = bodyReq({ note: 'n'.repeat(300 * 1024) }, viewer);
+    await firstValueFrom(
+      interceptor.intercept(routedCtx('readOnly', req, 200), {
+        handle: () => of({ lines: [] }),
+      }),
+    );
+    const [[row]] = record.mock.calls as [[{ body: unknown }]];
+    expect(row.body).toMatchObject({ _truncated: true });
+    expect(Buffer.byteLength(JSON.stringify(row.body))).toBeLessThanOrEqual(
+      8192,
+    );
+    // …while an unmarked body-binding handler keeps the 512 KiB tier.
+    await firstValueFrom(
+      interceptor.intercept(routedCtx('withBody', req), {
+        handle: () => of({ id: 'e1' }),
+      }),
+    );
+    expect(record).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ body: req.body }),
+    );
+  });
+
+  it('anonymous 2xx rows count against the anonymous global ceiling', async () => {
+    const limiter = new RejectionAuditLimiter({ globalLimit: 2 });
+    const { record, interceptor } = setup(limiter);
+    const ok = () =>
+      firstValueFrom(
+        interceptor.intercept(routedCtx('withBody', bodyReq({})), {
+          handle: () => of({ ok: true }),
+        }),
+      );
+    await expect(ok()).resolves.toEqual({ ok: true });
+    await expect(ok()).resolves.toEqual({ ok: true });
+    // Over the ceiling: the response still passes through, no row.
+    await expect(ok()).resolves.toEqual({ ok: true });
+    expect(record).toHaveBeenCalledTimes(2);
+    expect(limiter.allowAnonymousGlobal()).toBe(false);
+    // Authenticated 2xx rows are never subject to it.
+    await firstValueFrom(
+      interceptor.intercept(routedCtx('withBody', bodyReq({}, viewer)), {
+        handle: () => of({ id: 'e1' }),
+      }),
+    );
     expect(record).toHaveBeenCalledTimes(3);
   });
 });

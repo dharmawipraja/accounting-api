@@ -10,7 +10,7 @@ import { TaxCodesService } from '../src/tax/tax-codes.service';
 import { BusinessPartnersService } from '../src/invoicing/business-partners.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
-import { bootstrapTestApp } from './e2e-helpers';
+import { bootstrapTestApp, tomorrowWib } from './e2e-helpers';
 
 describe('Payments (e2e)', () => {
   let app: INestApplication;
@@ -987,6 +987,21 @@ describe('Payments (e2e)', () => {
       .send({ date: '2026-02-14' })
       .expect(422);
     expect((early.body as { code: string }).code).toBe('VALIDATION_FAILED');
+
+    // A void date after today (WIB) is rejected: { date, today }.
+    const future = await request(server())
+      .post(`/v1/payments/${paymentId}/void`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ date: tomorrowWib() })
+      .expect(422);
+    const fb = future.body as {
+      code: string;
+      details: { date: string; today: string };
+    };
+    expect(fb.code).toBe('VALIDATION_FAILED');
+    expect(fb.details.date).toBe(tomorrowWib());
+    expect(fb.details.today < fb.details.date).toBe(true);
 
     const res = await request(server())
       .post(`/v1/payments/${paymentId}/void`)

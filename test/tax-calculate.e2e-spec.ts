@@ -6,17 +6,19 @@ import { TaxCodesService } from '../src/tax/tax-codes.service';
 import { TaxService, CalculatedLine } from '../src/tax/tax.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
+import { PrismaService } from '../src/common/prisma/prisma.service';
 import { bootstrapTestApp } from './e2e-helpers';
 
 describe('Tax calculate (e2e)', () => {
   let app: INestApplication;
+  let prisma: PrismaService;
   let cleanup: () => Promise<void>;
   let token: string;
   let acc: Record<string, string>;
   let code: Record<string, string>;
 
   beforeAll(async () => {
-    ({ app, cleanup } = await bootstrapTestApp());
+    ({ app, prisma, cleanup } = await bootstrapTestApp());
     await app.get(AccountsService).seedIfEmpty();
     await app.get(TaxCodesService).seedIfEmpty();
     await app.get(UsersService).create({
@@ -276,5 +278,31 @@ describe('Tax calculate (e2e)', () => {
       );
       expect(d).toBeCloseTo(c, 4);
     }
+  });
+  it('iter5: a valid >8 KiB calculation (200) is audited at the 8 KiB read-only tier', async () => {
+    const body = {
+      nature: 'PURCHASE',
+      settlementAccountId: acc['2-1000'],
+      lines: Array.from({ length: 100 }, () => ({
+        accountId: acc['5-2000'],
+        amount: '1000000.0000',
+        taxCodeIds: [code['PPN-IN-11'], code['PPH23-PAY']],
+      })),
+    };
+    expect(Buffer.byteLength(JSON.stringify(body))).toBeGreaterThan(8192);
+    await request(app.getHttpServer() as App)
+      .post('/v1/tax/calculate')
+      .set('Authorization', `Bearer ${token}`)
+      .set('X-Request-Id', 'tax-iter5-big-valid')
+      .send(body)
+      .expect(200);
+    const row = await prisma.client.auditLog.findFirst({
+      where: { clientRequestId: 'tax-iter5-big-valid' },
+    });
+    expect(row!.statusCode).toBe(200);
+    expect(row!.body).toMatchObject({ _truncated: true });
+    expect(Buffer.byteLength(JSON.stringify(row!.body))).toBeLessThanOrEqual(
+      8192,
+    );
   });
 });

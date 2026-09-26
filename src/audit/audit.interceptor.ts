@@ -5,6 +5,7 @@ import {
   NestInterceptor,
 } from '@nestjs/common';
 import { ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
+import { Reflector } from '@nestjs/core';
 import { Observable, from, throwError } from 'rxjs';
 import { catchError, concatMap } from 'rxjs/operators';
 import { AuditService } from './audit.service';
@@ -17,6 +18,7 @@ import {
   type AuditableRequest,
 } from './audit-request';
 import { RejectionAuditLimiter } from './rejection-audit-limiter';
+import { READ_ONLY_POST_KEY } from './read-only-post';
 import {
   isLoginIpThrottled,
   markLoginAttempt,
@@ -56,12 +58,25 @@ export function handlerBindsBody(ctx: ExecutionContext): boolean {
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
-  /** @param limiter the app's shared RejectionAuditLimiter: anonymous 4xx rows
-   *  (login / refresh / logout) count against its anonymous global ceiling. */
+  /** @param limiter the app's shared RejectionAuditLimiter: anonymous rows
+   *  (login / refresh / logout — 2xx and 4xx) count against its anonymous
+   *  global ceiling.
+   *  @param reflector reads the `@ReadOnlyPost()` handler marker. */
   constructor(
     private readonly audit: AuditService,
     private readonly limiter: RejectionAuditLimiter,
+    private readonly reflector: Reflector,
   ) {}
+
+  /** Whether the routed handler is marked `@ReadOnlyPost()` (8 KiB tier for
+   *  every row). No handler (never for a routed request) → false. */
+  private isReadOnly(ctx: ExecutionContext): boolean {
+    const handler = ctx.getHandler?.();
+    return (
+      typeof handler === 'function' &&
+      this.reflector.get<boolean>(READ_ONLY_POST_KEY, handler) === true
+    );
+  }
 
   intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
     const req = ctx.switchToHttp().getRequest<AuditableRequest>();
@@ -72,20 +87,32 @@ export class AuditInterceptor implements NestInterceptor {
     const start = Date.now();
     const res = ctx.switchToHttp().getResponse<{ statusCode: number }>();
     // The stored body depends on the outcome (512 KiB only for an
-    // authenticated 2xx on a body-binding handler; 8 KiB otherwise; {} for a
+    // authenticated 2xx on a body-binding, state-changing handler; 8 KiB
+    // otherwise, incl. every row of a @ReadOnlyPost() handler; {} for a
     // bodyless handler) — so the base is built when the status is known.
     const bindsBody = handlerBindsBody(ctx);
+    const readOnly = this.isReadOnly(ctx);
     return next.handle().pipe(
-      concatMap((data) =>
-        from(
+      concatMap((data) => {
+        // Anonymous successes (login / refresh / logout 2xx — logout always
+        // answers 200) share the anonymous global ceiling too: past it the
+        // row is dropped (counted + logged by the limiter), the response
+        // still goes out.
+        if (!req.user && !this.limiter.allowAnonymousGlobal())
+          return from([data]);
+        return from(
           this.audit.record({
-            ...auditBaseOf(req, { status: res.statusCode, bindsBody }),
+            ...auditBaseOf(req, {
+              status: res.statusCode,
+              bindsBody,
+              readOnly,
+            }),
             entityId: entityIdOf(data),
             statusCode: res.statusCode,
             durationMs: Date.now() - start,
           }),
-        ).pipe(concatMap(() => from([data]))),
-      ),
+        ).pipe(concatMap(() => from([data])));
+      }),
       catchError((err: unknown) => {
         // Record the SAME status AllExceptionsFilter will return — one shared mapping
         // (HttpException, DomainError, and both Prisma families) so the audit row can
@@ -106,7 +133,7 @@ export class AuditInterceptor implements NestInterceptor {
           this.audit.record({
             // Anonymous client errors store no body (e.g. a 400 on
             // /auth/refresh → {}); a failed LOGIN keeps only `{ email }`.
-            ...auditBaseOf(req, { status: statusCode, bindsBody }),
+            ...auditBaseOf(req, { status: statusCode, bindsBody, readOnly }),
             entityId: null,
             statusCode,
             durationMs: Date.now() - start,

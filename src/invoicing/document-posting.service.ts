@@ -6,6 +6,7 @@ import {
   LedgerTx,
   POSTING_TX_OPTIONS,
 } from '../ledger/posting/posting.service';
+import { accountPolicyFor } from '../ledger/posting/account-policy';
 import {
   TaxService,
   TaxableLineInput,
@@ -116,7 +117,8 @@ export class DocumentPostingService {
    *  `tx` and must equal the pre-tx one (else DraftChangedError → restart),
    *  before a number is consumed. Lock / read order inside the tx:
    *  document row FOR UPDATE → partner FOR SHARE (`verifyLockedInTx`) → tax-code
-   *  + company-settings reads and the line/tax account-rule reads (plain) →
+   *  + company-settings reads, the postable-account check of EVERY line
+   *  account and the line/tax account-rule reads (plain) →
    *  document sequence (lock-and-increment) → fiscal-year advisory lock (shared)
    *  + period FOR SHARE → accounts FOR SHARE → journal-entry sequence (the last
    *  three inside `createPostedEntryInTx` / `stampPostedInTx`).
@@ -166,14 +168,20 @@ export class DocumentPostingService {
         tx,
       );
       if (!sameTaxCalculation(calc, lockedCalc)) throw new DraftChangedError();
-      // Post-time re-validation of the (now verified-current) line accounts:
-      // they must still satisfy the document line rules (catches drafts
-      // written before the rules existed).
-      await assertDocumentLineAccounts(
+      // Post-time re-validation of EVERY (now verified-current) line account
+      // — including a zero-amount (free) line, which leaves no journal line
+      // and so escapes the journal's FOR SHARE account check — with the same
+      // rules, in the same order, as a draft create/PATCH: exists, live,
+      // postable, active (422 INVALID_ACCOUNT), then the document line rules
+      // (catches drafts written before the rules existed). Draft and post
+      // therefore agree on every line.
+      const lineAccountIds = params.lines.map((l) => l.accountId);
+      await this.posting.resolvePostableAccounts(
+        lineAccountIds,
+        accountPolicyFor(params.sourceType),
         tx,
-        params.nature,
-        params.lines.map((l) => l.accountId),
       );
+      await assertDocumentLineAccounts(tx, params.nature, lineAccountIds);
       // ...and every account a (non-zero) tax line posts to must still pass
       // the tax-account rule for its code's kind.
       await assertTaxLineAccounts(

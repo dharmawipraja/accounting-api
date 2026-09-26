@@ -20,6 +20,7 @@ describe('Journal preview (e2e)', () => {
   let cleanup: () => Promise<void>;
   let acct: string;
   let appr: string;
+  let viewer: string;
   let acc: Record<string, string>;
   let code: Record<string, string>;
   let customerId: string;
@@ -46,6 +47,14 @@ describe('Journal preview (e2e)', () => {
       name: 'B',
       role: 'APPROVER',
     });
+    await users.create({
+      email: 'view@jp.test',
+      password: 'secret123',
+      name: 'V',
+      role: 'VIEWER',
+    });
+    viewer = (await app.get(AuthService).login('view@jp.test', 'secret123'))
+      .accessToken;
     acct = (await app.get(AuthService).login('acct@jp.test', 'secret123'))
       .accessToken;
     appr = (await app.get(AuthService).login('appr@jp.test', 'secret123'))
@@ -398,5 +407,104 @@ describe('Journal preview (e2e)', () => {
         allocations: [{ purchaseBillId: randomUUID(), amount: '100000' }],
       })
       .expect(422);
+  });
+  // Iteration-5: fields that belong to the OTHER nature are rejected (400) —
+  // they used to skip every validator and be stored in the append-only
+  // audit_log; and read-only POSTs always use the 8 KiB audit tier.
+  describe('iter5: foreign-nature fields + read-only audit tier', () => {
+    const AUDIT_SMALL = 8192;
+    const auditRow = async (clientRequestId: string) => {
+      for (let i = 0; i < 100; i++) {
+        const row = await prisma.client.auditLog.findFirst({
+          where: { clientRequestId },
+        });
+        if (row) return row;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      throw new Error(`no audit row for ${clientRequestId}`);
+    };
+    const preview = (token: string, body: object, requestId?: string) => {
+      const req = request(server())
+        .post('/v1/journal-entries/preview')
+        .set('Authorization', `Bearer ${token}`);
+      if (requestId) req.set('X-Request-Id', requestId);
+      return req.send(body);
+    };
+    const paymentBody = () => ({
+      nature: 'PAYMENT',
+      direction: 'RECEIPT',
+      cashAccountId: acc['1-1000'],
+      allocations: [{ salesInvoiceId: randomUUID(), amount: '100000' }],
+    });
+
+    it('a VIEWER SALE preview carrying 2,800 junk allocations is a 400 whose audit row stays <= 8 KiB', async () => {
+      const allocations = Array.from({ length: 2800 }, () => ({
+        salesInvoiceId: randomUUID(),
+        amount: '1000000.0000',
+        memo: 'j'.repeat(100),
+      }));
+      await preview(
+        viewer,
+        { ...saleBody(), allocations },
+        'jp-iter5-junk-allocations',
+      ).expect(400);
+      const row = await auditRow('jp-iter5-junk-allocations');
+      expect(row.statusCode).toBe(400);
+      expect(Buffer.byteLength(JSON.stringify(row.body))).toBeLessThanOrEqual(
+        AUDIT_SMALL,
+      );
+    });
+
+    it.each([
+      ['direction', { direction: 'RECEIPT' }],
+      ['cashAccountId', { cashAccountId: randomUUID() }],
+      ['allocations', { allocations: [] }],
+      ['allocations (null)', { allocations: null }],
+    ])('SALE/PURCHASE with PAYMENT field %s → 400', async (_name, extra) => {
+      await preview(acct, { ...saleBody(), ...extra }).expect(400);
+      await preview(acct, {
+        nature: 'PURCHASE',
+        lines: [{ accountId: acc['5-2000'], amount: '1000', taxCodeIds: [] }],
+        ...extra,
+      }).expect(400);
+    });
+
+    it.each([
+      ['lines', () => ({ lines: saleBody().lines })],
+      ['lines (empty)', () => ({ lines: [] })],
+      ['settlementAccountId', () => ({ settlementAccountId: randomUUID() })],
+    ])('PAYMENT with SALE/PURCHASE field %s → 400', async (_name, extra) => {
+      await preview(acct, { ...paymentBody(), ...extra() }).expect(400);
+    });
+
+    it('the documented SALE / PURCHASE / PAYMENT payloads still preview (200)', async () => {
+      const { settlementAccountId: _omit, ...sale } = saleBody();
+      void _omit;
+      await preview(acct, sale).expect(200);
+      await preview(acct, {
+        nature: 'PURCHASE',
+        lines: [{ accountId: acc['5-2000'], amount: '1000', taxCodeIds: [] }],
+      }).expect(200);
+      await preview(acct, paymentBody()).expect(200);
+    });
+
+    it('a valid >8 KiB preview (200) is audited at the 8 KiB read-only tier (_truncated marker)', async () => {
+      const lines = Array.from({ length: 100 }, () => ({
+        accountId: acc['4-1000'],
+        amount: '1000000.0000',
+        taxCodeIds: [code['PPN-OUT-11']],
+      }));
+      const body = { nature: 'SALE', date: '2026-03-10', lines };
+      expect(Buffer.byteLength(JSON.stringify(body))).toBeGreaterThan(
+        AUDIT_SMALL,
+      );
+      await preview(viewer, body, 'jp-iter5-big-valid').expect(200);
+      const row = await auditRow('jp-iter5-big-valid');
+      expect(row.statusCode).toBe(200);
+      expect(row.body).toMatchObject({ _truncated: true });
+      expect(Buffer.byteLength(JSON.stringify(row.body))).toBeLessThanOrEqual(
+        AUDIT_SMALL,
+      );
+    });
   });
 });

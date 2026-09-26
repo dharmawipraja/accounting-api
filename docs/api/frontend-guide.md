@@ -155,6 +155,12 @@ a short backoff.
     160, company `legalName` 200, document/line/payment descriptions 255, partner
     address 255, company address 500, journal entry and journal line descriptions
     500, `?q=` 100, refresh token 2048.
+  - **Malformed JSON body** (not parseable, e.g. a truncated `{"code": "X",`) →
+    `400` `{ "code": "HTTP_400", "message": "<the JSON parser's message>" }` — the
+    message is body-parser's own text (e.g. `Unexpected end of JSON input`; wording
+    varies by runtime, never parse it) and there is **no** `details.errors`. It is
+    raised before authentication, so it also has no field to highlight: treat it as a
+    client bug (the frontend sent a broken body), not a user input error.
 - **422** = the request is _well-formed_ but breaks an **accounting rule**. Examples:
   a journal entry whose debits ≠ credits (`UNBALANCED_ENTRY`), posting to a
   non-postable / invalid account (`INVALID_ACCOUNT`), a report range where
@@ -525,9 +531,11 @@ DELETE /ledger/journal-entries/:id      delete a DRAFT          (ACCOUNTANT+)
 - **Reverse** accepts an optional body `{ "date": "YYYY-MM-DD" }` — the reversal date.
   Omit the body (or `date`) to reverse on the original entry's date (unchanged
   behaviour). The date must be **on/after** the original date (`422 VALIDATION_FAILED`
-  otherwise, `details: { entryId, date, originalDate }`) and fall in an OPEN period of a
+  otherwise, `details: { entryId, date, originalDate }`), may **not be in the future** —
+  after today's company date (WIB) → `422 VALIDATION_FAILED` "Reversal date cannot be in
+  the future" `details: { date, today }` — and must fall in an OPEN period of a
   non-closed year (`409 CLOSED_PERIOD` / `409 CLOSED_YEAR`); a non `YYYY-MM-DD` value is
-  `400`. ⚠️ The document **void** endpoints use a *different* detail shape for the same
+  `400`. A body-less reverse (original date) is never refused as future. ⚠️ The document **void** endpoints use a *different* detail shape for the same
   kind of error — see [Void date](#sales-invoice--purchase-bill).
 - Only `MANUAL` and `OPENING` entries can be reversed here. Reversing a document-owned
   entry (`SALES_INVOICE`, `PURCHASE_BILL`, `PAYMENT`) — or a `REVERSAL`/`CLOSING`
@@ -574,7 +582,9 @@ with `404 NOT_FOUND` (partner not found); a partner deleted *while* the post is 
 is caught by the in-transaction re-check and gives the `422` above. Treat both as
 "partner no longer usable".
 
-**Line accounts.** On create, `PATCH` and `/post`, each line's `accountId` is checked.
+**Line accounts.** On create, `PATCH` and `/post`, each line's `accountId` is checked —
+**every** line, including a free (zero-amount) line that produces no journal line, so a
+draft that `PATCH` would reject is rejected by `/post` too.
 First the same postable-account check as posting: an unknown / deleted account, a header
 (non-postable) account or an inactive account → `422 INVALID_ACCOUNT`
 `details: { accountId }` (never a `409` FK error). A `PATCH` re-checks the effective lines —
@@ -632,6 +642,11 @@ already closed: the reversal entry is posted on that date. Rules:
   `details: { id, date, documentDate }`; not `YYYY-MM-DD` → `400`. (Journal **reverse**
   reports the same rule as `details: { entryId, date, originalDate }` — two shapes, so
   key your UI off `code` + the field names, not one shared parser.)
+- `date` after **today** (the company's calendar day, WIB) → `422 VALIDATION_FAILED`
+  "Void date cannot be in the future" `details: { date, today }` (today itself is
+  fine). Only an explicit `date` is checked — a body-less void (document date) is never
+  refused as future. Default the date picker's max to `today` from the server's point
+  of view (WIB).
 - `date` must fall in an OPEN period of a non-closed year → else `409 CLOSED_PERIOD` /
   `409 CLOSED_YEAR` (this is also what a body-less void of a closed-period document gets).
 - Invoice/bill only: `date` before the void date of a payment that was allocated to the
@@ -783,6 +798,13 @@ discriminated by `nature`:
   // DISBURSEMENT allocations use "purchaseBillId" instead
   ```
 
+- **Fields of the other shape are rejected.** A `SALE`/`PURCHASE` body carrying
+  `direction`, `cashAccountId` or `allocations`, and a `PAYMENT` body carrying `lines`
+  or `settlementAccountId`, is a `400` (`HTTP_400`, per-field message "`<field>` is
+  only allowed when nature is …") — never silently ignored. Send only the fields of
+  the chosen `nature` (e.g. clear the payment fields when the user switches the
+  preview from a payment to an invoice).
+
 Response (`JournalPreviewResponseDto`) — each line carries a human-readable
 `accountCode`/`accountName`; the non-active side is `"0.0000"` (never null):
 
@@ -917,7 +939,7 @@ no auth.
 - `GET    /v1/ledger/journal-entries/:id` · any · get one entry
 - `POST   /v1/ledger/journal-entries` · ACCOUNTANT+ · create draft (`?post=true` = create+post, APPROVER/ADMIN only) · **requires `Idempotency-Key`**
 - `POST   /v1/ledger/journal-entries/:id/post` · APPROVER/ADMIN · post draft · **requires `Idempotency-Key`**
-- `POST   /v1/ledger/journal-entries/:id/reverse` · APPROVER/ADMIN · reverse a posted MANUAL/OPENING entry (optional body `{ date }`; document-owned entries → `422`) · **requires `Idempotency-Key`**
+- `POST   /v1/ledger/journal-entries/:id/reverse` · APPROVER/ADMIN · reverse a posted MANUAL/OPENING entry (optional body `{ date }` ≥ original date, ≤ today WIB; document-owned entries → `422`) · **requires `Idempotency-Key`**
 - `DELETE /v1/ledger/journal-entries/:id` · ACCOUNTANT+ · delete draft
 - `POST   /v1/ledger/opening-balances` · ADMIN · post opening balances · **requires `Idempotency-Key`**
 
@@ -967,7 +989,7 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing).
 - `POST   /v1/sales-invoices` · ACCOUNTANT+ · create draft · **requires `Idempotency-Key`**
 - `PATCH  /v1/sales-invoices/:id` · ACCOUNTANT+ · update draft
 - `POST   /v1/sales-invoices/:id/post` · APPROVER/ADMIN · post · **requires `Idempotency-Key`**
-- `POST   /v1/sales-invoices/:id/void` · APPROVER/ADMIN · void (optional body `{ date }` ≥ document date) · **requires `Idempotency-Key`**
+- `POST   /v1/sales-invoices/:id/void` · APPROVER/ADMIN · void (optional body `{ date }` ≥ document date, ≤ today WIB) · **requires `Idempotency-Key`**
 - `DELETE /v1/sales-invoices/:id` · ACCOUNTANT+ · delete draft
 
 ### Purchase bills
@@ -977,7 +999,7 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing).
 - `POST   /v1/purchase-bills` · ACCOUNTANT+ · create draft · **requires `Idempotency-Key`**
 - `PATCH  /v1/purchase-bills/:id` · ACCOUNTANT+ · update draft
 - `POST   /v1/purchase-bills/:id/post` · APPROVER/ADMIN · post · **requires `Idempotency-Key`**
-- `POST   /v1/purchase-bills/:id/void` · APPROVER/ADMIN · void (optional body `{ date }` ≥ document date) · **requires `Idempotency-Key`**
+- `POST   /v1/purchase-bills/:id/void` · APPROVER/ADMIN · void (optional body `{ date }` ≥ document date, ≤ today WIB) · **requires `Idempotency-Key`**
 - `DELETE /v1/purchase-bills/:id` · ACCOUNTANT+ · delete draft
 
 ### Payments
@@ -986,7 +1008,7 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing).
 - `GET    /v1/payments/:id` · any · get one
 - `POST   /v1/payments` · ACCOUNTANT+ · create draft (RECEIPT/DISBURSEMENT + allocations) · **requires `Idempotency-Key`**
 - `POST   /v1/payments/:id/post` · APPROVER/ADMIN · post · **requires `Idempotency-Key`**
-- `POST   /v1/payments/:id/void` · APPROVER/ADMIN · void (optional body `{ date }` ≥ document date) · **requires `Idempotency-Key`** · a payment whose partner has been deleted → `422 VALIDATION_FAILED` `{ id, partnerId, reason: 'PARTNER_DELETED' }` (voiding would reopen a balance on a deleted partner)
+- `POST   /v1/payments/:id/void` · APPROVER/ADMIN · void (optional body `{ date }` ≥ document date, ≤ today WIB) · **requires `Idempotency-Key`** · a payment whose partner has been deleted → `422 VALIDATION_FAILED` `{ id, partnerId, reason: 'PARTNER_DELETED' }` (voiding would reopen a balance on a deleted partner)
 - `DELETE /v1/payments/:id` · ACCOUNTANT+ · delete draft
 
 ### Business partners
@@ -1043,7 +1065,7 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing).
 
 ### Audit
 
-- `GET    /v1/audit` · ADMIN · audit log — **bare array** (no envelope) (filters: `userId, method, from, to, limit, offset`; `limit` default 50, **max 200**; `method` ∈ POST/PATCH/PUT/DELETE). One row per mutating request — including requests cut off with `408` and requests rejected by auth/role/throttle guards (`401`/`403`/`429`; rejection rows are capped at 60 per client IP and 600 in total per minute for anonymous callers — failed anonymous login/refresh/logout rows share that 600/min total — 60 per user per minute for signed-in ones). **`body`** is the sanitized request body, except: an **anonymous 4xx** row (no signed-in user — e.g. a failed refresh, any `401`) stores `{}`, except a **failed login** (`400`/`401`/`429` on `/v1/auth/login`), which stores only `{ "email": "<trimmed, lowercased>" }` (never the password); an endpoint that takes **no body** (e.g. `POST /v1/auth/logout-all`, `…/:id/post`, `DELETE`) stores `{}` for every row it writes itself — except a signed-in `403`/`429` guard rejection on such a route, which is written before routing and stores the body capped at 8192 bytes like any other rejection; a body whose JSON exceeds **512 KiB** (a signed-in caller's **successful** request — above any valid request, so an accepted write is always stored in full) or **8192 bytes** (every other row: signed-in rejections such as a `400`/`403`/`422`, and anonymous rows) is stored as the object `{ "_truncated": true, "bytes": <n>, "preview": "<first 1024 chars of the JSON>" }` — always an object, render `preview` as text. **A `408` row does not mean nothing happened:** the timed-out handler may still commit afterwards (its record then exists with a later timestamp and no audit row of its own) — see *Retry after a timeout* under Idempotency. `path` (with query string) and `params` are truncated to 512 chars. `userId` filter must be a UUID (else `400`). `requestId` = the server trace id; `clientRequestId` = your sanitized `X-Request-Id` (or `null`)
+- `GET    /v1/audit` · ADMIN · audit log — **bare array** (no envelope) (filters: `userId, method, from, to, limit, offset`; `limit` default 50, **max 200**; `method` ∈ POST/PATCH/PUT/DELETE). One row per mutating request — including requests cut off with `408` and requests rejected by auth/role/throttle guards (`401`/`403`/`429`; rejection rows are capped at 60 per client IP and 600 in total per minute for anonymous callers — anonymous login/refresh/logout rows, successful or failed, share that 600/min total — 60 per user per minute for signed-in ones). **`body`** is the sanitized request body, except: an **anonymous 4xx** row (no signed-in user — e.g. a failed refresh, any `401`) stores `{}`, except a **failed login** (`400`/`401`/`429` on `/v1/auth/login`), which stores only `{ "email": "<trimmed, lowercased>" }` (never the password); an endpoint that takes **no body** (e.g. `POST /v1/auth/logout-all`, `…/:id/post`, `DELETE`) stores `{}` for every row it writes itself — except a signed-in `403`/`429` guard rejection on such a route, which is written before routing and stores the body capped at 8192 bytes like any other rejection; a body whose JSON exceeds **512 KiB** (a signed-in caller's **successful** state-changing request — above any valid request, so an accepted write is always stored in full) or **8192 bytes** (every other row: signed-in rejections such as a `400`/`403`/`422`, anonymous rows, and **every** row of the read-only POSTs `POST /v1/tax/calculate` and `POST /v1/journal-entries/preview`, which change nothing) is stored as the object `{ "_truncated": true, "bytes": <n>, "preview": "<first 1024 chars of the JSON>" }` — always an object, render `preview` as text. **A `408` row does not mean nothing happened:** the timed-out handler may still commit afterwards (its record then exists with a later timestamp and no audit row of its own) — see *Retry after a timeout* under Idempotency. `path` (with query string) and `params` are truncated to 512 chars. `userId` filter must be a UUID (else `400`). `requestId` = the server trace id; `clientRequestId` = your sanitized `X-Request-Id` (or `null`)
 
 ### Response schema quick-map
 

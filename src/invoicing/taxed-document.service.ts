@@ -1,3 +1,4 @@
+import { assertNotAfterToday } from '../common/dates/not-after-today';
 import { Injectable } from '@nestjs/common';
 import { DocumentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
@@ -357,6 +358,8 @@ export class TaxedDocumentService {
     // The void (reversal) date defaults to the document date; a later date lets
     // a document be voided after its own period has closed.
     const voidedOn = date ?? row.date;
+    // An explicit void date may not be in the future (WIB) — 422 { date, today }.
+    if (date) assertNotAfterToday(date, 'Void date cannot be in the future');
     assertVoidDateNotBefore(voidedOn, row.date, id);
     if (!Money.of(row.amountPaid.toString()).isZero())
       throw new ConflictDomainError(m.voidWithPaymentsFirst, { id });

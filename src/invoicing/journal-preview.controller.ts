@@ -4,6 +4,7 @@ import { JournalPreviewService } from './journal-preview.service';
 import { JournalPreview } from './journal-preview.projection';
 import { PreviewJournalEntryDto } from './dto/preview-journal-entry.dto';
 import { JournalPreviewResponseDto } from './dto/journal-preview-response.dto';
+import { ReadOnlyPost } from '../audit/read-only-post';
 
 @ApiTags('Journal entries')
 @ApiBearerAuth()
@@ -14,6 +15,7 @@ export class JournalPreviewController {
   @ApiOkResponse({ type: JournalPreviewResponseDto })
   @Post('preview')
   @HttpCode(200)
+  @ReadOnlyPost()
   preview(@Body() dto: PreviewJournalEntryDto): Promise<JournalPreview> {
     return this.service.preview(dto);
   }

@@ -26,6 +26,7 @@ describe('DocumentPostingService (orchestration)', () => {
         .fn()
         .mockResolvedValue({ periodId: 'p1', fiscalYear: 2026 }),
       createPostedEntryInTx: jest.fn().mockResolvedValue(entry),
+      resolvePostableAccounts: jest.fn().mockResolvedValue(new Map()),
     };
     const docNumber = {
       next: jest.fn().mockResolvedValue(42),
@@ -109,6 +110,16 @@ describe('DocumentPostingService (orchestration)', () => {
     expect(verify.mock.invocationCallOrder[0]).toBeLessThan(
       docNumber.next.mock.invocationCallOrder[0],
     );
+    // every line account (free lines included) is postable-checked in the tx,
+    // with the source type's policy, before a number is consumed
+    expect(posting.resolvePostableAccounts).toHaveBeenCalledWith(
+      [],
+      expect.anything(),
+      txWithLock,
+    );
+    expect(
+      posting.resolvePostableAccounts.mock.invocationCallOrder[0],
+    ).toBeLessThan(docNumber.next.mock.invocationCallOrder[0]);
     // preparePosting token is passed directly to the write (2-arg token form)
     expect(posting.createPostedEntryInTx).toHaveBeenCalledWith(
       txWithLock,

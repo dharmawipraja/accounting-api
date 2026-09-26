@@ -146,10 +146,14 @@ Guards run in registration order:
     route has no handler context, so it stores the body capped at 8 KiB.) Every other row stores
     the sanitized body, **capped** (`auditBodyOf` / `capBody` in
     `audit-request.ts`) at **512 KiB** only for an **authenticated 2xx on a
-    body-binding handler** (the body passed DTO validation), and at **8192 bytes**
-    for every other row — authenticated rejections (a guard 403 — the filter has
-    no handler, but guard statuses are ≥ 400 — any 400/409/422/5xx), anonymous
-    success / 5xx rows. So no caller, whatever its role, can park more than 8 KiB
+    body-binding, state-changing handler** (the body passed DTO validation), and
+    at **8192 bytes** for every other row — authenticated rejections (a guard 403
+    — the filter has no handler, but guard statuses are ≥ 400 — any
+    400/409/422/5xx), anonymous success / 5xx rows, and every row of a
+    **read-only POST** marked `@ReadOnlyPost()` (`src/audit/read-only-post.ts`,
+    read with `Reflector` — `POST /tax/calculate`, `POST /journal-entries/preview`:
+    they change nothing, so they never need the large tier). Mark any new
+    state-free POST the same way. So no caller, whatever its role, can park more than 8 KiB
     of unvalidated junk per row. An over-cap body is replaced by the object
     `{ "_truncated": true, "bytes": <n>, "preview": "<first 1024 code points of
     the JSON text>" }` — still a JSON object in the jsonb column (never a string

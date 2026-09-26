@@ -204,6 +204,20 @@ describe('env validation', () => {
     },
   );
 
+  // REPORT_UTC_OFFSET_MINUTES is NOT in the list above: an empty value passes
+  // validation (implicit conversion turns '' into 0, a valid @IsInt), yet the
+  // runtime reader (query-dates.ts) treats '' as UNSET → 420 (WIB), not 0
+  // (UTC) — see query-dates.spec.ts. Compose still passes `:-420` so the
+  // validated value and the runtime value agree.
+  it('accepts an empty REPORT_UTC_OFFSET_MINUTES (validated as 0; the runtime reads it as unset → 420)', () => {
+    const v = validate({
+      ...validEnv,
+      ...composeUnsetDefaults,
+      REPORT_UTC_OFFSET_MINUTES: '',
+    });
+    expect(v.REPORT_UTC_OFFSET_MINUTES).toBe(0);
+  });
+
   describe('CORS_ORIGIN in production', () => {
     const prod = { ...validEnv, ...composeUnsetDefaults };
     it('rejects a localhost origin (the .env.example value)', () => {

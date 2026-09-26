@@ -318,7 +318,8 @@ Documents (invoices, bills, payments) start `DRAFT` (no ledger effect), become `
 (journal entry written, control/subledger updated), and are undone with `VOID` — which
 reverses the journal entry and unwinds `amountPaid` rather than deleting anything. A
 draft can be soft-deleted; a posted document cannot. A void may be dated later than the
-document (optional `{ date }` body, e.g. when its period is closed); the date is stored in
+document (optional `{ date }` body, e.g. when its period is closed) but never after today
+(WIB, 422 `{ date, today }` — also for a journal reversal date); the date is stored in
 `voided_on` (set iff `VOID`, DB CHECK) and as-of aging treats the document/payment as live
 before it.
 - `DocumentStatus` enum (`DRAFT`/`POSTED`/`VOID`); shared `DocumentLifecycleService`

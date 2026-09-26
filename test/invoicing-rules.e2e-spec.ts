@@ -153,6 +153,67 @@ describe('Invoicing rules (e2e)', () => {
       expect(jl.some((l) => l.accountId === acc['4-9000'])).toBe(false);
     });
 
+    it('a free line on an account deactivated after drafting → post 422 INVALID_ACCOUNT (same as PATCH), stays DRAFT', async () => {
+      const free = await prisma.client.account.create({
+        data: {
+          code: '4-9811',
+          name: 'Revenue free-line',
+          type: 'REVENUE',
+          subtype: 'REVENUE',
+          normalBalance: 'CREDIT',
+          isPostable: true,
+        },
+      });
+      const draft = await createInvoice({
+        lines: [
+          line('4-1000', '1000000', ['PPN-OUT-11']),
+          { ...line('4-1000', '0'), accountId: free.id }, // free item
+        ],
+      }).expect(201);
+      const id = (draft.body as { id: string }).id;
+      await prisma.client.account.update({
+        where: { id: free.id },
+        data: { isActive: false },
+      });
+      const patch = await send('patch', `/v1/sales-invoices/${id}`, acct, {
+        description: 'still a draft',
+      }).expect(422);
+      expect(codeOf(patch)).toBe('INVALID_ACCOUNT');
+      const post = await postDoc('sales-invoices', id).expect(422);
+      expect(codeOf(post)).toBe('INVALID_ACCOUNT');
+      expect(detailsOf(post)).toEqual({ accountId: free.id });
+      expect(
+        (await prisma.client.salesInvoice.findFirst({ where: { id } }))!.status,
+      ).toBe('DRAFT');
+    });
+
+    it('a free bill line on a soft-deleted account → post 422 INVALID_ACCOUNT', async () => {
+      const free = await prisma.client.account.create({
+        data: {
+          code: '5-9811',
+          name: 'Expense free-line',
+          type: 'EXPENSE',
+          subtype: 'OPERATING_EXPENSE',
+          normalBalance: 'DEBIT',
+          isPostable: true,
+        },
+      });
+      const draft = await createBill({
+        lines: [
+          line('5-2000', '500000'),
+          { ...line('5-2000', '0'), accountId: free.id },
+        ],
+      }).expect(201);
+      const id = (draft.body as { id: string }).id;
+      await prisma.client.account.update({
+        where: { id: free.id },
+        data: { deletedAt: new Date() },
+      });
+      const post = await postDoc('purchase-bills', id).expect(422);
+      expect(codeOf(post)).toBe('INVALID_ACCOUNT');
+      expect(detailsOf(post)).toEqual({ accountId: free.id });
+    });
+
     it('rejects a document whose total is zero (422)', async () => {
       const res = await createInvoice({
         lines: [line('4-1000', '0', ['PPN-OUT-11'])],

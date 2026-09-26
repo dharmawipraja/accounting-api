@@ -9,8 +9,9 @@ export class VoidDocumentDto {
     example: '2026-02-10',
     description:
       'Void (reversal) date, YYYY-MM-DD. Defaults to the document date. Must be ' +
-      'on/after the document date and fall in an OPEN period of a non-closed ' +
-      'fiscal year — use it to void a document whose own period is closed.',
+      'on/after the document date, not after today (WIB; 422 { date, today }), ' +
+      'and fall in an OPEN period of a non-closed fiscal year — use it to void ' +
+      'a document whose own period is closed.',
   })
   @IsOptional()
   @IsDateString({ strict: true })

@@ -305,6 +305,11 @@ const MAX_BODIES: [string, new () => object, object][] = [
       allocations: times(allocation),
     },
   ],
+];
+
+/** Read-only POSTs (`@ReadOnlyPost()`: /tax/calculate, /journal-entries/preview)
+ *  change no state, so they always take the 8 KiB tier (iteration-5 ruling). */
+const READ_ONLY_MAX_BODIES: [string, new () => object, object][] = [
   [
     'tax calculate',
     CalculateTaxDto,
@@ -457,5 +462,46 @@ describe('iteration-4 audit body cap ruling', () => {
     ).toBe(false); // @CurrentUser()
     expect(bindsRequestBody(undefined)).toBe(false);
     expect(bindsRequestBody({})).toBe(false);
+  });
+});
+
+describe('iteration-5: read-only POST handlers always use the 8 KiB tier', () => {
+  const size = (v: unknown) => Buffer.byteLength(JSON.stringify(v));
+
+  it('auditBodyCap: a read-only handler is 8 KiB even for an authenticated 2xx', () => {
+    const user = { id: 'u1', role: 'VIEWER' };
+    for (const status of [200, 201, 400, 422, 500]) {
+      expect(auditBodyCap({ user }, status, true)).toBe(
+        AUDIT_SMALL_BODY_MAX_BYTES,
+      );
+      expect(auditBodyCap({}, status, true)).toBe(AUDIT_SMALL_BODY_MAX_BYTES);
+    }
+    expect(auditBodyCap({ user }, 200, false)).toBe(AUDIT_BODY_MAX_BYTES);
+  });
+
+  it.each(READ_ONLY_MAX_BODIES)(
+    'a maximal valid %s body (200) is stored as a <= 8 KiB _truncated marker',
+    (_name, Dto, body) => {
+      const errors = validateSync(plainToInstance(Dto, body), {
+        whitelist: true,
+        forbidNonWhitelisted: true,
+      });
+      expect(errors).toEqual([]);
+      expect(size(body)).toBeGreaterThan(AUDIT_SMALL_BODY_MAX_BYTES);
+      const stored = auditBaseOf(req({ body }), {
+        status: 200,
+        readOnly: true,
+      }).body;
+      expect(stored).toMatchObject({ _truncated: true });
+      expect(size(stored)).toBeLessThanOrEqual(AUDIT_SMALL_BODY_MAX_BYTES);
+      expect(auditBodyOf(req({ body }), 200, true, true)).toEqual(stored);
+    },
+  );
+
+  it('a small read-only body is kept as is', () => {
+    const body = { nature: 'SALE', lines: [] };
+    expect(
+      auditBaseOf(req({ body }), { status: 200, readOnly: true }).body,
+    ).toEqual(body);
   });
 });

@@ -9,7 +9,7 @@ import { CompanyService } from '../src/company/company.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
 import { PostingService } from '../src/ledger/posting/posting.service';
-import { bootstrapTestApp } from './e2e-helpers';
+import { bootstrapTestApp, tomorrowWib } from './e2e-helpers';
 
 describe('JournalEntries (e2e)', () => {
   let app: INestApplication;
@@ -506,6 +506,22 @@ describe('JournalEntries (e2e)', () => {
       const id = await postManual('2026-03-10');
       const res = await reverse(id).send({ date: '2026-03-09' }).expect(422);
       expect((res.body as { code: string }).code).toBe('VALIDATION_FAILED');
+    });
+
+    it('rejects a reversal date after today (WIB) with 422 { date, today }', async () => {
+      const id = await postManual('2026-03-10');
+      const res = await reverse(id).send({ date: tomorrowWib() }).expect(422);
+      const body = res.body as {
+        code: string;
+        details: { date: string; today: string };
+      };
+      expect(body.code).toBe('VALIDATION_FAILED');
+      expect(body.details.date).toBe(tomorrowWib());
+      expect(body.details.today < body.details.date).toBe(true);
+      const still = await prisma.client.journalEntry.findUnique({
+        where: { id },
+      });
+      expect(still!.status).toBe('POSTED');
     });
 
     it('rejects a non date-only reversal date (400)', async () => {

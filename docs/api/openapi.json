@@ -4526,7 +4526,7 @@
             "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
             "format": "date",
             "example": "2026-02-10",
-            "description": "Reversal date, YYYY-MM-DD. Defaults to the original entry date. Must be on/after the original date and fall in an OPEN period of a non-closed fiscal year."
+            "description": "Reversal date, YYYY-MM-DD. Defaults to the original entry date. Must be on/after the original date, not after today (WIB; 422 { date, today }), and fall in an OPEN period of a non-closed fiscal year."
           }
         }
       },
@@ -5422,7 +5422,7 @@
             "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
             "format": "date",
             "example": "2026-02-10",
-            "description": "Void (reversal) date, YYYY-MM-DD. Defaults to the document date. Must be on/after the document date and fall in an OPEN period of a non-closed fiscal year — use it to void a document whose own period is closed."
+            "description": "Void (reversal) date, YYYY-MM-DD. Defaults to the document date. Must be on/after the document date, not after today (WIB; 422 { date, today }), and fall in an OPEN period of a non-closed fiscal year — use it to void a document whose own period is closed."
           }
         }
       },
@@ -5995,11 +5995,11 @@
             "type": "string",
             "format": "uuid",
             "deprecated": true,
-            "description": "Deprecated and ignored: SALE/PURCHASE previews always settle to the AR/AP control account resolved by role (exactly what the post writes). Still accepted (must be a UUID if sent) for backward compatibility."
+            "description": "Deprecated and ignored: SALE/PURCHASE previews always settle to the AR/AP control account resolved by role (exactly what the post writes). Still accepted on SALE/PURCHASE (must be a UUID if sent) for backward compatibility; rejected (400) for PAYMENT."
           },
           "lines": {
             "minItems": 1,
-            "description": "Required for SALE/PURCHASE",
+            "description": "Required for SALE/PURCHASE; rejected (400) for PAYMENT",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TaxableLineDto"
@@ -6011,16 +6011,16 @@
               "DISBURSEMENT"
             ],
             "type": "string",
-            "description": "Required for PAYMENT"
+            "description": "Required for PAYMENT; rejected (400) for SALE/PURCHASE"
           },
           "cashAccountId": {
             "type": "string",
             "format": "uuid",
-            "description": "Required for PAYMENT"
+            "description": "Required for PAYMENT; rejected (400) for SALE/PURCHASE"
           },
           "allocations": {
             "minItems": 1,
-            "description": "Required for PAYMENT",
+            "description": "Required for PAYMENT; rejected (400) for SALE/PURCHASE",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AllocationDto"

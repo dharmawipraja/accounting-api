@@ -9,8 +9,8 @@ export class ReverseJournalEntryDto {
     example: '2026-02-10',
     description:
       'Reversal date, YYYY-MM-DD. Defaults to the original entry date. Must be ' +
-      'on/after the original date and fall in an OPEN period of a non-closed ' +
-      'fiscal year.',
+      'on/after the original date, not after today (WIB; 422 { date, today }), ' +
+      'and fall in an OPEN period of a non-closed fiscal year.',
   })
   @IsOptional()
   @IsDateString({ strict: true })

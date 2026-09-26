@@ -9,7 +9,7 @@ import { TaxCodesService } from '../src/tax/tax-codes.service';
 import { BusinessPartnersService } from '../src/invoicing/business-partners.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
-import { bootstrapTestApp } from './e2e-helpers';
+import { bootstrapTestApp, tomorrowWib } from './e2e-helpers';
 
 describe('PurchaseBills (e2e)', () => {
   let app: INestApplication;
@@ -167,6 +167,34 @@ describe('PurchaseBills (e2e)', () => {
       .set('Idempotency-Key', randomUUID())
       .expect(200);
     expect((voided.body as { status: string }).status).toBe('VOID');
+  });
+
+  it('rejects a bill void date after today (WIB) with 422 { date, today }', async () => {
+    const draft = await request(app.getHttpServer() as App)
+      .post('/v1/purchase-bills')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send(draftBody())
+      .expect(201);
+    const id = (draft.body as { id: string }).id;
+    await request(app.getHttpServer() as App)
+      .post(`/v1/purchase-bills/${id}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    const res = await request(app.getHttpServer() as App)
+      .post(`/v1/purchase-bills/${id}/void`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ date: tomorrowWib() })
+      .expect(422);
+    const body = res.body as {
+      code: string;
+      details: { date: string; today: string };
+    };
+    expect(body.code).toBe('VALIDATION_FAILED');
+    expect(body.details.date).toBe(tomorrowWib());
+    expect(body.details.today < body.details.date).toBe(true);
   });
 
   it('rejects creating a draft for a non-vendor partner (422)', async () => {

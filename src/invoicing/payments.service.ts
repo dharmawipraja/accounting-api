@@ -1,3 +1,4 @@
+import { assertNotAfterToday } from '../common/dates/not-after-today';
 import { Injectable } from '@nestjs/common';
 import {
   DocumentStatus,
@@ -374,6 +375,8 @@ export class PaymentsService {
     // Void (reversal) date defaults to the payment date; a later date lets a
     // payment be voided after its own period has closed.
     const voidedOn = date ?? payment.date;
+    // An explicit void date may not be in the future (WIB) — 422 { date, today }.
+    if (date) assertNotAfterToday(date, 'Void date cannot be in the future');
     assertVoidDateNotBefore(voidedOn, payment.date, id);
     const allocations = payment.allocations.map(
       (a): AllocationInput => ({

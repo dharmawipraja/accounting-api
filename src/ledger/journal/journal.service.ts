@@ -1,3 +1,4 @@
+import { assertNotAfterToday } from '../../common/dates/not-after-today';
 import { Injectable } from '@nestjs/common';
 import {
   JournalEntry,
@@ -144,6 +145,11 @@ export class JournalService {
         { entryId: id, sourceType: entry.sourceType },
       );
     }
+    // An explicit reversal date may not be in the future (WIB) — 422
+    // { date, today }. (Year-end reopen reverses through PostingService
+    // directly, on the closing entry's own date.)
+    if (date)
+      assertNotAfterToday(date, 'Reversal date cannot be in the future');
     return this.posting.reverse(id, reversedBy, date);
   }
 

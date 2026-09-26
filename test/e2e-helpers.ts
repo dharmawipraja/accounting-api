@@ -11,7 +11,16 @@ import { AuditService } from '../src/audit/audit.service';
 import { RejectionAuditLimiter } from '../src/audit/rejection-audit-limiter';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
 import { PrismaService } from '../src/common/prisma/prisma.service';
+import { asOfOrToday } from '../src/common/dates/query-dates';
 import { startTestDb, TestDb } from './testcontainers';
+
+/** Tomorrow's company calendar day (WIB, as asOfOrToday resolves "today"),
+ *  YYYY-MM-DD — the first date a void / reversal may NOT use. */
+export function tomorrowWib(): string {
+  return new Date(asOfOrToday().getTime() + 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+}
 
 /**
  * Builds a PrismaService pointed at a testcontainer URL. NestJS freezes

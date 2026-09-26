@@ -89,7 +89,8 @@ lifecycles, money), follow the guide.
     `Idempotency-Key`**, any authenticated user. Body is discriminated by `nature`:
     `SALE`/`PURCHASE` send `lines` (the `/tax/calculate` line shape; the AR/AP control
     is resolved by role — `settlementAccountId` is deprecated and ignored);
-    `PAYMENT` uses `{ direction, cashAccountId, allocations }`. Response is
+    `PAYMENT` uses `{ direction, cashAccountId, allocations }` — a field of the other
+    shape is a `400` (send only the chosen nature's fields). Response is
     `{ lines:[{accountId,accountCode,accountName,debit,credit}], totalDebit, totalCredit,
 balanced }` (4dp strings, inactive side `"0.0000"`). Use it for a live preview panel
     in the document editor; it validates like a real post (same `422`s) but writes nothing.
