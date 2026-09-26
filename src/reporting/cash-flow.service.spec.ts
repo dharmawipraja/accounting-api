@@ -19,18 +19,34 @@ const row = (o: Partial<AccountBalanceRow>): AccountBalanceRow => ({
   ...o,
 });
 
+/** Stand-in for the snapshot transaction client every query must receive. */
+const SNAPSHOT_TX = { snapshot: 'tx' };
+
+const makeBalances = (
+  movements: AccountBalanceRow[],
+  kasAwalRows: AccountBalanceRow[],
+  kasAkhirRows: AccountBalanceRow[],
+) => ({
+  snapshot: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn(SNAPSHOT_TX)),
+  movementsBetween: jest.fn().mockResolvedValue(movements),
+  balancesAsOf: jest
+    .fn()
+    .mockResolvedValueOnce(kasAwalRows) // dayBefore → kasAwal
+    .mockResolvedValueOnce(kasAkhirRows), // to → kasAkhir
+});
+
 const make = (
   movements: AccountBalanceRow[],
   kasAwalRows: AccountBalanceRow[],
   kasAkhirRows: AccountBalanceRow[],
 ) =>
-  new CashFlowService({
-    movementsBetween: jest.fn().mockResolvedValue(movements),
-    balancesAsOf: jest
-      .fn()
-      .mockResolvedValueOnce(kasAwalRows) // dayBefore → kasAwal
-      .mockResolvedValueOnce(kasAkhirRows), // to → kasAkhir
-  } as unknown as BalancesService);
+  new CashFlowService(
+    makeBalances(
+      movements,
+      kasAwalRows,
+      kasAkhirRows,
+    ) as unknown as BalancesService,
+  );
 
 const FROM = new Date('2026-01-01');
 const TO = new Date('2026-12-31');
@@ -100,5 +116,22 @@ describe('CashFlowService.generate', () => {
     );
     const r = await svc.generate(FROM, TO);
     expect(r.reconciles).toBe(false);
+  });
+
+  it('runs all four aggregates inside ONE snapshot, each on its transaction client', async () => {
+    const balances = makeBalances(movements, [], []);
+    await new CashFlowService(balances as unknown as BalancesService).generate(
+      FROM,
+      TO,
+    );
+    expect(balances.snapshot).toHaveBeenCalledTimes(1);
+    const calls: unknown[][] = [
+      ...(balances.movementsBetween.mock.calls as unknown[][]),
+      ...(balances.balancesAsOf.mock.calls as unknown[][]),
+    ];
+    expect(calls).toHaveLength(4);
+    for (const args of calls) {
+      expect(args[args.length - 1]).toMatchObject({ tx: SNAPSHOT_TX });
+    }
   });
 });

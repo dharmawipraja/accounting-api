@@ -24,7 +24,28 @@ export interface TransactionOptions {
   maxWait?: number;
   timeout?: number;
   isolationLevel?: Prisma.TransactionIsolationLevel;
+  /** Issue `SET TRANSACTION READ ONLY` as the callback's first statement (it
+   *  runs right after the adapter's BEGIN / SET TRANSACTION ISOLATION LEVEL,
+   *  before any query takes the snapshot). A read-only transaction writes
+   *  nothing, so it never marks an idempotency key (the mark is an UPDATE). */
+  readOnly?: boolean;
 }
+
+/**
+ * Options for a report's snapshot read: every query of a multi-query report
+ * sees ONE consistent snapshot (REPEATABLE READ), so a post committing
+ * mid-request can't make it internally inconsistent. READ ONLY: takes only
+ * ACCESS SHARE locks, never blocks posting, and a read-only RR transaction can
+ * never hit a serialization failure. timeout = the pool's 30s statement
+ * timeout (< the 35s request timeout); maxWait bounds the wait for a pooled
+ * connection.
+ */
+export const REPORT_SNAPSHOT_TX: TransactionOptions = {
+  isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+  readOnly: true,
+  maxWait: 5_000,
+  timeout: 30_000,
+};
 
 @Injectable()
 export class PrismaService
@@ -83,8 +104,10 @@ export class PrismaService
   ): Promise<T> {
     // Captured synchronously, before $transaction: the callback may run in an
     // async context Prisma/the driver created, where getStore() could differ.
-    const ctx = idempotencyContext.getStore();
+    const { readOnly, ...txOpts } = opts ?? {};
+    const ctx = readOnly ? undefined : idempotencyContext.getStore();
     return this.client.$transaction(async (tx) => {
+      if (readOnly) await tx.$executeRaw`SET TRANSACTION READ ONLY`;
       const result = await fn(tx);
       if (ctx) {
         const marked = await tx.$executeRaw`
@@ -99,7 +122,7 @@ export class PrismaService
         }
       }
       return result;
-    }, opts);
+    }, txOpts);
   }
 
   /** Live pg connection-pool stats for the /metrics db_pool_* gauges. */

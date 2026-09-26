@@ -20,9 +20,15 @@ const row = (o: Partial<AccountBalanceRow>): AccountBalanceRow => ({
   ...o,
 });
 
+/** Stand-in for the snapshot transaction client every query must receive. */
+const SNAPSHOT_TX = { snapshot: 'tx' };
+
 const make = (asOfRows: AccountBalanceRow[], fyRows: AccountBalanceRow[]) =>
   new BalanceSheetService(
     {
+      snapshot: jest.fn((fn: (tx: unknown) => Promise<unknown>) =>
+        fn(SNAPSHOT_TX),
+      ),
       balancesAsOf: jest.fn().mockResolvedValue(asOfRows),
       movementsBetween: jest.fn().mockResolvedValue(fyRows),
     } as unknown as BalancesService,
@@ -110,5 +116,34 @@ describe('BalanceSheetService.generate', () => {
     const r = await svc.generate(AS_OF);
     expect(r.totalAssets).toBe('1300.0000');
     expect(r.balanced).toBe(false);
+  });
+
+  it('reads both aggregates inside ONE snapshot, each on its transaction client', async () => {
+    const balances = {
+      snapshot: jest.fn((fn: (tx: unknown) => Promise<unknown>) =>
+        fn(SNAPSHOT_TX),
+      ),
+      balancesAsOf: jest.fn().mockResolvedValue([]),
+      movementsBetween: jest.fn().mockResolvedValue([]),
+    };
+    await new BalanceSheetService(
+      balances as unknown as BalancesService,
+      {
+        fiscalYearFor: jest.fn().mockResolvedValue(2026),
+        fiscalYearBounds: jest.fn().mockResolvedValue({
+          start: new Date('2026-01-01'),
+          end: new Date('2026-12-31'),
+        }),
+      } as unknown as CompanyService,
+    ).generate(AS_OF);
+    expect(balances.snapshot).toHaveBeenCalledTimes(1);
+    const asOfCalls = balances.balancesAsOf.mock.calls as unknown[][];
+    const fyCalls = balances.movementsBetween.mock.calls as unknown[][];
+    expect(asOfCalls[0][1]).toMatchObject({
+      tx: SNAPSHOT_TX,
+    });
+    expect(fyCalls[0][2]).toMatchObject({
+      tx: SNAPSHOT_TX,
+    });
   });
 });

@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { PrismaService } from '../../common/prisma/prisma.service';
+import {
+  PrismaService,
+  REPORT_SNAPSHOT_TX,
+} from '../../common/prisma/prisma.service';
 import { AccountsService } from '../accounts/accounts.service';
 import { truncateToUtcDay } from '../../common/dates/utc-day';
 import { Money } from '../../common/money/money';
@@ -75,6 +78,19 @@ export class BalancesService {
     private readonly prisma: PrismaService,
     private readonly accounts: AccountsService,
   ) {}
+
+  /**
+   * Run a multi-query report on ONE consistent snapshot: a READ ONLY,
+   * REPEATABLE READ transaction whose client every query must receive (pass it
+   * as `opts.tx`). Without it each query reads on its own pooled connection
+   * under READ COMMITTED, and a post committing mid-request can make the report
+   * internally inconsistent (cash flow not reconciling, GL opening + lines ≠
+   * closing). Reports are GETs — never under an idempotency context — and the
+   * read-only transaction never marks a key anyway.
+   */
+  snapshot<T>(fn: (tx: LedgerTx) => Promise<T>): Promise<T> {
+    return this.prisma.transaction(fn, REPORT_SNAPSHOT_TX);
+  }
 
   /**
    * Truncate to UTC midnight so an as-of date carrying a time-of-day still
@@ -200,15 +216,17 @@ export class BalancesService {
   async accountBalance(
     accountId: string,
     asOf: Date,
+    opts: Pick<BalanceQueryOpts, 'tx'> = {},
   ): Promise<{
     accountId: string;
     debit: string;
     credit: string;
     balance: string;
   }> {
-    const account = await this.accounts.findById(accountId);
+    const account = await this.accounts.findById(accountId, opts.tx);
     const day = this.toUtcDay(asOf);
-    const rows = await this.prisma.$queryRaw<
+    const client = opts.tx ?? this.prisma;
+    const rows = await client.$queryRaw<
       { debit: Prisma.Decimal; credit: Prisma.Decimal }[]
     >`
       SELECT COALESCE(SUM(jl.debit), 0) AS debit, COALESCE(SUM(jl.credit), 0) AS credit

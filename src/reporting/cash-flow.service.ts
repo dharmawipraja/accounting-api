@@ -5,6 +5,7 @@ import {
   AccountBalanceRow,
 } from '../ledger/balances/balances.service';
 import { truncateToUtcDay } from '../common/dates/utc-day';
+import type { LedgerTx } from '../common/prisma/prisma.service';
 
 export interface CashFlowLine {
   code: string;
@@ -31,12 +32,18 @@ export class CashFlowService {
       );
   }
 
-  async generate(from: Date, to: Date) {
+  /** All four aggregates read one snapshot (see BalancesService.snapshot). */
+  generate(from: Date, to: Date) {
+    return this.balances.snapshot((tx) => this.build(from, to, tx));
+  }
+
+  private async build(from: Date, to: Date, tx: LedgerTx) {
     // Flows exclude year-end CLOSING entries (P&L → Laba Ditahan is not cash
     // activity) and OPENING entries (beginning balances, folded into kasAwal).
     const movements = await this.balances.movementsBetween(from, to, {
       excludeClosing: true,
       excludeOpening: true,
+      tx,
     });
     const nonCash = movements.filter((r) => r.role !== 'CASH');
 
@@ -86,14 +93,17 @@ export class CashFlowService {
     // it (all movements minus the flow movements), so `reconciles` still ties.
     const allMovements = await this.balances.movementsBetween(from, to, {
       excludeClosing: true,
+      tx,
     });
     const openingCash = this.cashBalance(allMovements).subtract(
       this.cashBalance(movements),
     );
     const kasAwal = this.cashBalance(
-      await this.balances.balancesAsOf(dayBefore),
+      await this.balances.balancesAsOf(dayBefore, { tx }),
     ).add(openingCash);
-    const kasAkhir = this.cashBalance(await this.balances.balancesAsOf(to));
+    const kasAkhir = this.cashBalance(
+      await this.balances.balancesAsOf(to, { tx }),
+    );
 
     return {
       from: from.toISOString().slice(0, 10),

@@ -124,6 +124,12 @@ One stable error envelope, no leaked internals.
   422 if from > to), `optionalDateRange(from?, to?)`. These are the shared
   controller date-boundary seam — don't inline `new Date(x)` in controllers.
 
+- **A report that issues more than one query reads one snapshot.** Wrap its
+  reads in `BalancesService.snapshot(async (tx) => …)` and pass `tx` to every
+  query (`BalanceQueryOpts.tx`, `accountBalance(id, asOf, { tx })`, raw
+  `tx.$queryRaw`) — never mix in a query on the base client, which would read
+  outside the snapshot (and hold a second pooled connection).
+
 ## 4. Idempotency
 
 - **Money-movers and document/payment creates require an `Idempotency-Key`

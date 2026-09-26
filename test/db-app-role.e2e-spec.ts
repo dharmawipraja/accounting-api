@@ -141,6 +141,18 @@ describe('DB app role — accounting_app is least-privilege and runs the app (e2
       .get('/v1/ledger/trial-balance?asOf=2026-12-31')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
+    // Multi-query reports run in a READ ONLY REPEATABLE READ snapshot
+    // transaction — which accounting_app must be able to open.
+    for (const url of [
+      '/v1/reports/cash-flow?from=2026-01-01&to=2026-12-31',
+      '/v1/reports/balance-sheet?asOf=2026-12-31',
+      `/v1/reports/general-ledger?accountId=${kas}&from=2026-01-01&to=2026-12-31`,
+    ]) {
+      await request(server)
+        .get(url)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+    }
 
     // The audit interceptor INSERTed as accounting_app (fire-and-forget → poll).
     let auditRows = 0;

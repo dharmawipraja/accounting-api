@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from './prisma.service';
+import { PrismaService, REPORT_SNAPSHOT_TX } from './prisma.service';
 import { idempotencyContext } from '../idempotency/idempotency-context';
 import { ConflictDomainError } from '../errors/domain-errors';
 
@@ -17,6 +17,7 @@ function makeService(markedRows: number) {
   const svc = new PrismaService(config);
   const statements: unknown[][] = [];
   const queued: (() => void)[] = [];
+  const txOptions: unknown[] = [];
   const tx = {
     $executeRaw: (strings: TemplateStringsArray, ...values: unknown[]) => {
       statements.push([strings.join('?'), ...values]);
@@ -26,8 +27,9 @@ function makeService(markedRows: number) {
   // Defer the callback to a queue drained OUTSIDE the caller's ALS context —
   // how a driver/pool may schedule it.
   const client = {
-    $transaction: (cb: (t: typeof tx) => Promise<unknown>) =>
+    $transaction: (cb: (t: typeof tx) => Promise<unknown>, opts?: unknown) =>
       new Promise((resolve, reject) => {
+        txOptions.push(opts);
         queued.push(() => {
           cb(tx).then(resolve, reject);
         });
@@ -36,7 +38,7 @@ function makeService(markedRows: number) {
   Object.defineProperty(svc, 'client', { value: client });
   const drainOutsideContext = () =>
     idempotencyContext.exit(() => queued.splice(0).forEach((f) => f()));
-  return { svc, statements, drainOutsideContext };
+  return { svc, statements, txOptions, drainOutsideContext };
 }
 
 describe('PrismaService.transaction idempotency mark', () => {
@@ -77,5 +79,28 @@ describe('PrismaService.transaction idempotency mark', () => {
     drainOutsideContext();
     await expect(pending).resolves.toBe(7);
     expect(statements).toHaveLength(0);
+  });
+
+  it('readOnly: SET TRANSACTION READ ONLY runs first, no mark even under an idempotency context, and readOnly is not forwarded to Prisma', async () => {
+    const { svc, statements, txOptions, drainOutsideContext } = makeService(1);
+    const seenFirst: unknown[][] = [];
+    const pending = idempotencyContext.run(ctx, () =>
+      svc.transaction(
+        () => {
+          seenFirst.push(...statements);
+          return Promise.resolve('report');
+        },
+        { ...REPORT_SNAPSHOT_TX },
+      ),
+    );
+    drainOutsideContext();
+    await expect(pending).resolves.toBe('report');
+    expect(seenFirst).toEqual([['SET TRANSACTION READ ONLY']]);
+    expect(statements).toEqual([['SET TRANSACTION READ ONLY']]);
+    expect(txOptions[0]).toEqual({
+      isolationLevel: 'RepeatableRead',
+      maxWait: 5_000,
+      timeout: 30_000,
+    });
   });
 });

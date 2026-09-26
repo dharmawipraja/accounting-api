@@ -843,6 +843,12 @@ no auth.
 
 ### Reports (all read, any auth)
 
+Every report is **snapshot-consistent**: all of a report's queries read one
+database snapshot (a read-only REPEATABLE READ transaction), so a posting that
+commits while a report is being built is either entirely in it or entirely out
+of it — never half (the next request sees it). Totals inside one response always
+tie (`reconciles`, `balanced`, GL opening + lines = closing).
+
 - `GET    /v1/reports/balance-sheet?asOf=` · any · Neraca — pre-closing view:
   a year-end closing entry dated **on** `asOf` is ignored, so Neraca at the
   fiscal year-end shows the year's profit as Laba (Rugi) Berjalan /
@@ -859,7 +865,12 @@ no auth.
 - `GET    /v1/reports/ap-aging?asOf=` · any · AP aging — same `truncated` flag
 - `GET    /v1/reports/cash-flow?from=&to=` · any · Arus Kas — closing entries
   excluded; opening-balance (Saldo Awal) entries dated inside the range are
-  part of `kasAwal`, not operating/financing flows
+  part of `kasAwal`, not operating/financing flows. **Intended:** `kasAwal` =
+  cash balance at the day before `from` **plus** cash booked by OPENING entries
+  dated inside `[from, to]`, so when the range contains Saldo Awal entries
+  (e.g. a company that started bookkeeping mid-range) `kasAwal` is **not** the
+  same as the Kas balance on `from − 1` — don't cross-check it against the
+  trial balance of the previous day in that case. `reconciles` still ties.
 
 ### Sales invoices
 

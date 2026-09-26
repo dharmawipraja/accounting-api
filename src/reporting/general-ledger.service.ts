@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { PrismaService } from '../common/prisma/prisma.service';
+import type { LedgerTx } from '../common/prisma/prisma.service';
 import { Money } from '../common/money/money';
 import { AccountsService } from '../ledger/accounts/accounts.service';
 import { BalancesService } from '../ledger/balances/balances.service';
@@ -25,13 +25,30 @@ export const GL_MAX_RANGE_DAYS = 366;
 @Injectable()
 export class GeneralLedgerService {
   constructor(
-    private readonly prisma: PrismaService,
     private readonly accounts: AccountsService,
     private readonly balances: BalancesService,
   ) {}
 
   private day(d: Date): Date {
     return truncateToUtcDay(d);
+  }
+
+  /** The account's posted lines over [from, to], capped at maxLines + 1. */
+  private lines(
+    tx: LedgerTx,
+    accountId: string,
+    from: Date,
+    to: Date,
+    maxLines: number,
+  ): Promise<LineRow[]> {
+    return tx.$queryRaw<LineRow[]>(Prisma.sql`
+      SELECT je.date, je.entry_ref, jl.description, jl.debit, jl.credit
+      FROM journal_lines jl
+      JOIN journal_entries je ON je.id = jl.journal_entry_id
+      WHERE jl.account_id = ${accountId} AND ${POSTED_JE}
+        AND je.date >= ${this.day(from)} AND je.date <= ${this.day(to)}
+      ORDER BY je.date ASC, je.entry_number ASC, jl.line_no ASC
+      LIMIT ${maxLines + 1}`);
   }
 
   async generate(
@@ -42,17 +59,23 @@ export class GeneralLedgerService {
   ) {
     const account = await this.accounts.findById(accountId); // 404 if missing
     const dayBefore = new Date(this.day(from).getTime() - 86_400_000);
-    const opening = await this.balances.accountBalance(accountId, dayBefore);
+    // Opening, lines and closing read one snapshot (BalancesService.snapshot),
+    // so opening + Σlines always ties to closing (when not truncated).
+    const { opening, rows, closing } = await this.balances.snapshot(
+      async (tx) => ({
+        opening: await this.balances.accountBalance(accountId, dayBefore, {
+          tx,
+        }),
+        rows: await this.lines(tx, accountId, from, to, maxLines),
+        // Closing comes from the balance aggregate, not the running sum, so
+        // it stays the true as-of balance even when the list is truncated.
+        closing: await this.balances.accountBalance(accountId, this.day(to), {
+          tx,
+        }),
+      }),
+    );
     let running = Money.of(opening.balance);
 
-    const rows = await this.prisma.$queryRaw<LineRow[]>(Prisma.sql`
-      SELECT je.date, je.entry_ref, jl.description, jl.debit, jl.credit
-      FROM journal_lines jl
-      JOIN journal_entries je ON je.id = jl.journal_entry_id
-      WHERE jl.account_id = ${accountId} AND ${POSTED_JE}
-        AND je.date >= ${this.day(from)} AND je.date <= ${this.day(to)}
-      ORDER BY je.date ASC, je.entry_number ASC, jl.line_no ASC
-      LIMIT ${maxLines + 1}`);
     const truncated = rows.length > maxLines;
     const included = truncated ? rows.slice(0, maxLines) : rows;
 
@@ -72,10 +95,6 @@ export class GeneralLedgerService {
         runningBalance: running.toPersistence(),
       };
     });
-
-    // Closing comes from the balance aggregate, not the running sum, so it
-    // stays the true as-of balance even when the line list is truncated.
-    const closing = await this.balances.accountBalance(accountId, this.day(to));
 
     return {
       account: {

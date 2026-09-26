@@ -148,8 +148,13 @@ export class AccountsService implements OnModuleInit {
     return this.prisma.client.account.findMany({ orderBy: { code: 'asc' } });
   }
 
-  async findById(id: string): Promise<Account> {
-    const account = await this.prisma.client.account.findFirst({
+  /** `db`: a transaction client to read on (e.g. a report snapshot) — keeps
+   *  the lookup on the caller's connection instead of a second pooled one. */
+  async findById(
+    id: string,
+    db: LedgerTx = this.prisma.client,
+  ): Promise<Account> {
+    const account = await db.account.findFirst({
       where: { id },
     });
     if (!account) throw new NotFoundDomainError('Account not found', { id });

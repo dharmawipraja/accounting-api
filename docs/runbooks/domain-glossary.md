@@ -368,6 +368,16 @@ Every account's total debits and credits as of a date; the grand `totalDebit` mu
 `totalCredit` (the double-entry proof for the whole ledger).
 - `BalancesService.trialBalance` in `src/ledger/balances/balances.service.ts`.
 
+### Report snapshot consistency
+Every multi-query report (Neraca, Arus Kas, Buku Besar) runs its reads through
+`BalancesService.snapshot(fn)` — one READ ONLY, REPEATABLE READ transaction
+(`REPORT_SNAPSHOT_TX` in `src/common/prisma/prisma.service.ts`: maxWait 5s, timeout
+30s) whose client is passed to every query as `opts.tx`. A post committing
+mid-request is therefore either wholly in or wholly out of the report. Read-only RR
+takes only ACCESS SHARE locks (never blocks posting), can't hit serialization
+failures, and never marks an idempotency key. Single-query reports (trial balance,
+Laba Rugi, aging) are already consistent on their own.
+
 ### Balance sheet / Neraca
 Assets, liabilities, and equity as of a date, grouped by subtype. Equity includes a
 synthetic **Laba (Rugi) Berjalan** line = cumulative P&L (`Σ credit−debit` over
@@ -395,7 +405,10 @@ and ties to cash. The `reconciles` flag asserts **opening cash + net change = cl
 cash** (`kasAwal + netChange == kasAkhir`), where cash = `role === 'CASH'` accounts.
 Flows exclude `CLOSING` entries (and their reversals) and `OPENING` entries; cash booked
 by `OPENING` entries inside the range is added to `kasAwal` (beginning balance, not an
-operating/financing flow). Accumulated depreciation is `cashFlowCategory: NONE` → it
+operating/financing flow). This is **intended**: `kasAwal` = cash as of `from − 1` +
+in-range OPENING cash, so with in-range Saldo Awal entries it differs from the plain
+Kas balance on the day before `from` (the four aggregates are computed as
+`movementsBetween` with/without OPENING, so `reconciles` still ties). Accumulated depreciation is `cashFlowCategory: NONE` → it
 lands in operating as the non-cash add-back.
 - `CashFlowService.generate` (`src/reporting/cash-flow.service.ts`).
 
