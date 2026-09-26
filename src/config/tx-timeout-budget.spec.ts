@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync, statSync } from 'fs';
+import { join } from 'path';
 import { REPORT_SNAPSHOT_TX } from '../common/prisma/prisma.service';
 import { POSTING_TX_OPTIONS } from '../ledger/posting/posting.service';
 
@@ -28,5 +30,26 @@ describe('interactive-transaction timeout budget', () => {
     expect(o.maxWait).toBeDefined();
     expect(o.timeout).toBeDefined();
     expect(o.maxWait! + o.timeout!).toBeLessThan(requestTimeout);
+  });
+});
+
+describe('interactive-transaction options come from a budgeted constant', () => {
+  it('no src/ file passes a literal { maxWait: … } besides the constants above', () => {
+    const root = join(__dirname, '..');
+    const walk = (dir: string): string[] =>
+      readdirSync(dir).flatMap((f) => {
+        const p = join(dir, f);
+        return statSync(p).isDirectory() ? walk(p) : [p];
+      });
+    const offenders = walk(root)
+      .filter((f) => f.endsWith('.ts') && !f.endsWith('.spec.ts'))
+      .filter((f) => /maxWait:\s*\d/.test(readFileSync(f, 'utf8')))
+      .map((f) => f.slice(root.length + 1))
+      .filter(
+        (f) =>
+          f !== join('ledger', 'posting', 'posting.service.ts') &&
+          f !== join('common', 'prisma', 'prisma.service.ts'),
+      );
+    expect(offenders).toEqual([]);
   });
 });

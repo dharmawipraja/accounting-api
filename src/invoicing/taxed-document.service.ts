@@ -10,7 +10,10 @@ import {
 import { BusinessPartnersService } from './business-partners.service';
 import { DocumentPostingService } from './document-posting.service';
 import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
-import { LedgerTx } from '../ledger/posting/posting.service';
+import {
+  LedgerTx,
+  POSTING_TX_OPTIONS,
+} from '../ledger/posting/posting.service';
 import { trigramSearch } from '../common/search/trigram-search';
 import { listPaginated } from '../common/pagination/paginated';
 import {
@@ -190,7 +193,7 @@ export class TaxedDocumentService {
       },
       // An edit racing a post waits out the post's row lock here; give it room
       // to reach its clean 422 instead of Prisma's 5s default (→ 500 under load).
-      { maxWait: 5000, timeout: 20000 },
+      POSTING_TX_OPTIONS,
     );
     return this.getById(spec, id);
   }

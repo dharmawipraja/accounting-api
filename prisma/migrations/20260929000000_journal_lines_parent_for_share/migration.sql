@@ -11,8 +11,12 @@
 -- SELECT ... FOR UPDATE), so the line write now waits for the promotion to
 -- finish and then re-reads the committed parent (READ COMMITTED re-check):
 -- posted by another tx -> rejected. If the line write takes the lock first, the
--- promotion waits for it and postDraft re-reads the draft's lines in its own
--- tx, so the promoted entry includes (and balance-checks) the new line.
+-- promotion waits for it and the promoted entry then includes the new line.
+-- postDraft does NOT re-validate that line: its app-level balance and account
+-- checks run on the lines it read before its transaction. The line is still
+-- covered by the deferred journal_entries_balanced constraint trigger
+-- (20260926300000_ledger_integrity), which re-sums the committed lines at the
+-- promotion's COMMIT, so an unbalanced result is rejected there (23514).
 -- Rows the SAME transaction already locks (a post inserting lines into the
 -- entry it just created/updated) are unaffected — a tx never conflicts with
 -- its own locks. Behaviour is otherwise identical to the previous function.

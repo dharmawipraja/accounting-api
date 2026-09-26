@@ -2,7 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { YearEndClosing } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { Money } from '../common/money/money';
-import { PostingService, LedgerTx } from '../ledger/posting/posting.service';
+import {
+  PostingService,
+  LedgerTx,
+  POSTING_TX_OPTIONS,
+} from '../ledger/posting/posting.service';
 import { BalancesService } from '../ledger/balances/balances.service';
 import { CompanyService } from '../company/company.service';
 import { PostLineInput } from '../ledger/posting/posting.types';
@@ -97,8 +101,9 @@ export class YearEndCloseService {
           update: { ...closed, reopenedAt: null, reopenedBy: null },
         });
       },
-      // The lock wait + P&L aggregate run inside the tx: allow beyond the 5s default.
-      { maxWait: 5000, timeout: 20000 },
+      // The lock wait + P&L aggregate run inside the tx: allow beyond the 5s
+      // default, within the budget asserted by tx-timeout-budget.spec.
+      POSTING_TX_OPTIONS,
     );
     return this.getStatus(fiscalYear) as Promise<YearEndClosing>;
   }
@@ -188,38 +193,35 @@ export class YearEndCloseService {
         fiscalYear,
       });
     }
-    await this.prisma.transaction(
-      async (tx) => {
-        // Serialize against concurrent reopen/close and re-read the closing row
-        // under the lock: a reopen + re-close that committed after the pre-read
-        // above replaced closingEntryId, so the reversal must target the id
-        // read HERE (never double-reverse a stale entry or leave the current
-        // one standing).
-        const locked = await this.lockAndReadClosing(tx, fiscalYear);
-        if (locked?.status !== 'CLOSED') {
-          throw new ValidationFailedError('Fiscal year is not closed', {
-            fiscalYear,
-          });
-        }
-        if (locked.closingEntryId) {
-          // Same accepted trade-off as close(): prepareReversal's plain reads
-          // borrow a second pool connection; the closing entry is committed
-          // and cannot change while we hold the exclusive year lock.
-          const prepared = await this.posting.prepareReversal(
-            locked.closingEntryId,
-            reopenedBy,
-            undefined,
-            { allowClosedYear: true },
-          );
-          await this.posting.reverseInTx(tx, prepared);
-        }
-        await tx.yearEndClosing.update({
-          where: { fiscalYear },
-          data: { status: 'OPEN', reopenedAt: new Date(), reopenedBy },
+    await this.prisma.transaction(async (tx) => {
+      // Serialize against concurrent reopen/close and re-read the closing row
+      // under the lock: a reopen + re-close that committed after the pre-read
+      // above replaced closingEntryId, so the reversal must target the id
+      // read HERE (never double-reverse a stale entry or leave the current
+      // one standing).
+      const locked = await this.lockAndReadClosing(tx, fiscalYear);
+      if (locked?.status !== 'CLOSED') {
+        throw new ValidationFailedError('Fiscal year is not closed', {
+          fiscalYear,
         });
-      },
-      { maxWait: 5000, timeout: 20000 },
-    );
+      }
+      if (locked.closingEntryId) {
+        // Same accepted trade-off as close(): prepareReversal's plain reads
+        // borrow a second pool connection; the closing entry is committed
+        // and cannot change while we hold the exclusive year lock.
+        const prepared = await this.posting.prepareReversal(
+          locked.closingEntryId,
+          reopenedBy,
+          undefined,
+          { allowClosedYear: true },
+        );
+        await this.posting.reverseInTx(tx, prepared);
+      }
+      await tx.yearEndClosing.update({
+        where: { fiscalYear },
+        data: { status: 'OPEN', reopenedAt: new Date(), reopenedBy },
+      });
+    }, POSTING_TX_OPTIONS);
     return this.getStatus(fiscalYear) as Promise<YearEndClosing>;
   }
 }
