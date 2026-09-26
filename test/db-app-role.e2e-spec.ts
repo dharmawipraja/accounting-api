@@ -10,6 +10,9 @@ import { AccountsService } from '../src/ledger/accounts/accounts.service';
 import { PeriodsService } from '../src/ledger/periods/periods.service';
 import { CompanyService } from '../src/company/company.service';
 import { UsersService } from '../src/users/users.service';
+import { BusinessPartnersService } from '../src/invoicing/business-partners.service';
+import { RefreshTokenService } from '../src/auth/refresh-token.service';
+import { IdempotencyService } from '../src/common/idempotency/idempotency.service';
 import { bootstrapTestApp } from './e2e-helpers';
 import type { TestDb } from './testcontainers';
 
@@ -245,11 +248,193 @@ describe('DB app role — accounting_app is least-privilege and runs the app (e2
       await appClient.query("UPDATE future_migration_tbl SET v = 'y'");
       const r = await appClient.query('SELECT v FROM future_migration_tbl');
       expect(r.rows).toEqual([{ v: 'y' }]);
-      await appClient.query('DELETE FROM future_migration_tbl');
+      // Default privileges carry no DELETE: a new table is protected from hard
+      // deletes until it is deliberately added to app-role.sql's allow-list.
+      await expectDenied('DELETE FROM future_migration_tbl');
       await expectDenied('TRUNCATE future_migration_tbl');
     } finally {
       await db.prisma.$executeRawUnsafe('DROP TABLE future_migration_tbl');
     }
+  });
+
+  // AUDIT3 iteration-2 (Task 16): DELETE is granted only on the tables the app
+  // really hard-deletes (grep of every .delete/.deleteMany/DELETE FROM in src/).
+  // `DELETE ... WHERE false` checks the privilege without touching rows.
+  const DELETE_PROTECTED = [
+    'users',
+    'company_settings',
+    'accounts',
+    'journal_sequences',
+    'journal_entries',
+    'journal_lines',
+    'tax_codes',
+    'business_partners',
+    'sales_invoices',
+    'purchase_bills',
+    'payments',
+    'payment_allocations',
+    'document_sequences',
+    'year_end_closings',
+    'audit_log',
+  ];
+  const DELETE_ALLOWED = [
+    'sales_invoice_lines', // draft line replacement (PATCH)
+    'purchase_bill_lines', // draft line replacement (PATCH)
+    'accounting_periods', // OPEN-period regeneration on fiscalYearStartMonth change
+    'idempotency_keys', // release / stale reclaim / retention purge
+    'refresh_tokens', // expiry purge
+  ];
+
+  it.each(DELETE_PROTECTED)('DELETE on %s is denied', async (table) => {
+    await expectDenied(`DELETE FROM ${table} WHERE false`);
+  });
+
+  it.each(DELETE_ALLOWED)(
+    'DELETE on %s (a table the app hard-deletes) is allowed',
+    async (table) => {
+      await expect(
+        appClient.query(`DELETE FROM ${table} WHERE false`),
+      ).resolves.toBeDefined();
+    },
+  );
+
+  it('every public table is classified (protected or allow-listed)', async () => {
+    const { rows } = await appClient.query<{ t: string }>(
+      `SELECT tablename AS t FROM pg_tables
+        WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'
+        ORDER BY 1`,
+    );
+    expect(rows.map((r) => r.t).sort()).toEqual(
+      [...DELETE_PROTECTED, ...DELETE_ALLOWED].sort(),
+    );
+  });
+
+  it('ensure-app-role re-revokes a DELETE left over from an older deploy (it granted DELETE on everything)', async () => {
+    await db.prisma.$executeRawUnsafe(
+      'GRANT DELETE ON TABLE accounts, journal_entries TO accounting_app',
+    );
+    await db.prisma.$executeRawUnsafe(
+      'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT DELETE ON TABLES TO accounting_app',
+    );
+    expect(ensureAppRole(db.url)).toContain('up to date');
+    await expectDenied('DELETE FROM accounts WHERE false');
+    await expectDenied('DELETE FROM journal_entries WHERE false');
+    const { rows } = await appClient.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM pg_default_acl d
+         CROSS JOIN LATERAL aclexplode(d.defaclacl) a
+        WHERE d.defaclobjtype = 'r' AND a.privilege_type = 'DELETE'
+          AND a.grantee = 'accounting_app'::regrole`,
+    );
+    expect(rows[0].n).toBe('0');
+  });
+
+  it('document flows that hard-delete only allow-listed rows work as accounting_app (draft PATCH, post, pay, void, soft-delete drafts, purges)', async () => {
+    const server = app.getHttpServer() as App;
+    const token = (
+      (
+        await request(server)
+          .post('/v1/auth/login')
+          .send({ email: 'approver@approle.test', password: 'secret123' })
+          .expect(200)
+      ).body as { accessToken: string }
+    ).accessToken;
+    const auth = (r: request.Test) =>
+      r
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', randomUUID());
+    const { data: accounts } = await app.get(AccountsService).list();
+    const acc = Object.fromEntries(accounts.map((a) => [a.code, a.id]));
+    const partner = await app.get(BusinessPartnersService).create({
+      code: 'APPROLE-1',
+      name: 'App Role Partner',
+      isCustomer: true,
+      isVendor: true,
+    });
+    const line = (accountId: string, unitPrice: string) => ({
+      description: 'Line',
+      accountId,
+      quantity: '1',
+      unitPrice,
+      taxCodeIds: [],
+    });
+
+    // Sales invoice: draft → PATCH lines (hard-deletes the draft's lines) → post.
+    const inv = (
+      await auth(request(server).post('/v1/sales-invoices'))
+        .send({
+          partnerId: partner.id,
+          date: '2026-03-10',
+          lines: [line(acc['4-1000'], '100000')],
+        })
+        .expect(201)
+    ).body as { id: string };
+    await auth(request(server).patch(`/v1/sales-invoices/${inv.id}`))
+      .send({ lines: [line(acc['4-1000'], '250000')] })
+      .expect(200);
+    await auth(
+      request(server).post(`/v1/sales-invoices/${inv.id}/post`),
+    ).expect(200);
+
+    // Receipt: draft → post → void; then the invoice can be voided.
+    const pay = (
+      await auth(request(server).post('/v1/payments'))
+        .send({
+          direction: 'RECEIPT',
+          partnerId: partner.id,
+          date: '2026-03-12',
+          cashAccountId: acc['1-1000'],
+          allocations: [{ salesInvoiceId: inv.id, amount: '250000' }],
+        })
+        .expect(201)
+    ).body as { id: string };
+    await auth(request(server).post(`/v1/payments/${pay.id}/post`)).expect(200);
+    await auth(request(server).post(`/v1/payments/${pay.id}/void`)).expect(200);
+    await auth(
+      request(server).post(`/v1/sales-invoices/${inv.id}/void`),
+    ).expect(200);
+
+    // Purchase bill: draft → PATCH lines → soft-delete (an UPDATE).
+    const bill = (
+      await auth(request(server).post('/v1/purchase-bills'))
+        .send({
+          partnerId: partner.id,
+          date: '2026-03-10',
+          vendorInvoiceNo: 'APPROLE-VI-1',
+          lines: [line(acc['5-2000'], '50000')],
+        })
+        .expect(201)
+    ).body as { id: string };
+    await auth(request(server).patch(`/v1/purchase-bills/${bill.id}`))
+      .send({ lines: [line(acc['5-2000'], '60000')] })
+      .expect(200);
+    await auth(request(server).delete(`/v1/purchase-bills/${bill.id}`)).expect(
+      204,
+    );
+
+    // Draft journal entry soft-delete (an UPDATE).
+    const je = (
+      await auth(request(server).post('/v1/ledger/journal-entries'))
+        .send({
+          date: '2026-03-10',
+          description: 'draft (app role)',
+          lines: [
+            { accountId: acc['1-1000'], debit: '1000' },
+            { accountId: acc['3-1000'], credit: '1000' },
+          ],
+        })
+        .expect(201)
+    ).body as { id: string };
+    await auth(
+      request(server).delete(`/v1/ledger/journal-entries/${je.id}`),
+    ).expect(204);
+
+    // Housekeeping purges hard-delete allow-listed tables.
+    await expect(app.get(RefreshTokenService).purgeExpired()).resolves.toEqual(
+      expect.any(Number),
+    );
+    await expect(
+      app.get(IdempotencyService).purgeCompleted(0),
+    ).resolves.toEqual(expect.any(Number));
   });
 
   it('a failing CREATE/ALTER ROLE never echoes the password in the error (message, detail or CONTEXT)', async () => {

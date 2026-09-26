@@ -101,8 +101,13 @@ Deploy a tagged release on a single Docker host (Caddy auto-HTTPS, migrate-on-de
 
 ```bash
 git checkout v1.0.0
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+COMPOSE='docker compose -f docker-compose.yml -f docker-compose.prod.yml'
+$COMPOSE build              # new api + migrate images (nothing restarts yet)
+$COMPOSE stop api           # the OLD api must not run against the NEW schema
+$COMPOSE up -d --no-build   # migrate → new api → caddy/backup
 ```
+
+Stop `api` before `migrate` runs on every upgrade — the old api must not serve against the new schema (details in the deploy runbook).
 
 See [`docs/runbooks/deploy.md`](docs/runbooks/deploy.md) and [`docs/runbooks/backup-and-restore.md`](docs/runbooks/backup-and-restore.md) for the full procedure.
 

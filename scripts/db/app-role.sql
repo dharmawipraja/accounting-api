@@ -12,7 +12,8 @@
 -- (postgres docker-entrypoint, fresh volume only).
 --
 -- Result: LOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, owns nothing;
--- SELECT/INSERT/UPDATE/DELETE on every table in `public` (now and future),
+-- SELECT/INSERT/UPDATE on every table in `public` (now and future), DELETE only
+-- on the allow-list below (the tables the app really hard-deletes),
 -- USAGE/SELECT/UPDATE on sequences; no TRUNCATE, no DDL (no CREATE on schema),
 -- no access to _prisma_migrations, and INSERT/SELECT only on the append-only
 -- audit_log.
@@ -53,15 +54,49 @@ RESET accounting.app_db_password;
 GRANT USAGE ON SCHEMA public TO accounting_app;
 REVOKE CREATE ON SCHEMA public FROM accounting_app;
 
--- Existing objects.
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO accounting_app;
+-- Existing objects. No DELETE here: it is granted per table below.
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO accounting_app;
 GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO accounting_app;
 
--- Future objects created by the owner (i.e. by later migrations).
+-- Future objects created by the owner (i.e. by later migrations). No DELETE:
+-- a new table is protected from hard deletes until it is added to the
+-- allow-list below. The REVOKE undoes the DELETE default an older version of
+-- this file granted.
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO accounting_app;
+  GRANT SELECT, INSERT, UPDATE ON TABLES TO accounting_app;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  REVOKE DELETE ON TABLES FROM accounting_app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO accounting_app;
+
+-- Hard DELETE: revoke everywhere (older versions of this file granted it on
+-- every table), then grant it back ONLY where the app hard-deletes. Everything
+-- else — posted documents, the ledger, accounts, partners, tax codes, users,
+-- sequences, year-end closings — is soft-deleted (an UPDATE) or never deleted.
+-- Allow-list (keep in sync with every .delete/.deleteMany/DELETE FROM in src/;
+-- test/db-app-role.e2e-spec.ts classifies every table):
+--   sales_invoice_lines, purchase_bill_lines  draft line replacement (PATCH)
+--   accounting_periods                         OPEN-period regeneration when
+--                                              fiscalYearStartMonth changes
+--   idempotency_keys                           release / stale reclaim / purge
+--   refresh_tokens                             expiry purge
+REVOKE DELETE ON ALL TABLES IN SCHEMA public FROM accounting_app;
+DO $$
+DECLARE
+  t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'sales_invoice_lines', 'purchase_bill_lines', 'accounting_periods',
+    'idempotency_keys', 'refresh_tokens'
+  ] LOOP
+    -- Guarded: on a fresh volume (initdb hook) no table exists yet; the migrate
+    -- service re-runs this file after `prisma migrate deploy`.
+    IF to_regclass(format('public.%I', t)) IS NOT NULL THEN
+      EXECUTE format('GRANT DELETE ON TABLE public.%I TO accounting_app', t);
+    END IF;
+  END LOOP;
+END
+$$;
 
 -- Tighten below plain DML where the app never needs it.
 DO $$
@@ -70,7 +105,7 @@ BEGIN
     REVOKE ALL ON TABLE public._prisma_migrations FROM accounting_app;
   END IF;
   IF to_regclass('public.audit_log') IS NOT NULL THEN
-    REVOKE UPDATE, DELETE ON TABLE public.audit_log FROM accounting_app;
+    REVOKE UPDATE ON TABLE public.audit_log FROM accounting_app;
   END IF;
 END
 $$;

@@ -211,7 +211,10 @@ One stable error envelope, no leaked internals.
 - **Deletes are tombstones.** Use the model `softDelete(where, deletedBy?)`
   method (sets `deletedAt`/`deletedBy`). Hard `delete`/`deleteMany`/`upsert` on a
   `SOFT_DELETE_MODELS` model throws a programmer-error `Error` (→ 500 on
-  purpose) — there is no hard-delete route.
+  purpose) — there is no hard-delete route. In prod the DB enforces it too: the
+  runtime role `accounting_app` has `DELETE` only on an allow-list of tables
+  (`scripts/db/app-role.sql`); a new hard-delete path must extend that list —
+  see `database-and-migrations.md` ("Hard DELETE is an allow-list").
 - **`deleted_at IS NULL` is auto-injected** on `find*`/`count`/`aggregate`/
   `groupBy`/`update*` for the soft-delete models (`User`, `Account`,
   `JournalEntry`, `TaxCode`, `BusinessPartner`, `SalesInvoice`, `PurchaseBill`,

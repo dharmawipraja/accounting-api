@@ -13,7 +13,10 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: cd-${{ github.ref }}
+  # ONE global group: there is a single production host, so two deploys of
+  # different refs (e.g. a tag and main) must never run at the same time.
+  # Queued, never cancelled mid-deploy.
+  group: cd-deploy
   cancel-in-progress: false
 
 jobs:

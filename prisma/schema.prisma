@@ -257,6 +257,8 @@ model JournalEntry {
   // rows are unaffected). Blocks concurrent/duplicate reversals at the DB layer.
   @@unique([reversalOfId])
   @@index([date])
+  @@index([periodId])
+  @@index([reversedById])
   @@index([status])
   @@index([deletedAt])
   @@index([entryRef(ops: raw("gin_trgm_ops"))], type: Gin, map: "journal_entries_entry_ref_trgm")
@@ -406,10 +408,12 @@ model SalesInvoice {
   allocations      PaymentAllocation[]
 
   // + hand-authored CHECK sales_invoices_amount_paid_range (0 <= amount_paid <= total)
+  // + hand-authored CHECK sales_invoices_journal_entry_iff_not_draft ((status = 'DRAFT') = (journal_entry_id IS NULL))
   @@unique([fiscalYear, invoiceNumber], name: "sales_invoices_fy_number_unique")
   @@index([deletedAt])
   @@index([partnerId])
   @@index([status, date])
+  @@index([journalEntryId])
   @@index([invoiceRef(ops: raw("gin_trgm_ops"))], type: Gin, map: "sales_invoices_invoice_ref_trgm")
   @@index([description(ops: raw("gin_trgm_ops"))], type: Gin, map: "sales_invoices_description_trgm")
   @@map("sales_invoices")
@@ -466,6 +470,7 @@ model PurchaseBill {
   allocations      PaymentAllocation[]
 
   // + hand-authored CHECK purchase_bills_amount_paid_range (0 <= amount_paid <= total)
+  // + hand-authored CHECK purchase_bills_journal_entry_iff_not_draft ((status = 'DRAFT') = (journal_entry_id IS NULL))
   @@unique([fiscalYear, billNumber], name: "purchase_bills_fy_number_unique")
   // + hand-authored partial UNIQUE INDEX purchase_bills_partner_vendor_invoice_norm_live_key
   //   ON (partner_id, lower(btrim(vendor_invoice_no))) WHERE deleted_at IS NULL
@@ -475,6 +480,7 @@ model PurchaseBill {
   @@index([deletedAt])
   @@index([partnerId])
   @@index([status, date])
+  @@index([journalEntryId])
   @@index([billRef(ops: raw("gin_trgm_ops"))], type: Gin, map: "purchase_bills_bill_ref_trgm")
   @@index([vendorInvoiceNo(ops: raw("gin_trgm_ops"))], type: Gin, map: "purchase_bills_vendor_invoice_no_trgm")
   @@index([description(ops: raw("gin_trgm_ops"))], type: Gin, map: "purchase_bills_description_trgm")
@@ -513,6 +519,7 @@ model Payment {
   cashAccountId  String              @map("cash_account_id")
   cashAccount    Account             @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
   // + hand-authored CHECK payments_amount_positive (amount > 0)
+  // + hand-authored CHECK payments_journal_entry_iff_not_draft ((status = 'DRAFT') = (journal_entry_id IS NULL))
   amount         Decimal             @db.Decimal(20, 4)
   description    String?
   status         DocumentStatus      @default(DRAFT)
@@ -533,6 +540,7 @@ model Payment {
   @@unique([direction, fiscalYear, number], name: "payments_direction_fy_number_unique")
   @@index([deletedAt])
   @@index([partnerId])
+  @@index([journalEntryId])
   @@index([ref(ops: raw("gin_trgm_ops"))], type: Gin, map: "payments_ref_trgm")
   @@index([description(ops: raw("gin_trgm_ops"))], type: Gin, map: "payments_description_trgm")
   @@map("payments")
@@ -578,6 +586,7 @@ model YearEndClosing {
   reopenedBy     String?       @map("reopened_by")
   updatedAt      DateTime      @updatedAt @map("updated_at")
 
+  @@index([closingEntryId])
   @@map("year_end_closings")
 }
 

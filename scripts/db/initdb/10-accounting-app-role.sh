@@ -4,7 +4,8 @@
 # privileges before the first migration, so every table the migrate service
 # later creates as the owner is granted automatically. Existing volumes are
 # covered by the migrate service's idempotent step (scripts/db/ensure-app-role.js),
-# which applies the same SQL after every `prisma migrate deploy`.
+# which applies the same SQL after every `prisma migrate deploy` — and is what
+# grants DELETE on the hard-delete allow-list (those tables do not exist yet here).
 #
 # No `exit` here on purpose: the entrypoint *sources* non-executable hooks, and
 # an `exit` would end the entrypoint itself.

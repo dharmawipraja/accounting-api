@@ -118,14 +118,16 @@ Work through this **once**, on the first deploy that includes migrations
 | Role | Used by | Privileges |
 |---|---|---|
 | `accounting` (`POSTGRES_USER`, owner) | `migrate`, `backup`, operators | owns the schema; DDL |
-| `accounting_app` | `api` (`DATABASE_URL` in `docker-compose.prod.yml`) | `SELECT/INSERT/UPDATE/DELETE` on all tables, `USAGE/SELECT/UPDATE` on sequences; **no** TRUNCATE, **no** DDL, not superuser/createdb/createrole, owns nothing, no access to `_prisma_migrations`, INSERT/SELECT only on the append-only `audit_log` |
+| `accounting_app` | `api` (`DATABASE_URL` in `docker-compose.prod.yml`) | `SELECT/INSERT/UPDATE` on all tables, `DELETE` **only** on the hard-delete allow-list (`sales_invoice_lines`, `purchase_bill_lines`, `accounting_periods`, `idempotency_keys`, `refresh_tokens`), `USAGE/SELECT/UPDATE` on sequences; **no** TRUNCATE, **no** DDL, not superuser/createdb/createrole, owns nothing, no access to `_prisma_migrations`, INSERT/SELECT only on the append-only `audit_log` |
 
 - **Where it is created:** `scripts/db/app-role.sql` (idempotent) is applied
   (a) by the postgres init hook `scripts/db/initdb/10-accounting-app-role.sh` on a
   **fresh** data volume, and (b) by the `migrate` service after every
   `prisma migrate deploy` (`node scripts/db/ensure-app-role.js`) — so **existing
   volumes are upgraded on the next deploy** and every table a new migration adds is
-  granted (default privileges cover owner-created future tables as well).
+  granted SELECT/INSERT/UPDATE (default privileges cover owner-created future
+  tables as well). Each run also revokes DELETE everywhere and re-grants it only on
+  the allow-list, so an older deploy's blanket DELETE grant is removed on upgrade.
 - **Env:** `APP_DB_PASSWORD` is required by `db` (init hook), `migrate` (grants step)
   and `api` (its `DATABASE_URL` is
   `postgresql://accounting_app:${APP_DB_PASSWORD}@db:5432/accounting`). `migrate`'s
@@ -147,8 +149,9 @@ Work through this **once**, on the first deploy that includes migrations
   [`backup-and-restore.md`](./backup-and-restore.md) (role + `posted_xid` notes).
 - **Local dev is unaffected:** `.env.development` keeps connecting as the owner
   (see `local-development.md`). Tests (testcontainers) use the container superuser;
-  `test/db-app-role.e2e-spec.ts` proves the app runs as `accounting_app` and that
-  TRUNCATE/DDL are denied.
+  `test/db-app-role.e2e-spec.ts` proves the app runs as `accounting_app` (incl.
+  draft edit → post → pay → void flows), that TRUNCATE/DDL are denied, and that
+  DELETE is denied on every table outside the allow-list.
 
 ## Health & shutdown
 - `api` is healthy when `/ready` returns 200 (DB + Redis reachable — a dependency outage now marks the container unhealthy); `/health` stays a bare liveness probe. Caddy proxies only a started app.

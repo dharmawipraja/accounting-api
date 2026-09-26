@@ -549,6 +549,71 @@ describe('DB integrity — ledger invariants enforced by Postgres (e2e)', () => 
     });
   });
 
+  describe('documents: journal_entry_id set exactly when non-DRAFT (Task 16)', () => {
+    const MIGRATION =
+      '../prisma/migrations/20261002000000_document_journal_link_check_and_fk_indexes/migration.sql';
+
+    it.each([
+      ['sales_invoices', () => invoiceId],
+      ['purchase_bills', () => billId],
+      ['payments', () => paymentId],
+    ])(
+      '%s: rejects POSTED/VOID without a journal entry and a DRAFT carrying one',
+      async (table, id) => {
+        const constraint = new RegExp(`${table}_journal_entry_iff_not_draft`);
+        await expect(
+          runSql(`UPDATE ${table} SET status = 'POSTED' WHERE id = '${id()}'`),
+        ).rejects.toThrow(constraint);
+        await expect(
+          runSql(
+            `UPDATE ${table} SET status = 'VOID', voided_on = date WHERE id = '${id()}'`,
+          ),
+        ).rejects.toThrow(constraint);
+        const entry = await postEntry();
+        await expect(
+          runSql(
+            `UPDATE ${table} SET journal_entry_id = '${entry.id}' WHERE id = '${id()}'`,
+          ),
+        ).rejects.toThrow(constraint);
+      },
+    );
+
+    it('migration pre-check aborts with a clear message when violating rows exist', async () => {
+      const sql = readFileSync(join(__dirname, MIGRATION), 'utf8');
+      const precheck = /DO \$\$[\s\S]*?END \$\$;/.exec(sql)![0];
+      // Drop the constraint inside a rolled-back tx to manufacture a violator.
+      await expect(
+        inTx(async (tx) => {
+          await tx.$executeRawUnsafe(
+            'ALTER TABLE payments DROP CONSTRAINT payments_journal_entry_iff_not_draft',
+          );
+          await tx.$executeRawUnsafe(
+            `UPDATE payments SET status = 'POSTED' WHERE id = '${paymentId}'`,
+          );
+          await tx.$executeRawUnsafe(precheck);
+        }),
+      ).rejects.toThrow(
+        /document_journal_link_check migration aborted.*1 payments rows/,
+      );
+    });
+
+    it('FK columns used by RESTRICT checks / joins are indexed', async () => {
+      const rows = await prisma.client.$queryRaw<{ indexname: string }[]>`
+        SELECT indexname FROM pg_indexes WHERE schemaname = 'public'`;
+      const names = rows.map((r) => r.indexname);
+      expect(names).toEqual(
+        expect.arrayContaining([
+          'journal_entries_period_id_idx',
+          'journal_entries_reversed_by_id_idx',
+          'sales_invoices_journal_entry_id_idx',
+          'purchase_bills_journal_entry_id_idx',
+          'payments_journal_entry_id_idx',
+          'year_end_closings_closing_entry_id_idx',
+        ]),
+      );
+    });
+  });
+
   describe('foreign keys (ON DELETE RESTRICT)', () => {
     const ghost = '00000000-0000-0000-0000-000000000000';
 
@@ -575,7 +640,8 @@ describe('DB integrity — ledger invariants enforced by Postgres (e2e)', () => 
       [
         'sales_invoices.journal_entry_id',
         () =>
-          `UPDATE sales_invoices SET journal_entry_id = '${ghost}' WHERE id = '${invoiceId}'`,
+          // POSTED so the journal-link CHECK is satisfied and the FK is what fires.
+          `UPDATE sales_invoices SET status = 'POSTED', journal_entry_id = '${ghost}' WHERE id = '${invoiceId}'`,
         /sales_invoices_journal_entry_id_fkey/,
       ],
       [

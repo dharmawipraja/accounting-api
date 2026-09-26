@@ -107,7 +107,23 @@ the Prisma schema cannot express:
     `{sales_invoice,purchase_bill}_lines_nonnegative` (quantity, unit_price ≥ 0;
     zero-price lines stay legal), `accounting_periods_dates_ordered`, and
     `journal_entries_posted_complete` (DRAFT ⇔ `posted_at IS NULL`; a non-DRAFT
-    entry carries `entry_number`, `fiscal_year`, `period_id`, `posted_at`).
+    entry carries `entry_number`, `fiscal_year`, `period_id`, `posted_at`),
+    and `{sales_invoices,purchase_bills,payments}_journal_entry_iff_not_draft`
+    (`(status = 'DRAFT') = (journal_entry_id IS NULL)` — post sets the journal
+    entry, void keeps it; `20261002000000_document_journal_link_check_and_fk_indexes`,
+    which also indexes the FK columns `journal_entries.{period_id,reversed_by_id}`,
+    the documents' `journal_entry_id` and `year_end_closings.closing_entry_id`).
+  - **Hard DELETE is an allow-list** for the runtime role `accounting_app`
+    (`scripts/db/app-role.sql`): only `sales_invoice_lines`,
+    `purchase_bill_lines` (draft line replacement), `accounting_periods`
+    (OPEN-period regeneration), `idempotency_keys` and `refresh_tokens`. Every
+    other table — including any table a new migration adds (default privileges
+    grant SELECT/INSERT/UPDATE only) — rejects `DELETE` with *permission denied*.
+    ⚠️ **A new hard-delete path** (`.delete` / `.deleteMany` / `DELETE FROM` on a
+    non-soft-delete model) must add its table to the allow-list in
+    `app-role.sql` and to `DELETE_ALLOWED` in `test/db-app-role.e2e-spec.ts`
+    (that spec fails on any unclassified table). Tests and local dev connect as
+    the owner, so only that spec catches a missing grant.
   - **No overlapping periods** — `EXCLUDE USING gist (daterange(start_date,
     end_date,'[]') WITH &&)` (`accounting_periods_no_overlap`; needs
     `CREATE EXTENSION btree_gist`, shipped in the official postgres image).
@@ -207,8 +223,12 @@ starts. The `api` service `depends_on` `migrate` with
 itself. See [`./deploy.md`](./deploy.md):
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-# builds the image, runs `migrate` (prisma migrate deploy), THEN starts api/caddy/backup
+# Same sequence as deploy.md "Deploy / upgrade":
+COMPOSE='docker compose -f docker-compose.yml -f docker-compose.prod.yml'
+$COMPOSE build              # new api + migrate images (nothing restarts yet)
+$COMPOSE stop api           # the OLD api must not run against the NEW schema
+$COMPOSE up -d --no-build   # migrate → new api → caddy/backup
+# `up` runs `migrate` (prisma migrate deploy + accounting_app grants), THEN api/caddy/backup
 ```
 
 Migrations are **forward-only** in prod. Rolling back the app image does not undo a

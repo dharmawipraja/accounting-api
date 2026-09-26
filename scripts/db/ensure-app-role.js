@@ -7,8 +7,11 @@
  *
  * Connects as the schema OWNER (DATABASE_URL — the same URL migrate used) and
  * applies scripts/db/app-role.sql: (re)creates the `accounting_app` role with
- * APP_DB_PASSWORD and grants it DML on every table, including any the migration
- * just created. Plain CommonJS on purpose: runs in the migrate (Dockerfile
+ * APP_DB_PASSWORD, grants it SELECT/INSERT/UPDATE on every table (including any
+ * the migration just created), then re-applies the DELETE revoke and grants
+ * DELETE back only on the hard-delete allow-list. Because it runs after every
+ * migrate, the revokes hold regardless of what a migration granted. Plain
+ * CommonJS on purpose: runs in the migrate (Dockerfile
  * `build` stage) image with only node + node_modules (`pg`).
  */
 'use strict';
@@ -62,7 +65,9 @@ async function main() {
   } finally {
     await client.end();
   }
-  console.log('ensure-app-role: accounting_app role + grants are up to date');
+  console.log(
+    'ensure-app-role: accounting_app role + grants are up to date (DELETE only on the allow-list)',
+  );
 }
 
 main().catch((err) => {
