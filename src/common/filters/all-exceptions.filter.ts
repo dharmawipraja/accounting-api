@@ -18,6 +18,7 @@ import {
 import type { AuditService } from '../../audit/audit.service';
 import {
   auditBaseOf,
+  auditBodyAllowed,
   markAudited,
   shouldAuditRejection,
   type AuditableRequest,
@@ -39,9 +40,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
   /** @param audit when given, mutating requests rejected by a GUARD (401/403/
    *  429 — guards run before AuditInterceptor) are audited here: one row, no
-   *  body for 401 (unauthenticated input is not trusted into the log). The row
-   *  is written fire-and-forget AFTER the response, and capped per client IP
-   *  and globally (anonymous 401s are not throttled — JwtAuthGuard runs first). */
+   *  body when anonymous (unauthenticated input is not trusted into the log).
+   *  The row is written fire-and-forget AFTER the response, and capped per
+   *  caller: anonymous per client IP + a global ceiling (anonymous 401s are not
+   *  throttled — JwtAuthGuard runs first); authenticated per user. */
   constructor(
     private readonly audit?: Pick<AuditService, 'record'>,
     limiter?: RejectionAuditLimiter,
@@ -49,13 +51,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
     this.rejectionLimiter =
       limiter ??
       new RejectionAuditLimiter({
-        onSuppressed: (ip, n) =>
+        onSuppressed: (key, n) =>
           this.logger.warn(
-            `Suppressed ${n} guard-rejection audit row(s) from ${ip} (per-IP cap)`,
+            `Suppressed ${n} guard-rejection audit row(s) from ${key} (per-caller cap)`,
           ),
         onGlobalSuppressed: (n) =>
           this.logger.warn(
-            `Suppressed ${n} guard-rejection audit row(s) across all IPs (global cap)`,
+            `Suppressed ${n} anonymous guard-rejection audit row(s) across all IPs (global cap)`,
           ),
       });
   }
@@ -156,11 +158,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
   private auditRejection(req: AuditableRequest, status: number): void {
     if (!this.audit || !shouldAuditRejection(req, status)) return;
     markAudited(req);
-    if (!this.rejectionLimiter.allow(req.ip ?? 'unknown')) return;
+    if (!this.rejectionLimiter.allow(req.ip ?? 'unknown', req.user?.id)) return;
     let pending: Promise<void>;
     try {
       pending = this.audit.record({
-        ...auditBaseOf(req, { withBody: status !== 401 }),
+        ...auditBaseOf(req, { withBody: auditBodyAllowed(req, status) }),
         entityId: null,
         statusCode: status,
         durationMs: 0, // rejected before any handler work

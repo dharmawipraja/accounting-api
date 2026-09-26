@@ -395,6 +395,64 @@ describe('AllExceptionsFilter guard-rejection audit', () => {
     }
   });
 
+  it('AUDIT3-17: an anonymous 429 stores no body; an authenticated 429 keeps it', async () => {
+    const record = jest.fn().mockResolvedValue(undefined);
+    const filter = new AllExceptionsFilter({ record });
+    filter.catch(
+      new HttpException('Too Many Requests', 429),
+      hostFor({
+        method: 'POST',
+        url: '/v1/auth/login',
+        params: {},
+        body: { email: 'a@b.io', junk: 'x' },
+      }).host,
+    );
+    filter.catch(
+      new HttpException('Too Many Requests', 429),
+      hostFor({
+        method: 'POST',
+        url: '/v1/partners',
+        params: {},
+        body: { name: 'n' },
+        user: { id: 'u1', role: 'ADMIN' },
+      }).host,
+    );
+    await flush();
+    expect(record).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ statusCode: 429, body: {}, userId: null }),
+    );
+    expect(record).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ statusCode: 429, body: { name: 'n' } }),
+    );
+  });
+
+  it('authenticated rejections are capped per user, not by the client IP bucket', () => {
+    const record = jest.fn().mockResolvedValue(undefined);
+    const filter = new AllExceptionsFilter(
+      { record },
+      new RejectionAuditLimiter({ limit: 1, userLimit: 2 }),
+    );
+    const fire = (user?: { id: string; role: string }) =>
+      filter.catch(
+        new HttpException('Forbidden', user ? 403 : 401),
+        hostFor({
+          method: 'POST',
+          url: '/v1/x',
+          params: {},
+          ip: '5.5.5.5',
+          user,
+        }).host,
+      );
+    fire(); // anonymous: IP budget 1
+    fire(); // suppressed
+    fire({ id: 'u1', role: 'VIEWER' });
+    fire({ id: 'u1', role: 'VIEWER' });
+    fire({ id: 'u1', role: 'VIEWER' }); // suppressed (user cap 2)
+    expect(record).toHaveBeenCalledTimes(3);
+  });
+
   it('caps rejection rows per client IP', () => {
     const record = jest.fn().mockResolvedValue(undefined);
     const filter = new AllExceptionsFilter(

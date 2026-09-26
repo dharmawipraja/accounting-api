@@ -77,6 +77,7 @@ auth endpoints **per IP** (login additionally per email).
 | `POST /auth/login`           | 10 / min  | email (lowercased) |
 | `POST /auth/login`           | 30 / min  | client IP          |
 | `POST /auth/refresh`         | 30 / min  | IP                 |
+| `POST /auth/logout`          | 30 / min  | IP                 |
 | `POST /auth/change-password` | 10 / min  | authenticated user |
 | All other endpoints          | 300 / min | authenticated user |
 
@@ -125,7 +126,7 @@ a short backoff.
 | Status    | Meaning                                                                                                                           | Typical `code` values                                      |
 | --------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | 200 / 201 | Success                                                                                                                           | —                                                          |
-| **400**   | **Input shape / validation** — malformed body, query, or path param (`ValidationPipe`, `ParseUUIDPipe`, `ParseIntPipe`, bad JSON), incl. an explicit `null` on a non-nullable `PATCH` field or a string over its length cap | `HTTP_400`, `INVALID_INPUT`                                |
+| **400**   | **Input shape / validation** — malformed body, query, or path param (`ValidationPipe`, `ParseUUIDPipe`, `ParseIntPipe`, bad JSON, a JSON body nested deeper than 32 levels), incl. an explicit `null` on a non-nullable `PATCH` field or a string over its length cap | `HTTP_400`, `INVALID_INPUT`                                |
 | **401**   | Missing / expired / invalid token                                                                                                 | `UNAUTHORIZED`, `HTTP_401`                                 |
 | **403**   | Wrong role, or Segregation-of-Duties block                                                                                        | `FORBIDDEN`, `SEGREGATION_OF_DUTIES`                       |
 | **404**   | Resource not found (incl. soft-deleted)                                                                                           | `NOT_FOUND`                                                |
@@ -819,7 +820,7 @@ no auth.
 - `POST   /auth/logout-all` · any (authenticated) · revoke all sessions for the current user
 - `GET    /auth/me` · any · current user `{ id, email, role, mustChangePassword }`
 - `GET    /auth/admin-only` · ADMIN · RBAC smoke endpoint
-- `POST   /auth/change-password` · any (authenticated) · self-service `{currentPassword, newPassword}`; revokes **all** the caller's refresh sessions (see [Forced password change](#forced-password-change))
+- `POST   /auth/change-password` · any (authenticated) · self-service `{currentPassword, newPassword}`; revokes **all** the caller's refresh sessions (see [Forced password change](#forced-password-change)). If an admin resets the same account's password while the change is in flight, the reset wins and the change answers `401` "Current password is incorrect" (sessions are revoked by the reset anyway) — send the user to login
 
 ### Users (ADMIN)
 
@@ -969,7 +970,7 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing).
 
 ### Audit
 
-- `GET    /v1/audit` · ADMIN · audit log — **bare array** (no envelope) (filters: `userId, method, from, to, limit, offset`; `limit` default 50, **max 200**; `method` ∈ POST/PATCH/PUT/DELETE). One row per mutating request — including requests cut off with `408` and requests rejected by auth/role/throttle guards (`401`/`403`/`429`; a `401` row stores no body; these rejection rows are capped at 60 per client IP and 600 in total per minute). `path` (with query string) and `params` are truncated to 512 chars. `userId` filter must be a UUID (else `400`). `requestId` = the server trace id; `clientRequestId` = your sanitized `X-Request-Id` (or `null`)
+- `GET    /v1/audit` · ADMIN · audit log — **bare array** (no envelope) (filters: `userId, method, from, to, limit, offset`; `limit` default 50, **max 200**; `method` ∈ POST/PATCH/PUT/DELETE). One row per mutating request — including requests cut off with `408` and requests rejected by auth/role/throttle guards (`401`/`403`/`429`; rejection rows are capped at 60 per client IP and 600 in total per minute for anonymous callers, 60 per user per minute for signed-in ones). **`body`** is the sanitized request body, except: an **anonymous 4xx** row (no signed-in user — e.g. a failed login/refresh, any `401`) stores `{}`; a body whose JSON exceeds **8192 bytes** is stored as the object `{ "_truncated": true, "bytes": <n>, "preview": "<first 1024 chars of the JSON>" }` — always an object, render `preview` as text. **A `408` row does not mean nothing happened:** the timed-out handler may still commit afterwards (its record then exists with a later timestamp and no audit row of its own) — see *Retry after a timeout* under Idempotency. `path` (with query string) and `params` are truncated to 512 chars. `userId` filter must be a UUID (else `400`). `requestId` = the server trace id; `clientRequestId` = your sanitized `X-Request-Id` (or `null`)
 
 ### Response schema quick-map
 

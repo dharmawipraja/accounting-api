@@ -19,14 +19,22 @@ export const LOGIN_IP_THROTTLER = 'loginIp';
 export const LoginIpThrottle = (): MethodDecorator & ClassDecorator =>
   SetMetadata(LOGIN_IP_THROTTLE_KEY, true);
 
+/** True when the handler is the login route (marked with `@LoginIpThrottle()`).
+ *  UserThrottlerGuard keys the per-email bucket ONLY for such handlers. */
+export function isLoginIpThrottled(handler: unknown): boolean {
+  return (
+    typeof handler === 'function' &&
+    Reflect.getMetadata(LOGIN_IP_THROTTLE_KEY, handler) === true
+  );
+}
+
 /** The named throttler: inert (skipped) on every route not marked above. */
 export function loginIpThrottler(): ThrottlerOptions {
   return {
     name: LOGIN_IP_THROTTLER,
     ttl: THROTTLE_TTL_MS,
     limit: THROTTLE.loginIp,
-    skipIf: (ctx: ExecutionContext) =>
-      Reflect.getMetadata(LOGIN_IP_THROTTLE_KEY, ctx.getHandler()) !== true,
+    skipIf: (ctx: ExecutionContext) => !isLoginIpThrottled(ctx.getHandler()),
     getTracker: (req: Record<string, unknown>) =>
       `loginip:${typeof req.ip === 'string' ? req.ip : 'unknown'}`,
   };

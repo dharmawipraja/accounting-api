@@ -1,0 +1,9 @@
+# OPT-IN override for staging smoke tests / perf baselines ONLY — never in a
+# production deploy. docker-compose.prod.yml removes the api's host port (only
+# Caddy is exposed); this re-publishes it on the host's loopback:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#     -f docker-compose.hostport.yml up -d db migrate api
+services:
+  api:
+    ports:
+      - '127.0.0.1:3000:3000'

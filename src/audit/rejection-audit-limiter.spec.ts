@@ -1,7 +1,12 @@
 import { RejectionAuditLimiter } from './rejection-audit-limiter';
 
 function setup(
-  opts: { limit?: number; maxKeys?: number; globalLimit?: number } = {},
+  opts: {
+    limit?: number;
+    maxKeys?: number;
+    globalLimit?: number;
+    userLimit?: number;
+  } = {},
 ) {
   let t = 1_000_000;
   const reports: [string, number][] = [];
@@ -9,6 +14,7 @@ function setup(
   const limiter = new RejectionAuditLimiter({
     limit: opts.limit ?? 3,
     globalLimit: opts.globalLimit,
+    userLimit: opts.userLimit,
     windowMs: 60_000,
     maxKeys: opts.maxKeys ?? 10_000,
     now: () => t,
@@ -113,5 +119,41 @@ describe('RejectionAuditLimiter', () => {
     let allowed = 0;
     for (let i = 0; i < 700; i++) if (limiter.allow(`ip${i}`)) allowed++;
     expect(allowed).toBe(600);
+  });
+
+  it('authenticated rejections use a per-user bucket (default 60/window), not the IP one', () => {
+    const { limiter, reports, advance } = setup({ limit: 1 });
+    let allowed = 0;
+    for (let i = 0; i < 70; i++) if (limiter.allow('1.1.1.1', 'u1')) allowed++;
+    expect(allowed).toBe(60);
+    // same IP, anonymous: its own IP budget is untouched by u1's rows
+    expect(limiter.allow('1.1.1.1')).toBe(true);
+    // another user behind the same IP has a fresh budget
+    expect(limiter.allow('1.1.1.1', 'u2')).toBe(true);
+    advance(60_000);
+    expect(limiter.allow('1.1.1.1', 'u1')).toBe(true);
+    expect(reports).toContainEqual(['user:u1', 10]);
+  });
+
+  it('authenticated rows are never blocked by, nor consume, the anonymous global ceiling', () => {
+    const { limiter } = setup({ limit: 100, globalLimit: 2, userLimit: 5 });
+    expect(limiter.allow('a')).toBe(true);
+    expect(limiter.allow('b')).toBe(true);
+    expect(limiter.allow('c')).toBe(false); // anonymous global cap reached
+    expect(limiter.allow('c', 'u1')).toBe(true); // authenticated still audited
+    // and a fresh window's anonymous budget is not eaten by authenticated rows
+    const { limiter: l2 } = setup({ limit: 100, globalLimit: 2, userLimit: 5 });
+    for (let i = 0; i < 5; i++) l2.allow('x', 'u1');
+    expect(l2.allow('a')).toBe(true);
+    expect(l2.allow('b')).toBe(true);
+  });
+
+  it('honours a custom userLimit', () => {
+    const { limiter } = setup({ userLimit: 2 });
+    expect([1, 2, 3].map(() => limiter.allow('9.9.9.9', 'u1'))).toEqual([
+      true,
+      true,
+      false,
+    ]);
   });
 });

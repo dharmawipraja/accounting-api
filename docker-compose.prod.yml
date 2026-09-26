@@ -62,6 +62,13 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+    # Only Caddy is published in production: drop the base file's
+    # `127.0.0.1:3000:3000` so nothing on the host (or a misconfigured host
+    # firewall / SSH tunnel) reaches the api around Caddy's headers, body cap and
+    # /ready+/metrics blocking. `!reset` needs Docker Compose >= 2.24.0. The
+    # healthcheck probes 127.0.0.1:3000 INSIDE the container, so it is unaffected.
+    # Need host access for a smoke/perf run? add -f docker-compose.hostport.yml.
+    ports: !reset []
     # Must exceed worst-case drain: active requests are bounded by the 40s
     # socket requestTimeout (idle keep-alive sockets close at shutdown start).
     stop_grace_period: 45s

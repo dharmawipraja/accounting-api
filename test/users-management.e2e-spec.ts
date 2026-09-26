@@ -6,6 +6,7 @@ import { AccountsService } from '../src/ledger/accounts/accounts.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
 import { UserAdminService } from '../src/users/user-admin.service';
+import { passwordHasher } from '../src/users/password-hashing';
 import { bootstrapTestApp } from './e2e-helpers';
 
 describe('User management (e2e)', () => {
@@ -411,6 +412,43 @@ describe('User management (e2e)', () => {
         .post(`/v1/users/${id}/reset-password`)
         .set('Authorization', `Bearer ${adminToken}`)
         .expect(404);
+    });
+  });
+
+  describe('change-password vs admin reset-password race (AUDIT3-17)', () => {
+    afterEach(() => jest.restoreAllMocks());
+
+    it('an admin reset that commits while change-password is hashing wins; the change is refused (401)', async () => {
+      const u = await app.get(UsersService).create({
+        email: 'race-cp@um.test',
+        password: 'secret123',
+        name: 'RaceCP',
+        role: 'VIEWER',
+      });
+      const realHash = passwordHasher.hash.bind(passwordHasher);
+      let tempPassword = '';
+      // Deterministic interleaving: change-password's hash of the NEW password
+      // (after it verified the current one) runs the admin reset to completion.
+      jest
+        .spyOn(passwordHasher, 'hash')
+        .mockImplementationOnce(async (pw: string) => {
+          const h = await realHash(pw);
+          tempPassword = (await app.get(UserAdminService).resetPassword(u.id))
+            .tempPassword;
+          return h;
+        });
+      await expect(
+        app.get(AuthService).changePassword(u.id, 'secret123', 'newpass1234'),
+      ).rejects.toMatchObject({ status: 401 });
+
+      const row = await prisma.client.user.findFirstOrThrow({
+        where: { id: u.id },
+      });
+      expect(row.mustChangePassword).toBe(true); // the reset was NOT undone
+      await expect(
+        app.get(AuthService).login('race-cp@um.test', 'newpass1234'),
+      ).rejects.toBeDefined();
+      await app.get(AuthService).login('race-cp@um.test', tempPassword);
     });
   });
 

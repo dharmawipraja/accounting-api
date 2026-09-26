@@ -58,6 +58,46 @@ function capParams(params: Record<string, unknown> | undefined): unknown {
     : truncateCodePoints(json, AUDIT_PARAMS_MAX);
 }
 
+/** Serialized-body byte cap (UTF-8) for every audit row, and the preview
+ *  length (code points of the JSON text) kept when a body exceeds it. */
+export const AUDIT_BODY_MAX_BYTES = 8192;
+export const AUDIT_BODY_PREVIEW_CODE_POINTS = 1024;
+
+/** Oversized-body marker stored instead of the body: a valid JSON OBJECT (the
+ *  column is jsonb and API consumers read objects), never a string cut mid-JSON. */
+export interface TruncatedAuditBody {
+  _truncated: true;
+  bytes: number;
+  preview: string;
+}
+
+/** Caps an (already sanitized) body at AUDIT_BODY_MAX_BYTES of serialized
+ *  UTF-8. Small bodies are returned unchanged; larger ones become a
+ *  `TruncatedAuditBody` whose preview is the first
+ *  AUDIT_BODY_PREVIEW_CODE_POINTS code points of the JSON (surrogate-safe). Pure. */
+export function capBody(body: unknown): unknown {
+  const json = JSON.stringify(body);
+  if (json === undefined) return body; // undefined / function: nothing to store
+  const bytes = Buffer.byteLength(json, 'utf8');
+  if (bytes <= AUDIT_BODY_MAX_BYTES) return body;
+  const marker: TruncatedAuditBody = {
+    _truncated: true,
+    bytes,
+    preview: truncateCodePoints(json, AUDIT_BODY_PREVIEW_CODE_POINTS),
+  };
+  return marker;
+}
+
+/** Whether an audit row for this outcome may store the request body. An
+ *  ANONYMOUS (no `req.user`) client error (4xx) stores `{}`: unauthenticated
+ *  junk is never copied into the append-only log (disk-fill DoS, AUDIT3-17). */
+export function auditBodyAllowed(
+  req: Pick<AuditableRequest, 'user'>,
+  status: number,
+): boolean {
+  return !(status >= 400 && status < 500 && !req.user);
+}
+
 export function isMutating(method: string): boolean {
   return MUTATING.has(method);
 }
@@ -67,7 +107,8 @@ export function markAudited(req: AuditableRequest): void {
 }
 
 /** The request-derived audit fields shared by the interceptor and the
- *  exception filter. `withBody: false` stores `{}` (e.g. unauthenticated 401s). */
+ *  exception filter. `withBody: false` stores `{}` (e.g. anonymous 4xx); a
+ *  stored body is sanitized, then size-capped (`capBody`). */
 export function auditBaseOf(
   req: AuditableRequest,
   opts: { withBody: boolean },
@@ -78,7 +119,7 @@ export function auditBaseOf(
     method: req.method,
     path: truncateCodePoints(req.originalUrl ?? req.url, AUDIT_PATH_MAX),
     params: capParams(req.params),
-    body: opts.withBody ? sanitize(req.body) : {},
+    body: opts.withBody ? capBody(sanitize(req.body)) : {},
     ip: req.ip ?? null,
     requestId:
       typeof req.id === 'string' || typeof req.id === 'number'

@@ -1,4 +1,9 @@
-import { Module } from '@nestjs/common';
+import {
+  MiddlewareConsumer,
+  Module,
+  NestModule,
+  RequestMethod,
+} from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -34,6 +39,7 @@ import { loginIpThrottler } from './common/guards/login-ip-throttle';
 import { AuditInterceptor } from './audit/audit.interceptor';
 import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout.interceptor';
 import { HttpDrainService } from './common/http/http-drain.service';
+import { jsonDepthGuard } from './common/http/json-depth';
 import {
   THROTTLE,
   THROTTLE_TTL_MS,
@@ -123,4 +129,12 @@ import {
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  /** Runs after body parsing, before guards/interceptors/pipes: an over-deep
+   *  JSON body is a 400 before anything recurses over it (AUDIT3-17). */
+  configure(consumer: MiddlewareConsumer): void {
+    consumer
+      .apply(jsonDepthGuard)
+      .forRoutes({ path: '{*splat}', method: RequestMethod.ALL });
+  }
+}

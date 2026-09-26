@@ -5,35 +5,46 @@ import {
 } from '@nestjs/common';
 import { ThrottlerException, ThrottlerGuard } from '@nestjs/throttler';
 import type { ThrottlerLimitDetail, ThrottlerRequest } from '@nestjs/throttler';
+import { isLoginIpThrottled } from './login-ip-throttle';
 
 /**
  * Keys the rate limit by the *verified* authenticated user (so concurrent users
  * behind one shared/NAT IP each get their own budget), falling back to the
- * client IP for anonymous routes (login/refresh). Relies on the global guard
- * order JwtAuthGuard -> UserThrottlerGuard, so `req.user` is set when present.
+ * client IP for anonymous routes (refresh/logout/…). Only the LOGIN handler
+ * (marked `@LoginIpThrottle()`) keys its default bucket by the submitted email.
+ * Relies on the global guard order JwtAuthGuard -> UserThrottlerGuard, so
+ * `req.user` is set when present.
  *
  * The param is typed (not the base's `Record<string, any>`) — a valid bivariant
  * method override that keeps the body free of unsafe `any` access.
  */
 @Injectable()
 export class UserThrottlerGuard extends ThrottlerGuard {
-  protected override getTracker(req: {
-    user?: { id?: string };
-    ip?: string;
-    body?: { email?: unknown };
-  }): Promise<string> {
+  protected override getTracker(
+    req: {
+      user?: { id?: string };
+      ip?: string;
+      body?: { email?: unknown };
+    },
+    context?: Pick<ExecutionContext, 'getHandler'>,
+  ): Promise<string> {
     const userId = req.user?.id;
     if (userId) return Promise.resolve(`user:${userId}`);
-    // Anonymous: a login carries an email — key by it so per-account brute force
-    // is bounded regardless of a spoofed X-Forwarded-For. Combining with IP would
-    // let a rotating spoofed IP restore a fresh budget, defeating the limit.
-    // The complementary per-client-IP ceiling (rotating EMAILS) is the separate
-    // `loginIp` named throttler — see common/guards/login-ip-throttle.ts.
-    const email =
-      typeof req.body?.email === 'string'
-        ? req.body.email.trim().toLowerCase()
-        : null;
-    if (email) return Promise.resolve(`login:${email}`);
+    // Login only: key by the submitted email so per-account brute force is
+    // bounded regardless of a spoofed X-Forwarded-For (combining with IP would
+    // let a rotating spoofed IP restore a fresh budget). The complementary
+    // per-client-IP ceiling (rotating EMAILS) is the separate `loginIp` named
+    // throttler — see common/guards/login-ip-throttle.ts.
+    // Every OTHER anonymous route is keyed by IP: honouring `email` there let a
+    // caller add a rotating `email` field to e.g. /auth/refresh and get a fresh
+    // bucket per request (AUDIT3-17).
+    if (context && isLoginIpThrottled(context.getHandler())) {
+      const email =
+        typeof req.body?.email === 'string'
+          ? req.body.email.trim().toLowerCase()
+          : null;
+      if (email) return Promise.resolve(`login:${email}`);
+    }
     return Promise.resolve(`ip:${req.ip ?? 'unknown'}`);
   }
 

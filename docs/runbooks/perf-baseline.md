@@ -21,10 +21,12 @@ when you choose to wire it into CI (see *Not a default CI gate* below).
 ## Prerequisites
 
 1. A **running stack** reachable over HTTP. For a local baseline, bring up
-   `db` + `migrate` + `api` (the api binds `127.0.0.1:3000`):
+   `db` + `migrate` + `api` (the opt-in `docker-compose.hostport.yml` re-publishes
+   the api on `127.0.0.1:3000` — the prod overlay alone exposes only Caddy):
    ```bash
    export DOMAIN=localhost   # any value; api/db/migrate don't use Caddy
-   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build db migrate api
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+     -f docker-compose.hostport.yml up -d --build db migrate api
    # wait for health:
    curl -s http://127.0.0.1:3000/health   # -> {"status":"ok"}
    ```

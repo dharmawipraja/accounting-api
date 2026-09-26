@@ -10,6 +10,7 @@ import { AuditService } from './audit.service';
 import { statusFromException } from '../common/errors/exception-status';
 import {
   auditBaseOf,
+  auditBodyAllowed,
   isMutating,
   markAudited,
   type AuditableRequest,
@@ -64,6 +65,8 @@ export class AuditInterceptor implements NestInterceptor {
         return from(
           this.audit.record({
             ...base,
+            // Anonymous client errors (e.g. a 400 on /auth/refresh) store no body.
+            ...(auditBodyAllowed(req, statusCode) ? {} : { body: {} }),
             entityId: null,
             statusCode,
             durationMs: Date.now() - start,

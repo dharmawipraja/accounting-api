@@ -2,13 +2,24 @@ import { ServiceUnavailableException } from '@nestjs/common';
 import { ThrottlerException } from '@nestjs/throttler';
 import type { ThrottlerRequest } from '@nestjs/throttler';
 import { UserThrottlerGuard } from './user-throttler.guard';
+import { LoginIpThrottle } from './login-ip-throttle';
+
+class Handlers {
+  @LoginIpThrottle()
+  login(): void {}
+  refresh(): void {}
+}
+const handler = (name: keyof Handlers): unknown =>
+  Reflect.get(Handlers.prototype, name);
+const loginCtx = { getHandler: () => handler('login') };
+const refreshCtx = { getHandler: () => handler('refresh') };
 
 describe('UserThrottlerGuard.getTracker', () => {
   // getTracker doesn't touch instance state, so a prototype instance is enough.
   const guard = Object.create(
     UserThrottlerGuard.prototype,
   ) as UserThrottlerGuard & {
-    getTracker(req: unknown): Promise<string>;
+    getTracker(req: unknown, ctx?: unknown): Promise<string>;
   };
 
   it('keys by user id when authenticated', async () => {
@@ -21,6 +32,33 @@ describe('UserThrottlerGuard.getTracker', () => {
     await expect(guard.getTracker({ ip: '1.2.3.4' })).resolves.toBe(
       'ip:1.2.3.4',
     );
+  });
+
+  it('keys the LOGIN handler by the normalized email', async () => {
+    await expect(
+      guard.getTracker(
+        { ip: '1.2.3.4', body: { email: ' A@B.io ' } },
+        loginCtx,
+      ),
+    ).resolves.toBe('login:a@b.io');
+  });
+
+  it('login without a string email falls back to ip', async () => {
+    await expect(
+      guard.getTracker({ ip: '1.2.3.4', body: { email: 42 } }, loginCtx),
+    ).resolves.toBe('ip:1.2.3.4');
+  });
+
+  it('AUDIT3-17: ignores `email` on every non-login anonymous route', async () => {
+    await expect(
+      guard.getTracker(
+        { ip: '1.2.3.4', body: { email: 'rotating@x.io' } },
+        refreshCtx,
+      ),
+    ).resolves.toBe('ip:1.2.3.4');
+    await expect(
+      guard.getTracker({ ip: '1.2.3.4', body: { email: 'rotating@x.io' } }),
+    ).resolves.toBe('ip:1.2.3.4');
   });
 
   it('falls back to ip:unknown when neither is present', async () => {

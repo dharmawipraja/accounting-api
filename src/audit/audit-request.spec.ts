@@ -1,5 +1,8 @@
 import {
+  AUDIT_BODY_MAX_BYTES,
   auditBaseOf,
+  auditBodyAllowed,
+  capBody,
   markAudited,
   shouldAuditRejection,
   type AuditableRequest,
@@ -125,5 +128,72 @@ describe('auditBaseOf size caps', () => {
     expect(auditBaseOf(req(), { withBody: true }).params).toEqual({
       id: 'p1',
     });
+  });
+});
+
+describe('capBody (AUDIT3-17)', () => {
+  it('returns small bodies unchanged (identity)', () => {
+    const body = { name: 'A', lines: [{ qty: '1' }] };
+    expect(capBody(body)).toBe(body);
+    expect(capBody(undefined)).toBeUndefined();
+    expect(capBody(null)).toBeNull();
+  });
+
+  it('keeps a body of exactly the byte cap', () => {
+    // {"k":"…"} = 8 bytes of JSON syntax + payload
+    const body = { k: 'x'.repeat(AUDIT_BODY_MAX_BYTES - 8) };
+    expect(JSON.stringify(body)).toHaveLength(AUDIT_BODY_MAX_BYTES);
+    expect(capBody(body)).toBe(body);
+  });
+
+  it('replaces an oversized body with a small, valid-JSON marker object', () => {
+    const body = { junk: 'x'.repeat(50 * 1024) };
+    const capped = capBody(body) as {
+      _truncated: boolean;
+      bytes: number;
+      preview: string;
+    };
+    expect(capped._truncated).toBe(true);
+    expect(capped.bytes).toBe(Buffer.byteLength(JSON.stringify(body)));
+    expect(Array.from(capped.preview)).toHaveLength(1024);
+    expect(capped.preview.startsWith('{"junk":"xxx')).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(capped))).toBeLessThan(2048);
+  });
+
+  it('measures UTF-8 bytes, not UTF-16 units, and never splits a surrogate pair', () => {
+    // 2100 emoji = 4200 UTF-16 units but 8400 UTF-8 bytes → over the cap
+    const body = { e: '😀'.repeat(2100) };
+    expect(JSON.stringify(body).length).toBeLessThan(AUDIT_BODY_MAX_BYTES);
+    const capped = capBody(body) as { preview: string; bytes: number };
+    expect(capped.bytes).toBeGreaterThan(AUDIT_BODY_MAX_BYTES);
+    expect(hasLoneSurrogate(capped.preview)).toBe(false);
+  });
+
+  it('auditBaseOf stores the capped (sanitized) body', () => {
+    const base = auditBaseOf(
+      req({ body: { password: 'p', junk: 'y'.repeat(20_000) } }),
+      { withBody: true },
+    );
+    expect(base.body).toMatchObject({ _truncated: true });
+    expect((base.body as { preview: string }).preview).toContain(
+      '"password":"[REDACTED]"',
+    );
+  });
+});
+
+describe('auditBodyAllowed', () => {
+  it('anonymous 4xx never stores the body', () => {
+    for (const status of [400, 401, 404, 408, 413, 429]) {
+      expect(auditBodyAllowed({}, status)).toBe(false);
+    }
+  });
+
+  it('anonymous success / 5xx and every authenticated outcome keep it', () => {
+    expect(auditBodyAllowed({}, 200)).toBe(true);
+    expect(auditBodyAllowed({}, 500)).toBe(true);
+    const user = { id: 'u1', role: 'ADMIN' };
+    for (const status of [200, 400, 403, 429, 500]) {
+      expect(auditBodyAllowed({ user }, status)).toBe(true);
+    }
   });
 });

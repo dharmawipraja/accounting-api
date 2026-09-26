@@ -46,7 +46,7 @@ describe('Throttle policy (e2e)', () => {
     expect(statuses[10]).toBe(429); // 11th blocked by the login throttle
 
     // A guard rejection (the throttler runs before interceptors) is still
-    // audited — one row, status 429, body redacted as usual.
+    // audited — one row, status 429; anonymous, so no body is stored (AUDIT3-17).
     // (written fire-and-forget after the response — poll briefly)
     let throttled = await prisma.client.auditLog.findMany({
       where: { path: '/v1/auth/login', statusCode: 429 },
@@ -58,10 +58,7 @@ describe('Throttle policy (e2e)', () => {
       });
     }
     expect(throttled).toHaveLength(1);
-    expect(throttled[0].body).toEqual({
-      email: 'thr@test.io',
-      password: '[REDACTED]',
-    });
+    expect(throttled[0].body).toEqual({});
   });
 
   it('SEC-3: login throttle is per-email, not bypassable by rotating X-Forwarded-For', async () => {
@@ -106,6 +103,40 @@ describe('Throttle policy (e2e)', () => {
       .set('X-Forwarded-For', '198.51.100.78')
       .send({ email: 'spray-other@test.io', password: 'wrong-password' });
     expect(other.status).toBe(401);
+  }, 60_000);
+
+  it('AUDIT3-17: a rotating `email` field does NOT buy anonymous non-login routes a fresh bucket; stored bodies stay tiny', async () => {
+    // Before the fix every anonymous request carrying `email` was keyed
+    // `login:<email>` — so a rotating email on /auth/refresh bypassed the IP
+    // bucket, and each 400 wrote the full 50 KB junk body to audit_log.
+    const ip = '198.51.100.201';
+    const junk = 'x'.repeat(50 * 1024);
+    const statuses: number[] = [];
+    for (let i = 0; i < 60; i++) {
+      const res = await request(app.getHttpServer() as App)
+        .post('/v1/auth/refresh')
+        .set('X-Forwarded-For', ip)
+        .send({ email: `rot${i}@test.io`, refreshToken: 'nope', junk });
+      statuses.push(res.status);
+    }
+    // THROTTLE_REFRESH_LIMIT default 30/min per IP on this route.
+    expect(statuses.slice(0, 30).every((s) => s === 400)).toBe(true);
+    expect(statuses.slice(30).every((s) => s === 429)).toBe(true);
+
+    // Anonymous 4xx rows never store the caller's body.
+    let rows = await prisma.client.auditLog.findMany({
+      where: { path: '/v1/auth/refresh', ip },
+    });
+    for (let i = 0; i < 100 && rows.length < 31; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      rows = await prisma.client.auditLog.findMany({
+        where: { path: '/v1/auth/refresh', ip },
+      });
+    }
+    expect(rows.length).toBeGreaterThanOrEqual(31);
+    for (const row of rows) {
+      expect(row.body).toEqual({});
+    }
   }, 60_000);
 
   it('a normal low-volume authenticated request is not throttled', async () => {

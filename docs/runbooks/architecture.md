@@ -71,6 +71,11 @@ service inventory.
    the OpenAPI export script, and each e2e spec — or routes 404.
 7. **Server timeouts**: `keepAliveTimeout 65s`, `headersTimeout 66s`,
    `requestTimeout 30s`; **body limits**: JSON + urlencoded capped at `1mb`.
+   **Body depth:** `jsonDepthGuard` (`src/common/http/json-depth.ts`, applied to
+   every route in `AppModule.configure`, so it runs after body parsing and before
+   guards) rejects a body nested deeper than **32** levels with `400` — before the
+   recursive audit sanitizer / class-transformer could overflow the stack (→ 500).
+   The check itself is iterative. A 400 here writes no audit row.
 8. Swagger served at `/docs` except in production (unless `ENABLE_SWAGGER=true`).
 
 ### Guard chain (global, `src/app.module.ts` `APP_GUARD` order)
@@ -80,9 +85,13 @@ Guards run in registration order:
 1. **`JwtAuthGuard`** (`src/auth/guards/jwt-auth.guard.ts`) — validates the bearer
    token; honors `@Public()` (skips auth) via the reflector.
 2. **`UserThrottlerGuard`** (`src/common/guards/user-throttler.guard.ts`) — rate
-   limits keyed by *verified* user id (`user:<id>`), falling back to
-   `login:<email>` for anonymous logins, then `ip:<ip>`. Runs after JwtAuthGuard so
-   `req.user` is set. Redis-backed and **fail-closed** (503 if Redis is down).
+   limits keyed by *verified* user id (`user:<id>`); anonymous requests are keyed
+   `ip:<ip>` — except the **login handler only** (marked `@LoginIpThrottle()`),
+   whose default bucket is `login:<email>` (plus the separate per-IP `loginIp`
+   ceiling). Any other route ignores a body `email` (AUDIT3-17: honouring it
+   everywhere let a rotating `email` field bypass the IP bucket on `/auth/refresh`).
+   Runs after JwtAuthGuard so `req.user` is set. Redis-backed and **fail-closed**
+   (503 if Redis is down); every 429 carries `Retry-After`.
 3. **`RolesGuard`** (`src/auth/guards/roles.guard.ts`) — enforces `@Roles(...)`;
    honors `@Public()`; no `@Roles` ⇒ any authenticated user passes.
 
@@ -97,17 +106,37 @@ Guards run in registration order:
   blanket 500), exactly once — including a `408` (rxjs `timeout` unsubscribes from
   everything inside it, so an inner audit would miss it). Guard rejections
   (`401/403/429`) happen before any interceptor; `AllExceptionsFilter` (given the
-  `AuditService` in `main.ts`) writes their row (no body for 401) **after** sending
-  the response, fire-and-forget (a failed write is logged at warn), capped at **60
-  rejection rows per client IP per minute** and **600 per minute across all IPs**
-  (`src/audit/rejection-audit-limiter.ts`, in-process, ≤ 10k IPs; the global
-  ceiling stops IPv6 address rotation from multiplying the per-IP budget;
-  suppressed counts logged once per window). Only
+  `AuditService` in `main.ts`) writes their row **after** sending
+  the response, fire-and-forget (a failed write is logged at warn), capped
+  (`src/audit/rejection-audit-limiter.ts`, in-process, ≤ 10k keys per key space;
+  suppressed counts logged once per window): **anonymous** rejections at **60 rows
+  per client IP per minute** plus **600 per minute across all IPs** (the global
+  ceiling stops IPv6 address rotation from multiplying the per-IP budget);
+  **authenticated** rejections (403/429 with `req.user`) at **60 per user per
+  minute**, never counted against — nor blocked by — the anonymous global ceiling. Only
   401/403/429 are audited this way — a throttler-storage outage `503` and route 404s
   are not. A request-level `AUDITED` marker (`src/audit/audit-request.ts`) prevents
   a second row. Every row caps `path` (incl. query string) and serialized `params`
   at 512 characters (code points — a surrogate pair is never split, so the jsonb
   insert cannot fail on a lone surrogate).
+  - **Body storage (AUDIT3-17):** an **anonymous** (no `req.user`) **4xx** row —
+    interceptor or filter, e.g. a 400/401 on `/auth/refresh`, a login 401/429 —
+    stores `{}`: unauthenticated input is never copied into the append-only log.
+    Every other row stores the sanitized body, **capped** (`capBody` in
+    `audit-request.ts`): if its serialized JSON exceeds **8192 UTF-8 bytes** it is
+    replaced by the object `{ "_truncated": true, "bytes": <n>, "preview": "<first
+    1024 code points of the JSON text>" }` — still a JSON object in the jsonb
+    column (never a string cut mid-JSON), surrogate-safe.
+  - **408-then-commit (for auditors):** a `408` row means the *response* timed out
+    at 35s, **not** that nothing happened. The rxjs timeout only stops observing
+    the handler; its DB transaction keeps running and may still **commit** after
+    the 408 row was written (bounded by the 30s statement timeout per query). So a
+    408 row can coexist with a committed business write (and its journal entry /
+    document number) carrying a *later* timestamp and **no audit row of its own**.
+    To reconcile, match the 408 row's `requestId`/`path`/time against the created
+    entity (`createdAt`, document number), or the idempotency record of the same
+    `Idempotency-Key`; a same-key client retry then gets the committed-`409` or a
+    replay, never a second write.
   - **Timeout caveat (outermost = outside the 408):** on success the response is
     emitted only after the audit INSERT resolves, and that INSERT runs *outside*
     `RequestTimeoutInterceptor`. A stalled audit write is therefore **not** cut

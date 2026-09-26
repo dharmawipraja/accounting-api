@@ -1,7 +1,9 @@
 # Deploy Runbook (single VM)
 
 ## Prerequisites
-- Docker + Docker Compose v2 on the VM; ports 80 and 443 open; DNS A-record for
+- Docker + Docker Compose **v2.24.0 or newer** on the VM (`docker-compose.prod.yml`
+  uses `ports: !reset []` to drop the api's host port — older Compose fails to
+  parse it; check with `docker compose version`); ports 80 and 443 open; DNS A-record for
   `$DOMAIN` pointing at the VM (required for Caddy auto-HTTPS).
 - A `.env` next to the compose files (gitignored) with:
   `POSTGRES_PASSWORD` (DB owner), `APP_DB_PASSWORD` (the api's least-privilege
@@ -173,6 +175,13 @@ Work through this **once**, on the first deploy that includes migrations
 
 ## Health & shutdown
 - `api` is healthy when `/ready` returns 200 (DB + Redis reachable — a dependency outage now marks the container unhealthy); `/health` stays a bare liveness probe. Caddy proxies only a started app.
+- **Host exposure:** in production **only Caddy publishes ports** (80/443). The
+  base `docker-compose.yml` publishes the api on `127.0.0.1:3000` for local dev;
+  `docker-compose.prod.yml` removes it (`ports: !reset []`), so nothing on the VM
+  can reach the api around Caddy's headers, body cap and `/ready`/`/metrics`
+  blocking. Verify: `$COMPOSE config` shows no `ports` under `api`. For a
+  one-off host-side smoke/perf run add `-f docker-compose.hostport.yml` (opt-in,
+  never in a real deploy).
 - **Edge exposure:** Caddy answers `404` for `/ready*` and `/metrics*` (dependency state and metrics are internal). The container healthcheck (`127.0.0.1:3000/ready`) and Prometheus (`api:3000/metrics`) bypass Caddy, so they are unaffected; external uptime probes use `https://$DOMAIN/health`. Check readiness from the VM with `docker compose exec api node -e "require('http').get('http://127.0.0.1:3000/ready',r=>console.log(r.statusCode))"`.
 - One-time caveat (AUDIT3-7, `20260926100000_auth_hardening`): the migration
   lowercases `users.email` and adds a unique index on `lower(email)`. It **aborts
@@ -345,7 +354,8 @@ down — the failure mode no in-VM alert can report.
 Don't edit the committed `Caddyfile` (it would dirty the repo and risk shipping a
 non-prod TLS setting). Instead either:
 - **Skip Caddy:** smoke-test `db`+`migrate`+`api` only and curl `http://127.0.0.1:3000/health`
-  (`docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d db migrate api`); or
+  (`docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.hostport.yml up -d db migrate api`
+  — the prod overlay alone publishes no api port); or
 - **Throwaway internal TLS:** copy the Caddyfile, append `tls internal`, and mount the copy
   via a one-off override file — e.g. `cp Caddyfile /tmp/Caddyfile.staging && printf '\n\ttls internal\n' >> /tmp/Caddyfile.staging`, then a small `docker-compose.staging.yml` that remaps `caddy.volumes` to `/tmp/Caddyfile.staging:/etc/caddy/Caddyfile:ro`, and add `-f docker-compose.staging.yml` to the up command. `DOMAIN=localhost`, then `curl -k https://localhost/health`.
 

@@ -259,4 +259,66 @@ describe('Audit log (e2e)', () => {
     expect(row.path).toHaveLength(512);
     expect(row.path.startsWith('/v1/partners?pad=zzz')).toBe(true);
   });
+
+  it('AUDIT3-17: an oversized body is stored as a small _truncated marker object (authenticated 400)', async () => {
+    const junk = 'j'.repeat(50 * 1024);
+    await request(app.getHttpServer() as App)
+      .post('/v1/partners')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-Request-Id', 'audit-big-body')
+      .send({ code: 'AUD-BIG', name: 'Big', isCustomer: true, junk })
+      .expect(400); // forbidNonWhitelisted
+    const [row] = await waitForRows({ clientRequestId: 'audit-big-body' });
+    const body = row.body as {
+      _truncated: boolean;
+      bytes: number;
+      preview: string;
+    };
+    expect(body._truncated).toBe(true);
+    expect(body.bytes).toBeGreaterThan(50 * 1024);
+    expect(body.preview.length).toBeLessThanOrEqual(1024);
+    expect(Buffer.byteLength(JSON.stringify(row.body))).toBeLessThan(2048);
+
+    // The list endpoint still serves it as a JSON object (not a cut string).
+    const list = await request(app.getHttpServer() as App)
+      .get('/v1/audit?method=POST&limit=200')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const listed = (list.body as { id: string; body: unknown }[]).find(
+      (r) => r.id === row.id,
+    );
+    expect(listed?.body).toMatchObject({ _truncated: true });
+  });
+
+  it('AUDIT3-17: an anonymous 4xx stores no body (even a huge one)', async () => {
+    await request(app.getHttpServer() as App)
+      .post('/v1/auth/refresh')
+      .set('X-Request-Id', 'audit-anon-400')
+      .send({ refreshToken: 'x', junk: 'k'.repeat(20_000) })
+      .expect(400);
+    const [row] = await waitForRows({ clientRequestId: 'audit-anon-400' });
+    expect(row.statusCode).toBe(400);
+    expect(row.body).toEqual({});
+  });
+
+  it('AUDIT3-17: a 20k-deep JSON body is a clean 400 (no 500), with at most one audit row', async () => {
+    const depth = 20_000;
+    const deep = `{"code":"AUD-DEEP","x":${'['.repeat(depth)}${']'.repeat(depth)}}`;
+    for (const auth of [true, false]) {
+      const id = `audit-deep-${auth}`;
+      let req = request(app.getHttpServer() as App)
+        .post('/v1/partners')
+        .set('Content-Type', 'application/json')
+        .set('X-Request-Id', id);
+      if (auth) req = req.set('Authorization', `Bearer ${adminToken}`);
+      const res = await req.send(deep);
+      expect(res.status).toBe(400);
+      expect((res.body as { code: string }).code).toBe('HTTP_400');
+      await new Promise((r) => setTimeout(r, 100));
+      const rows = await prisma.client.auditLog.findMany({
+        where: { clientRequestId: id },
+      });
+      expect(rows.length).toBeLessThanOrEqual(1);
+    }
+  });
 });

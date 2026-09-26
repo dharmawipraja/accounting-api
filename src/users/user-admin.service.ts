@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import {
   NotFoundDomainError,
@@ -146,28 +145,26 @@ export class UserAdminService {
     return toUserResponse(updated);
   }
 
-  /** New one-time password; all sessions die; user must change on next login. */
+  /** New one-time password; all sessions die; user must change on next login.
+   *  Lock order (AUDIT3-17): admin-pool advisory lock → the user row FOR UPDATE
+   *  — the same row lock UsersService.changePassword takes before its write, so
+   *  a reset and a self-service change serialize (a change that verified the
+   *  pre-reset hash is refused once the reset commits). */
   async resetPassword(id: string) {
     const tempPassword = generateTempPassword();
     const passwordHash = await passwordHasher.hash(tempPassword);
-    let updated;
-    try {
-      // Single guarded write: the soft-delete extension injects deletedAt:null
-      // into the update's where, so an unknown or tombstoned id throws P2025 —
-      // no separate read-then-write window for a concurrent delete to hit.
-      updated = await this.prisma.client.user.update({
+    const updated = await this.prisma.transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${USER_ADMIN_LOCK_KEY})`;
+      // Soft-delete extension does NOT apply inside $transaction → filter explicitly.
+      const rows = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM users WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
+      if (rows.length === 0)
+        throw new NotFoundDomainError('User not found', { id });
+      return tx.user.update({
         where: { id },
         data: { passwordHash, mustChangePassword: true },
       });
-    } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2025'
-      ) {
-        throw new NotFoundDomainError('User not found', { id });
-      }
-      throw err;
-    }
+    });
     await this.refreshTokens.revokeAllForUser(id);
     return { user: toUserResponse(updated), tempPassword };
   }
