@@ -102,6 +102,21 @@ describe('documentLineAccountViolation — contra assets', () => {
   });
 });
 
+describe('documentLineAccountViolation — contra revenue', () => {
+  it('rejects a contra-revenue (REVENUE with DEBIT normal balance) on a sale with reason CONTRA_REVENUE', () => {
+    const v = documentLineAccountViolation(
+      'SALE',
+      acct({ type: 'REVENUE', normalBalance: 'DEBIT' }),
+      false,
+    );
+    expect(v?.details).toEqual({ accountId: 'a1', reason: 'CONTRA_REVENUE' });
+    expect(v?.message).toMatch(/contra-revenue/);
+  });
+  it('keeps accepting a credit-normal revenue account on a sale', () => {
+    expect(documentLineAccountViolation('SALE', acct({}), false)).toBeNull();
+  });
+});
+
 describe('cashAccountViolation', () => {
   it('accepts only a CASH-role account', () => {
     expect(cashAccountViolation({ id: 'k', role: 'CASH' })).toBeNull();

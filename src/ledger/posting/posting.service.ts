@@ -1,10 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import {
-  Account,
-  JournalEntry,
-  JournalSourceType,
-  Prisma,
-} from '@prisma/client';
+import { Account, JournalEntry, Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CompanyService } from '../../company/company.service';
 import { PeriodsService } from '../periods/periods.service';
@@ -577,28 +572,6 @@ export class PostingService {
     const byId = new Map(accounts.map((a) => [a.id, a]));
     this.assertAccountsValid(unique, byId, policy);
     return byId;
-  }
-
-  /** Role-only policy check for a source type (no postable/active checks) —
-   *  used where accounts are not otherwise validated (MANUAL draft create).
-   *  Unknown ids are skipped. */
-  async assertAccountPolicy(
-    ids: string[],
-    sourceType: JournalSourceType,
-    db: LedgerTx = this.prisma.client,
-  ): Promise<void> {
-    const policy = accountPolicyFor(sourceType);
-    if (policy.forbiddenRoles.length === 0 || ids.length === 0) return;
-    const unique = [...new Set(ids)];
-    const accounts = await db.account.findMany({
-      where: { id: { in: unique } },
-      select: { id: true, role: true },
-    });
-    const byId = new Map(accounts.map((a) => [a.id, a]));
-    this.throwIfForbiddenRole(
-      unique.flatMap((id) => byId.get(id) ?? []),
-      policy,
-    );
   }
 
   /** In-transaction re-check of the line accounts: lock them FOR SHARE (sorted

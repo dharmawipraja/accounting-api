@@ -55,9 +55,16 @@ export class JournalPreviewService {
       dto.nature as 'SALE' | 'PURCHASE',
       dto.lines!.map((l) => l.accountId),
     );
+    // The settlement (AR/AP control) is resolved by role exactly as the
+    // invoice/bill post does; a client `settlementAccountId` is deprecated and
+    // ignored, so the preview cannot show a JE the post would never write.
+    const settlementAccountId = await findControlAccountId(
+      this.prisma,
+      dto.nature === 'SALE' ? 'AR_CONTROL' : 'AP_CONTROL',
+    );
     const calc = await this.tax.calculate({
       nature: dto.nature as 'SALE' | 'PURCHASE',
-      settlementAccountId: dto.settlementAccountId!,
+      settlementAccountId,
       lines: dto.lines!.map((l) => ({
         accountId: l.accountId,
         amount: l.amount,

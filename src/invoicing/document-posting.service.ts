@@ -18,6 +18,12 @@ import {
   assertDocumentLineAccounts,
   assertTaxLineAccounts,
 } from './document-account-rules';
+import { sameTaxCalculation } from './document-helpers';
+
+/** Internal signal: the locked draft (or the tax state its entry was derived
+ *  from) no longer matches the pre-lock read. The caller restarts the post
+ *  from a fresh read (bounded — TaxedDocumentService.MAX_POST_ATTEMPTS). */
+export class DraftChangedError extends Error {}
 
 export interface PostTaxedDocParams {
   nature: 'SALE' | 'PURCHASE';
@@ -106,7 +112,9 @@ export class DocumentPostingService {
   /** Post a taxed document atomically. The source row is locked (FOR UPDATE) and
    *  re-checked still-DRAFT internally, then `verifyLockedInTx` proves the lines
    *  the entry was derived from are the ones stored under that lock (a draft edit
-   *  serializes on the same row lock), before a number is consumed. Lock order:
+   *  serializes on the same row lock) and the tax calculation is re-run through
+   *  `tx` and must equal the pre-tx one (else DraftChangedError → restart),
+   *  before a number is consumed. Lock order:
    *  document row → fiscal-year advisory lock / period FOR SHARE → sequences.
    *  `finalize` updates the document row to POSTED with the assigned number/ref +
    *  journal entry id. */
@@ -141,6 +149,19 @@ export class DocumentPostingService {
       // The locked row must still hold exactly the content the entry was
       // derived from; otherwise an edit committed after the pre-read.
       await params.verifyLockedInTx(tx);
+      // Re-derive the tax through `tx` (tax codes AND company settings read on
+      // this connection, after the lock): a tax-code rate/account change that
+      // committed after the pre-tx calculation restarts the post; a code now
+      // inactive/unknown or an isPkp flip surfaces as the calculation's 422.
+      const lockedCalc = await this.tax.calculate(
+        {
+          nature: params.nature,
+          settlementAccountId: params.settlementAccountId,
+          lines: params.lines,
+        },
+        tx,
+      );
+      if (!sameTaxCalculation(calc, lockedCalc)) throw new DraftChangedError();
       // Post-time re-validation of the (now verified-current) line accounts:
       // they must still satisfy the document line rules (catches drafts
       // written before the rules existed).

@@ -25,7 +25,11 @@ export interface AccountRuleViolation {
     | { accountId: string; role: AccountRole | null }
     | {
         accountId: string;
-        reason: 'TAX_ACCOUNT' | 'ACCOUNT_TYPE' | 'CONTRA_ASSET';
+        reason:
+          | 'TAX_ACCOUNT'
+          | 'ACCOUNT_TYPE'
+          | 'CONTRA_ASSET'
+          | 'CONTRA_REVENUE';
       };
 }
 
@@ -42,7 +46,9 @@ const LINE_FORBIDDEN_ROLES: readonly AccountRole[] = [
  *  (sales → REVENUE type or OTHER_INCOME subtype; purchase → EXPENSE or ASSET,
  *  i.e. expenses, inventory, fixed assets — but never a contra-asset, an ASSET
  *  with a CREDIT normal balance such as Akumulasi Penyusutan, which only moves
- *  via depreciation/disposal journals). */
+ *  via depreciation/disposal journals; sales → never a contra-revenue, a
+ *  REVENUE with a DEBIT normal balance such as Retur/Potongan Penjualan —
+ *  returns belong to credit notes, not negative-meaning invoice lines). */
 export function documentLineAccountViolation(
   nature: 'SALE' | 'PURCHASE',
   account: RuleAccount,
@@ -73,6 +79,17 @@ export function documentLineAccountViolation(
       message:
         'Purchase bill lines cannot post to a contra-asset account (e.g. accumulated depreciation)',
       details: { accountId: account.id, reason: 'CONTRA_ASSET' },
+    };
+  }
+  if (
+    nature === 'SALE' &&
+    account.type === 'REVENUE' &&
+    account.normalBalance === 'DEBIT'
+  ) {
+    return {
+      message:
+        'Sales invoice lines cannot post to a contra-revenue account (e.g. sales returns/discounts)',
+      details: { accountId: account.id, reason: 'CONTRA_REVENUE' },
     };
   }
   const typeOk =

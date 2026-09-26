@@ -87,7 +87,8 @@ lifecycles, money), follow the guide.
 12. **Journal-entry preview.** `POST /v1/journal-entries/preview` returns the exact
     balanced debit/credit entry a document _would_ post — read-only, **no
     `Idempotency-Key`**, any authenticated user. Body is discriminated by `nature`:
-    `SALE`/`PURCHASE` use the `/tax/calculate` shape (`settlementAccountId` + `lines`);
+    `SALE`/`PURCHASE` send `lines` (the `/tax/calculate` line shape; the AR/AP control
+    is resolved by role — `settlementAccountId` is deprecated and ignored);
     `PAYMENT` uses `{ direction, cashAccountId, allocations }`. Response is
     `{ lines:[{accountId,accountCode,accountName,debit,credit}], totalDebit, totalCredit,
 balanced }` (4dp strings, inactive side `"0.0000"`). Use it for a live preview panel

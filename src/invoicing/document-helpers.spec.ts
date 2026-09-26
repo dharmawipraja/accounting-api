@@ -1,12 +1,15 @@
 import { Prisma } from '@prisma/client';
+import { Money } from '../common/money/money';
 import {
   assertDueDateNotBefore,
   assertVoidDateNotBefore,
   normalizeVendorInvoiceNo,
   samePostableContent,
+  sameTaxCalculation,
   taxableLines,
 } from './document-helpers';
 import { ValidationFailedError } from '../common/errors/domain-errors';
+import type { TaxCalculation } from '../tax/tax.service';
 
 describe('taxableLines', () => {
   it('maps quantity*unitPrice to a 4dp amount and carries accountId + taxCodeIds', () => {
@@ -143,5 +146,54 @@ describe('normalizeVendorInvoiceNo', () => {
   });
   it('keeps undefined (field omitted)', () => {
     expect(normalizeVendorInvoiceNo(undefined)).toBeUndefined();
+  });
+});
+
+describe('sameTaxCalculation', () => {
+  const calc = (rate = '110000.0000'): TaxCalculation => ({
+    subtotal: '1000000.0000',
+    taxTotal: rate,
+    withholdingTotal: '0.0000',
+    settlementAmount: Money.of('1000000').add(Money.of(rate)).toPersistence(),
+    taxes: [
+      {
+        taxCodeId: 't1',
+        code: 'PPN',
+        kind: 'PPN_OUTPUT',
+        base: '1000000.0000',
+        amount: rate,
+        accountId: 'tax',
+      },
+    ],
+    journalLines: [
+      { accountId: 'ar', debit: '1110000.0000' },
+      { accountId: 'rev', credit: '1000000.0000' },
+      { accountId: 'tax', credit: rate },
+    ],
+  });
+
+  it('true for equal calculations (amount formatting ignored)', () => {
+    const b = calc();
+    b.subtotal = '1000000';
+    expect(sameTaxCalculation(calc(), b)).toBe(true);
+  });
+
+  it('false when a tax amount / total changes (rate change)', () => {
+    expect(sameTaxCalculation(calc(), calc('120000.0000'))).toBe(false);
+  });
+
+  it('false when a journal line account changes (tax account re-pointed)', () => {
+    const b = calc();
+    b.journalLines[2] = { ...b.journalLines[2], accountId: 'tax2' };
+    expect(sameTaxCalculation(calc(), b)).toBe(false);
+  });
+
+  it('false when the breakdown length or a tax row account differs', () => {
+    const b = calc();
+    b.taxes = [];
+    expect(sameTaxCalculation(calc(), b)).toBe(false);
+    const c = calc();
+    c.taxes[0] = { ...c.taxes[0], accountId: 'x' };
+    expect(sameTaxCalculation(calc(), c)).toBe(false);
   });
 });

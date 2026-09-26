@@ -2,6 +2,7 @@ import { AccountRole, Prisma } from '@prisma/client';
 import { Money } from '../common/money/money';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { ValidationFailedError } from '../common/errors/domain-errors';
+import type { TaxCalculation } from '../tax/tax.service';
 
 type TaxableLineInput = {
   accountId: string;
@@ -123,4 +124,47 @@ export function normalizeVendorInvoiceNo(
   if (value === null) return null;
   const trimmed = value.trim();
   return trimmed === '' ? null : trimmed;
+}
+
+/** Pure: do two tax calculations yield the same document totals, tax
+ *  breakdown and journal lines? Document post re-runs the calculation inside
+ *  its tx (after the row lock) and restarts when this is false — a tax-code
+ *  rate/account change committed between the pre-tx calculation and the lock. */
+export function sameTaxCalculation(
+  a: TaxCalculation,
+  b: TaxCalculation,
+): boolean {
+  const amt = (x: string | undefined, y: string | undefined) =>
+    Money.of(x ?? '0').equals(Money.of(y ?? '0'));
+  if (
+    !amt(a.subtotal, b.subtotal) ||
+    !amt(a.taxTotal, b.taxTotal) ||
+    !amt(a.withholdingTotal, b.withholdingTotal) ||
+    !amt(a.settlementAmount, b.settlementAmount) ||
+    a.taxes.length !== b.taxes.length ||
+    a.journalLines.length !== b.journalLines.length
+  )
+    return false;
+  const taxesMatch = a.taxes.every((t, i) => {
+    const u = b.taxes[i];
+    return (
+      t.taxCodeId === u.taxCodeId &&
+      t.kind === u.kind &&
+      t.accountId === u.accountId &&
+      amt(t.base, u.base) &&
+      amt(t.amount, u.amount)
+    );
+  });
+  return (
+    taxesMatch &&
+    a.journalLines.every((l, i) => {
+      const m = b.journalLines[i];
+      return (
+        l.accountId === m.accountId &&
+        (l.description ?? null) === (m.description ?? null) &&
+        amt(l.debit, m.debit) &&
+        amt(l.credit, m.credit)
+      );
+    })
+  );
 }

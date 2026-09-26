@@ -626,4 +626,68 @@ describe('JournalEntries (e2e)', () => {
       expect((res.body as { sourceType: string }).sourceType).toBe('OPENING');
     });
   });
+  describe('draft create validates accounts like post (422 INVALID_ACCOUNT)', () => {
+    const draftBody = (accountId: string) => ({
+      date: '2026-03-14',
+      description: 'Draft with a bad account',
+      lines: [
+        { accountId, debit: '5000' },
+        { accountId: modalId, credit: '5000' },
+      ],
+    });
+    const createDraft = (accountId: string) =>
+      request(app.getHttpServer() as App)
+        .post('/v1/ledger/journal-entries')
+        .set('Authorization', `Bearer ${accountantToken}`)
+        .set('Idempotency-Key', randomUUID())
+        .send(draftBody(accountId));
+
+    it('unknown account id → 422 INVALID_ACCOUNT (not a 409 FK violation)', async () => {
+      const missing = randomUUID();
+      const res = await createDraft(missing).expect(422);
+      const body = res.body as { code: string; details: unknown };
+      expect(body.code).toBe('INVALID_ACCOUNT');
+      expect(body.details).toEqual({ accountId: missing });
+    });
+
+    it('header (non-postable) account → 422 INVALID_ACCOUNT', async () => {
+      const header = (await prisma.client.account.findFirst({
+        where: { isPostable: false },
+      }))!;
+      const res = await createDraft(header.id).expect(422);
+      expect((res.body as { code: string }).code).toBe('INVALID_ACCOUNT');
+    });
+
+    it('inactive account → 422 INVALID_ACCOUNT', async () => {
+      const inactive = await prisma.client.account.create({
+        data: {
+          code: '6-9901',
+          name: 'Inactive draft target',
+          type: 'EXPENSE',
+          subtype: 'OPERATING_EXPENSE',
+          normalBalance: 'DEBIT',
+          isPostable: true,
+          isActive: false,
+        },
+      });
+      const res = await createDraft(inactive.id).expect(422);
+      expect((res.body as { code: string }).code).toBe('INVALID_ACCOUNT');
+    });
+
+    it('soft-deleted account → 422 INVALID_ACCOUNT', async () => {
+      const gone = await prisma.client.account.create({
+        data: {
+          code: '6-9902',
+          name: 'Deleted draft target',
+          type: 'EXPENSE',
+          subtype: 'OPERATING_EXPENSE',
+          normalBalance: 'DEBIT',
+          isPostable: true,
+          deletedAt: new Date(),
+        },
+      });
+      const res = await createDraft(gone.id).expect(422);
+      expect((res.body as { code: string }).code).toBe('INVALID_ACCOUNT');
+    });
+  });
 });

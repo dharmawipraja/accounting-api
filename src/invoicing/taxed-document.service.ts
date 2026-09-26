@@ -8,7 +8,10 @@ import {
   ValidationFailedError,
 } from '../common/errors/domain-errors';
 import { BusinessPartnersService } from './business-partners.service';
-import { DocumentPostingService } from './document-posting.service';
+import {
+  DocumentPostingService,
+  DraftChangedError,
+} from './document-posting.service';
 import { lockLivePartnerForShare } from './partner-lock';
 import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
 import {
@@ -39,11 +42,9 @@ import {
 import { assertDocumentLineAccounts } from './document-account-rules';
 
 /** Posting restarts from a fresh read at most this many times when the draft
- *  is edited between its pre-read and the row lock, then answers 409. */
+ *  is edited (or a tax code/setting its tax derives from changes) between its
+ *  pre-read and the row lock, then answers 409. */
 const MAX_POST_ATTEMPTS = 3;
-
-/** Internal signal: the locked draft no longer matches the pre-lock read. */
-class DraftChangedError extends Error {}
 
 type Spec<
   R extends DocumentRow,
@@ -319,6 +320,14 @@ export class TaxedDocumentService {
           const locked = await spec.findById(id, tx);
           if (!locked || !samePostableContent(row, locked))
             throw new DraftChangedError();
+          // The partner check above ran pre-tx; re-check it FOR SHARE under
+          // the document lock so a concurrent deactivate/delete (FOR UPDATE)
+          // serializes with this post — same 422 as the pre-tx check.
+          const p = await lockLivePartnerForShare(tx, row.partnerId);
+          if (!p || !p[spec.partnerFlag] || !p.isActive)
+            throw new ValidationFailedError(m.partnerInactive, {
+              partnerId: row.partnerId,
+            });
         },
       },
       (ctx) => spec.finalizePosted(ctx.tx, id, ctx, postedBy),

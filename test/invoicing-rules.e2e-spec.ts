@@ -380,6 +380,83 @@ describe('Invoicing rules (e2e)', () => {
     });
   });
 
+  describe('sales lines exclude contra-revenue accounts', () => {
+    let contraId: string;
+    const contraDetails = () => ({
+      accountId: contraId,
+      reason: 'CONTRA_REVENUE',
+    });
+
+    beforeAll(async () => {
+      const parent = await prisma.client.account.findFirstOrThrow({
+        where: { code: '4-0000' },
+      });
+      contraId = (
+        await prisma.client.account.create({
+          data: {
+            code: '4-8100',
+            name: 'Retur Penjualan',
+            type: 'REVENUE',
+            subtype: 'REVENUE',
+            normalBalance: 'DEBIT',
+            parentId: parent.id,
+          },
+        })
+      ).id;
+    });
+
+    const contraLine = () => ({
+      description: 'retur',
+      accountId: contraId,
+      quantity: '1',
+      unitPrice: '1000',
+      taxCodeIds: [],
+    });
+
+    it('rejects a contra-revenue line on create (422 CONTRA_REVENUE)', async () => {
+      const res = await createInvoice({
+        lines: [line('4-1000', '1000000'), contraLine()],
+      }).expect(422);
+      expect(codeOf(res)).toBe('VALIDATION_FAILED');
+      expect(detailsOf(res)).toEqual(contraDetails());
+    });
+
+    it('rejects it on update (422)', async () => {
+      const id = ((await createInvoice().expect(201)).body as { id: string })
+        .id;
+      const res = await send('patch', `/v1/sales-invoices/${id}`, acct, {
+        lines: [contraLine()],
+      }).expect(422);
+      expect(detailsOf(res)).toEqual(contraDetails());
+    });
+
+    it('rejects posting a stored draft that carries one (422, stays DRAFT)', async () => {
+      const id = ((await createInvoice().expect(201)).body as { id: string })
+        .id;
+      await prisma.client.salesInvoiceLine.updateMany({
+        where: { salesInvoiceId: id },
+        data: { accountId: contraId },
+      });
+      const res = await postDoc('sales-invoices', id).expect(422);
+      expect(detailsOf(res)).toEqual(contraDetails());
+      expect(
+        (await prisma.client.salesInvoice.findFirst({ where: { id } }))!.status,
+      ).toBe('DRAFT');
+    });
+
+    it('rejects it in the SALE preview (422)', async () => {
+      const res = await request(server())
+        .post('/v1/journal-entries/preview')
+        .set('Authorization', `Bearer ${acct}`)
+        .send({
+          nature: 'SALE',
+          lines: [{ accountId: contraId, amount: '1000', taxCodeIds: [] }],
+        })
+        .expect(422);
+      expect(detailsOf(res)).toEqual(contraDetails());
+    });
+  });
+
   /** Audit3 iteration-2 Task 13: invoicing & tax fixes. */
   describe('iteration-2 invoicing/tax fixes', () => {
     let admin: string;

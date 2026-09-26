@@ -11,6 +11,7 @@ import { listPaginated } from '../../common/pagination/paginated';
 import { PostingService } from '../posting/posting.service';
 import { DocumentLifecycleService } from '../document-lifecycle.service';
 import { PostLineInput } from '../posting/posting.types';
+import { accountPolicyFor } from '../posting/account-policy';
 import { Money } from '../../common/money/money';
 import {
   NotFoundDomainError,
@@ -64,9 +65,12 @@ export class JournalService {
   ) {}
 
   async createDraft(input: DraftInput): Promise<JournalEntry> {
-    await this.posting.assertAccountPolicy(
+    // Same account rules and errors as post (unknown/deleted/header/inactive
+    // → 422 INVALID_ACCOUNT; AR/AP control → 422 {accountId, role}), so a bad
+    // id never reaches the FK (which would surface as a 409).
+    await this.posting.resolvePostableAccounts(
       input.lines.map((l) => l.accountId),
-      'MANUAL',
+      accountPolicyFor('MANUAL'),
     );
     // Transaction so an idempotent create marks its key committed atomically
     // with the insert (see PrismaService.transaction).

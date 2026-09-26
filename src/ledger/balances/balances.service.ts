@@ -184,32 +184,33 @@ export class BalancesService {
   async trialBalance(asOf: Date): Promise<TrialBalance> {
     const day = this.toUtcDay(asOf);
     const rows = await this.groupedBalances(Prisma.sql`je.date <= ${day}`);
-    let totalDebit = new Prisma.Decimal(0);
-    let totalCredit = new Prisma.Decimal(0);
+    // Sum via Money (40-digit precision): Prisma.Decimal's default 20
+    // significant digits would round a trial-balance total past 16 integer
+    // digits + 4dp.
+    let totalDebit = Money.zero();
+    let totalCredit = Money.zero();
     const out: TrialBalanceRow[] = [];
     for (const r of rows) {
       if (r.debit.isZero() && r.credit.isZero()) continue; // preserve old HAVING
-      totalDebit = totalDebit.add(r.debit);
-      totalCredit = totalCredit.add(r.credit);
-      const net = signedNet(
-        r.normal_balance,
-        Money.of(r.debit.toString()),
-        Money.of(r.credit.toString()),
-      );
+      const debit = Money.of(r.debit.toString());
+      const credit = Money.of(r.credit.toString());
+      totalDebit = totalDebit.add(debit);
+      totalCredit = totalCredit.add(credit);
+      const net = signedNet(r.normal_balance, debit, credit);
       out.push({
         accountId: r.account_id,
         code: r.code,
         name: r.name,
-        debit: Money.of(r.debit.toString()).toPersistence(),
-        credit: Money.of(r.credit.toString()).toPersistence(),
+        debit: debit.toPersistence(),
+        credit: credit.toPersistence(),
         balance: net.toPersistence(),
       });
     }
     return {
       asOf: asOf.toISOString().slice(0, 10),
       rows: out,
-      totalDebit: Money.of(totalDebit.toString()).toPersistence(),
-      totalCredit: Money.of(totalCredit.toString()).toPersistence(),
+      totalDebit: totalDebit.toPersistence(),
+      totalCredit: totalCredit.toPersistence(),
     };
   }
 

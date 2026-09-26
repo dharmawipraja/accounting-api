@@ -248,6 +248,10 @@ the same total from the subledger and must reconcile to the control balance.
 - Settlement account resolved by role: `findControlAccountId(prisma, 'AR_CONTROL')` in
   `src/invoicing/sales-invoices.service.ts`; passed as `settlementAccountId` into the tax
   engine, which puts it on the AR/AP side of the journal.
+  The journal preview resolves it the same way (a client `settlementAccountId` is
+  deprecated and ignored). Sales lines may not use a **contra-revenue** account
+  (`REVENUE` with a `DEBIT` normal balance) → `422 {accountId, reason: 'CONTRA_REVENUE'}`
+  — returns belong to credit notes (backlog).
 - **Control accounts are document-only.** A `MANUAL` journal entry (direct post, draft
   create, draft post) may not touch an `AR_CONTROL`/`AP_CONTROL` account → `422
   VALIDATION_FAILED` `{ accountId, role }` (`src/ledger/posting/account-policy.ts`, enforced

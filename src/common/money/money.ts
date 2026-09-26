@@ -3,27 +3,37 @@ import type { Prisma } from '@prisma/client';
 
 const SCALE = 4;
 
-export class Money {
-  private readonly value: Decimal;
+/** Module-private decimal.js constructor with 40 significant digits. The
+ *  library default (20) silently rounds intermediate products/sums of
+ *  realistic amounts (16 integer digits + 4dp × a 6dp rate needs 26+), which
+ *  can double-round (e.g. 7111639187031.6986 × 1.9786 → …9189 instead of the
+ *  exact …9188). All Money arithmetic runs through this constructor, so every
+ *  intermediate is exact before the single 4dp (or rupiah) rounding. Plain
+ *  `Decimal` / `Prisma.Decimal` inputs are accepted and re-wrapped, unchanged. */
+const D = Decimal.clone({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
+type D = InstanceType<typeof D>;
 
-  private constructor(value: Decimal) {
+export class Money {
+  private readonly value: D;
+
+  private constructor(value: D) {
     if (!value.isFinite()) {
       throw new Error(
         `Money cannot represent a non-finite value: ${value.toString()}`,
       );
     }
     // ROUND_HALF_UP matches Indonesian tax-invoice (Faktur Pajak) rounding.
-    this.value = value.toDecimalPlaces(SCALE, Decimal.ROUND_HALF_UP);
+    this.value = value.toDecimalPlaces(SCALE, D.ROUND_HALF_UP);
   }
 
   // Accepts string | Decimal only — never a JS number, so float arithmetic
   // cannot sneak in before the amount is wrapped in exact decimal math.
   static of(amount: string | Decimal): Money {
-    return new Money(new Decimal(amount));
+    return new Money(new D(amount));
   }
 
   static zero(): Money {
-    return new Money(new Decimal(0));
+    return new Money(new D(0));
   }
 
   static sum(amounts: Money[]): Money {
@@ -41,8 +51,7 @@ export class Money {
   /** Multiply by a rate or quantity. Like `of()`, never a JS number — a float
    *  factor would reintroduce binary rounding before the decimal math. */
   multiply(factor: string | Money | Prisma.Decimal): Money {
-    const f =
-      factor instanceof Money ? factor.value : new Decimal(factor.toString());
+    const f = factor instanceof Money ? factor.value : new D(factor.toString());
     return new Money(this.value.times(f));
   }
 
@@ -50,15 +59,12 @@ export class Money {
    *  product. Unlike `multiply(f).roundToRupiah()`, the product is not first
    *  rounded to 4dp (which can flip a .49995 up to .5000 → +1 rupiah). */
   multiplyToRupiah(factor: string | Money | Prisma.Decimal): Money {
-    const f =
-      factor instanceof Money ? factor.value : new Decimal(factor.toString());
-    return new Money(
-      this.value.times(f).toDecimalPlaces(0, Decimal.ROUND_HALF_UP),
-    );
+    const f = factor instanceof Money ? factor.value : new D(factor.toString());
+    return new Money(this.value.times(f).toDecimalPlaces(0, D.ROUND_HALF_UP));
   }
 
   roundToRupiah(): Money {
-    return new Money(this.value.toDecimalPlaces(0, Decimal.ROUND_HALF_UP));
+    return new Money(this.value.toDecimalPlaces(0, D.ROUND_HALF_UP));
   }
 
   equals(other: Money): boolean {

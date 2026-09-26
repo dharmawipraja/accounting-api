@@ -40,9 +40,13 @@ export class PreviewJournalEntryDto {
   // --- SALE | PURCHASE ---
   @ApiPropertyOptional({
     format: 'uuid',
-    description: 'Required for SALE/PURCHASE',
+    deprecated: true,
+    description:
+      'Deprecated and ignored: SALE/PURCHASE previews always settle to the ' +
+      'AR/AP control account resolved by role (exactly what the post writes). ' +
+      'Still accepted (must be a UUID if sent) for backward compatibility.',
   })
-  @ValidateIf((o: PreviewJournalEntryDto) => o.nature !== 'PAYMENT')
+  @IsOptional()
   @IsUUID()
   settlementAccountId?: string;
 

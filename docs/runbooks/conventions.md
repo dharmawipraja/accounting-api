@@ -21,6 +21,10 @@ bug, not a style nit.
   → `src/common/money/money.ts`. Backed by `decimal.js`, fixed at `SCALE = 4`
   decimal places, rounded `ROUND_HALF_UP` (matches Indonesian Faktur Pajak
   rounding).
+  Arithmetic runs on a module-private `Decimal.clone({ precision: 40 })` — the
+  decimal.js / `Prisma.Decimal` default of 20 significant digits silently rounds
+  intermediates of realistic amounts. **Never add/multiply `Prisma.Decimal`
+  values directly** (e.g. summing report columns): wrap them in `Money.of(...)`.
 - **Construct only via `Money.of(string | Decimal)`, `Money.zero()`, or
   `Money.sum()`.** `Money.of()` deliberately rejects JS `number` at the type
   level — a float can never sneak in before it is wrapped in exact decimal math.

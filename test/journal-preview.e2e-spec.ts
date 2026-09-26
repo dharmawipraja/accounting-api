@@ -147,6 +147,52 @@ describe('Journal preview (e2e)', () => {
     }
   });
 
+  describe('settlementAccountId is accepted but ignored (control resolved by role)', () => {
+    type Preview = { lines: { accountId: string; debit: string }[] };
+    const previewWith = async (body: object) =>
+      (
+        await request(server())
+          .post('/v1/journal-entries/preview')
+          .set('Authorization', `Bearer ${acct}`)
+          .send(body)
+          .expect(200)
+      ).body as Preview;
+
+    it('SALE: a client-supplied non-control account is ignored; AR control is used', async () => {
+      const p = await previewWith({
+        ...saleBody(),
+        settlementAccountId: acc['1-1000'], // Kas — not AR control
+      });
+      expect(
+        p.lines.find((l) => l.accountId === acc['1-1000']),
+      ).toBeUndefined();
+      const ar = p.lines.find((l) => l.accountId === acc['1-1200'])!;
+      expect(ar.debit).toBe('1110000.0000');
+    });
+
+    it('SALE: settlementAccountId may be omitted', async () => {
+      const { settlementAccountId: _omit, ...body } = saleBody();
+      void _omit;
+      const p = await previewWith(body);
+      expect(p.lines.some((l) => l.accountId === acc['1-1200'])).toBe(true);
+    });
+
+    it('PURCHASE: resolves AP control by role regardless of the client value', async () => {
+      const ap = (await prisma.client.account.findFirst({
+        where: { role: 'AP_CONTROL' },
+      }))!;
+      const p = await previewWith({
+        nature: 'PURCHASE',
+        settlementAccountId: acc['1-1200'], // AR control — wrong side
+        lines: [{ accountId: acc['5-2000'], amount: '500000', taxCodeIds: [] }],
+      });
+      expect(
+        p.lines.find((l) => l.accountId === acc['1-1200']),
+      ).toBeUndefined();
+      expect(p.lines.some((l) => l.accountId === ap.id)).toBe(true);
+    });
+  });
+
   it("preview can't lie: matches a real posted invoice's GL exactly", async () => {
     const draft = await request(server())
       .post('/v1/sales-invoices')

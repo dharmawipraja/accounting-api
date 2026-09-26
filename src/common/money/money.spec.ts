@@ -86,4 +86,36 @@ describe('Money', () => {
     expect(() => Money.of('Infinity')).toThrow();
     expect(() => Money.of('NaN')).toThrow();
   });
+  describe('precision (40 significant digits, not decimal.js default 20)', () => {
+    it('multiplies a max-size amount by a 4dp factor exactly before 4dp rounding', () => {
+      // Exact product 14071089295460.91884196 has 22 significant digits.
+      expect(Money.of('7111639187031.6986').multiply('1.9786').toString()).toBe(
+        '14071089295460.9188',
+      );
+    });
+
+    it('multiplyToRupiah rounds the exact product once (no 20-digit pre-rounding)', () => {
+      // Exact product 1629137389230247.4999613606 → 247; a 20-significant-digit
+      // intermediate would read .5000 and round up to 248.
+      expect(
+        Money.of('5249811935403587.5522')
+          .multiplyToRupiah('0.310323')
+          .toString(),
+      ).toBe('1629137389230247.0000');
+    });
+
+    it('sums max-size amounts past 20 significant digits without rounding', () => {
+      const big = Money.of('9999999999999999.9999');
+      expect(Money.sum([big, big, big]).toString()).toBe(
+        '29999999999999999.9997',
+      );
+    });
+
+    it('interoperates with Prisma.Decimal unchanged', () => {
+      const d = new Prisma.Decimal('7111639187031.6986');
+      expect(
+        Money.of(d).multiply(new Prisma.Decimal('1.9786')).toString(),
+      ).toBe('14071089295460.9188');
+    });
+  });
 });

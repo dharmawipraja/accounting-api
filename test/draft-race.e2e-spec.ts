@@ -6,6 +6,7 @@ import { PeriodsService } from '../src/ledger/periods/periods.service';
 import { PostingService } from '../src/ledger/posting/posting.service';
 import { CompanyService } from '../src/company/company.service';
 import { TaxCodesService } from '../src/tax/tax-codes.service';
+import { TaxService } from '../src/tax/tax.service';
 import { BusinessPartnersService } from '../src/invoicing/business-partners.service';
 import { SalesInvoicesService } from '../src/invoicing/sales-invoices.service';
 import { PurchaseBillsService } from '../src/invoicing/purchase-bills.service';
@@ -241,6 +242,179 @@ describe('Draft edit/delete vs post race (e2e)', () => {
         );
       }
       expect(await assertInvoiceConsistent(draft.id)).toBe('POSTED');
+    });
+  });
+
+  /** Run `mutate` once, right after the post's pre-tx reads (partner check,
+   *  tax calculation) and before its write tx locks the row. */
+  const mutateBeforeLock = (
+    sourceId: string,
+    mutate: () => Promise<unknown>,
+  ) => {
+    const posting = app.get(PostingService);
+    const original = posting.preparePosting.bind(posting);
+    const state = { done: false };
+    jest
+      .spyOn(posting, 'preparePosting')
+      .mockImplementation(async (input, postedBy) => {
+        if (!state.done && input.sourceId === sourceId) {
+          state.done = true;
+          await mutate();
+        }
+        return original(input, postedBy);
+      });
+    return state;
+  };
+
+  describe('post re-derives tax and re-checks the partner inside the tx', () => {
+    let rateCodeId: string;
+
+    beforeAll(async () => {
+      const ppn = await prisma.client.taxCode.findUniqueOrThrow({
+        where: { id: code['PPN-OUT-11'] },
+      });
+      rateCodeId = (
+        await prisma.client.taxCode.create({
+          data: {
+            code: 'PPN-OUT-RACE',
+            name: 'PPN race code',
+            kind: 'PPN_OUTPUT',
+            rate: '0.11',
+            taxAccountId: ppn.taxAccountId,
+          },
+        })
+      ).id;
+    });
+
+    afterEach(async () => {
+      await prisma.client.taxCode.update({
+        where: { id: rateCodeId },
+        data: { rate: '0.11', isActive: true },
+      });
+      await app.get(CompanyService).update({ isPkp: true });
+      await prisma.client.businessPartner.updateMany({
+        where: { id: { in: [customerId, vendorId] } },
+        data: { isActive: true },
+      });
+    });
+
+    const raceInvoice = () =>
+      invoices.createDraft({
+        partnerId: customerId,
+        date: new Date('2026-03-10'),
+        description: 'tax race',
+        lines: [
+          {
+            description: 'Jasa',
+            accountId: acc['4-1000'],
+            quantity: '1',
+            unitPrice: '1000000',
+            taxCodeIds: [rateCodeId],
+          },
+        ],
+        createdBy: 'creator',
+      });
+
+    it('a tax-rate change committing before the lock restarts; the new rate is posted', async () => {
+      const draft = await raceInvoice();
+      expect(draft.taxTotal.toString()).toBe('110000');
+      const calc = jest.spyOn(app.get(TaxService), 'calculate');
+      const state = mutateBeforeLock(draft.id, () =>
+        prisma.client.taxCode.update({
+          where: { id: rateCodeId },
+          data: { rate: '0.12' },
+        }),
+      );
+      await invoices.post(draft.id, 'poster');
+      expect(state.done).toBe(true);
+      // attempt 1: pre-tx + in-tx (mismatch); attempt 2: pre-tx + in-tx.
+      expect(calc).toHaveBeenCalledTimes(4);
+      const inv = await invoices.getById(draft.id);
+      expect(inv.status).toBe('POSTED');
+      expect(Money.of(inv.taxTotal.toString()).toPersistence()).toBe(
+        '120000.0000',
+      );
+      expect(Money.of(inv.total.toString()).toPersistence()).toBe(
+        '1120000.0000',
+      );
+      await assertInvoiceConsistent(draft.id);
+    });
+
+    it('a tax code deactivated before the lock → 422, still a DRAFT', async () => {
+      const draft = await raceInvoice();
+      mutateBeforeLock(draft.id, () =>
+        prisma.client.taxCode.update({
+          where: { id: rateCodeId },
+          data: { isActive: false },
+        }),
+      );
+      await expect(invoices.post(draft.id, 'poster')).rejects.toThrow(
+        'Tax code is inactive',
+      );
+      expect((await invoices.getById(draft.id)).status).toBe('DRAFT');
+    });
+
+    it('isPkp flipped off before the lock → 422 (PPN needs PKP), still a DRAFT', async () => {
+      const draft = await raceInvoice();
+      mutateBeforeLock(draft.id, () =>
+        app.get(CompanyService).update({ isPkp: false }),
+      );
+      const err: unknown = await invoices
+        .post(draft.id, 'poster')
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ValidationFailedError);
+      expect((err as Error).message).toMatch(/PKP/);
+      expect((await invoices.getById(draft.id)).status).toBe('DRAFT');
+    });
+
+    it('customer deactivated before the lock → 422 partnerInactive, still a DRAFT', async () => {
+      const draft = await raceInvoice();
+      mutateBeforeLock(draft.id, () =>
+        prisma.client.businessPartner.update({
+          where: { id: customerId },
+          data: { isActive: false },
+        }),
+      );
+      const err: unknown = await invoices
+        .post(draft.id, 'poster')
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ValidationFailedError);
+      expect((err as ValidationFailedError).message).toBe(
+        'Partner is not an active customer',
+      );
+      expect((await invoices.getById(draft.id)).status).toBe('DRAFT');
+    });
+
+    it('vendor deactivated before the lock → 422 partnerInactive, still a DRAFT', async () => {
+      const draft = await bills.createDraft({
+        partnerId: vendorId,
+        date: new Date('2026-03-11'),
+        description: 'partner race bill',
+        lines: [
+          {
+            description: 'Beban',
+            accountId: acc['5-2000'],
+            quantity: '1',
+            unitPrice: '100000',
+            taxCodeIds: [],
+          },
+        ],
+        createdBy: 'creator',
+      });
+      mutateBeforeLock(draft.id, () =>
+        prisma.client.businessPartner.update({
+          where: { id: vendorId },
+          data: { isActive: false },
+        }),
+      );
+      const err: unknown = await bills
+        .post(draft.id, 'poster')
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ValidationFailedError);
+      expect((err as ValidationFailedError).message).toBe(
+        'Partner is not an active vendor',
+      );
+      expect((await bills.getById(draft.id)).status).toBe('DRAFT');
     });
   });
 

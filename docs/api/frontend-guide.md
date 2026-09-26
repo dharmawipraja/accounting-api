@@ -499,6 +499,10 @@ DELETE /ledger/journal-entries/:id      delete a DRAFT          (ACCOUNTANT+)
   `"AR/AP control accounts can only be posted through sales invoices, purchase bills and payments"`
   and `details: { accountId, role }`. Hide those accounts from the manual-entry account
   picker. Opening balances (`POST /ledger/opening-balances`) are still allowed on them.
+- **Draft create validates accounts exactly like post.** An unknown, soft-deleted,
+  header (non-postable) or inactive `accountId` on `POST /ledger/journal-entries` (draft)
+  → `422 INVALID_ACCOUNT` `{ accountId }` — the same error `/:id/post` gives (previously
+  an unknown id surfaced as `409`).
 - **Opening balances are balance-sheet only.** A `REVENUE` or `EXPENSE` account in
   `balances` → `422 VALIDATION_FAILED` with `details: { accountId, reason: 'PNL_IN_OPENING' }`
   (nothing is written). Enter mid-year year-to-date revenue/expense as a normal MANUAL
@@ -543,6 +547,16 @@ lines stored at that moment (it restarts internally if the draft was edited mid-
 If the draft keeps changing across several internal restarts the post returns
 `409 CONFLICT` (`Invoice was edited while being posted; retry`) — reload and retry.
 
+**Post re-validates tax and partner under the lock.** Inside the post transaction the
+tax is recomputed from the current tax codes and company settings; if a tax code's
+rate/account changed after the draft was read, the post restarts internally and posts
+the **current** rate (the posted totals may differ from the draft's stored totals —
+re-read the response). A tax code deactivated/deleted in the meantime, or `isPkp`
+switched off for a PPN document, → `422 VALIDATION_FAILED` (same message as create).
+The partner is re-checked too: deactivated / no longer a customer (vendor) / deleted
+→ `422 VALIDATION_FAILED` `Partner is not an active customer` (`vendor`)
+`{ partnerId }`. The document stays `DRAFT` in every `422` case.
+
 **Line accounts.** On create, `PATCH` and `/post`, each line's `accountId` is checked;
 violations return `422 VALIDATION_FAILED`:
 
@@ -552,6 +566,7 @@ violations return `422 VALIDATION_FAILED`:
 | Line on a tax account (used by any tax code, e.g. PPN Keluaran/Masukan) — apply a tax code instead | `{ accountId, reason: "TAX_ACCOUNT" }` |
 | Sales line not a revenue account (`type` `REVENUE` or subtype `OTHER_INCOME`); purchase line not `EXPENSE`/`ASSET` | `{ accountId, reason: "ACCOUNT_TYPE" }` |
 | Purchase line on a **contra-asset** (`ASSET` with `normalBalance` `CREDIT`, e.g. Akumulasi Penyusutan) | `{ accountId, reason: "CONTRA_ASSET" }` |
+| Sales line on a **contra-revenue** (`REVENUE` with `normalBalance` `DEBIT`, e.g. Retur/Potongan Penjualan) — returns need credit notes (not yet supported) | `{ accountId, reason: "CONTRA_REVENUE" }` |
 
 **Other document rules** (create, `PATCH` and — where noted — `/post`):
 
@@ -695,7 +710,7 @@ discriminated by `nature`:
   ```jsonc
   {
     "nature": "SALE", // or "PURCHASE"
-    "settlementAccountId": "<uuid>",
+    // "settlementAccountId": DEPRECATED — accepted but ignored (see below)
     "lines": [
       {
         "accountId": "<uuid>",
@@ -705,6 +720,11 @@ discriminated by `nature`:
     ],
   }
   ```
+
+  The settlement side is always the **AR control** (SALE) / **AP control** (PURCHASE)
+  account resolved by role — exactly what the invoice/bill post writes.
+  `settlementAccountId` is **deprecated and ignored** (still accepted, must be a UUID if
+  sent); stop sending it.
 
 - **`PAYMENT`** — its own shape (a payment has no tax lines; its entry is cash ↔ AR/AP
   control for the allocation total):

@@ -1,7 +1,10 @@
 import { PrismaService } from '../common/prisma/prisma.service';
 import { PostingService } from '../ledger/posting/posting.service';
 import { TaxService } from '../tax/tax.service';
-import { DocumentPostingService } from './document-posting.service';
+import {
+  DocumentPostingService,
+  DraftChangedError,
+} from './document-posting.service';
 import { ValidationFailedError } from '../common/errors/domain-errors';
 
 describe('DocumentPostingService (orchestration)', () => {
@@ -71,8 +74,23 @@ describe('DocumentPostingService (orchestration)', () => {
 
     await svc.post(params, finalize);
 
-    // tax + prepare run OUTSIDE the tx, before it opens
-    expect(tax.calculate).toHaveBeenCalledTimes(1);
+    // tax + prepare run OUTSIDE the tx, before it opens; the tax is then
+    // re-derived through the tx (after verify, before a number is consumed)
+    expect(tax.calculate).toHaveBeenCalledTimes(2);
+    expect(tax.calculate.mock.invocationCallOrder[0]).toBeLessThan(
+      prisma.transaction.mock.invocationCallOrder[0],
+    );
+    expect(tax.calculate).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      txWithLock,
+    );
+    expect(params.verifyLockedInTx.mock.invocationCallOrder[0]).toBeLessThan(
+      tax.calculate.mock.invocationCallOrder[1],
+    );
+    expect(tax.calculate.mock.invocationCallOrder[1]).toBeLessThan(
+      docNumber.next.mock.invocationCallOrder[0],
+    );
     expect(posting.preparePosting).toHaveBeenCalledTimes(1);
     expect(posting.preparePosting.mock.invocationCallOrder[0]).toBeLessThan(
       prisma.transaction.mock.invocationCallOrder[0],
@@ -154,5 +172,24 @@ describe('DocumentPostingService (orchestration)', () => {
     );
     expect(docNumber.next).not.toHaveBeenCalled();
     expect(finalize).not.toHaveBeenCalled();
+  });
+  it('in-tx tax result differs from the pre-tx one → DraftChangedError, no number consumed', async () => {
+    const { svc, tax, docNumber, prisma, posting } = build();
+    const txWithLock = {
+      $queryRaw: jest.fn().mockResolvedValue([{ status: 'DRAFT' }]),
+    };
+    (prisma.transaction as jest.Mock).mockImplementation(
+      (cb: (t: unknown) => unknown) => cb(txWithLock),
+    );
+    const pre = (await tax.calculate()) as Record<string, unknown>;
+    tax.calculate.mockReset();
+    tax.calculate
+      .mockResolvedValueOnce(pre)
+      .mockResolvedValueOnce({ ...pre, subtotal: '1100.0000' });
+    await expect(svc.post(params, jest.fn())).rejects.toBeInstanceOf(
+      DraftChangedError,
+    );
+    expect(docNumber.next).not.toHaveBeenCalled();
+    expect(posting.createPostedEntryInTx).not.toHaveBeenCalled();
   });
 });
