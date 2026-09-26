@@ -10,6 +10,21 @@ a correct frontend. Everything here is derived from the API source code.
 
 ---
 
+> **Behaviour changes in this release (audit-3 iteration 8)**
+>
+> - **Blank names are rejected**: account and tax-code `name` (and `code`) that is
+>   empty / whitespace-only → `400` on create and `PATCH` (partners already did);
+>   a zero-width / format character in any partner / account / tax-code name → `400`.
+> - **Identifier codes are normalized** (NFKC + trim; zero-width / control characters
+>   → `400`) and **unique case-insensitively** — `dup` vs `DUP` → `409 CONFLICT`.
+>   Existing codes that were untrimmed / full-width were normalized by the upgrade.
+> - **Audit `from` / `to` are strict**: ISO date or date-time on a real day, year
+>   1970–9999 — week/ordinal/basic forms and impossible days → `400`.
+> - **`Cache-Control: no-store`** on every `/v1/*` response, and **no `ETag`**
+>   headers (so no `304 Not Modified`) — don't rely on HTTP caching.
+> - Emails are NFC-normalized (see *Login & tokens*); audit rows of idempotent
+>   replays carry `replayed: true`.
+
 ## 1. Overview & authentication
 
 This is a **single-company** Indonesian accounting API. It follows Indonesian GAAP

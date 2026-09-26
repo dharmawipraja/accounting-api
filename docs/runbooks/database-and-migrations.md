@@ -176,14 +176,25 @@ the Prisma schema cannot express:
   empty (it does not try to drop the expression indexes — verified). Tombstoned rows
   (`<code>#deleted-<id>`, `deleted_at` set) are outside the index. The API stores
   codes normalized (NFKC + trim; blank / format / control characters → 400,
-  `src/common/text/identifier.ts`). **The migration pre-checks live rows and aborts
-  (P3018, SQLSTATE P0001) listing** every group of codes that collide under
-  `lower(trim(NFKC(code)))` and every code not already in normalized form, with
-  table + id. To recover: fix each listed row (`UPDATE <table> SET code = '<fixed>'
-  WHERE id = '<id>'`, or soft-delete it through the API), then
+  `src/common/text/identifier.ts`). The migration handles live legacy rows in one
+  all-or-nothing block: it **aborts** (P3018, SQLSTATE P0001, nothing changed)
+  listing table + code + id for codes that collide under `lower(trim(NFKC(code)))`,
+  codes blank once normalized, codes holding a format (Cf) / control (Cc) character,
+  and codes whose normalized form equals a soft-deleted row's exact code; otherwise
+  it **auto-fixes** every untrimmed / NFKC-different live code to `trim(NFKC(code))`
+  (case kept; a `RAISE NOTICE` per change — codes are not FK targets or copied
+  elsewhere), re-verifies, then creates the indexes. To recover from an abort: fix
+  each listed row (`UPDATE <table> SET code = '<fixed>' WHERE id = '<id>'`, or
+  soft-delete it through the API), then
   `npx prisma migrate resolve --rolled-back 20261005000000_identifier_code_ci_unique`
-  and re-run `prisma migrate deploy` (the failed run changed nothing — the check runs
-  before any index is created). Test: `test/identifier-code-migration.e2e-spec.ts`.
+  and re-run `prisma migrate deploy`. Test: `test/identifier-code-migration.e2e-spec.ts`.
+- **Email NFC** (`20261005300000_users_email_nfc`): aborts listing users whose emails
+  collide once NFC-normalized; otherwise rewrites every non-NFC (decomposed) email to
+  NFC (`NOTICE` per row) and adds `CHECK users_email_nfc (email IS NFC NORMALIZED)`,
+  so `users_email_lower_key` on `lower(email)` stays a complete guard (case itself
+  is not CHECKed — JS and Postgres lowercasing can differ on rare characters).
+  Recovery like above (`resolve --rolled-back 20261005300000_users_email_nfc`).
+  Test: `test/email-nfc-migration.e2e-spec.ts`.
 - **FK indexes** (`20261005200000_payment_cash_account_and_tax_account_fk_indexes`):
   `payments_cash_account_id_idx`, `tax_codes_tax_account_id_idx` (`@@index` in the
   schema) — the last two FK columns without an index.

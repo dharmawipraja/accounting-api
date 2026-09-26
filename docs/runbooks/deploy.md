@@ -242,7 +242,7 @@ the deployed image — the same commands work unchanged.
 
 This release adds schema invariants, a least-privilege DB role and token changes.
 Work through this **once**, on the first deploy that includes migrations
-`20260925000000_accum_depreciation_cash_flow` … `20261004000000_business_partner_customer_or_vendor_check`
+`20260925000000_accum_depreciation_cash_flow` … `20261005300000_users_email_nfc`
 (if an earlier audit-3 deploy already applied some of them, the rehearsal simply
 skips those — the list below still applies to the ones that remain):
 
@@ -276,7 +276,21 @@ skips those — the list below still applies to the ones that remain):
      purchase bills or payments whose `journal_entry_id` does not match their
      status (a DRAFT with a journal entry, or a POSTED/VOID one without);
    - `20261004000000_business_partner_customer_or_vendor_check` — business partners
-     (soft-deleted included) that are neither customer nor vendor.
+     (soft-deleted included) that are neither customer nor vendor;
+   - `20261005000000_identifier_code_ci_unique` — live account / tax-code / partner
+     codes that **block**: codes that collide once normalized
+     (`lower(trim(NFKC(code)))`, e.g. `KAS-1` / `kas-1` / ` KAS-1`), codes blank after
+     normalization, codes containing an invisible format (zero-width space, BOM, bidi
+     control, soft hyphen …) or control character, and codes whose normalized form
+     equals the exact code of a soft-deleted row. Everything else that is merely
+     **untrimmed or NFKC-different** (surrounding spaces, full-width `ＫＡＳ-１`) is
+     **auto-fixed** in place to `trim(NFKC(code))` (case kept) — each change is a
+     `NOTICE` in the migrate log (`identifier code normalized: <table> id <id> : 'old'
+     -> 'new'`); check the rehearsal's log and tell users whose codes changed;
+   - `20261005300000_users_email_nfc` — users whose emails are the same address once
+     NFC-normalized (a precomposed and a decomposed `josé@…`). Every other
+     decomposed (NFD) email is rewritten to NFC (a `NOTICE` per row) — without that
+     such users could no longer log in — and a CHECK then keeps emails NFC.
 
    The others in the range cannot abort on data: `20260925000000_accum_depreciation_cash_flow`
    is a data-only reclassification — every credit-normal `ASSET` account (contra-asset,
@@ -289,7 +303,8 @@ skips those — the list below still applies to the ones that remain):
    the reports, and check the rehearsal's before/after cash-flow for a closed year.
    `20260925100000_add_voided_on` backfills `voided_on` before adding its CHECK, `20260929000000` only replaces a
    trigger function, and `20260926000000` / `20260928000000` / `20261001000000` /
-   `20261003000000` (index on `payment_allocations(payment_id)`) are additive.
+   `20261003000000` (index on `payment_allocations(payment_id)`), `20261005100000`
+   (`audit_log.replayed` column) and `20261005200000` (two FK indexes) are additive.
    Fix the data by hand, mark the failed attempt as rolled back, and re-run. There
    is no host `node`/`npx` on the VM and `db` is not published, so run `resolve`
    **in the migrate image** — after pinning `MIGRATE_IMAGE` (*Operator commands on a

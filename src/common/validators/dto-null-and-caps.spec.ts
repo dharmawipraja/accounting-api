@@ -134,6 +134,16 @@ describe('@MaxLength caps on free-text inputs', () => {
 });
 
 describe('AuditQueryDto', () => {
+  it('iter8: a bad from/to yields exactly one validation message', () => {
+    for (const from of ['0000-01-01', '2026-02-30', 'junk']) {
+      const errors = validateSync(plainToInstance(AuditQueryDto, { from }));
+      expect(errors).toHaveLength(1);
+      expect(Object.keys(errors[0].constraints ?? {})).toEqual([
+        'isAuditInstant',
+      ]);
+    }
+  });
+
   it('userId must be a UUID', () => {
     expect(failing(AuditQueryDto, { userId: 'not-a-uuid' })).toEqual([
       'userId',

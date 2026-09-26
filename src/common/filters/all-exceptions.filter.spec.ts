@@ -237,6 +237,36 @@ describe('AllExceptionsFilter', () => {
     });
   });
 
+  it('iter8: a 22008 datetime overflow is 400 INVALID_INPUT and a Sentry warning (kind datetime-overflow)', () => {
+    (Sentry.captureException as jest.Mock).mockClear();
+    const m = mockHost();
+    const err = new Prisma.PrismaClientKnownRequestError(
+      'Database error. Code: `22008`.',
+      {
+        code: 'P2039',
+        clientVersion: Prisma.prismaVersion.client,
+        meta: {
+          driverAdapterError: Object.assign(new Error('adapter'), {
+            name: 'DriverAdapterError',
+            cause: { kind: 'postgres', originalCode: '22008' },
+          }),
+        },
+      },
+    );
+    filter.catch(err, m.host);
+    expect(m.code()).toBe(400);
+    expect(m.payload()).toEqual({
+      code: 'INVALID_INPUT',
+      message: 'Value out of range',
+      traceId: 'req-1',
+    });
+    expect(Sentry.captureException as jest.Mock).toHaveBeenCalledWith(err, {
+      level: 'warning',
+      tags: { kind: 'datetime-overflow', traceId: 'req-1' },
+      extra: { path: '/test' },
+    });
+  });
+
   it('reports the deferred journal_entry_balanced trigger (bare 23514) with its name', () => {
     (Sentry.captureException as jest.Mock).mockClear();
     const m = mockHost();

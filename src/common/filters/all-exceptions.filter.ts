@@ -158,7 +158,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       );
     } else if (isValueOutOfRange(exception)) {
       // A date/time outside the column's range reached Postgres (22008):
-      // client input, not an incident — 400 INVALID_INPUT, warn only.
+      // answered 400 INVALID_INPUT, but the DTOs should have caught it (or a
+      // server-computed date overflowed), so it is also a Sentry warning.
       envelope = {
         code: VALUE_OUT_OF_RANGE.code,
         message: VALUE_OUT_OF_RANGE.message,
@@ -168,6 +169,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
           exception instanceof Error ? exception.message : String(exception)
         }`,
       );
+      Sentry.captureException(exception, {
+        level: 'warning',
+        tags: { kind: 'datetime-overflow', traceId: req.id },
+        extra: { path: url },
+      });
     } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       const mapped = PRISMA_STATUS[exception.code];
       if (mapped) {

@@ -30,6 +30,8 @@ model User {
   @@unique([email]) // DB index name is the Prisma default "users_email_key"
   // + hand-authored UNIQUE INDEX users_email_lower_key ON users (lower(email))
   //   (20260926100000_auth_hardening) — emails are stored/looked up lowercased.
+  // + hand-authored CHECK users_email_nfc (email IS NFC NORMALIZED)
+  //   (20261005300000_users_email_nfc, which also backfilled NFD emails).
   @@index([deletedAt])
   @@map("users")
 }

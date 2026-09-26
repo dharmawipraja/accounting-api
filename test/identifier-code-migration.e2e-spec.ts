@@ -13,7 +13,9 @@ import { INestApplication } from '@nestjs/common';
  * The container is migrated to head, so the migration under test is rolled
  * back first (drop its three indexes + forget its _prisma_migrations row),
  * legacy rows the new API would refuse are written straight to the DB, and
- * `prisma migrate deploy` re-applies it.
+ * `prisma migrate deploy` re-applies it. Mechanically fixable codes
+ * (untrimmed, NFKC-different) are auto-normalized; case collisions, blank
+ * codes and codes holding format / control characters block the deploy.
  */
 const MIGRATION = '20261005000000_identifier_code_ci_unique';
 const INDEXES = [
@@ -53,7 +55,7 @@ describe('Migration 20261005000000_identifier_code_ci_unique on legacy data (e2e
 
   afterAll(() => cleanup());
 
-  it('aborts listing every colliding / non-normalized live code, ignores tombstones, then applies once they are fixed', async () => {
+  it('blocks on collisions / blank / zero-width codes (listing them, tombstones ignored), then auto-normalizes padded and full-width codes', async () => {
     for (const ix of INDEXES)
       await prisma.client.$executeRawUnsafe(`DROP INDEX "${ix}"`);
     await prisma.client.$executeRawUnsafe(
@@ -68,10 +70,13 @@ describe('Migration 20261005000000_identifier_code_ci_unique on legacy data (e2e
       data: { code: 'LEG-DUP', name: 'A', isCustomer: true },
     });
     const dupB = await bp.create({
-      data: { code: 'leg-dup', name: 'B', isCustomer: true },
+      data: { code: 'leg-dup ', name: 'B', isCustomer: true },
     });
     const padded = await bp.create({
-      data: { code: 'LEG-PAD ', name: 'C', isCustomer: true },
+      data: { code: '  LEG-PAD ', name: 'C', isCustomer: true },
+    });
+    const blank = await bp.create({
+      data: { code: '\u3000 ', name: 'G', isCustomer: true },
     });
     // A tombstoned row sharing a live code's lower() form (even un-renamed)
     // is outside the partial index and the pre-check.
@@ -81,6 +86,14 @@ describe('Migration 20261005000000_identifier_code_ci_unique on legacy data (e2e
     await prisma.client.$executeRaw`
       INSERT INTO business_partners (id, code, name, is_customer, updated_at, deleted_at)
       VALUES (gen_random_uuid()::text, 'leg-tomb', 'E', true, now(), now())`;
+    // A padded live code whose normalized form equals an UN-renamed
+    // tombstone's exact code: the rewrite would hit <table>_code_key → blocks.
+    const shadowed = await bp.create({
+      data: { code: ' LEG-SHADOW', name: 'H', isCustomer: true },
+    });
+    await prisma.client.$executeRaw`
+      INSERT INTO business_partners (id, code, name, is_customer, updated_at, deleted_at)
+      VALUES (gen_random_uuid()::text, 'LEG-SHADOW', 'I', true, now(), now())`;
     const kas = await prisma.client.account.findFirstOrThrow({
       where: { code: '1-1000' },
     });
@@ -98,7 +111,7 @@ describe('Migration 20261005000000_identifier_code_ci_unique on legacy data (e2e
     });
     const zw = await prisma.client.taxCode.create({
       data: {
-        code: 'TX​1',
+        code: 'TX\u200B1',
         name: 'Zero width',
         kind: 'PPN_OUTPUT',
         rate: '0.01',
@@ -120,27 +133,38 @@ describe('Migration 20261005000000_identifier_code_ci_unique on legacy data (e2e
       'identifier code case-insensitive uniqueness aborted',
     );
     expect(output).toMatch(/business_partners: live codes collide/);
-    expect(output).toContain(dupA.id);
-    expect(output).toContain(dupB.id);
-    expect(output).toContain(padded.id);
-    expect(output).toContain(fw.id);
-    expect(output).toContain(zw.id);
-    expect(output).not.toContain(tomb.id);
+    expect(output).toMatch(/business_partners: live codes that cannot be/);
+    expect(output).toMatch(/tax_codes: live codes that cannot be/);
+    expect(output).toMatch(/equals a soft-deleted row's code/);
+    for (const blocking of [dupA, dupB, blank, zw, shadowed])
+      expect(output).toContain(blocking.id);
+    // Fixable-only rows are not blocking; tombstones are ignored.
+    for (const fine of [padded, fw, tomb])
+      expect(output).not.toContain(fine.id);
     expect(await presentIndexes()).toEqual([]);
+    // The failed run changed nothing (the auto-fix runs only once the
+    // blocking checks pass).
+    expect(
+      (
+        await prisma.client.businessPartner.findFirstOrThrow({
+          where: { id: padded.id },
+        })
+      ).code,
+    ).toBe('  LEG-PAD ');
 
-    // The operator fixes the rows, marks the failed attempt rolled back and
-    // re-runs.
+    // The operator fixes the blocking rows, marks the failed attempt rolled
+    // back and re-runs.
     await prisma.client.businessPartner.update({
       where: { id: dupB.id },
       data: { code: 'LEG-DUP-2' },
     });
     await prisma.client.businessPartner.update({
-      where: { id: padded.id },
-      data: { code: 'LEG-PAD' },
+      where: { id: blank.id },
+      data: { code: 'LEG-BLANK' },
     });
-    await prisma.client.account.update({
-      where: { id: fw.id },
-      data: { code: 'FW-9' },
+    await prisma.client.businessPartner.update({
+      where: { id: shadowed.id },
+      data: { code: 'LEG-SHADOW-2' },
     });
     await prisma.client.taxCode.update({
       where: { id: zw.id },
@@ -153,6 +177,19 @@ describe('Migration 20261005000000_identifier_code_ci_unique on legacy data (e2e
     const out = deploy();
     expect(out).toContain(MIGRATION);
     expect(await presentIndexes()).toEqual(INDEXES);
+
+    // Padded and full-width codes were normalized in place (case kept).
+    expect(
+      (
+        await prisma.client.businessPartner.findFirstOrThrow({
+          where: { id: padded.id },
+        })
+      ).code,
+    ).toBe('LEG-PAD');
+    expect(
+      (await prisma.client.account.findFirstOrThrow({ where: { id: fw.id } }))
+        .code,
+    ).toBe('FW-9');
 
     // The live-only case-insensitive index now rejects a case variant...
     await expect(

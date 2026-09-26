@@ -5,12 +5,11 @@ import {
   isAuditInstantString,
 } from '../dates/parse-date';
 
-/** Pair with @IsDateString() on the audit-log `from` / `to` filters: a
+/** Used ALONE (it subsumes @IsDateString) on the audit-log `from` / `to` filters: a
  *  strict ISO date or date-time (`YYYY-MM-DD[THH:MM[:SS[.f]]][Z|±HH:MM]`)
  *  on a real calendar day with a year in 1970–9999 — anything else is a 400
- *  (never a silently shifted day or a Postgres out-of-range 500). Kept as an
- *  extra decorator so the OpenAPI format inferred from IsDateString is
- *  unchanged. */
+ *  (never a silently shifted day or a Postgres out-of-range 500), with ONE
+ *  validation message (non-strings fail it too). */
 export function IsAuditInstant(options?: ValidationOptions) {
   return function (object: object, propertyName: string): void {
     registerDecorator({
