@@ -7,23 +7,13 @@ import {
 import { Observable, from, throwError } from 'rxjs';
 import { catchError, concatMap } from 'rxjs/operators';
 import { AuditService } from './audit.service';
-import { sanitize } from './audit-sanitize';
 import { statusFromException } from '../common/errors/exception-status';
-import { MUTATING_METHODS } from './mutating-methods';
-
-const MUTATING: Set<string> = new Set(MUTATING_METHODS);
-
-interface AuditableRequest {
-  method: string;
-  originalUrl?: string;
-  url: string;
-  params: Record<string, unknown>;
-  body: unknown;
-  ip?: string;
-  /** pino-http request id — the same value as X-Request-Id / error traceId. */
-  id?: unknown;
-  user?: { id: string; role: string };
-}
+import {
+  auditBaseOf,
+  isMutating,
+  markAudited,
+  type AuditableRequest,
+} from './audit-request';
 
 function boundedId(id: unknown): string | null {
   return typeof id === 'string' && id.length > 0 && id.length <= 128
@@ -49,22 +39,12 @@ export class AuditInterceptor implements NestInterceptor {
 
   intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
     const req = ctx.switchToHttp().getRequest<AuditableRequest>();
-    if (!MUTATING.has(req.method)) return next.handle();
+    if (!isMutating(req.method)) return next.handle();
+    // Claim the request: the exception filter must not write a second row.
+    markAudited(req);
     const start = Date.now();
     const res = ctx.switchToHttp().getResponse<{ statusCode: number }>();
-    const base = {
-      userId: req.user?.id ?? null,
-      userRole: req.user?.role ?? null,
-      method: req.method,
-      path: req.originalUrl ?? req.url,
-      params: req.params ?? {},
-      body: sanitize(req.body),
-      ip: req.ip ?? null,
-      requestId:
-        typeof req.id === 'string' || typeof req.id === 'number'
-          ? String(req.id)
-          : null,
-    };
+    const base = auditBaseOf(req, { withBody: true });
     return next.handle().pipe(
       concatMap((data) =>
         from(

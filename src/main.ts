@@ -5,6 +5,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { AuditService } from './audit/audit.service';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { corsOptions } from './config/cors-origins';
 import { scrubSentryEvent } from './config/sentry-scrub';
@@ -57,7 +58,7 @@ async function bootstrap(): Promise<void> {
       transform: true,
     }),
   );
-  app.useGlobalFilters(new AllExceptionsFilter());
+  app.useGlobalFilters(new AllExceptionsFilter(app.get(AuditService)));
   app.enableShutdownHooks();
   // URI versioning — every business route is served under /v1 (hard cutover).
   // Operational probes (/health, /ready, /metrics) opt out via @Version(VERSION_NEUTRAL).

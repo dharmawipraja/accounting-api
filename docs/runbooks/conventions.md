@@ -105,6 +105,18 @@ One stable error envelope, no leaked internals.
   body fields are rejected (422-style validation error), and payloads are
   transformed into DTO instances. Define request shapes as DTO classes with
   class-validator decorators — don't read untyped `req.body`.
+- **PATCH DTOs: `@OptionalNonNull()` for non-nullable columns.** `@IsOptional()`
+  skips validation for `null` too, so `{ "name": null }` would reach Prisma (a
+  500/opaque 400). Use `@OptionalNonNull()`
+  (`src/common/validators/optional-non-null.ts`): an absent key is skipped, an
+  explicit `null` is a 400 `"<field> must not be null"`. Keep `@IsOptional()` only
+  for nullable columns where `null` means "clear" (and document it). Cap every
+  free-text string with `@MaxLength` (codes/npwp 32, vendorInvoiceNo 64, new
+  names 200, new descriptions/addresses 500; existing tighter caps stay). Both are
+  asserted in `src/common/validators/dto-null-and-caps.spec.ts`.
+- **Trace ids are server-generated.** `req.id` / `X-Request-Id` response header /
+  error `traceId` / `audit_log.request_id` is always a fresh UUID (`genReqId` in
+  `app.module.ts`); a safe inbound `X-Request-Id` is only `clientRequestId`.
 - **Lists use the pagination envelope `{ data, total, limit, offset }`.** Drive
   it through the shared `listPaginated` seam (`src/common/pagination/paginated.ts`)
   and accept a `PaginationQueryDto` (`@Max(MAX_LIMIT)`; `MAX_LIMIT = 200`,

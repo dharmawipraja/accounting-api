@@ -286,3 +286,87 @@ describe('AllExceptionsFilter', () => {
     expect((body as Record<string, unknown>).traceId).toBeUndefined();
   });
 });
+
+describe('AllExceptionsFilter guard-rejection audit', () => {
+  function hostFor(req: Record<string, unknown>) {
+    let statusCode = 0;
+    const res = {
+      status(code: number) {
+        statusCode = code;
+        return this;
+      },
+      json() {
+        return this;
+      },
+    };
+    const host = {
+      switchToHttp: () => ({ getResponse: () => res, getRequest: () => req }),
+    } as unknown as ArgumentsHost;
+    return { host, code: () => statusCode };
+  }
+  const flush = () => new Promise((r) => setImmediate(r));
+
+  it('audits a guard 401 on a mutating request without the body, then responds', async () => {
+    const record = jest.fn().mockResolvedValue(undefined);
+    const filter = new AllExceptionsFilter({ record });
+    const req = {
+      method: 'POST',
+      url: '/v1/partners',
+      params: {},
+      body: { name: 'x' },
+      id: 'srv-1',
+      clientRequestId: 'cli-1',
+    };
+    const m = hostFor(req);
+    filter.catch(new HttpException('Unauthorized', 401), m.host);
+    await flush();
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: 401,
+        body: {},
+        userId: null,
+        requestId: 'srv-1',
+        clientRequestId: 'cli-1',
+      }),
+    );
+    expect(m.code()).toBe(401);
+  });
+
+  it('keeps the redacted body for a 403 and never double-audits', async () => {
+    const record = jest.fn().mockResolvedValue(undefined);
+    const filter = new AllExceptionsFilter({ record });
+    const req = {
+      method: 'PATCH',
+      url: '/v1/x',
+      params: {},
+      body: { password: 'p' },
+      user: { id: 'u1', role: 'VIEWER' },
+    };
+    filter.catch(new HttpException('Forbidden', 403), hostFor(req).host);
+    await flush();
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: 403,
+        body: { password: '[REDACTED]' },
+        userId: 'u1',
+      }),
+    );
+    // same request object reaching the filter again → already audited
+    filter.catch(new HttpException('Forbidden', 403), hostFor(req).host);
+    await flush();
+    expect(record).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not audit reads or non-guard statuses', async () => {
+    const record = jest.fn().mockResolvedValue(undefined);
+    const filter = new AllExceptionsFilter({ record });
+    const get = hostFor({ method: 'GET', url: '/v1/x', params: {} });
+    filter.catch(new HttpException('Unauthorized', 401), get.host);
+    const notFound = hostFor({ method: 'POST', url: '/v1/nope', params: {} });
+    filter.catch(new HttpException('Not Found', 404), notFound.host);
+    await flush();
+    expect(record).not.toHaveBeenCalled();
+    expect(get.code()).toBe(401);
+    expect(notFound.code()).toBe(404);
+  });
+});

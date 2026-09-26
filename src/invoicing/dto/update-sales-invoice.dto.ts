@@ -13,9 +13,10 @@ import {
 import { DocumentLineDto } from './document-line.dto';
 import { MAX_LINE_ITEMS } from '../../common/dto/limits';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { OptionalNonNull } from '../../common/validators/optional-non-null';
 
 export class UpdateSalesInvoiceDto {
-  @IsOptional() @IsDateString() @IsBusinessDate() date?: string;
+  @OptionalNonNull() @IsDateString() @IsBusinessDate() date?: string;
   @ApiPropertyOptional({
     type: String,
     format: 'date',
@@ -27,7 +28,7 @@ export class UpdateSalesInvoiceDto {
   @IsBusinessDate()
   dueDate?: string | null;
   @IsOptional() @IsString() @MaxLength(255) description?: string;
-  @IsOptional()
+  @OptionalNonNull()
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(MAX_LINE_ITEMS)

@@ -22,5 +22,5 @@ export class CreateAccountDto {
   @IsOptional() @IsEnum(CashFlowCategory) cashFlowCategory?: CashFlowCategory;
   @IsOptional() @IsEnum(AccountRole) role?: AccountRole;
   @IsOptional() @IsBoolean() isPostable?: boolean;
-  @IsOptional() @IsString() parentCode?: string;
+  @IsOptional() @IsString() @MaxLength(32) parentCode?: string;
 }

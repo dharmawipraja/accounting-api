@@ -8,6 +8,7 @@ import { RedisModule } from './common/redis/redis.module';
 import { REDIS_CLIENT } from './common/redis/redis.constants';
 import { LoggerModule } from 'nestjs-pino';
 import { randomUUID } from 'crypto';
+import { clientRequestIdOf } from './common/http/request-id';
 import { HealthController } from './health/health.controller';
 import { validate } from './config/env.validation';
 import { resolveEnvFilePaths } from './config/env-file-paths';
@@ -30,6 +31,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
 import { PasswordChangeGuard } from './auth/guards/password-change.guard';
 import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
 import { loginIpThrottler } from './common/guards/login-ip-throttle';
+import { AuditInterceptor } from './audit/audit.interceptor';
 import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout.interceptor';
 import { HttpDrainService } from './common/http/http-drain.service';
 import {
@@ -51,16 +53,20 @@ import {
         level: process.env.LOG_LEVEL ?? 'info',
         autoLogging: true,
         genReqId: (req, res) => {
-          // Reuse an inbound X-Request-Id only if it's a safe shape/length;
-          // otherwise generate one. Prevents an oversized/garbage upstream value
-          // from polluting logs (defense-in-depth — Node already rejects CR/LF).
-          const inbound = req.headers['x-request-id'];
-          const id =
-            typeof inbound === 'string' && /^[\w.-]{1,128}$/.test(inbound)
-              ? inbound
-              : randomUUID();
+          // The trace id is ALWAYS server-generated: a caller-chosen id could
+          // collide with / impersonate another request's audit trail. A
+          // safe-shaped inbound X-Request-Id is kept only for correlation — as
+          // the `clientRequestId` log field and audit_log.client_request_id.
+          (req as { clientRequestId?: string | null }).clientRequestId =
+            clientRequestIdOf(req.headers['x-request-id']);
+          const id = randomUUID();
           res.setHeader('X-Request-Id', id);
           return id;
+        },
+        customProps: (req) => {
+          const cid = (req as { clientRequestId?: string | null })
+            .clientRequestId;
+          return cid ? { clientRequestId: cid } : {};
         },
         redact: [
           'req.headers.authorization',
@@ -104,6 +110,13 @@ import {
     { provide: APP_GUARD, useClass: UserThrottlerGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: PasswordChangeGuard },
+    // Global interceptor ORDER matters: Nest applies APP_INTERCEPTORs in module
+    // scan order (AppModule first), outermost first. AuditInterceptor MUST wrap
+    // RequestTimeoutInterceptor: on timeout, rxjs `timeout` unsubscribes from
+    // everything inside it, so an inner audit would never record the 408. Being
+    // outermost, audit sees the RequestTimeoutException and writes exactly one
+    // row (status 408). Metrics + Idempotency (their own modules) stay inside.
+    { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
     {
       provide: APP_INTERCEPTOR,
       useFactory: () => new RequestTimeoutInterceptor(REQUEST_TIMEOUT_MS),

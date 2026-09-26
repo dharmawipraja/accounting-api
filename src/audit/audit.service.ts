@@ -12,6 +12,7 @@ export interface AuditEntry {
   durationMs: number;
   ip: string | null;
   requestId: string | null;
+  clientRequestId: string | null;
   entityId: string | null;
 }
 
@@ -35,6 +36,7 @@ export class AuditService {
           durationMs: entry.durationMs,
           ip: entry.ip,
           requestId: entry.requestId,
+          clientRequestId: entry.clientRequestId,
           entityId: entry.entityId,
         },
       });

@@ -18,8 +18,8 @@ import {
 
 export interface UpdateCompanyInput {
   legalName?: string;
-  npwp?: string;
-  address?: string;
+  npwp?: string | null;
+  address?: string | null;
   fiscalYearStartMonth?: number;
   segregationOfDutiesEnabled?: boolean;
   isPkp?: boolean;

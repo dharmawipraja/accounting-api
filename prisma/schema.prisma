@@ -582,19 +582,21 @@ model YearEndClosing {
 }
 
 model AuditLog {
-  id         String   @id @default(uuid())
-  timestamp  DateTime @default(now())
-  userId     String?  @map("user_id")
-  userRole   String?  @map("user_role")
-  method     String
-  path       String
-  params     Json?
-  body       Json?
-  statusCode Int      @map("status_code")
-  durationMs Int      @map("duration_ms")
-  ip         String?
-  requestId  String?  @map("request_id")
-  entityId   String?  @map("entity_id")
+  id              String   @id @default(uuid())
+  timestamp       DateTime @default(now())
+  userId          String?  @map("user_id")
+  userRole        String?  @map("user_role")
+  method          String
+  path            String
+  params          Json?
+  body            Json?
+  statusCode      Int      @map("status_code")
+  durationMs      Int      @map("duration_ms")
+  ip              String?
+  requestId       String?  @map("request_id")
+  /// Caller-supplied X-Request-Id (sanitized ^[\w.-]{1,128}$, else NULL) — correlation only; request_id is always server-generated.
+  clientRequestId String?  @map("client_request_id")
+  entityId        String?  @map("entity_id")
 
   @@index([timestamp])
   @@index([userId])

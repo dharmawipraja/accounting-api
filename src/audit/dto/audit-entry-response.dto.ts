@@ -17,9 +17,16 @@ export class AuditEntryDto {
   @ApiProperty({ nullable: true, example: '127.0.0.1' }) ip!: string | null;
   @ApiProperty({
     nullable: true,
-    description: 'Request trace id (X-Request-Id / error envelope traceId)',
+    description:
+      'Server-generated request trace id (X-Request-Id response header / error envelope traceId)',
   })
   requestId!: string | null;
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Caller-supplied X-Request-Id, kept for correlation only when it matches ^[\\w.-]{1,128}$ (else null)',
+  })
+  clientRequestId!: string | null;
   @ApiProperty({
     nullable: true,
     description: 'Id of the created/affected entity (response body `id`)',

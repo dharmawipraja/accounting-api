@@ -1,14 +1,11 @@
 import { Module } from '@nestjs/common';
-import { APP_INTERCEPTOR } from '@nestjs/core';
 import { AuditService } from './audit.service';
 import { AuditController } from './audit.controller';
-import { AuditInterceptor } from './audit.interceptor';
 
 @Module({
-  providers: [
-    AuditService,
-    { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
-  ],
+  // AuditInterceptor is registered as APP_INTERCEPTOR in AppModule (ordered
+  // OUTSIDE RequestTimeoutInterceptor so 408s are audited) — not here.
+  providers: [AuditService],
   controllers: [AuditController],
   exports: [AuditService],
 })

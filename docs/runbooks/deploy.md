@@ -7,8 +7,13 @@
   `POSTGRES_PASSWORD` (DB owner), `APP_DB_PASSWORD` (the api's least-privilege
   `accounting_app` role — see [Database roles](#database-roles-least-privilege)),
   `JWT_ACCESS_SECRET` (>=32 chars), `JWT_REFRESH_SECRET` (>=32),
-  `DOMAIN`. Both DB passwords are interpolated into connection URLs — use
-  URL-safe values (e.g. `openssl rand -hex 24`). The two JWT secrets **must differ** (startup validation rejects equal
+  `DOMAIN`. Both DB passwords are interpolated **unencoded** into connection URLs
+  by compose (`postgresql://user:${PASSWORD}@db/...`), so they **must be URL-safe**:
+  only `A-Z a-z 0-9 . _ ~ -` (e.g. `openssl rand -hex 24`). A reserved character
+  (`@ : / ? # % [ ]`, space…) breaks or mis-parses the URL. Where you build a URL by
+  hand (e.g. a one-off `DATABASE_URL` for a rehearsal), percent-encode any such
+  character (`@` → `%40`). The `migrate` grants step (`ensure-app-role`) **refuses**
+  a non-URL-safe `APP_DB_PASSWORD` and fails the deploy before `api` starts. The two JWT secrets **must differ** (startup validation rejects equal
   secrets); `JWT_ACCESS_TTL` must be ≤ 3600s and `JWT_REFRESH_TTL` ≤ 30d, each a whole
   number **with a unit** `s`/`m`/`h`/`d` (e.g. `900s`, `7d`) — a unitless `900` is rejected
   at startup (jsonwebtoken would read it as 900 ms).
@@ -146,6 +151,7 @@ Work through this **once**, on the first deploy that includes migrations
 
 ## Health & shutdown
 - `api` is healthy when `/ready` returns 200 (DB + Redis reachable — a dependency outage now marks the container unhealthy); `/health` stays a bare liveness probe. Caddy proxies only a started app.
+- **Edge exposure:** Caddy answers `404` for `/ready*` and `/metrics*` (dependency state and metrics are internal). The container healthcheck (`127.0.0.1:3000/ready`) and Prometheus (`api:3000/metrics`) bypass Caddy, so they are unaffected; external uptime probes use `https://$DOMAIN/health`. Check readiness from the VM with `docker compose exec api node -e "require('http').get('http://127.0.0.1:3000/ready',r=>console.log(r.statusCode))"`.
 - One-time caveat (AUDIT3-7, `20260926100000_auth_hardening`): the migration
   lowercases `users.email` and adds a unique index on `lower(email)`. It **aborts
   with a clear error listing the emails** if two accounts differ only by

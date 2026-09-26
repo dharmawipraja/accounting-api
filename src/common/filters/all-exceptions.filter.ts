@@ -15,6 +15,13 @@ import {
   statusFromException,
   TRANSIENT_CONFLICT,
 } from '../errors/exception-status';
+import type { AuditService } from '../../audit/audit.service';
+import {
+  auditBaseOf,
+  markAudited,
+  shouldAuditRejection,
+  type AuditableRequest,
+} from '../../audit/audit-request';
 
 interface ErrorEnvelope {
   code: string;
@@ -27,10 +34,17 @@ interface ErrorEnvelope {
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
 
+  /** @param audit when given, mutating requests rejected by a GUARD (401/403/
+   *  429 — guards run before AuditInterceptor) are audited here: one row, no
+   *  body for 401 (unauthenticated input is not trusted into the log). */
+  constructor(private readonly audit?: Pick<AuditService, 'record'>) {}
+
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
-    const req = ctx.getRequest<{ url?: string; id?: string }>();
+    const req = ctx.getRequest<
+      { url?: string; id?: string } & Partial<AuditableRequest>
+    >();
     const url = req.url ?? 'unknown';
 
     const status = statusFromException(exception);
@@ -112,6 +126,23 @@ export class AllExceptionsFilter implements ExceptionFilter {
     }
 
     if (req.id) envelope.traceId = req.id;
-    response.status(status).json(envelope);
+    const send = () => {
+      response.status(status).json(envelope);
+    };
+    const auditable = req as AuditableRequest;
+    if (this.audit && shouldAuditRejection(auditable, status)) {
+      markAudited(auditable);
+      // record() never throws; respond once the row is written.
+      void this.audit
+        .record({
+          ...auditBaseOf(auditable, { withBody: status !== 401 }),
+          entityId: null,
+          statusCode: status,
+          durationMs: 0, // rejected before any handler work
+        })
+        .finally(send);
+      return;
+    }
+    send();
   }
 }

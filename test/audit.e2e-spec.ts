@@ -7,6 +7,8 @@ import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
 import { bootstrapTestApp } from './e2e-helpers';
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 describe('Audit log (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -133,23 +135,96 @@ describe('Audit log (e2e)', () => {
       .send({ code: 'AUD-2', name: 'Traced', isCustomer: true })
       .expect(201);
     const createdId = (res.body as { id: string }).id;
+    // The trace id is ALWAYS server-generated (the response header); the inbound
+    // X-Request-Id is kept only as client_request_id.
+    const serverId = res.headers['x-request-id'];
+    expect(serverId).toMatch(UUID);
     const row = await prisma.client.auditLog.findFirst({
-      where: { requestId: 'audit-trace-0001' },
+      where: { clientRequestId: 'audit-trace-0001' },
     });
     expect(row).not.toBeNull();
+    expect(row!.requestId).toBe(serverId);
     expect(row!.entityId).toBe(createdId);
 
-    // A failed write still records the trace id; no entity id.
-    await request(app.getHttpServer() as App)
+    // A failed write still records the trace id; no entity id; exactly one row
+    // (the exception filter must not add a second one).
+    const failedRes = await request(app.getHttpServer() as App)
       .post('/v1/partners')
       .set('Authorization', `Bearer ${adminToken}`)
       .set('X-Request-Id', 'audit-trace-0002')
       .send({ code: 'AUD-2', name: 'Dup', isCustomer: true })
       .expect(409);
-    const failed = await prisma.client.auditLog.findFirst({
-      where: { requestId: 'audit-trace-0002' },
+    const failed = await prisma.client.auditLog.findMany({
+      where: { clientRequestId: 'audit-trace-0002' },
     });
-    expect(failed!.statusCode).toBe(409);
-    expect(failed!.entityId).toBeNull();
+    expect(failed).toHaveLength(1);
+    expect(failed[0].requestId).toBe(failedRes.headers['x-request-id']);
+    expect(failed[0].statusCode).toBe(409);
+    expect(failed[0].entityId).toBeNull();
+  });
+
+  it('an unsafe inbound X-Request-Id is dropped (client_request_id NULL)', async () => {
+    await request(app.getHttpServer() as App)
+      .post('/v1/partners')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-Request-Id', 'bad id with spaces')
+      .send({ code: 'AUD-3', name: 'Unsafe trace', isCustomer: true })
+      .expect(201);
+    const row = await prisma.client.auditLog.findFirst({
+      where: { path: '/v1/partners', method: 'POST', statusCode: 201 },
+      orderBy: { timestamp: 'desc' },
+    });
+    expect(row!.clientRequestId).toBeNull();
+    expect(row!.requestId).toMatch(UUID);
+  });
+
+  it('a guard 401 on a mutating route writes one audit row without the body', async () => {
+    const res = await request(app.getHttpServer() as App)
+      .post('/v1/partners')
+      .set('X-Request-Id', 'audit-guard-401')
+      .send({ code: 'AUD-401', name: 'Anon', isCustomer: true })
+      .expect(401);
+    const rows = await prisma.client.auditLog.findMany({
+      where: { clientRequestId: 'audit-guard-401' },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      method: 'POST',
+      path: '/v1/partners',
+      statusCode: 401,
+      userId: null,
+      requestId: res.headers['x-request-id'],
+    });
+    expect(rows[0].body).toEqual({});
+  });
+
+  it('a guard 403 on a mutating route writes one audit row (user + redacted body)', async () => {
+    await request(app.getHttpServer() as App)
+      .post('/v1/partners')
+      .set('Authorization', `Bearer ${viewerToken}`)
+      .set('X-Request-Id', 'audit-guard-403')
+      .send({ code: 'AUD-403', name: 'Viewer', isCustomer: true, token: 'x' })
+      .expect(403);
+    const rows = await prisma.client.auditLog.findMany({
+      where: { clientRequestId: 'audit-guard-403' },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].statusCode).toBe(403);
+    expect(rows[0].userId).toBeTruthy();
+    expect(rows[0].userRole).toBe('VIEWER');
+    expect(rows[0].body).toEqual({
+      code: 'AUD-403',
+      name: 'Viewer',
+      isCustomer: true,
+      token: '[REDACTED]',
+    });
+  });
+
+  it('a guard 401 on a GET is not audited', async () => {
+    const before = await prisma.client.auditLog.count();
+    await request(app.getHttpServer() as App)
+      .get('/v1/partners')
+      .expect(401);
+    expect(await prisma.client.auditLog.count()).toBe(before);
   });
 });

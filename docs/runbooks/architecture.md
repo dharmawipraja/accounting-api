@@ -86,22 +86,30 @@ Guards run in registration order:
 3. **`RolesGuard`** (`src/auth/guards/roles.guard.ts`) — enforces `@Roles(...)`;
    honors `@Public()`; no `@Roles` ⇒ any authenticated user passes.
 
-### Interceptors (registered per-module via `APP_INTERCEPTOR`, plus one in `AppModule`)
+### Interceptors (registered via `APP_INTERCEPTOR`; order = module scan order, outermost first)
 
 - **`IdempotencyInterceptor`** (`src/common/idempotency/idempotency.module.ts`) —
   reserve-first idempotency for handlers marked `@Idempotent()`/`@IdempotentWrite()`.
-- **`AuditInterceptor`** (`src/audit/audit.module.ts`) — records every mutating
-  request (method in `MUTATING_METHODS`) with sanitized body + resolved status code
-  (DomainError/HttpException statuses are recorded, not a blanket 500).
+- **`AuditInterceptor`** (`src/audit/audit.interceptor.ts`, registered in
+  `AppModule` **before** `RequestTimeoutInterceptor`, so it is outermost) — records
+  every mutating request (method in `MUTATING_METHODS`) with sanitized body +
+  resolved status code (DomainError/HttpException statuses are recorded, not a
+  blanket 500), exactly once — including a `408` (rxjs `timeout` unsubscribes from
+  everything inside it, so an inner audit would miss it). Guard rejections
+  (`401/403/429`) happen before any interceptor; `AllExceptionsFilter` (given the
+  `AuditService` in `main.ts`) writes their row (no body for 401). A request-level
+  `AUDITED` marker (`src/audit/audit-request.ts`) prevents a second row.
 - **`MetricsInterceptor`** (`src/metrics/metrics.module.ts`) — HTTP-duration
   histogram labelled by method/route/status.
 - **`RequestTimeoutInterceptor`** (`src/common/interceptors/request-timeout.interceptor.ts`,
   registered in `AppModule`) — caps handler duration (default 35s, above the 30s DB statement timeout) → clean 408;
   exempts probe paths.
 
-> NestJS does not guarantee a strict cross-module ordering of multiple
-> `APP_INTERCEPTOR` providers; treat them as independent cross-cutting concerns
-> rather than a hand-tuned pipeline.
+> Global `APP_INTERCEPTOR`s apply in module scan order (the root module's
+> providers first, then imports depth-first). The one ordering that matters —
+> Audit outside Timeout — is pinned by listing both in `AppModule.providers` and
+> guarded by `test/audit-timeout.e2e-spec.ts`. Metrics/Idempotency (their own
+> modules) sit inside both.
 
 ### Error → envelope
 
@@ -115,7 +123,7 @@ All thrown errors funnel through **`AllExceptionsFilter`**
   `P2003`→409, …); unmapped codes stay 500 and are Sentry-captured.
 - Anything else → 500 `INTERNAL_ERROR`, logged + Sentry-captured (no stack leak).
 
-Every envelope gets a `traceId` (the `X-Request-Id`) when present.
+Every envelope gets a `traceId` (the server-generated `X-Request-Id`) when present.
 
 ---
 

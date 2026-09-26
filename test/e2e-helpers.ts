@@ -6,6 +6,7 @@ import {
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from '../src/app.module';
+import { AuditService } from '../src/audit/audit.service';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { startTestDb, TestDb } from './testcontainers';
@@ -73,7 +74,7 @@ export async function bootstrapTestApp(
       }),
     );
   }
-  app.useGlobalFilters(new AllExceptionsFilter());
+  app.useGlobalFilters(new AllExceptionsFilter(app.get(AuditService)));
   opts.configure?.(app);
   await app.init();
   const cleanup = async () => {

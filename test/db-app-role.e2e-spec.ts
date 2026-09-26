@@ -77,6 +77,29 @@ describe('DB app role — accounting_app is least-privilege and runs the app (e2
     await cleanup();
   });
 
+  it('ensure-app-role refuses an APP_DB_PASSWORD that is not URL-safe (it is interpolated raw into the api DATABASE_URL)', () => {
+    for (const bad of ['p@ss', 'a/b', 'x:y', 'has space', '100%', 'q?z#']) {
+      let stderr = '';
+      expect(() => {
+        try {
+          execFileSync('node', ['scripts/db/ensure-app-role.js'], {
+            env: {
+              ...process.env,
+              DATABASE_URL: db.url,
+              APP_DB_PASSWORD: bad,
+            },
+            encoding: 'utf8',
+            stdio: 'pipe',
+          });
+        } catch (err) {
+          stderr = String((err as { stderr?: string }).stderr);
+          throw err;
+        }
+      }).toThrow();
+      expect(stderr).toMatch(/URL-safe/);
+    }
+  });
+
   it('the app connects as accounting_app', async () => {
     const { rows } = await appClient.query<{ u: string }>(
       'SELECT current_user AS u',

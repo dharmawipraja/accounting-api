@@ -5,14 +5,15 @@ import {
   IsString,
   MaxLength,
 } from 'class-validator';
+import { OptionalNonNull } from '../../common/validators/optional-non-null';
 
 export class UpdateBusinessPartnerDto {
-  @IsOptional() @IsString() @MaxLength(160) name?: string;
+  @OptionalNonNull() @IsString() @MaxLength(160) name?: string;
   @IsOptional() @IsString() @MaxLength(32) npwp?: string;
   @IsOptional() @IsEmail() email?: string;
   @IsOptional() @IsString() @MaxLength(32) phone?: string;
   @IsOptional() @IsString() @MaxLength(255) address?: string;
-  @IsOptional() @IsBoolean() isCustomer?: boolean;
-  @IsOptional() @IsBoolean() isVendor?: boolean;
-  @IsOptional() @IsBoolean() isActive?: boolean;
+  @OptionalNonNull() @IsBoolean() isCustomer?: boolean;
+  @OptionalNonNull() @IsBoolean() isVendor?: boolean;
+  @OptionalNonNull() @IsBoolean() isActive?: boolean;
 }

@@ -1,18 +1,13 @@
-import {
-  IsBoolean,
-  IsOptional,
-  IsString,
-  Matches,
-  MaxLength,
-} from 'class-validator';
+import { IsBoolean, IsString, Matches, MaxLength } from 'class-validator';
+import { OptionalNonNull } from '../../common/validators/optional-non-null';
 
 export class UpdateTaxCodeDto {
-  @IsOptional()
+  @OptionalNonNull()
   @IsString()
   @MaxLength(128)
   name?: string;
 
-  @IsOptional()
+  @OptionalNonNull()
   @IsString()
   @Matches(/^\d+(\.\d{1,6})?$/, {
     message:
@@ -20,7 +15,7 @@ export class UpdateTaxCodeDto {
   })
   rate?: string;
 
-  @IsOptional()
+  @OptionalNonNull()
   @IsBoolean()
   isActive?: boolean;
 }

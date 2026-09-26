@@ -5,15 +5,17 @@ import * as request from 'supertest';
 import { type App } from 'supertest/types';
 import { UsersService } from '../src/users/users.service';
 import { AuthService } from '../src/auth/auth.service';
+import { PrismaService } from '../src/common/prisma/prisma.service';
 import { bootstrapTestApp } from './e2e-helpers';
 
 describe('Throttle policy (e2e)', () => {
   let app: INestApplication;
   let cleanup: () => Promise<void>;
+  let prisma: PrismaService;
   let token: string;
 
   beforeAll(async () => {
-    ({ app, cleanup } = await bootstrapTestApp());
+    ({ app, cleanup, prisma } = await bootstrapTestApp());
     (
       app.getHttpAdapter().getInstance() as {
         set: (k: string, v: unknown) => void;
@@ -42,6 +44,17 @@ describe('Throttle policy (e2e)', () => {
     }
     expect(statuses.slice(0, 10).every((s) => s === 401)).toBe(true); // bad creds, under the cap
     expect(statuses[10]).toBe(429); // 11th blocked by the login throttle
+
+    // A guard rejection (the throttler runs before interceptors) is still
+    // audited — one row, status 429, body redacted as usual.
+    const throttled = await prisma.client.auditLog.findMany({
+      where: { path: '/v1/auth/login', statusCode: 429 },
+    });
+    expect(throttled).toHaveLength(1);
+    expect(throttled[0].body).toEqual({
+      email: 'thr@test.io',
+      password: '[REDACTED]',
+    });
   });
 
   it('SEC-3: login throttle is per-email, not bypassable by rotating X-Forwarded-For', async () => {

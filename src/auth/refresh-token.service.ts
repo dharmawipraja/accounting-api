@@ -4,8 +4,31 @@ import { randomUUID } from 'crypto';
 import * as ms from 'ms';
 import type { StringValue } from 'ms';
 import { RefreshTokenStatus } from '@prisma/client';
-import { PrismaService } from '../common/prisma/prisma.service';
+import { LedgerTx, PrismaService } from '../common/prisma/prisma.service';
 import { UnauthorizedDomainError } from '../common/errors/domain-errors';
+
+/**
+ * Namespace (classid) of the per-user refresh-session advisory lock, taken with
+ * the TWO-int4-key form `pg_advisory_xact_lock(ns, hashtext(user_id))`. Postgres
+ * keeps the two-key space disjoint from the single-bigint space, so this can
+ * never collide with the bigint keys 71_00x_001 or the fiscal-year keys. A
+ * hashtext collision between two users only over-serializes (harmless).
+ */
+export const REFRESH_SESSION_LOCK_NS = 71_002;
+
+/**
+ * Per-user serialization point for every refresh-token writer (rotate, revoke
+ * one family, revoke all). Row locks alone are not enough: a revoke's UPDATE
+ * snapshot predates a successor that a concurrent rotate INSERTs, so the
+ * successor would survive the revoke. Holding this lock first means the revoke's
+ * UPDATE statement starts only after the rotate committed (READ COMMITTED → a
+ * fresh snapshot that sees the successor). Lock order: this lock → token rows.
+ * Revokes run AFTER (never inside) the user-admin tx that holds 71_001_001, so
+ * no path holds both — no lock-order cycle.
+ */
+async function lockUserSessions(tx: LedgerTx, userId: string): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(${REFRESH_SESSION_LOCK_NS}::int4, hashtext(${userId}))`;
+}
 
 @Injectable()
 export class RefreshTokenService {
@@ -49,6 +72,7 @@ export class RefreshTokenService {
 
     const result = await this.prisma.transaction(
       async (tx): Promise<RotateResult> => {
+        await lockUserSessions(tx, userId);
         const rows = await tx.$queryRaw<
           {
             id: string;
@@ -101,17 +125,24 @@ export class RefreshTokenService {
       where: { id: jti },
     });
     if (!row) return;
-    await this.prisma.client.refreshToken.updateMany({
-      where: { familyId: row.familyId },
-      data: { status: 'REVOKED' },
+    // family_id / user_id are immutable, so reading them before the lock is safe.
+    await this.prisma.transaction(async (tx) => {
+      await lockUserSessions(tx, row.userId);
+      await tx.refreshToken.updateMany({
+        where: { familyId: row.familyId },
+        data: { status: 'REVOKED' },
+      });
     });
   }
 
   /** Revoke every session for a user (logout all devices). */
   async revokeAllForUser(userId: string): Promise<void> {
-    await this.prisma.client.refreshToken.updateMany({
-      where: { userId },
-      data: { status: 'REVOKED' },
+    await this.prisma.transaction(async (tx) => {
+      await lockUserSessions(tx, userId);
+      await tx.refreshToken.updateMany({
+        where: { userId },
+        data: { status: 'REVOKED' },
+      });
     });
   }
 

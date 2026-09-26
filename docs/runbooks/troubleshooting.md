@@ -159,6 +159,10 @@ mechanics, and [`./deploy.md`](./deploy.md) for production deploys.
 - **A 408 does NOT mean the write failed.** The handler may still complete after
   the response. Clients must retry with the **same** `Idempotency-Key` (replay or
   409-then-replay), never a fresh one — a fresh key can duplicate the write.
+- **Audit:** a 408'd mutating request still writes exactly **one** `audit_log` row
+  with `status_code = 408` (AuditInterceptor is registered outermost, before the
+  timeout interceptor). If the handler later commits, the 408 row is all you get —
+  correlate by `request_id` with the api logs.
 - **Fix:** Investigate the slow handler (usually a slow query or a lock wait).
 
 ### Same-key retry keeps returning 409 "committed its write, but its response is unavailable"
@@ -233,6 +237,30 @@ mechanics, and [`./deploy.md`](./deploy.md) for production deploys.
 - **Fix:** Set `ENABLE_SWAGGER=true` on the prod service to expose `/docs` (it
   reveals the full route/DTO surface — opt in deliberately). For a DB-free spec
   artifact instead, use `npm run openapi:export`.
+
+### `/ready` or `/metrics` returns 404 from outside
+
+- **Symptom:** `https://$DOMAIN/ready` (or `/metrics`, `/metrics/...`) returns `404`.
+- **Cause:** Intended. The Caddyfile blocks `/ready*` and `/metrics*` at the edge;
+  only `/health` is public. Healthchecks and Prometheus reach `api:3000` directly.
+- **Fix:** Probe readiness from inside the network (see deploy.md "Edge exposure").
+
+### `migrate` fails: "APP_DB_PASSWORD must be URL-safe"
+
+- **Cause:** The password contains a character outside `A-Z a-z 0-9 . _ ~ -`. Compose
+  embeds it unencoded in the api's `DATABASE_URL`, which would break.
+- **Fix:** Generate a new one (`openssl rand -hex 24`), put it in `.env`, redeploy
+  (`migrate` re-sets the role password). The same rule applies to `POSTGRES_PASSWORD`.
+
+### The `X-Request-Id` I sent is not echoed back / not in `audit_log.request_id`
+
+- **Cause:** Intended. The trace id (`X-Request-Id` response header, error
+  `traceId`, `audit_log.request_id`, log `req.id`) is always a server-generated UUID.
+  A safe-shaped inbound value (`^[\w.-]{1,128}$`) is kept only as the
+  `clientRequestId` log field and `audit_log.client_request_id`; anything else is
+  dropped.
+- **Fix:** Search logs/audit by `clientRequestId` / `client_request_id` for the
+  caller's id, or by the response header for the server id.
 
 ### `/metrics` returns 401
 

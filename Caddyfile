@@ -1,6 +1,10 @@
 {$DOMAIN} {
-	@metrics path /metrics
-	respond @metrics "Not found" 404
+	# Internal-only endpoints: never served to the internet. /metrics* covers
+	# /metrics, /metrics/ and any sub-path; /ready* likewise (readiness leaks
+	# dependency state). Container healthchecks and Prometheus hit api:3000
+	# directly, bypassing Caddy. /health stays public for external uptime probes.
+	@internal path /metrics* /ready*
+	respond @internal "Not found" 404
 	reverse_proxy api:3000
 	request_body {
 		max_size 1MB

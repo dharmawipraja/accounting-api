@@ -22,12 +22,14 @@ describe('traceId correlation (e2e)', () => {
     );
   });
 
-  it('reuses an inbound X-Request-Id', async () => {
+  it('never reuses an inbound X-Request-Id — the trace id is always server-generated', async () => {
     const res = await request(app.getHttpServer() as App)
       .get('/health')
       .set('X-Request-Id', 'trace-abc-123')
       .expect(200);
-    expect(res.headers['x-request-id']).toBe('trace-abc-123');
+    expect(res.headers['x-request-id']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
   });
 
   it('ignores an oversized/garbage inbound X-Request-Id and generates a UUID', async () => {
@@ -47,7 +49,8 @@ describe('traceId correlation (e2e)', () => {
       .get('/v1/reports/balance-sheet')
       .set('X-Request-Id', 'trace-corr-xyz')
       .expect(401);
-    expect(res.headers['x-request-id']).toBe('trace-corr-xyz');
-    expect((res.body as { traceId?: string }).traceId).toBe('trace-corr-xyz');
+    const id = res.headers['x-request-id'];
+    expect(id).not.toBe('trace-corr-xyz'); // server-generated, not the inbound
+    expect((res.body as { traceId?: string }).traceId).toBe(id);
   });
 });

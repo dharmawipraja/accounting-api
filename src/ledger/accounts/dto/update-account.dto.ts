@@ -2,17 +2,20 @@ import {
   IsBoolean,
   IsEnum,
   IsIn,
-  IsOptional,
   IsString,
+  MaxLength,
   ValidateIf,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { CashFlowCategory } from '@prisma/client';
+import { OptionalNonNull } from '../../../common/validators/optional-non-null';
 
 export class UpdateAccountDto {
-  @IsOptional() @IsString() name?: string;
-  @IsOptional() @IsEnum(CashFlowCategory) cashFlowCategory?: CashFlowCategory;
-  @IsOptional() @IsBoolean() isActive?: boolean;
+  @OptionalNonNull() @IsString() @MaxLength(128) name?: string;
+  @OptionalNonNull()
+  @IsEnum(CashFlowCategory)
+  cashFlowCategory?: CashFlowCategory;
+  @OptionalNonNull() @IsBoolean() isActive?: boolean;
   /** Only `CASH` can be assigned after creation (to a postable, debit-normal
    *  ASSET without a role). Singleton roles are create-only. */
   @ApiPropertyOptional({
