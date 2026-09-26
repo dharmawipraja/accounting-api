@@ -5,6 +5,8 @@ import {
   constraintNameOf,
   isConstraintViolation,
   isBodyParserClientError,
+  isUnstorableCharacters,
+  UNSTORABLE_CHARACTERS,
   isTransientConflict,
   statusFromException,
   PRISMA_STATUS,
@@ -366,5 +368,56 @@ describe('constraintNameOf', () => {
     ).toBe('journal_entry_balanced');
     expect(constraintNameOf(new Error('Something else'))).toBeUndefined();
     expect(constraintNameOf(null)).toBeUndefined();
+  });
+});
+
+describe('isUnstorableCharacters (22021 / 22P05 backstop → 400)', () => {
+  const known = (code: string, meta?: Record<string, unknown>) =>
+    new Prisma.PrismaClientKnownRequestError('m', {
+      code,
+      clientVersion: Prisma.prismaVersion.client,
+      meta,
+    });
+  const adapter = (originalCode: string) => {
+    const e = new Error('adapter') as Error & { cause: unknown };
+    e.name = 'DriverAdapterError';
+    e.cause = {
+      kind: 'postgres',
+      originalCode,
+      originalMessage: 'invalid byte sequence for encoding "UTF8": 0x00',
+    };
+    return e;
+  };
+
+  it('matches P2039 / P2010 carrying a 22021 or 22P05 driverAdapterError', () => {
+    for (const code of ['P2039', 'P2010']) {
+      for (const pg of ['22021', '22P05']) {
+        const err = known(code, { driverAdapterError: adapter(pg) });
+        expect(isUnstorableCharacters(err)).toBe(true);
+        expect(statusFromException(err)).toBe(400);
+      }
+    }
+    expect(UNSTORABLE_CHARACTERS).toMatchObject({
+      status: 400,
+      code: 'INVALID_CHARACTERS',
+    });
+  });
+
+  it('matches a bare DriverAdapterError 22021 / 22P05', () => {
+    expect(isUnstorableCharacters(adapter('22021'))).toBe(true);
+    expect(isUnstorableCharacters(adapter('22P05'))).toBe(true);
+    expect(statusFromException(adapter('22P05'))).toBe(400);
+  });
+
+  it('does not match other SQLSTATEs / codes', () => {
+    expect(isUnstorableCharacters(adapter('22003'))).toBe(false);
+    expect(
+      isUnstorableCharacters(
+        known('P2039', { driverAdapterError: adapter('23514') }),
+      ),
+    ).toBe(false);
+    expect(isUnstorableCharacters(known('P2039'))).toBe(false);
+    expect(isUnstorableCharacters(new Error('x'))).toBe(false);
+    expect(statusFromException(known('P2039'))).toBe(500);
   });
 });

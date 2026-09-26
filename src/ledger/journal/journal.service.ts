@@ -5,7 +5,6 @@ import {
   JournalStatus,
   Prisma,
 } from '@prisma/client';
-import { assertNotAfterToday } from '../../common/dates/not-after-today';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { trigramSearch } from '../../common/search/trigram-search';
 import { listPaginated } from '../../common/pagination/paginated';
@@ -135,7 +134,7 @@ export class JournalService {
   ): Promise<JournalEntry> {
     const entry = await this.prisma.client.journalEntry.findFirst({
       where: { id },
-      select: { sourceType: true, date: true },
+      select: { sourceType: true },
     });
     if (!entry)
       throw new NotFoundDomainError('Journal entry not found', { entryId: id });
@@ -147,14 +146,13 @@ export class JournalService {
     }
     // An explicit reversal date may not be after max(today (WIB), the
     // entry's own date) — 422 { date, today[, originalDate] }: a future-dated
-    // entry may be reversed on its own date, like the no-body reversal.
-    // (Year-end reopen reverses through PostingService directly, on the
-    // closing entry's own date.)
-    if (date)
-      assertNotAfterToday(date, 'Reversal date cannot be in the future', {
-        originalDate: entry.date,
-      });
-    return this.posting.reverse(id, reversedBy, date);
+    // entry may be reversed on its own date, like the no-body reversal. The
+    // ceiling is checked in prepareReversal against the entry it re-reads
+    // (after the POSTED check), never against this pre-read. (Year-end reopen
+    // reverses through PostingService directly, on the closing entry's date.)
+    return this.posting.reverse(id, reversedBy, date, {
+      futureDateCeiling: true,
+    });
   }
 
   /** Direct create-and-post (used when Segregation of Duties is off). */

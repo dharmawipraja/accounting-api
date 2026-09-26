@@ -40,6 +40,7 @@ import { AuditInterceptor } from './audit/audit.interceptor';
 import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout.interceptor';
 import { HttpDrainService } from './common/http/http-drain.service';
 import { jsonDepthGuard } from './common/http/json-depth';
+import { inputHygieneGuard } from './common/http/input-hygiene';
 import {
   THROTTLE,
   THROTTLE_TTL_MS,
@@ -130,11 +131,14 @@ import {
   ],
 })
 export class AppModule implements NestModule {
-  /** Runs after body parsing, before guards/interceptors/pipes: an over-deep
-   *  JSON body is a 400 before anything recurses over it (AUDIT3-17). */
+  /** Runs after body parsing, before guards/interceptors/pipes, in order: an
+   *  over-deep JSON body is a 400 before anything recurses over it
+   *  (AUDIT3-17); then a lone surrogate / U+0000 anywhere in the path, query
+   *  or body is a 400 INVALID_CHARACTERS (Audit7 P1) — its walk relies on
+   *  the depth cap applied first. */
   configure(consumer: MiddlewareConsumer): void {
     consumer
-      .apply(jsonDepthGuard)
+      .apply(jsonDepthGuard, inputHygieneGuard)
       .forRoutes({ path: '{*splat}', method: RequestMethod.ALL });
   }
 }

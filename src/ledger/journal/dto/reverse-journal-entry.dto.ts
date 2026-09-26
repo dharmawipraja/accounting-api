@@ -8,9 +8,12 @@ export class ReverseJournalEntryDto {
     format: 'date',
     example: '2026-02-10',
     description:
-      'Reversal date, YYYY-MM-DD. Defaults to the original entry date. Must be ' +
-      'on/after the original date, not after today (WIB; 422 { date, today }), ' +
-      'and fall in an OPEN period of a non-closed fiscal year.',
+      'Reversal date, YYYY-MM-DD. Defaults to the original entry date. Must ' +
+      'satisfy originalDate ≤ date ≤ max(today WIB, originalDate) — a ' +
+      'future-dated entry may be reversed on its own date (422 ' +
+      '{ date, today[, originalDate] }; originalDate is present when it, not ' +
+      'today, is the ceiling) — and fall in an OPEN period of a non-closed ' +
+      'fiscal year.',
   })
   @IsOptional()
   @IsDateString({ strict: true })

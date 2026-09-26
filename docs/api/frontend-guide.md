@@ -127,6 +127,7 @@ a short backoff.
 | --------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | 200 / 201 | Success                                                                                                                           | —                                                          |
 | **400**   | **Input shape / validation** — malformed body, query, or path param (`ValidationPipe`, `ParseUUIDPipe`, `ParseIntPipe`, bad JSON, a JSON body nested deeper than 32 levels), incl. an explicit `null` on a non-nullable `PATCH` field or a string over its length cap | `HTTP_400`, `INVALID_INPUT`                                |
+| **400**   | **Invalid characters** — a lone UTF-16 surrogate (e.g. a JSON `"\ud800"` escape, or a string sliced mid-emoji) or U+0000 (`\u0000`, `%00`) in any body key or string value, query key/value, or path segment; rejected before auth/validation (`details.location`: `"path"` / `"query"` / `"body"`). Emoji and all well-formed Unicode are fine — sanitize/strip the character client-side, never retry as-is | `INVALID_CHARACTERS`                                       |
 | **401**   | Missing / expired / invalid token                                                                                                 | `UNAUTHORIZED`, `HTTP_401`                                 |
 | **403**   | Wrong role, or Segregation-of-Duties block                                                                                        | `FORBIDDEN`, `SEGREGATION_OF_DUTIES`                       |
 | **404**   | Resource not found (incl. soft-deleted)                                                                                           | `NOT_FOUND`                                                |
@@ -191,6 +192,7 @@ These are the typed domain errors the API raises (`src/common/errors/domain-erro
 | `UNAUTHORIZED`          | 401  | Auth failure raised in the domain layer                       |
 | `FORBIDDEN`             | 403  | Role not permitted for the operation                          |
 | `SEGREGATION_OF_DUTIES` | 403  | Same user tried to both create and approve/post (see SoD)     |
+| `INVALID_CHARACTERS`    | 400  | Lone UTF-16 surrogate or U+0000 in the path, query or body    |
 
 Prisma-level failures are normalized too: a unique conflict surfaces as `409 CONFLICT`,
 a missing row as `404 NOT_FOUND`, malformed input as `400 INVALID_INPUT`, and a
@@ -600,7 +602,14 @@ First the same postable-account check as posting: an unknown / deleted account, 
 `details: { accountId }` (never a `409` FK error). A `PATCH` re-checks the effective lines —
 also the stored ones when `lines` is omitted, so a draft whose account was deactivated
 since must have that line changed before any other edit (or post) succeeds. Then the
-document line rules; violations return `422 VALIDATION_FAILED`:
+document line rules; violations return `422 VALIDATION_FAILED`.
+**Scope — draft vs post (by design):** draft create / `PATCH` check only the
+document's **line** accounts. The tax-code accounts and the AR/AP control account are
+not part of a draft; they are checked when the full journal entry is derived — by
+`/post` and by `POST /v1/journal-entries/preview` — so a draft can save cleanly and
+still get `422` at post (e.g. a tax code whose account was deactivated, or a missing
+AR/AP control account). Use the preview to surface those before posting.
+Line-rule violations:
 
 | Violation | `details` |
 | --- | --- |
@@ -958,7 +967,7 @@ no auth.
 - `GET    /v1/ledger/journal-entries/:id` · any · get one entry
 - `POST   /v1/ledger/journal-entries` · ACCOUNTANT+ · create draft (`?post=true` = create+post, APPROVER/ADMIN only) · **requires `Idempotency-Key`**
 - `POST   /v1/ledger/journal-entries/:id/post` · APPROVER/ADMIN · post draft · **requires `Idempotency-Key`**
-- `POST   /v1/ledger/journal-entries/:id/reverse` · APPROVER/ADMIN · reverse a posted MANUAL/OPENING entry (optional body `{ date }` ≥ original date, ≤ today WIB; document-owned entries → `422`) · **requires `Idempotency-Key`**
+- `POST   /v1/ledger/journal-entries/:id/reverse` · APPROVER/ADMIN · reverse a posted MANUAL/OPENING entry (optional body `{ date }`: original date ≤ date ≤ max(today WIB, original date) — `422 { date, today[, originalDate] }`; document-owned entries → `422`) · **requires `Idempotency-Key`**
 - `DELETE /v1/ledger/journal-entries/:id` · ACCOUNTANT+ · delete draft
 - `POST   /v1/ledger/opening-balances` · ADMIN · post opening balances · **requires `Idempotency-Key`**
 
@@ -1008,7 +1017,7 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing).
 - `POST   /v1/sales-invoices` · ACCOUNTANT+ · create draft · **requires `Idempotency-Key`**
 - `PATCH  /v1/sales-invoices/:id` · ACCOUNTANT+ · update draft
 - `POST   /v1/sales-invoices/:id/post` · APPROVER/ADMIN · post · **requires `Idempotency-Key`**
-- `POST   /v1/sales-invoices/:id/void` · APPROVER/ADMIN · void (optional body `{ date }` ≥ document date, ≤ today WIB) · **requires `Idempotency-Key`**
+- `POST   /v1/sales-invoices/:id/void` · APPROVER/ADMIN · void (optional body `{ date }`: document date ≤ date ≤ max(today WIB, document date) — `422 { date, today[, originalDate] }`) · **requires `Idempotency-Key`**
 - `DELETE /v1/sales-invoices/:id` · ACCOUNTANT+ · delete draft
 
 ### Purchase bills
@@ -1018,7 +1027,7 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing).
 - `POST   /v1/purchase-bills` · ACCOUNTANT+ · create draft · **requires `Idempotency-Key`**
 - `PATCH  /v1/purchase-bills/:id` · ACCOUNTANT+ · update draft
 - `POST   /v1/purchase-bills/:id/post` · APPROVER/ADMIN · post · **requires `Idempotency-Key`**
-- `POST   /v1/purchase-bills/:id/void` · APPROVER/ADMIN · void (optional body `{ date }` ≥ document date, ≤ today WIB) · **requires `Idempotency-Key`**
+- `POST   /v1/purchase-bills/:id/void` · APPROVER/ADMIN · void (optional body `{ date }`: document date ≤ date ≤ max(today WIB, document date) — `422 { date, today[, originalDate] }`) · **requires `Idempotency-Key`**
 - `DELETE /v1/purchase-bills/:id` · ACCOUNTANT+ · delete draft
 
 ### Payments
@@ -1027,7 +1036,7 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing).
 - `GET    /v1/payments/:id` · any · get one
 - `POST   /v1/payments` · ACCOUNTANT+ · create draft (RECEIPT/DISBURSEMENT + allocations) · **requires `Idempotency-Key`**
 - `POST   /v1/payments/:id/post` · APPROVER/ADMIN · post · **requires `Idempotency-Key`**
-- `POST   /v1/payments/:id/void` · APPROVER/ADMIN · void (optional body `{ date }` ≥ document date, ≤ today WIB) · **requires `Idempotency-Key`** · a payment whose partner has been deleted → `422 VALIDATION_FAILED` `{ id, partnerId, reason: 'PARTNER_DELETED' }` (voiding would reopen a balance on a deleted partner)
+- `POST   /v1/payments/:id/void` · APPROVER/ADMIN · void (optional body `{ date }`: document date ≤ date ≤ max(today WIB, document date) — `422 { date, today[, originalDate] }`) · **requires `Idempotency-Key`** · a payment whose partner has been deleted → `422 VALIDATION_FAILED` `{ id, partnerId, reason: 'PARTNER_DELETED' }` (voiding would reopen a balance on a deleted partner)
 - `DELETE /v1/payments/:id` · ACCOUNTANT+ · delete draft
 
 ### Business partners
@@ -1037,14 +1046,22 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing).
 - `POST   /v1/partners` · ACCOUNTANT+ · create
 - `PATCH  /v1/partners/:id` · ACCOUNTANT+ · update
 - `POST   /v1/partners/:id/deactivate` · ADMIN · deactivate
-- **Deactivating or un-flagging a partner that still has open items is allowed**
-  (`deactivate`, or `PATCH` `isCustomer: false` / `isVendor: false` / `isActive: false`
-  while it has outstanding invoices/bills or drafts). Its posted documents stay open in
-  AR/AP and aging, but new receipts (disbursements) against them — create **and** `/post`
-  of an existing draft — return `422 VALIDATION_FAILED` `{ partnerId }` ("Partner is
-  inactive" / "Receipt requires a customer" / "Disbursement requires a vendor"), as do new
-  invoices/bills and posting their drafts, **until the flag is re-enabled**. Voiding an
-  already-posted payment still works for an inactive partner. Warn before un-flagging a
+- `code` is stored trimmed (create); `name` is stored trimmed (create and `PATCH`).
+- **Removing a role that still has open items is refused (changed):** `PATCH`
+  `isCustomer: false` while the partner has a draft invoice, a `POSTED` invoice with an
+  outstanding balance, or a draft RECEIPT — or `isVendor: false` with the same for
+  bills / DISBURSEMENTs — → `422 VALIDATION_FAILED` `details: { id, reason: "OPEN_ITEMS",
+  role: "CUSTOMER" | "VENDOR", draftDocuments, outstandingDocuments, draftPayments }`
+  (the `DELETE` shape plus `role`). Items of the other role never block; re-sending the
+  current value (`true`) never checks.
+- **Deactivating a partner that still has open items is allowed** (`deactivate`, or
+  `PATCH` `isActive: false`). Its posted documents stay open in AR/AP and aging, but new
+  receipts (disbursements) against them — create **and** `/post` of an existing draft —
+  return `422 VALIDATION_FAILED` `{ partnerId }` ("Partner is inactive"), as do new
+  invoices/bills and posting their drafts, **until it is re-activated** (likewise
+  "Receipt requires a customer" / "Disbursement requires a vendor" for a partner
+  whose role was removed). Voiding an
+  already-posted payment still works for an inactive partner. Warn before deactivating a
   partner with an outstanding balance.
 - `DELETE /v1/partners/:id` · ADMIN · delete. Refused while the partner has **open items** — a
   draft invoice/bill, a draft payment, or a `POSTED` invoice/bill with an outstanding balance

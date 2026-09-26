@@ -174,6 +174,35 @@ export function constraintNameOf(err: unknown): string | undefined {
   return undefined;
 }
 
+/** Postgres SQLSTATEs for a value the database cannot store as text:
+ *  22021 character_not_in_repertoire (e.g. U+0000 — "invalid byte sequence
+ *  for encoding UTF8: 0x00") and 22P05 untranslatable_character (e.g. a
+ *  `\u0000` escape in jsonb). The input-hygiene middleware rejects such input
+ *  up front; this is the backstop for any path it does not cover. */
+const UNSTORABLE_PG_CODES = new Set(['22021', '22P05']);
+
+/** Envelope for an unstorable-character value (see UNSTORABLE_PG_CODES) —
+ *  the same code as the middleware's 400 INVALID_CHARACTERS. */
+export const UNSTORABLE_CHARACTERS = {
+  status: 400,
+  code: 'INVALID_CHARACTERS',
+  message: 'Request contains a character that cannot be stored',
+} as const;
+
+/** True for a Postgres 22021 / 22P05 however Prisma 7 + the pg adapter
+ *  surfaces it: P2039 / P2010 carrying `meta.driverAdapterError` (model /
+ *  raw query) or a bare DriverAdapterError. Pure. */
+export function isUnstorableCharacters(err: unknown): boolean {
+  const code =
+    err instanceof Prisma.PrismaClientKnownRequestError
+      ? driverAdapterCode(
+          (err.meta as { driverAdapterError?: unknown } | undefined)
+            ?.driverAdapterError,
+        )
+      : driverAdapterCode(err);
+  return code !== undefined && UNSTORABLE_PG_CODES.has(code);
+}
+
 /** Envelope for a request body over the parser's size cap (1 MB, main.ts). */
 export const PAYLOAD_TOO_LARGE = {
   status: 413,
@@ -228,6 +257,7 @@ export function statusFromException(err: unknown): number {
   if (err instanceof HttpException) return err.getStatus();
   if (isTransientConflict(err)) return TRANSIENT_CONFLICT.status;
   if (isConstraintViolation(err)) return CONSTRAINT_VIOLATION.status;
+  if (isUnstorableCharacters(err)) return UNSTORABLE_CHARACTERS.status;
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     return PRISMA_STATUS[err.code]?.status ?? 500;
   }

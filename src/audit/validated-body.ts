@@ -1,5 +1,8 @@
 import {
   ArgumentMetadata,
+  BadRequestException,
+  HttpException,
+  Logger,
   ValidationPipe,
   type ValidationPipeOptions,
 } from '@nestjs/common';
@@ -32,11 +35,26 @@ export function isBodyValidated(body: unknown): boolean {
  *  `validatedBodies`) that lets AuditInterceptor keep the large body tier for
  *  an authenticated 408 / 5xx on a body the DTO accepted. */
 export class AuditingValidationPipe extends ValidationPipe {
+  private readonly backstopLogger = new Logger('AuditingValidationPipe');
+
+  /** Also a backstop: a validator that THROWS instead of failing (e.g.
+   *  validator.js' `isEmail` raising URIError on a lone surrogate) is a 400
+   *  client error, not a 500 + Sentry; a normal validation failure keeps its
+   *  own HttpException. */
   override async transform(
     value: unknown,
     metadata: ArgumentMetadata,
   ): Promise<unknown> {
-    const out: unknown = await super.transform(value, metadata);
+    let out: unknown;
+    try {
+      out = await super.transform(value, metadata);
+    } catch (err) {
+      if (err instanceof HttpException) throw err;
+      this.backstopLogger.warn(
+        `A validator threw while validating the ${metadata.type} -> 400: ${String(err)}`,
+      );
+      throw new BadRequestException('Request validation failed');
+    }
     if (
       metadata.type === 'body' &&
       metadata.data === undefined &&

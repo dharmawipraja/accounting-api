@@ -15,10 +15,12 @@ import {
   isConstraintViolation,
   isBodyParserClientError,
   isTransientConflict,
+  isUnstorableCharacters,
   PAYLOAD_TOO_LARGE,
   PRISMA_STATUS,
   statusFromException,
   TRANSIENT_CONFLICT,
+  UNSTORABLE_CHARACTERS,
 } from '../errors/exception-status';
 import type { AuditService } from '../../audit/audit.service';
 import {
@@ -140,6 +142,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
         },
         extra: { path: url },
       });
+    } else if (isUnstorableCharacters(exception)) {
+      // A U+0000 / untranslatable character reached Postgres (22021/22P05):
+      // client input, not an incident — 400 INVALID_CHARACTERS, warn only.
+      envelope = {
+        code: UNSTORABLE_CHARACTERS.code,
+        message: UNSTORABLE_CHARACTERS.message,
+      };
+      this.logger.warn(
+        `Unstorable character -> ${status} on ${url}: ${
+          exception instanceof Error ? exception.message : String(exception)
+        }`,
+      );
     } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       const mapped = PRISMA_STATUS[exception.code];
       if (mapped) {
@@ -208,20 +222,26 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     if (req.id) envelope.traceId = req.id;
     response.status(status).json(envelope);
-    this.auditRejection(req as AuditableRequest, status);
+    this.auditRejection(req as AuditableRequest, status, exception);
   }
 
-  /** Guard rejection → one audit row, fire-and-forget after the response:
-   *  a slow or failing audit INSERT never delays or breaks the 401/403/429. */
-  private auditRejection(req: AuditableRequest, status: number): void {
-    if (!this.audit || !shouldAuditRejection(req, status)) return;
+  /** Guard (or input-hygiene) rejection → one audit row, fire-and-forget
+   *  after the response: a slow or failing audit INSERT never delays or
+   *  breaks the 401/403/429/400. */
+  private auditRejection(
+    req: AuditableRequest,
+    status: number,
+    exception: unknown,
+  ): void {
+    if (!this.audit || !shouldAuditRejection(req, status, exception)) return;
     markAudited(req);
     if (!this.rejectionLimiter.allow(req.ip ?? 'unknown', req.user?.id)) return;
     let pending: Promise<void>;
     try {
       pending = this.audit.record({
-        // No handler here: guard rejections are >= 400, so an authenticated
-        // row takes the 8 KiB cap and an anonymous one stores {}.
+        // No handler here: these rejections are >= 400, so an authenticated
+        // row takes the 8 KiB cap and an anonymous one stores {} (a login
+        // attempt keeps its normalized email).
         ...auditBaseOf(req, { status }),
         entityId: null,
         statusCode: status,

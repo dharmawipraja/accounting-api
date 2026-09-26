@@ -81,6 +81,22 @@ service inventory.
    400s are **neither rate-limited nor audited** (no interceptor or guard-rejection
    row is written). The exposure is bounded by the 1 MB body cap (Caddy edge +
    `useBodyParser` above) and the cheap iterative check.
+   **Input hygiene:** `inputHygieneGuard` (`src/common/http/input-hygiene.ts`,
+   applied right after `jsonDepthGuard`) rejects a lone UTF-16 surrogate or
+   U+0000 in any body key / string value, query key / value (`req.query`,
+   decoded) or percent-decoded path segment (route params are bound only after
+   routing, so every segment is checked — `/v1/partners/%00`) with **400
+   `INVALID_CHARACTERS`** `{ location }`, no Sentry — before JwtStrategy's DB read,
+   validation and any write (Audit7 P1: such a string used to be written to a text
+   column as U+FFFD while its jsonb audit row was rejected, leaving a write with no
+   audit row). Valid surrogate pairs (emoji) pass. Unlike a deep body, a
+   **mutating** request rejected here IS audited by `AllExceptionsFilter`
+   (anonymous — no guard ran — so the body is withheld as `{}`; capped by the
+   rejection-audit limiter). Defence in depth in the audit path: `AuditService.record`
+   makes every row storable (lone surrogates → U+FFFD, U+0000 stripped,
+   null-prototype objects so a `__proto__` key is kept as data) and, if the INSERT
+   still fails, retries once with body `{ "_unstorable": true }` (method / path /
+   user / status / requestId kept), logging the original error.
 8. Swagger served at `/docs` except in production (unless `ENABLE_SWAGGER=true`).
 
 ### Guard chain (global, `src/app.module.ts` `APP_GUARD` order)
@@ -242,6 +258,11 @@ All thrown errors funnel through **`AllExceptionsFilter`**
   for a validation gap (a code defect): ERROR-logged with the constraint name and
   Sentry-captured at `warning` (tag `kind: constraint-backstop`), but no
   SQL/constraint name in the response; primary validation stays in the services.
+- A Postgres **22021 / 22P05** (an unstorable character — e.g. U+0000 — reaching the DB
+  on a path the input-hygiene middleware does not cover; `isUnstorableCharacters`) →
+  **400 `INVALID_CHARACTERS`** (warn log, no Sentry). A validator that *throws* inside
+  the global pipe (validator.js `isEmail` URIError on a lone surrogate) → 400
+  "Request validation failed" (`AuditingValidationPipe` backstop).
 - A body-parser over-limit error → **413 `PAYLOAD_TOO_LARGE`**; any other body-parser
   4xx (415 charset/encoding, 400 aborted) → its own status as `HTTP_<status>` (info log,
   no Sentry, no audit row).

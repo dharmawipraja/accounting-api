@@ -7,7 +7,10 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AllExceptionsFilter } from './all-exceptions.filter';
-import { ConflictDomainError } from '../errors/domain-errors';
+import {
+  ConflictDomainError,
+  InvalidCharactersError,
+} from '../errors/domain-errors';
 import { RejectionAuditLimiter } from '../../audit/rejection-audit-limiter';
 
 function mockHost(): {
@@ -164,6 +167,32 @@ describe('AllExceptionsFilter', () => {
     expect(m.payload()).toMatchObject({
       code: 'CONFLICT',
       details: { retryable: true },
+    });
+    expect(Sentry.captureException as jest.Mock).not.toHaveBeenCalled();
+  });
+
+  it('maps an unstorable character (P2039 + 22021) to 400 INVALID_CHARACTERS, no Sentry', () => {
+    (Sentry.captureException as jest.Mock).mockClear();
+    const m = mockHost();
+    const adapterErr = Object.assign(new Error('adapter'), {
+      name: 'DriverAdapterError',
+      cause: {
+        kind: 'postgres',
+        originalCode: '22021',
+        originalMessage: 'invalid byte sequence for encoding "UTF8": 0x00',
+      },
+    });
+    const err = new Prisma.PrismaClientKnownRequestError('m', {
+      code: 'P2039',
+      clientVersion: Prisma.prismaVersion.client,
+      meta: { driverAdapterError: adapterErr },
+    });
+    filter.catch(err, m.host);
+    expect(m.code()).toBe(400);
+    expect(m.payload()).toEqual({
+      code: 'INVALID_CHARACTERS',
+      message: 'Request contains a character that cannot be stored',
+      traceId: 'req-1',
     });
     expect(Sentry.captureException as jest.Mock).not.toHaveBeenCalled();
   });
@@ -541,6 +570,33 @@ describe('AllExceptionsFilter guard-rejection audit', () => {
     );
     // same request object reaching the filter again → already audited
     filter.catch(new HttpException('Forbidden', 403), hostFor(req).host);
+    await flush();
+    expect(record).toHaveBeenCalledTimes(1);
+  });
+
+  it('audits an input-hygiene 400 (InvalidCharactersError) on a mutating request, anonymously; a plain 400 is not audited', async () => {
+    const record = jest.fn().mockResolvedValue(undefined);
+    const filter = new AllExceptionsFilter({ record });
+    const req = {
+      method: 'POST',
+      url: '/v1/partners',
+      params: {},
+      body: { name: 'a\u0000b' },
+      id: 'srv-hyg',
+    };
+    const m = hostFor(req);
+    filter.catch(
+      new InvalidCharactersError('bad', { location: 'body' }),
+      m.host,
+    );
+    await flush();
+    expect(m.code()).toBe(400);
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({ statusCode: 400, body: {}, userId: null }),
+    );
+    const plain = hostFor({ ...req });
+    filter.catch(new BadRequestException('x'), plain.host);
     await flush();
     expect(record).toHaveBeenCalledTimes(1);
   });

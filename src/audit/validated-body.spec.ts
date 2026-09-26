@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { IsString, MaxLength } from 'class-validator';
+import { IsEmail, IsString, MaxLength } from 'class-validator';
 import {
   GLOBAL_VALIDATION_OPTIONS,
   globalValidationPipe,
@@ -10,8 +10,30 @@ class Dto {
   @IsString() @MaxLength(5) name!: string;
 }
 
+class EmailDto {
+  @IsEmail() email!: string;
+}
+
 describe('AuditingValidationPipe (validated-body mark)', () => {
   const pipe = globalValidationPipe();
+
+  it('a validator that THROWS (validator.js URIError on a lone surrogate) is a 400, not a 500 — and the body is not marked', async () => {
+    const body = { email: 'a\ud800@x.io' };
+    await expect(
+      pipe.transform(body, { type: 'body', metatype: EmailDto }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(isBodyValidated(body)).toBe(false);
+  });
+
+  it('keeps the HttpException a validation failure already produced', async () => {
+    const err: unknown = await pipe
+      .transform({ email: 'nope' }, { type: 'body', metatype: EmailDto })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect(
+      (err as BadRequestException).getResponse() as { message: string[] },
+    ).toMatchObject({ message: ['email must be an email'] });
+  });
 
   it('marks the raw body object once a whole-body DTO passed validation', async () => {
     const body = { name: 'ok' };

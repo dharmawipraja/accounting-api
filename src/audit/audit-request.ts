@@ -1,4 +1,5 @@
 import { sanitize } from './audit-sanitize';
+import { InvalidCharactersError } from '../common/errors/domain-errors';
 import { isLoginAttempt } from '../common/guards/login-ip-throttle';
 import { MUTATING_METHODS } from './mutating-methods';
 import type { AuditEntry } from './audit.service';
@@ -254,14 +255,19 @@ export function auditBaseOf(
 const GUARD_REJECTION_STATUSES = new Set([401, 403, 429]);
 
 /** True when the exception filter must write the audit row itself: a mutating
- *  request rejected before AuditInterceptor ran (i.e. by a guard). */
+ *  request rejected before AuditInterceptor ran — by a guard (401/403/429),
+ *  or by the input-hygiene middleware (400 INVALID_CHARACTERS: the rejected
+ *  write must still leave a trail; the row is anonymous — no guard ran — and
+ *  sanitized into storable JSON by AuditService). */
 export function shouldAuditRejection(
   req: AuditableRequest,
   status: number,
+  exception?: unknown,
 ): boolean {
   return (
     isMutating(req.method) &&
     !req[AUDITED] &&
-    GUARD_REJECTION_STATUSES.has(status)
+    (GUARD_REJECTION_STATUSES.has(status) ||
+      exception instanceof InvalidCharactersError)
   );
 }

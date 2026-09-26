@@ -467,10 +467,12 @@ rounds to whole rupiah for tax. The currency is IDR (`CompanySettings.baseCurren
 ### Business partner (mitra bisnis / pelanggan / pemasok)
 A customer and/or vendor. Flags `isCustomer` / `isVendor` decide whether a partner can
 appear on sales vs purchase documents; `npwp` is the Indonesian tax ID.
-- **Deactivating / un-flagging with open items is allowed (by design, no guard).** Posted
-  documents stay open in AR/AP and aging, but receipts (disbursements) against them —
-  create and post — and new documents return `422` ("Partner is inactive" / "Receipt
-  requires a customer" / "Disbursement requires a vendor") until the flag is re-enabled;
-  voiding an existing payment still works. Deletion, by contrast, is refused with
-  `OPEN_ITEMS`.
+- **Deactivating with open items is allowed (by design, no guard).** Posted documents
+  stay open in AR/AP and aging, but receipts (disbursements) against them — create and
+  post — and new documents return `422` ("Partner is inactive") until it is
+  re-activated; voiding an existing payment still works.
+- **Removing a role with open items is refused** (`PATCH isCustomer/isVendor: false` →
+  `422 OPEN_ITEMS` `{ …, role }` while that role has drafts, outstanding POSTED
+  documents or draft payments of its direction), and so is deletion (`OPEN_ITEMS`).
+  `code` / `name` are stored trimmed.
 - `BusinessPartner` model in `prisma/schema.prisma`.

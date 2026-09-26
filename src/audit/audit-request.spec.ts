@@ -18,6 +18,7 @@ import {
   type AuditableRequest,
 } from './audit-request';
 import { markLoginAttempt } from '../common/guards/login-ip-throttle';
+import { InvalidCharactersError } from '../common/errors/domain-errors';
 import { CreateJournalEntryDto } from '../ledger/journal/dto/create-journal-entry.dto';
 import { OpeningBalancesDto } from '../ledger/journal/dto/opening-balances.dto';
 import { CreateSalesInvoiceDto } from '../invoicing/dto/create-sales-invoice.dto';
@@ -95,6 +96,14 @@ describe('shouldAuditRejection', () => {
     const audited = req();
     markAudited(audited);
     expect(shouldAuditRejection(audited, 403)).toBe(false);
+  });
+
+  it('audits an input-hygiene 400 (InvalidCharactersError) on a mutating request only', () => {
+    const bad = new InvalidCharactersError('x');
+    expect(shouldAuditRejection(req(), 400, bad)).toBe(true);
+    expect(shouldAuditRejection(req({ method: 'GET' }), 400, bad)).toBe(false);
+    expect(shouldAuditRejection(req(), 400, new Error('x'))).toBe(false);
+    expect(shouldAuditRejection(req(), 400)).toBe(false);
   });
 });
 

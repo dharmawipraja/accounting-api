@@ -8,10 +8,12 @@ export class VoidDocumentDto {
     format: 'date',
     example: '2026-02-10',
     description:
-      'Void (reversal) date, YYYY-MM-DD. Defaults to the document date. Must be ' +
-      'on/after the document date, not after today (WIB; 422 { date, today }), ' +
-      'and fall in an OPEN period of a non-closed fiscal year — use it to void ' +
-      'a document whose own period is closed.',
+      'Void (reversal) date, YYYY-MM-DD. Defaults to the document date. Must ' +
+      'satisfy originalDate ≤ date ≤ max(today WIB, originalDate) — a ' +
+      'future-dated document may be voided on its own date (422 ' +
+      '{ date, today[, originalDate] }; originalDate is present when it, not ' +
+      'today, is the ceiling) — and fall in an OPEN period of a non-closed ' +
+      'fiscal year; use it to void a document whose own period is closed.',
   })
   @IsOptional()
   @IsDateString({ strict: true })

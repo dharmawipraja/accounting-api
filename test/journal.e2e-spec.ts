@@ -541,6 +541,22 @@ describe('JournalEntries (e2e)', () => {
       expect((res.body as { date: string }).date.slice(0, 10)).toBe(own);
     });
 
+    it('iter7: the date ceiling is checked in prepareReversal on the re-read entry, AFTER the POSTED check (a DRAFT with a far-future date → the POSTED 422, not the ceiling)', async () => {
+      const draft = await request(app.getHttpServer() as App)
+        .post('/v1/ledger/journal-entries')
+        .set('Authorization', `Bearer ${accountantToken}`)
+        .set('Idempotency-Key', randomUUID())
+        .send(balancedBody('2026-03-10'))
+        .expect(201);
+      const id = (draft.body as { id: string }).id;
+      const res = await reverse(id).send({ date: '2099-01-01' }).expect(422);
+      expect(res.body).toMatchObject({
+        code: 'VALIDATION_FAILED',
+        message: 'Only a POSTED entry can be reversed',
+        details: { entryId: id, status: 'DRAFT' },
+      });
+    });
+
     it('rejects a non date-only reversal date (400)', async () => {
       const id = await postManual('2026-03-10');
       await reverse(id).send({ date: '2026-04-05T10:00:00Z' }).expect(400);

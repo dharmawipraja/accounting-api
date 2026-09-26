@@ -73,3 +73,12 @@ export class SegregationOfDutiesError extends DomainError {
   readonly code = 'SEGREGATION_OF_DUTIES';
   readonly status = 403;
 }
+
+/** A request carrying a lone UTF-16 surrogate or U+0000 in a body key/value,
+ *  a query-string key/value or a route param (input-hygiene middleware), or
+ *  a value Postgres cannot store (22021 / 22P05 backstop). 400, no Sentry:
+ *  a client-input problem, never an incident. */
+export class InvalidCharactersError extends DomainError {
+  readonly code = 'INVALID_CHARACTERS';
+  readonly status = 400;
+}

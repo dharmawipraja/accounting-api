@@ -27,6 +27,10 @@ describe('BusinessPartners (e2e)', () => {
 
   afterAll(() => cleanup());
 
+  /** Budget for a test transaction held open (or parked on a lock) while
+   *  the test asserts: the 5 s interactive-tx default can expire under load. */
+  const HELD_TX = { maxWait: 5000, timeout: 20000 };
+
   /** Poll pg_stat_activity until `n` backends running a statement matching
    *  `pattern` are waiting on a lock (bounded: throws after ~10 s). */
   async function waitForLockWaiters(pattern: string, n: number): Promise<void> {
@@ -160,16 +164,16 @@ describe('BusinessPartners (e2e)', () => {
     let held!: () => void;
     const isHeld = new Promise<void>((r) => (held = r));
     const original = prisma.transaction.bind(prisma);
-    const spy = jest
-      .spyOn(prisma, 'transaction')
-      .mockImplementationOnce((fn, opts) =>
-        original(async (tx) => {
-          const r = await fn(tx);
-          held();
-          await gate;
-          return r;
-        }, opts),
-      );
+    const spy = jest.spyOn(prisma, 'transaction').mockImplementationOnce((fn) =>
+      // Held open across the assertions below: an explicit budget so the
+      // default 5 s interactive-tx timeout cannot expire it under load.
+      original(async (tx) => {
+        const r = await fn(tx);
+        held();
+        await gate;
+        return r;
+      }, HELD_TX),
+    );
     try {
       const patch = partners.update(p.id, { name: 'After' });
       await isHeld;
@@ -181,7 +185,7 @@ describe('BusinessPartners (e2e)', () => {
         return tx.$executeRaw`
           INSERT INTO sales_invoices (id, partner_id, date, created_by, updated_at)
           VALUES (gen_random_uuid()::text, ${p.id}, '2026-01-15', ${admin.id}, now())`;
-      });
+      }, HELD_TX);
       expect(inserted).toBe(1);
       // A FOR SHARE reader (draft create / payment post) still waits for it.
       let shareDone = false;
@@ -190,7 +194,7 @@ describe('BusinessPartners (e2e)', () => {
           const rows = await tx.$queryRaw<{ name: string }[]>`
             SELECT name FROM business_partners WHERE id = ${p.id} FOR SHARE`;
           return rows[0].name;
-        })
+        }, HELD_TX)
         .then((name) => {
           shareDone = true;
           return name;
@@ -207,6 +211,99 @@ describe('BusinessPartners (e2e)', () => {
       release();
       spy.mockRestore();
     }
+  });
+
+  it('iter7: code is trimmed on create, name on create and update', async () => {
+    const created = await request(app.getHttpServer() as App)
+      .post('/v1/partners')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ code: '  TRIM-1 \t', name: '  PT Spasi  ', isCustomer: true })
+      .expect(201);
+    const body = created.body as { id: string; code: string; name: string };
+    expect(body.code).toBe('TRIM-1');
+    expect(body.name).toBe('PT Spasi');
+    // the trimmed code is the one uniqueness is checked against
+    await request(app.getHttpServer() as App)
+      .post('/v1/partners')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ code: 'TRIM-1', name: 'Dup', isCustomer: true })
+      .expect(409);
+    const patched = await request(app.getHttpServer() as App)
+      .patch(`/v1/partners/${body.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: '\n PT Baru ' })
+      .expect(200);
+    expect((patched.body as { name: string }).name).toBe('PT Baru');
+  });
+
+  it('iter7: clearing isCustomer / isVendor while that role has open items → 422 OPEN_ITEMS (softDelete shape); the other role can still be cleared', async () => {
+    const admin = await prisma.client.user.findFirstOrThrow({
+      where: { email: 'a@p.test' },
+    });
+    const kas = await prisma.client.account.findFirstOrThrow({
+      where: { isPostable: true, deletedAt: null },
+    });
+    const mk = async (code: string) =>
+      (
+        await request(app.getHttpServer() as App)
+          .post('/v1/partners')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ code, name: code, isCustomer: true, isVendor: true })
+          .expect(201)
+      ).body as { id: string };
+    const patch = (id: string, body: object) =>
+      request(app.getHttpServer() as App)
+        .patch(`/v1/partners/${id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send(body);
+
+    // A draft sales invoice blocks clearing isCustomer, not isVendor.
+    const c = await mk('ROLE-OPEN-C');
+    await prisma.client.$executeRaw`
+      INSERT INTO sales_invoices (id, partner_id, date, created_by, updated_at)
+      VALUES (gen_random_uuid()::text, ${c.id}, '2026-01-15', ${admin.id}, now())`;
+    const res = await patch(c.id, { isCustomer: false }).expect(422);
+    expect(res.body).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      details: {
+        id: c.id,
+        reason: 'OPEN_ITEMS',
+        role: 'CUSTOMER',
+        draftDocuments: 1,
+        outstandingDocuments: 0,
+        draftPayments: 0,
+      },
+    });
+    await patch(c.id, { isVendor: false }).expect(200);
+
+    // A draft DISBURSEMENT blocks clearing isVendor; a draft RECEIPT does not
+    // (it is a customer-side item).
+    const v = await mk('ROLE-OPEN-V');
+    await prisma.client.$executeRaw`
+      INSERT INTO payments (id, direction, partner_id, date, cash_account_id, amount, created_by, updated_at)
+      VALUES (gen_random_uuid()::text, 'RECEIPT', ${v.id}, '2026-01-15', ${kas.id}, 10, ${admin.id}, now())`;
+    await patch(v.id, { isVendor: false }).expect(200);
+    await patch(v.id, { isVendor: true }).expect(200);
+    await prisma.client.$executeRaw`
+      INSERT INTO payments (id, direction, partner_id, date, cash_account_id, amount, created_by, updated_at)
+      VALUES (gen_random_uuid()::text, 'DISBURSEMENT', ${v.id}, '2026-01-15', ${kas.id}, 10, ${admin.id}, now())`;
+    const blocked = await patch(v.id, { isVendor: false }).expect(422);
+    expect(blocked.body).toMatchObject({
+      details: {
+        reason: 'OPEN_ITEMS',
+        role: 'VENDOR',
+        draftDocuments: 0,
+        draftPayments: 1,
+      },
+    });
+    // the customer side (one draft RECEIPT) blocks clearing isCustomer too
+    await patch(v.id, { isCustomer: false }).expect(422);
+    const row = await prisma.client.businessPartner.findUniqueOrThrow({
+      where: { id: v.id },
+    });
+    expect(row.isCustomer && row.isVendor).toBe(true);
+    // re-sending the current value (true) never checks open items
+    await patch(v.id, { isVendor: true, isCustomer: true }).expect(200);
   });
 
   it('iter6: the DB rejects a partner row that is neither customer nor vendor (CHECK)', async () => {

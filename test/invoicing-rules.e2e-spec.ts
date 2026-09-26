@@ -858,9 +858,17 @@ describe('Invoicing rules (e2e)', () => {
       it('rejects posting a receipt whose partner is no longer a customer (422)', async () => {
         const pid = await newPartner({ isCustomer: true, isVendor: true });
         const payId = await draftReceipt(pid);
-        await app
-          .get(BusinessPartnersService)
-          .update(pid, { isCustomer: false });
+        // iter7: the PATCH itself now refuses to remove a role with open items
+        // (this draft receipt) — 422 OPEN_ITEMS …
+        await expect(
+          app.get(BusinessPartnersService).update(pid, { isCustomer: false }),
+        ).rejects.toMatchObject({ details: { reason: 'OPEN_ITEMS' } });
+        // … so un-flag underneath it (legacy data / out-of-band change) to
+        // prove the post-time in-tx re-check still holds.
+        await prisma.client.businessPartner.update({
+          where: { id: pid },
+          data: { isCustomer: false },
+        });
         const res = await postDoc('payments', payId).expect(422);
         expect(detailsOf(res)).toMatchObject({ partnerId: pid });
       });

@@ -28,6 +28,7 @@ import {
 
 /** Re-exported from PrismaService (its home) so existing imports keep working. */
 import type { LedgerTx } from '../../common/prisma/prisma.service';
+import { assertNotAfterToday } from '../../common/dates/not-after-today';
 export type { LedgerTx };
 
 /** Explicit interactive-tx bounds for the posting writes (direct post,
@@ -300,8 +301,14 @@ export class PostingService {
     entryId: string,
     reversedBy: string,
     date?: Date,
+    opts: { futureDateCeiling?: boolean } = {},
   ): Promise<JournalEntry> {
-    const prepared = await this.prepareReversal(entryId, reversedBy, date);
+    const prepared = await this.prepareReversal(
+      entryId,
+      reversedBy,
+      date,
+      opts,
+    );
     try {
       return await this.prisma.transaction(
         (tx) => this.reverseInTx(tx, prepared),
@@ -327,12 +334,16 @@ export class PostingService {
    *  reversal date (defaults to the original's date; must not precede it). All
    *  reads stay out of the write transaction. No sourceType guard here: the
    *  year-end reopen reverses CLOSING entries through this method — the
-   *  MANUAL/OPENING restriction lives in JournalService.reverse. */
+   *  MANUAL/OPENING restriction lives in JournalService.reverse.
+   *  `futureDateCeiling` (the generic reversal endpoint): an EXPLICIT `date`
+   *  may not be after max(today (WIB), the entry's own date) — checked here,
+   *  after the POSTED check, against the entry just read (not a caller's
+   *  pre-read), 422 `{ date, today[, originalDate] }`. */
   async prepareReversal(
     entryId: string,
     reversedBy: string,
     date?: Date,
-    opts: { allowClosedYear?: boolean } = {},
+    opts: { allowClosedYear?: boolean; futureDateCeiling?: boolean } = {},
   ): Promise<PreparedReversal> {
     const original = await this.prisma.client.journalEntry.findUnique({
       where: { id: entryId },
@@ -346,6 +357,10 @@ export class PostingService {
         status: original.status,
       });
     }
+    if (date && opts.futureDateCeiling)
+      assertNotAfterToday(date, 'Reversal date cannot be in the future', {
+        originalDate: original.date,
+      });
     const reversalDate = date ?? original.date;
     // A reversal can be dated later (e.g. into an open period when the
     // original's is closed) but never before the entry it reverses.
