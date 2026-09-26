@@ -8,6 +8,7 @@ import { RejectionAuditLimiter } from '../src/audit/rejection-audit-limiter';
 import { globalValidationPipe } from '../src/audit/validated-body';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
 import { PrismaService } from '../src/common/prisma/prisma.service';
+import { noStoreApiResponses } from '../src/common/http/no-store';
 import { asOfOrToday } from '../src/common/dates/query-dates';
 import { startTestDb, TestDb } from './testcontainers';
 
@@ -78,7 +79,9 @@ export async function bootstrapTestApp(
     .useValue(prisma)
     .compile();
   const app = mod.createNestApplication<NestExpressApplication>();
-  // Same as main.ts: no ETags (API responses are Cache-Control: no-store).
+  // Same as main.ts: Cache-Control: no-store on /v* registered BEFORE the body
+  // parsers (so their 400 / 413 carries it) and no ETags.
+  app.use(noStoreApiResponses);
   app.set('etag', false);
   // Same body caps as main.ts (the Nest default is 100 KB).
   app.useBodyParser('json', { limit: '1mb' });

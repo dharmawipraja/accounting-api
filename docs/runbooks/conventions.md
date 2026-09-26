@@ -150,9 +150,10 @@ One stable error envelope, no leaked internals.
   lists them — the filter accepts `AUDIT_METHODS`).
 - **Idempotent replays are flagged in the audit log** (`audit_log.replayed = true`,
   set via `markIdempotentReplay` by the idempotency interceptor); NULL otherwise.
-- **`Cache-Control: no-store` on every `/v1/*` response** (`noStoreApiResponses`
-  middleware in `AppModule`) and **no ETags** (`app.set('etag', false)` in `main.ts`
-  and `test/e2e-helpers.ts`) — never add HTTP caching to an API route.
+- **`Cache-Control: no-store` on every `/v1/*` response** (`app.use(noStoreApiResponses)`
+  BEFORE the body parsers, in `main.ts` and `test/e2e-helpers.ts` — keep both in sync,
+  so body-parser 400/413 rejections carry it too) and **no ETags** (`app.set('etag', false)`
+  in both) — never add HTTP caching to an API route.
 - **Trace ids are server-generated.** `req.id` / `X-Request-Id` response header /
   error `traceId` / `audit_log.request_id` is always a fresh UUID (`genReqId` in
   `app.module.ts`); a safe inbound `X-Request-Id` is only `clientRequestId`.

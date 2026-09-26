@@ -94,4 +94,20 @@ describe('Hardening (e2e)', () => {
     expect(health.headers['cache-control']).toBeUndefined();
     await request(server).get('/ready').expect(200);
   });
+
+  it('iter8-final: a body-parser rejection under /v1 (malformed JSON 400, over-cap 413) carries Cache-Control: no-store too', async () => {
+    const server = app.getHttpServer() as App;
+    const malformed = await request(server)
+      .post('/v1/auth/login')
+      .set('Content-Type', 'application/json')
+      .send('{"email": "x@y.z",')
+      .expect(400);
+    expect(malformed.headers['cache-control']).toBe('no-store');
+    const tooLarge = await request(server)
+      .post('/v1/auth/login')
+      .set('Content-Type', 'application/json')
+      .send(JSON.stringify({ email: 'x'.repeat(1_100_000) }))
+      .expect(413);
+    expect(tooLarge.headers['cache-control']).toBe('no-store');
+  });
 });

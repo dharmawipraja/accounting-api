@@ -5,8 +5,9 @@ export function isApiPath(url: string): boolean {
   return /^\/v\d+(?:[/?#]|$)/.test(url);
 }
 
-/** Express-style middleware (registered for every route in AppModule, so it
- *  runs before guards — a 401 / 403 / 429 / 400 carries it too): every API
+/** Express-style middleware (an app-level `app.use` in main.ts and the e2e
+ *  bootstrap, registered BEFORE the body parsers — so a body-parser 400 / 413
+ *  and every guard 401 / 403 / 429 / 400 carries it too): every API
  *  response is `Cache-Control: no-store`. Responses are per-user financial
  *  data; no browser, proxy or CDN may keep a copy (a shared machine's back
  *  button / disk cache, a misconfigured cache in front of Caddy). The app

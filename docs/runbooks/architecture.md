@@ -61,12 +61,12 @@ service inventory.
 2. `NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true })`,
    logger swapped to `nestjs-pino`.
 3. `trust proxy: 1` (single Caddy edge), `helmet()`, `etag: false`, `enableCors(...)`.
-   **No caching:** `noStoreApiResponses` (`src/common/http/no-store.ts`, the first
-   middleware in `AppModule.configure`, so the e2e bootstrap gets it too) sets
-   `Cache-Control: no-store` on every `/v1/*` response — success or error, incl.
-   guard 401/403/429. `/health`, `/ready`, `/metrics` and `/docs` are untouched.
-   (Body-parser rejections — 413/415/malformed JSON — happen before any Nest
-   middleware and carry no body data.) ETags are off in both bootstraps.
+   **No caching:** `noStoreApiResponses` (`src/common/http/no-store.ts`, an
+   `app.use` right after `helmet()` and BEFORE the body parsers — mirrored in
+   `test/e2e-helpers.ts`) sets `Cache-Control: no-store` on every `/v1/*`
+   response — success or error, incl. body-parser rejections (malformed JSON
+   400, over-cap 413) and guard 401/403/429. `/health`, `/ready`, `/metrics` and
+   `/docs` are untouched. ETags are off in both bootstraps.
 4. **Global `ValidationPipe`** — `whitelist: true`, `forbidNonWhitelisted: true`,
    `transform: true` (DTOs are the validated trust boundary).
 5. **Global `AllExceptionsFilter`** + `enableShutdownHooks()`.

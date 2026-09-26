@@ -9,6 +9,7 @@ import { AuditService } from './audit/audit.service';
 import { RejectionAuditLimiter } from './audit/rejection-audit-limiter';
 import { globalValidationPipe } from './audit/validated-body';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { noStoreApiResponses } from './common/http/no-store';
 import { corsOptions } from './config/cors-origins';
 import { sentryOptions } from './config/sentry-options';
 import { scrubSentryEvent } from './config/sentry-scrub';
@@ -52,8 +53,11 @@ async function bootstrap(): Promise<void> {
   // — and a client-forged X-Forwarded-For is ignored. See resolveTrustProxy.
   app.set('trust proxy', resolveTrustProxy(process.env));
   app.use(helmet());
-  // API responses are Cache-Control: no-store (common/http/no-store); no
-  // ETags either, so a conditional GET can never 304 an authenticated body.
+  // API responses are Cache-Control: no-store (common/http/no-store) —
+  // registered here, BEFORE the body parsers below, so a body-parser rejection
+  // (malformed JSON 400, over-cap 413) carries it too. No ETags either, so a
+  // conditional GET can never 304 an authenticated body.
+  app.use(noStoreApiResponses);
   app.set('etag', false);
   app.enableCors(corsOptions(process.env.CORS_ORIGIN));
   // Strict validation + the validated-body audit mark (audit/validated-body).
