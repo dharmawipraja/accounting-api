@@ -1,5 +1,13 @@
+jest.mock('@sentry/node', () => ({ captureException: jest.fn() }));
+import * as Sentry from '@sentry/node';
 import { BadRequestException } from '@nestjs/common';
-import { IsEmail, IsString, MaxLength } from 'class-validator';
+import {
+  IsEmail,
+  IsString,
+  MaxLength,
+  ValidateBy,
+  type ValidationOptions,
+} from 'class-validator';
 import {
   GLOBAL_VALIDATION_OPTIONS,
   globalValidationPipe,
@@ -14,6 +22,25 @@ class EmailDto {
   @IsEmail() email!: string;
 }
 
+/** A custom validator that throws a non-URIError — a validator DEFECT. */
+function ThrowsTypeError(opts?: ValidationOptions) {
+  return ValidateBy(
+    {
+      name: 'throwsTypeError',
+      validator: {
+        validate: () => {
+          throw new TypeError('boom');
+        },
+      },
+    },
+    opts,
+  );
+}
+
+class DefectDto {
+  @ThrowsTypeError() value!: string;
+}
+
 describe('AuditingValidationPipe (validated-body mark)', () => {
   const pipe = globalValidationPipe();
 
@@ -23,6 +50,34 @@ describe('AuditingValidationPipe (validated-body mark)', () => {
       pipe.transform(body, { type: 'body', metatype: EmailDto }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(isBodyValidated(body)).toBe(false);
+  });
+
+  it('a URIError from a validator is a 400 with NO Sentry event (client input)', async () => {
+    const capture = Sentry.captureException as jest.Mock;
+    capture.mockClear();
+    await expect(
+      pipe.transform(
+        { email: 'a\ud800@x.io' },
+        { type: 'body', metatype: EmailDto },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(capture).not.toHaveBeenCalled();
+  });
+
+  it('any OTHER validator throw stays a 400 but is reported to Sentry at warning level (tag validator-backstop)', async () => {
+    const capture = Sentry.captureException as jest.Mock;
+    capture.mockClear();
+    await expect(
+      pipe.transform({ value: 'x' }, { type: 'body', metatype: DefectDto }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(capture).toHaveBeenCalledTimes(1);
+    const [err, ctx] = capture.mock.calls[0] as [
+      unknown,
+      { level: string; tags: Record<string, string> },
+    ];
+    expect(err).toBeInstanceOf(TypeError);
+    expect(ctx.level).toBe('warning');
+    expect(ctx.tags).toMatchObject({ kind: 'validator-backstop' });
   });
 
   it('keeps the HttpException a validation failure already produced', async () => {

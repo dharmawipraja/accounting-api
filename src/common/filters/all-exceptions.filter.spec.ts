@@ -574,6 +574,32 @@ describe('AllExceptionsFilter guard-rejection audit', () => {
     expect(record).toHaveBeenCalledTimes(1);
   });
 
+  it('audits an input-hygiene 400 (InvalidCharactersError) of an AUTHENTICATED caller with its user and the (sanitized) body', async () => {
+    const record = jest.fn().mockResolvedValue(undefined);
+    const filter = new AllExceptionsFilter({ record });
+    const m = hostFor({
+      method: 'POST',
+      url: '/v1/partners',
+      params: {},
+      body: { name: 'a\ud800b', password: 'p' },
+      id: 'srv-hyg-auth',
+      user: { id: 'u-1', role: 'ACCOUNTANT' },
+    });
+    filter.catch(
+      new InvalidCharactersError('bad', { location: 'body' }),
+      m.host,
+    );
+    await flush();
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: 400,
+        userId: 'u-1',
+        userRole: 'ACCOUNTANT',
+        body: { name: 'a\ufffdb', password: '[REDACTED]' },
+      }),
+    );
+  });
+
   it('audits an input-hygiene 400 (InvalidCharactersError) on a mutating request, anonymously; a plain 400 is not audited', async () => {
     const record = jest.fn().mockResolvedValue(undefined);
     const filter = new AllExceptionsFilter({ record });

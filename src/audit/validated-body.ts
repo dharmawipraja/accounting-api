@@ -6,6 +6,7 @@ import {
   ValidationPipe,
   type ValidationPipeOptions,
 } from '@nestjs/common';
+import * as Sentry from '@sentry/node';
 
 /**
  * Request bodies the global ValidationPipe ACCEPTED against a body DTO. Keyed
@@ -37,10 +38,12 @@ export function isBodyValidated(body: unknown): boolean {
 export class AuditingValidationPipe extends ValidationPipe {
   private readonly backstopLogger = new Logger('AuditingValidationPipe');
 
-  /** Also a backstop: a validator that THROWS instead of failing (e.g.
-   *  validator.js' `isEmail` raising URIError on a lone surrogate) is a 400
-   *  client error, not a 500 + Sentry; a normal validation failure keeps its
-   *  own HttpException. */
+  /** Also a backstop: a validator that THROWS instead of failing is a 400,
+   *  not a 500; a normal validation failure keeps its own HttpException. A
+   *  URIError (validator.js' `isEmail` on a lone surrogate — client input)
+   *  is a warn log only; any OTHER throw is a validator defect worth seeing,
+   *  so it is also reported to Sentry at warning level (tag
+   *  `kind: validator-backstop`) — still a 400 for the caller. */
   override async transform(
     value: unknown,
     metadata: ArgumentMetadata,
@@ -53,6 +56,12 @@ export class AuditingValidationPipe extends ValidationPipe {
       this.backstopLogger.warn(
         `A validator threw while validating the ${metadata.type} -> 400: ${String(err)}`,
       );
+      if (!(err instanceof URIError)) {
+        Sentry.captureException(err, {
+          level: 'warning',
+          tags: { kind: 'validator-backstop', paramType: metadata.type },
+        });
+      }
       throw new BadRequestException('Request validation failed');
     }
     if (

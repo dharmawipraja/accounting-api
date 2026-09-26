@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { toStorableString } from '../common/text/unicode-hygiene';
 import { toStorableJson } from './audit-sanitize';
+import { pgSqlStateOf } from '../common/errors/exception-status';
 
 export interface AuditEntry {
   userId: string | null;
@@ -21,6 +22,28 @@ export interface AuditEntry {
 
 /** Body stored by the fallback row when the real one could not be inserted. */
 export const UNSTORABLE_BODY = { _unstorable: true } as const;
+
+/** SQLSTATEs meaning the row's CONTENT was rejected (not the database being
+ *  unavailable): 22021 character_not_in_repertoire, 22P05
+ *  untranslatable_character, 22P02 invalid_text_representation (e.g. bad
+ *  jsonb text), 22001 string_data_right_truncation, 54000
+ *  program_limit_exceeded (e.g. a jsonb value over a size limit). Only these
+ *  are worth the `_unstorable` retry — on a connection / pool / timeout
+ *  error the retry would just wait as long again. */
+const AUDIT_CONTENT_PG_CODES = new Set([
+  '22021',
+  '22P05',
+  '22P02',
+  '22001',
+  '54000',
+]);
+
+/** True when an audit INSERT failed because of what the row holds (see
+ *  AUDIT_CONTENT_PG_CODES). Pure. */
+export function isAuditContentError(err: unknown): boolean {
+  const code = pgSqlStateOf(err);
+  return code !== undefined && AUDIT_CONTENT_PG_CODES.has(code);
+}
 
 const storableOrNull = (s: string | null): string | null =>
   s === null ? null : toStorableString(s);
@@ -54,20 +77,27 @@ export class AuditService {
   /** Append-only. Never throws — an audit failure must not break the request.
    *  Never drops a row because of its CONTENT: every string field is made
    *  storable first (lone surrogates → U+FFFD, U+0000 removed — jsonb and
-   *  text reject them), and if the INSERT still fails it is retried ONCE with
-   *  the body replaced by `{ _unstorable: true }` (method / path / user /
-   *  status / requestId kept) after logging the original error. */
+   *  text reject them), and if the INSERT still fails on content
+   *  (`isAuditContentError`) it is retried ONCE with the body replaced by
+   *  `{ _unstorable: true }` and params by `{}` (method / path / user /
+   *  status / requestId kept) after logging the original error. Any other
+   *  failure (connection lost, pool exhausted, timeout) is logged once and
+   *  NOT retried: a retry would only double the wait during an outage. */
   async record(entry: AuditEntry): Promise<void> {
     const data = storableRow(entry);
     try {
       await this.prisma.client.auditLog.create({ data });
     } catch (err) {
+      if (!isAuditContentError(err)) {
+        this.logger.error(`Failed to write audit log: ${String(err)}`);
+        return;
+      }
       this.logger.error(
-        `Failed to write audit log; retrying with an _unstorable body: ${String(err)}`,
+        `Failed to write audit log (content rejected); retrying with an _unstorable body: ${String(err)}`,
       );
       try {
         await this.prisma.client.auditLog.create({
-          data: { ...data, body: UNSTORABLE_BODY },
+          data: { ...data, params: {}, body: UNSTORABLE_BODY },
         });
       } catch (retryErr) {
         this.logger.error(

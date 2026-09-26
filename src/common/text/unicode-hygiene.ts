@@ -1,5 +1,5 @@
 /**
- * Characters Postgres cannot store — shared by the input-hygiene middleware
+ * Characters Postgres cannot store — shared by the InputHygieneGuard
  * (reject) and the audit sanitizer (repair):
  *  - a LONE UTF-16 surrogate (a high surrogate not followed by a low one, or
  *    a low surrogate not preceded by a high one). JSON.parse turns a

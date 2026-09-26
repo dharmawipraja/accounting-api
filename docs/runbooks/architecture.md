@@ -81,22 +81,17 @@ service inventory.
    400s are **neither rate-limited nor audited** (no interceptor or guard-rejection
    row is written). The exposure is bounded by the 1 MB body cap (Caddy edge +
    `useBodyParser` above) and the cheap iterative check.
-   **Input hygiene:** `inputHygieneGuard` (`src/common/http/input-hygiene.ts`,
-   applied right after `jsonDepthGuard`) rejects a lone UTF-16 surrogate or
-   U+0000 in any body key / string value, query key / value (`req.query`,
-   decoded) or percent-decoded path segment (route params are bound only after
-   routing, so every segment is checked — `/v1/partners/%00`) with **400
-   `INVALID_CHARACTERS`** `{ location }`, no Sentry — before JwtStrategy's DB read,
-   validation and any write (Audit7 P1: such a string used to be written to a text
-   column as U+FFFD while its jsonb audit row was rejected, leaving a write with no
-   audit row). Valid surrogate pairs (emoji) pass. Unlike a deep body, a
-   **mutating** request rejected here IS audited by `AllExceptionsFilter`
-   (anonymous — no guard ran — so the body is withheld as `{}`; capped by the
-   rejection-audit limiter). Defence in depth in the audit path: `AuditService.record`
+   **Input hygiene** is the global **`InputHygieneGuard`** (guard chain step 3
+   below), not middleware — its body walk relies on this depth cap having run.
+   Defence in depth in the audit path: `AuditService.record`
    makes every row storable (lone surrogates → U+FFFD, U+0000 stripped,
    null-prototype objects so a `__proto__` key is kept as data) and, if the INSERT
-   still fails, retries once with body `{ "_unstorable": true }` (method / path /
-   user / status / requestId kept), logging the original error.
+   still fails **on content** (SQLSTATE 22021 / 22P05 / 22P02 / 22001 / 54000 —
+   `isAuditContentError`), retries once with body `{ "_unstorable": true }` and
+   params `{}` (method / path / user / status / requestId kept), logging the
+   original error. Any other failure (connection lost, pool exhausted, timeout) is
+   logged once and **not** retried — a retry would only double the wait during an
+   outage.
 8. Swagger served at `/docs` except in production (unless `ENABLE_SWAGGER=true`).
 
 ### Guard chain (global, `src/app.module.ts` `APP_GUARD` order)
@@ -113,8 +108,29 @@ Guards run in registration order:
    everywhere let a rotating `email` field bypass the IP bucket on `/auth/refresh`).
    Runs after JwtAuthGuard so `req.user` is set. Redis-backed and **fail-closed**
    (503 if Redis is down); every 429 carries `Retry-After`.
-3. **`RolesGuard`** (`src/auth/guards/roles.guard.ts`) — enforces `@Roles(...)`;
+3. **`InputHygieneGuard`** (`src/common/http/input-hygiene.ts`) — rejects a lone
+   UTF-16 surrogate or U+0000 in any body key / string value, query key / value
+   (`req.query`, decoded) or route param (`req.params`, percent-decoded by the
+   router — `/v1/partners/%00`) with **400 `INVALID_CHARACTERS`** `{ location }`
+   (`"path"` for a param, `"query"`, `"body"`), no Sentry — before the role check,
+   validation and any write (Audit7 P1: such a string used to be written to a text
+   column as U+FFFD while its jsonb audit row was rejected, leaving a write with no
+   audit row). Valid surrogate pairs (emoji) pass. Because it runs **after**
+   `JwtAuthGuard` and `UserThrottlerGuard`: an unauthenticated bad-character
+   request on a protected route is a **401** first; a bad-character login is a 400
+   only after the throttle (it counts against the login buckets); an unknown route
+   with `%00` stays a **404** (no route matched, no guard ran). A **mutating**
+   request rejected here is audited by `AllExceptionsFilter` under the normal rules:
+   an authenticated caller's row carries its `userId` and the sanitized body
+   (8 KiB cap); an anonymous one stores `{}`, or the repaired `{ email }` of a login
+   attempt (capped by the rejection-audit limiter).
+4. **`RolesGuard`** (`src/auth/guards/roles.guard.ts`) — enforces `@Roles(...)`;
    honors `@Public()`; no `@Roles` ⇒ any authenticated user passes.
+5. **`PasswordChangeGuard`** (`src/auth/guards/password-change.guard.ts`) — a user
+   flagged for a forced password change (`mustChangePassword`) gets `403
+   PASSWORD_CHANGE_REQUIRED` on every handler not marked
+   `@AllowWithPendingPassword()` (`/auth/change-password`, `/auth/me`, `/auth/logout`,
+   `/auth/logout-all`).
 
 ### Interceptors (registered via `APP_INTERCEPTOR`; order = module scan order, outermost first)
 
@@ -259,10 +275,12 @@ All thrown errors funnel through **`AllExceptionsFilter`**
   Sentry-captured at `warning` (tag `kind: constraint-backstop`), but no
   SQL/constraint name in the response; primary validation stays in the services.
 - A Postgres **22021 / 22P05** (an unstorable character — e.g. U+0000 — reaching the DB
-  on a path the input-hygiene middleware does not cover; `isUnstorableCharacters`) →
+  on a path the `InputHygieneGuard` does not cover; `isUnstorableCharacters`) →
   **400 `INVALID_CHARACTERS`** (warn log, no Sentry). A validator that *throws* inside
-  the global pipe (validator.js `isEmail` URIError on a lone surrogate) → 400
-  "Request validation failed" (`AuditingValidationPipe` backstop).
+  the global pipe → 400 "Request validation failed" (`AuditingValidationPipe`
+  backstop): a `URIError` (validator.js `isEmail` on a lone surrogate — client
+  input) is a warn log only; any other throw is a validator defect, so it is also
+  Sentry-captured at `warning` (tag `kind: validator-backstop`).
 - A body-parser over-limit error → **413 `PAYLOAD_TOO_LARGE`**; any other body-parser
   4xx (415 charset/encoding, 400 aborted) → its own status as `HTTP_<status>` (info log,
   no Sentry, no audit row).

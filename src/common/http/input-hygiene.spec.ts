@@ -1,9 +1,10 @@
 import { InvalidCharactersError } from '../errors/domain-errors';
+import type { ExecutionContext } from '@nestjs/common';
 import {
   containsInvalidCharacters,
-  inputHygieneGuard,
+  InputHygieneGuard,
   invalidCharactersLocation,
-  pathHasInvalidCharacters,
+  type HygieneRequest,
 } from './input-hygiene';
 
 describe('containsInvalidCharacters', () => {
@@ -45,52 +46,51 @@ describe('containsInvalidCharacters', () => {
   });
 });
 
-describe('pathHasInvalidCharacters', () => {
-  it('flags a %00 path segment, ignoring the query string', () => {
-    expect(pathHasInvalidCharacters('/v1/partners/%00')).toBe(true);
-    expect(pathHasInvalidCharacters('/v1/partners/ab%00cd/void')).toBe(true);
-    expect(pathHasInvalidCharacters('/v1/partners?q=%00')).toBe(false);
-  });
-
-  it('accepts clean / percent-encoded UTF-8 paths and skips malformed encoding', () => {
-    expect(pathHasInvalidCharacters('/v1/partners/3f2c')).toBe(false);
-    expect(pathHasInvalidCharacters('/v1/x/%F0%9F%98%80')).toBe(false); // 😀
-    expect(pathHasInvalidCharacters('/v1/x/%E0%A4%A')).toBe(false); // malformed
-    expect(pathHasInvalidCharacters('/v1/x/%ED%A0%80')).toBe(false); // URIError
-    expect(pathHasInvalidCharacters('')).toBe(false);
-  });
-});
-
-describe('invalidCharactersLocation / inputHygieneGuard', () => {
-  it('reports path, then query, then body', () => {
+describe('invalidCharactersLocation / InputHygieneGuard', () => {
+  it('reports a route param (as "path"), then query, then body', () => {
     expect(
       invalidCharactersLocation({
-        originalUrl: '/v1/a/%00',
+        params: { id: '\u0000' },
         query: { q: '\u0000' },
         body: { a: '\u0000' },
       }),
     ).toBe('path');
     expect(
-      invalidCharactersLocation({ url: '/v1/a', query: { 'k\u0000': '1' } }),
+      invalidCharactersLocation({ params: {}, query: { 'k\u0000': '1' } }),
     ).toBe('query');
     expect(
-      invalidCharactersLocation({ url: '/v1/a', body: { a: '\ud800' } }),
+      invalidCharactersLocation({ params: {}, body: { a: '\ud800' } }),
     ).toBe('body');
     expect(
-      invalidCharactersLocation({ url: '/v1/a', query: {}, body: { a: '😀' } }),
+      invalidCharactersLocation({
+        params: { id: '3f2c', name: 'Kopi 😀' },
+        query: {},
+        body: { a: '😀' },
+      }),
     ).toBeNull();
+    expect(invalidCharactersLocation({})).toBeNull();
   });
 
+  const ctx = (req: HygieneRequest) =>
+    ({
+      switchToHttp: () => ({ getRequest: () => req }),
+    }) as unknown as ExecutionContext;
+
   it('passes a clean request and rejects a bad one with a 400 InvalidCharactersError', () => {
-    const next = jest.fn<void, [unknown?]>();
-    inputHygieneGuard({ url: '/v1/a', body: { a: 'ok' } }, {}, next);
-    expect(next).toHaveBeenCalledWith();
-    next.mockClear();
-    inputHygieneGuard({ url: '/v1/a', body: { a: 'x\u0000' } }, {}, next);
-    const err = next.mock.calls[0][0] as InvalidCharactersError;
+    const guard = new InputHygieneGuard();
+    expect(guard.canActivate(ctx({ params: {}, body: { a: 'ok' } }))).toBe(
+      true,
+    );
+    let err: unknown;
+    try {
+      guard.canActivate(ctx({ params: {}, body: { a: 'x\u0000' } }));
+    } catch (e) {
+      err = e;
+    }
     expect(err).toBeInstanceOf(InvalidCharactersError);
-    expect(err.status).toBe(400);
-    expect(err.code).toBe('INVALID_CHARACTERS');
-    expect(err.details).toEqual({ location: 'body' });
+    const e = err as InvalidCharactersError;
+    expect(e.status).toBe(400);
+    expect(e.code).toBe('INVALID_CHARACTERS');
+    expect(e.details).toEqual({ location: 'body' });
   });
 });

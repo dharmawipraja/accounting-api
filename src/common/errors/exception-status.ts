@@ -174,15 +174,28 @@ export function constraintNameOf(err: unknown): string | undefined {
   return undefined;
 }
 
+/** The Postgres SQLSTATE behind `err` however Prisma 7 + the pg adapter
+ *  surfaces it — a PrismaClientKnownRequestError carrying
+ *  `meta.driverAdapterError`, or a bare DriverAdapterError — else undefined.
+ *  Pure. */
+export function pgSqlStateOf(err: unknown): string | undefined {
+  return err instanceof Prisma.PrismaClientKnownRequestError
+    ? driverAdapterCode(
+        (err.meta as { driverAdapterError?: unknown } | undefined)
+          ?.driverAdapterError,
+      )
+    : driverAdapterCode(err);
+}
+
 /** Postgres SQLSTATEs for a value the database cannot store as text:
  *  22021 character_not_in_repertoire (e.g. U+0000 — "invalid byte sequence
  *  for encoding UTF8: 0x00") and 22P05 untranslatable_character (e.g. a
- *  `\u0000` escape in jsonb). The input-hygiene middleware rejects such input
+ *  `\u0000` escape in jsonb). The InputHygieneGuard rejects such input
  *  up front; this is the backstop for any path it does not cover. */
 const UNSTORABLE_PG_CODES = new Set(['22021', '22P05']);
 
 /** Envelope for an unstorable-character value (see UNSTORABLE_PG_CODES) —
- *  the same code as the middleware's 400 INVALID_CHARACTERS. */
+ *  the same code as the InputHygieneGuard's 400 INVALID_CHARACTERS. */
 export const UNSTORABLE_CHARACTERS = {
   status: 400,
   code: 'INVALID_CHARACTERS',
@@ -193,13 +206,7 @@ export const UNSTORABLE_CHARACTERS = {
  *  surfaces it: P2039 / P2010 carrying `meta.driverAdapterError` (model /
  *  raw query) or a bare DriverAdapterError. Pure. */
 export function isUnstorableCharacters(err: unknown): boolean {
-  const code =
-    err instanceof Prisma.PrismaClientKnownRequestError
-      ? driverAdapterCode(
-          (err.meta as { driverAdapterError?: unknown } | undefined)
-            ?.driverAdapterError,
-        )
-      : driverAdapterCode(err);
+  const code = pgSqlStateOf(err);
   return code !== undefined && UNSTORABLE_PG_CODES.has(code);
 }
 

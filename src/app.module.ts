@@ -40,7 +40,7 @@ import { AuditInterceptor } from './audit/audit.interceptor';
 import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout.interceptor';
 import { HttpDrainService } from './common/http/http-drain.service';
 import { jsonDepthGuard } from './common/http/json-depth';
-import { inputHygieneGuard } from './common/http/input-hygiene';
+import { InputHygieneGuard } from './common/http/input-hygiene';
 import {
   THROTTLE,
   THROTTLE_TTL_MS,
@@ -113,8 +113,13 @@ import {
   controllers: [HealthController],
   providers: [
     HttpDrainService,
+    // Global guard ORDER matters (registration order = run order):
+    // authenticate → throttle (marks a login attempt) → input hygiene (400
+    // INVALID_CHARACTERS, audited with the caller when authenticated) →
+    // role check → forced password change.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: UserThrottlerGuard },
+    { provide: APP_GUARD, useClass: InputHygieneGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: PasswordChangeGuard },
     // Global interceptor ORDER matters: Nest applies APP_INTERCEPTORs in module
@@ -131,14 +136,12 @@ import {
   ],
 })
 export class AppModule implements NestModule {
-  /** Runs after body parsing, before guards/interceptors/pipes, in order: an
+  /** Runs after body parsing, before guards/interceptors/pipes: an
    *  over-deep JSON body is a 400 before anything recurses over it
-   *  (AUDIT3-17); then a lone surrogate / U+0000 anywhere in the path, query
-   *  or body is a 400 INVALID_CHARACTERS (Audit7 P1) — its walk relies on
-   *  the depth cap applied first. */
+   *  (AUDIT3-17) — including the InputHygieneGuard's body walk. */
   configure(consumer: MiddlewareConsumer): void {
     consumer
-      .apply(jsonDepthGuard, inputHygieneGuard)
+      .apply(jsonDepthGuard)
       .forRoutes({ path: '{*splat}', method: RequestMethod.ALL });
   }
 }

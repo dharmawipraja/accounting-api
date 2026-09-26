@@ -120,7 +120,8 @@ One stable error envelope, no leaked internals.
   asserted in `src/common/validators/dto-null-and-caps.spec.ts`.
 - **Audit coverage:** one row per mutating request (interceptor), plus guard
   rejections 401/403/429 and input-hygiene 400 `INVALID_CHARACTERS` rejections
-  (`src/common/http/input-hygiene.ts`; anonymous rows) from `AllExceptionsFilter` (fire-and-forget, capped 60/min
+  (`InputHygieneGuard`, `src/common/http/input-hygiene.ts` — after auth + throttle,
+  so an authenticated caller's row carries its user) from `AllExceptionsFilter` (fire-and-forget, capped 60/min
   per IP and 600/min globally — anonymous interceptor rows, 2xx, 4xx and 5xx, share
   that global ceiling; a successful login is exempt and a successful refresh gets
   60/min per token owner first). A 503 from an unavailable throttler store and 404s

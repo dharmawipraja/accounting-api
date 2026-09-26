@@ -75,7 +75,7 @@ export class SegregationOfDutiesError extends DomainError {
 }
 
 /** A request carrying a lone UTF-16 surrogate or U+0000 in a body key/value,
- *  a query-string key/value or a route param (input-hygiene middleware), or
+ *  a query-string key/value or a route param (InputHygieneGuard), or
  *  a value Postgres cannot store (22021 / 22P05 backstop). 400, no Sentry:
  *  a client-input problem, never an incident. */
 export class InvalidCharactersError extends DomainError {

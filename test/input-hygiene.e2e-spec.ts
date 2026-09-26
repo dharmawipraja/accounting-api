@@ -16,9 +16,11 @@ import {
  * Audit7 P1: a lone UTF-16 surrogate (or NUL) in request input made the
  * domain write succeed (node-pg stores U+FFFD / Postgres rejects NUL) while
  * the jsonb audit insert failed and was only logged — a write with NO audit
- * row. Now: such input is a 400 INVALID_CHARACTERS at the edge (before
- * guards), the rejection is audited, and the audit path itself never drops a
- * row because of content (sanitize + `_unstorable` fallback row).
+ * row. Now: such input is a 400 INVALID_CHARACTERS from the global
+ * InputHygieneGuard (JwtAuthGuard → UserThrottlerGuard → InputHygieneGuard →
+ * RolesGuard → PasswordChangeGuard), the rejection is audited under the
+ * normal authenticated / anonymous rules, and the audit path itself never
+ * drops a row because of content (sanitize + `_unstorable` fallback row).
  */
 describe('Input hygiene + audit robustness (e2e)', () => {
   let app: INestApplication;
@@ -79,12 +81,37 @@ describe('Input hygiene + audit robustness (e2e)', () => {
     ).toBe(0);
     const rows = await waitForRows({ clientRequestId: 'hyg-lone-surrogate' });
     expect(rows).toHaveLength(1);
+    const admin = await prisma.client.user.findFirstOrThrow({
+      where: { email: 'admin@hyg.test' },
+    });
+    // The guard runs AFTER JwtAuthGuard: the row carries the caller, and the
+    // (8 KiB-capped, sanitized) body is stored — repaired to storable JSON.
     expect(rows[0]).toMatchObject({
       method: 'POST',
       path: '/v1/partners',
       statusCode: 400,
+      userId: admin.id,
+      userRole: 'ADMIN',
       requestId: res.headers['x-request-id'],
+      body: { code: 'HYG-LONE', name: 'Bad \ufffd name', isCustomer: true },
     });
+  });
+
+  it('an UNAUTHENTICATED bad-character write is a 401 first (JwtAuthGuard runs before the hygiene guard)', async () => {
+    const res = await postRaw(
+      '/v1/partners',
+      '{"code":"HYG-ANON","name":"Bad \\ud800","isCustomer":true}',
+      'hyg-anon-401',
+      false,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it('an unknown route with %00 is a 404 (no route matched, so no guard ran)', async () => {
+    const res = await http()
+      .get('/v1/no-such-route/%00')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(404);
   });
 
   it('a lone LOW surrogate and a reversed pair are rejected too', async () => {
@@ -151,7 +178,7 @@ describe('Input hygiene + audit robustness (e2e)', () => {
     }
   });
 
-  it('a lone surrogate in the login email is a 400 INVALID_CHARACTERS (not a 500 / Sentry), audited anonymously', async () => {
+  it('a lone surrogate in the login email is a 400 INVALID_CHARACTERS (not a 500 / Sentry), after the throttle, audited anonymously with the repaired { email }', async () => {
     const errorSpy = jest.spyOn(Logger.prototype, 'error');
     const res = await postRaw(
       '/v1/auth/login',
@@ -163,9 +190,10 @@ describe('Input hygiene + audit robustness (e2e)', () => {
     expect((res.body as { code: string }).code).toBe('INVALID_CHARACTERS');
     const [row] = await waitForRows({ clientRequestId: 'hyg-login-lone' });
     expect(row).toMatchObject({ statusCode: 400, userId: null });
-    // Rejected at the edge, before the login route's guard marks the request
-    // as a login attempt: an anonymous 4xx row, body withheld ({}).
-    expect(row.body).toEqual({});
+    // Rejected by the hygiene guard AFTER UserThrottlerGuard marked the
+    // request as a login attempt: an anonymous 4xx row keeping only the
+    // forensic email, repaired to storable text (lone surrogate → U+FFFD).
+    expect(row.body).toEqual({ email: 'a\ufffd@hyg.test' });
     expect(
       errorSpy.mock.calls.some((c) =>
         String(c[0]).includes('Unhandled exception'),
@@ -199,7 +227,8 @@ describe('Input hygiene + audit robustness (e2e)', () => {
       CREATE OR REPLACE FUNCTION hyg_reject_probe() RETURNS trigger AS $$
       BEGIN
         IF NEW.body ? 'hygFailProbe' THEN
-          RAISE EXCEPTION 'hyg probe: forced audit insert failure';
+          RAISE EXCEPTION 'hyg probe: forced audit insert failure'
+            USING ERRCODE = '22P05';
         END IF;
         RETURN NEW;
       END $$ LANGUAGE plpgsql`);
@@ -225,6 +254,7 @@ describe('Input hygiene + audit robustness (e2e)', () => {
         userId: admin.id,
         userRole: 'ADMIN',
         requestId: res.headers['x-request-id'],
+        params: {},
         body: { _unstorable: true },
       });
     } finally {
@@ -233,6 +263,47 @@ describe('Input hygiene + audit robustness (e2e)', () => {
       );
       await prisma.client.$executeRawUnsafe(
         'DROP FUNCTION IF EXISTS hyg_reject_probe()',
+      );
+    }
+  });
+
+  it('a NON-content audit insert failure (not a content SQLSTATE) is logged once and NOT retried', async () => {
+    await prisma.client.$executeRawUnsafe(`
+      CREATE OR REPLACE FUNCTION hyg_reject_all() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.client_request_id = 'hyg-no-retry' THEN
+          RAISE EXCEPTION 'hyg probe: forced non-content failure'
+            USING ERRCODE = '57014';
+        END IF;
+        RETURN NEW;
+      END $$ LANGUAGE plpgsql`);
+    await prisma.client.$executeRawUnsafe(`
+      CREATE TRIGGER hyg_reject_all BEFORE INSERT ON audit_log
+      FOR EACH ROW EXECUTE FUNCTION hyg_reject_all()`);
+    const errorSpy = jest.spyOn(Logger.prototype, 'error');
+    try {
+      await http()
+        .post('/v1/partners')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Request-Id', 'hyg-no-retry')
+        .send({ code: 'HYG-NR', name: 'N', isCustomer: true, junk: 1 })
+        .expect(400);
+      const logged = () =>
+        errorSpy.mock.calls.filter((c) =>
+          String(c[0]).includes('Failed to write'),
+        );
+      for (let i = 0; i < 100 && logged().length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      await new Promise((r) => setTimeout(r, 200));
+      expect(logged()).toHaveLength(1);
+      expect(String(logged()[0][0])).not.toContain('retrying');
+    } finally {
+      await prisma.client.$executeRawUnsafe(
+        'DROP TRIGGER IF EXISTS hyg_reject_all ON audit_log',
+      );
+      await prisma.client.$executeRawUnsafe(
+        'DROP FUNCTION IF EXISTS hyg_reject_all()',
       );
     }
   });

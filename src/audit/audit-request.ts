@@ -256,9 +256,10 @@ const GUARD_REJECTION_STATUSES = new Set([401, 403, 429]);
 
 /** True when the exception filter must write the audit row itself: a mutating
  *  request rejected before AuditInterceptor ran — by a guard (401/403/429),
- *  or by the input-hygiene middleware (400 INVALID_CHARACTERS: the rejected
- *  write must still leave a trail; the row is anonymous — no guard ran — and
- *  sanitized into storable JSON by AuditService). */
+ *  or by the InputHygieneGuard (400 INVALID_CHARACTERS: the rejected write
+ *  must still leave a trail; it runs after JwtAuthGuard / UserThrottlerGuard,
+ *  so the row follows the normal authenticated / anonymous body rules, and
+ *  AuditService makes it storable JSON). */
 export function shouldAuditRejection(
   req: AuditableRequest,
   status: number,
