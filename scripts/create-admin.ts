@@ -53,6 +53,7 @@ import {
   REFRESH_SESSION_LOCK_NS,
   USER_ADMIN_LOCK_KEY,
 } from '../src/common/concurrency/advisory-lock-keys';
+import { CLI_AUDIT_METHOD } from '../src/audit/mutating-methods';
 
 const USAGE =
   'Usage: create-admin <email> <password> "<name>"\n' +
@@ -65,8 +66,9 @@ export const PASSWORD_MAX = 128;
 // management would reject anything else.
 export const EMAIL_MAX = 254;
 export const NAME_MAX = 120;
-/** The audit_log method / path of a create-admin row. */
-export const CLI_AUDIT_METHOD = 'CLI';
+/** The audit_log method / path of a create-admin row (the method is shared
+ *  with the GET /v1/audit `?method=` filter). */
+export { CLI_AUDIT_METHOD };
 export const CLI_AUDIT_PATH = 'scripts/create-admin';
 
 export interface BootstrapAdminInput {

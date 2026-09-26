@@ -3338,7 +3338,8 @@
                 "POST",
                 "PATCH",
                 "PUT",
-                "DELETE"
+                "DELETE",
+                "CLI"
               ]
             }
           },
@@ -5018,11 +5019,13 @@
         "properties": {
           "code": {
             "type": "string",
-            "maxLength": 32
+            "maxLength": 32,
+            "pattern": "\\S"
           },
           "name": {
             "type": "string",
-            "maxLength": 160
+            "maxLength": 160,
+            "pattern": "\\S"
           },
           "npwp": {
             "type": "string",
@@ -5057,7 +5060,8 @@
         "properties": {
           "name": {
             "type": "string",
-            "maxLength": 160
+            "maxLength": 160,
+            "pattern": "\\S"
           },
           "npwp": {
             "type": "string",

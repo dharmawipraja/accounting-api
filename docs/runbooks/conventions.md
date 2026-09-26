@@ -131,7 +131,9 @@ One stable error envelope, no leaked internals.
   body the global ValidationPipe accepted (`src/audit/validated-body.ts`; register
   the pipe only via `globalValidationPipe()`) — 8 KiB for every other row
   (incl. every row of a `@ReadOnlyPost()` handler — mark a new state-free POST
-  with it). `scripts/create-admin.ts` writes its own row (method `CLI`).
+  with it). `scripts/create-admin.ts` writes its own row (method `CLI`,
+  `CLI_AUDIT_METHOD` in `src/audit/mutating-methods.ts`; `GET /v1/audit?method=CLI`
+  lists them — the filter accepts `AUDIT_METHODS`).
 - **Trace ids are server-generated.** `req.id` / `X-Request-Id` response header /
   error `traceId` / `audit_log.request_id` is always a fresh UUID (`genReqId` in
   `app.module.ts`); a safe inbound `X-Request-Id` is only `clientRequestId`.

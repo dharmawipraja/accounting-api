@@ -277,6 +277,12 @@ no separate seed command for the core reference data:
   refused (422) once any journal entry, CLOSED period or `year_end_closings` row
   exists; otherwise, under that lock, it deletes the OPEN periods and regenerates the
   current + next fiscal year for the new month.
+  **Any** settings PATCH that includes `fiscalYearStartMonth` — even with the
+  unchanged value — takes that lock plus `LOCK TABLE journal_entries,
+  accounting_periods, year_end_closings IN SHARE ROW EXCLUSIVE MODE`
+  (`lock_timeout` 5 s → 409) and re-reads the row under it, so it briefly blocks
+  posting company-wide; clients send the field only when it actually changed
+  (`CompanyService.update`; FE guide says so too).
 - **Company settings** (`CompanyService.seedIfEmpty`) and **tax codes**
   (`TaxCodesService.seedIfEmpty`) seed on boot the same way.
 - **First ADMIN user** — there is no registration endpoint; bootstrap it explicitly:

@@ -3,11 +3,18 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 interface OpenApiDoc {
+  components: {
+    schemas: Record<
+      string,
+      { properties: Record<string, { pattern?: string }> }
+    >;
+  };
   paths: Record<
     string,
     Record<
       string,
       {
+        parameters?: { name: string; schema?: { enum?: string[] } }[];
         responses?: Record<
           string,
           { content?: Record<string, { schema?: unknown }> }
@@ -49,5 +56,31 @@ describe('OpenAPI response contract', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('partner code / name advertise the non-blank pattern the DTO enforces', () => {
+    const { schemas } = doc.components;
+    expect(schemas.CreateBusinessPartnerDto.properties.code.pattern).toBe(
+      '\\S',
+    );
+    expect(schemas.CreateBusinessPartnerDto.properties.name.pattern).toBe(
+      '\\S',
+    );
+    expect(schemas.UpdateBusinessPartnerDto.properties.name.pattern).toBe(
+      '\\S',
+    );
+  });
+
+  it('GET /v1/audit ?method= accepts the CLI rows written by create-admin', () => {
+    const method = doc.paths['/v1/audit'].get.parameters?.find(
+      (p) => p.name === 'method',
+    );
+    expect(method?.schema?.enum).toEqual([
+      'POST',
+      'PATCH',
+      'PUT',
+      'DELETE',
+      'CLI',
+    ]);
   });
 });

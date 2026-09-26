@@ -7,12 +7,12 @@ import {
   MaxLength,
 } from 'class-validator';
 import { OptionalNonNull } from '../../common/validators/optional-non-null';
-import { NON_BLANK, NON_BLANK_MESSAGE } from './create-business-partner.dto';
+import { NON_BLANK_MESSAGE } from './create-business-partner.dto';
 
 export class UpdateBusinessPartnerDto {
   @OptionalNonNull()
   @IsString()
-  @Matches(NON_BLANK, { message: NON_BLANK_MESSAGE })
+  @Matches(/\S/, { message: NON_BLANK_MESSAGE })
   @MaxLength(160)
   name?: string;
   // npwp / email / phone / address are nullable columns: `null` clears them.

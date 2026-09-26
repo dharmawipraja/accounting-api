@@ -111,6 +111,26 @@ describe('Audit log (e2e)', () => {
       .expect(200);
   });
 
+  it('final: ?method=CLI lists the create-admin CLI rows (and only them)', async () => {
+    const id = randomUUID();
+    await prisma.client.auditLog.create({
+      data: {
+        id,
+        method: 'CLI',
+        path: 'scripts/create-admin',
+        statusCode: 200,
+        durationMs: 0,
+      },
+    });
+    const res = await request(app.getHttpServer() as App)
+      .get('/v1/audit?method=CLI&limit=200')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const rows = res.body as { id: string; method: string }[];
+    expect(rows.map((r) => r.id)).toContain(id);
+    expect(rows.every((r) => r.method === 'CLI')).toBe(true);
+  });
+
   it('SEC-7: audit_log is append-only — UPDATE and DELETE are rejected', async () => {
     const id = randomUUID();
     await prisma.client.auditLog.create({
