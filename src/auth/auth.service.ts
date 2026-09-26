@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type { StringValue } from 'ms';
@@ -19,6 +19,8 @@ export interface TokenPair {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly users: UsersService,
     private readonly jwt: JwtService,
@@ -26,7 +28,13 @@ export class AuthService {
     private readonly refreshTokens: RefreshTokenService,
   ) {}
 
-  async login(email: string, password: string): Promise<TokenPair> {
+  /** @param ip the client address (`req.ip`), logged on success so every
+   *  successful login leaves app-log evidence even if its audit row is lost. */
+  async login(
+    email: string,
+    password: string,
+    ip?: string,
+  ): Promise<TokenPair> {
     const user = await this.users.findByEmailWithHash(email);
     // Always run a verify (decoy when the user is absent) so timing is constant.
     const valid = await this.users.verifyPasswordOrDecoy(user, password);
@@ -34,10 +42,12 @@ export class AuthService {
       throw new UnauthorizedDomainError('Invalid credentials');
     }
     const { jti } = await this.refreshTokens.issue(user.id);
-    return this.issueTokens(
+    const tokens = await this.issueTokens(
       { id: user.id, email: user.email, role: user.role },
       jti,
     );
+    this.logger.log({ event: 'login', userId: user.id, ip: ip ?? null });
+    return tokens;
   }
 
   async refresh(refreshToken: string): Promise<TokenPair> {

@@ -19,6 +19,7 @@ import {
 } from './audit-request';
 import { RejectionAuditLimiter } from './rejection-audit-limiter';
 import { READ_ONLY_POST_KEY } from './read-only-post';
+import { TOKEN_GRANT_KEY } from './token-grant';
 import {
   isLoginIpThrottled,
   markLoginAttempt,
@@ -59,9 +60,11 @@ export function handlerBindsBody(ctx: ExecutionContext): boolean {
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
   /** @param limiter the app's shared RejectionAuditLimiter: anonymous rows
-   *  (login / refresh / logout — 2xx and 4xx) count against its anonymous
-   *  global ceiling.
-   *  @param reflector reads the `@ReadOnlyPost()` handler marker. */
+   *  count against its anonymous global ceiling — every anonymous 4xx and
+   *  every anonymous 2xx EXCEPT a successful login / refresh (see
+   *  `isCredentialedSuccess`).
+   *  @param reflector reads the `@ReadOnlyPost()` / `@TokenGrant()` handler
+   *  markers. */
   constructor(
     private readonly audit: AuditService,
     private readonly limiter: RejectionAuditLimiter,
@@ -75,6 +78,22 @@ export class AuditInterceptor implements NestInterceptor {
     return (
       typeof handler === 'function' &&
       this.reflector.get<boolean>(READ_ONLY_POST_KEY, handler) === true
+    );
+  }
+
+  /** A successful login (`@LoginIpThrottle()` handler) or refresh
+   *  (`@TokenGrant()` handler): a 2xx there proves valid credentials / a valid
+   *  refresh token, so it cannot be flooded (and stays bounded by the per-IP /
+   *  per-email / per-route throttles). These rows are never dropped by the
+   *  anonymous global ceiling — cheap anonymous 401s must not be able to hide
+   *  a (possibly credential-stuffed) successful login. */
+  private isCredentialedSuccess(ctx: ExecutionContext, status: number) {
+    if (status < 200 || status >= 300) return false;
+    const handler = ctx.getHandler?.();
+    return (
+      isLoginIpThrottled(handler) ||
+      (typeof handler === 'function' &&
+        this.reflector.get<boolean>(TOKEN_GRANT_KEY, handler) === true)
     );
   }
 
@@ -94,11 +113,15 @@ export class AuditInterceptor implements NestInterceptor {
     const readOnly = this.isReadOnly(ctx);
     return next.handle().pipe(
       concatMap((data) => {
-        // Anonymous successes (login / refresh / logout 2xx — logout always
-        // answers 200) share the anonymous global ceiling too: past it the
-        // row is dropped (counted + logged by the limiter), the response
-        // still goes out.
-        if (!req.user && !this.limiter.allowAnonymousGlobal())
+        // Anonymous successes share the anonymous global ceiling too (e.g.
+        // logout, which always answers 200): past it the row is dropped
+        // (counted + logged by the limiter), the response still goes out.
+        // A successful login / refresh is exempt (isCredentialedSuccess).
+        if (
+          !req.user &&
+          !this.isCredentialedSuccess(ctx, res.statusCode) &&
+          !this.limiter.allowAnonymousGlobal()
+        )
           return from([data]);
         return from(
           this.audit.record({

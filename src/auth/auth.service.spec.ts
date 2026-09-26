@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
@@ -48,5 +49,43 @@ describe('AuthService.login (constant-time)', () => {
       UnauthorizedDomainError,
     );
     expect(verifyOrDecoy).toHaveBeenCalled();
+  });
+});
+
+describe('AuthService.login (success log)', () => {
+  it('logs { event: login, userId, ip } at info on a successful login', async () => {
+    const log = jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation(() => undefined);
+    const users = {
+      findByEmailWithHash: jest.fn().mockResolvedValue({
+        id: 'u1',
+        email: 'x@y.com',
+        role: 'VIEWER',
+        isActive: true,
+        passwordHash: 'h',
+      }),
+      verifyPasswordOrDecoy: jest.fn().mockResolvedValue(true),
+    } as unknown as UsersService;
+    const auth = new AuthService(
+      users,
+      { signAsync: jest.fn().mockResolvedValue('t') } as unknown as JwtService,
+      { getOrThrow: () => 'x' } as unknown as ConfigService,
+      {
+        issue: jest.fn().mockResolvedValue({ jti: 'j1' }),
+      } as unknown as RefreshTokenService,
+    );
+    try {
+      await expect(
+        auth.login('x@y.com', 'correct', '9.9.9.9'),
+      ).resolves.toEqual({ accessToken: 't', refreshToken: 't' });
+      expect(log).toHaveBeenCalledWith({
+        event: 'login',
+        userId: 'u1',
+        ip: '9.9.9.9',
+      });
+    } finally {
+      log.mockRestore();
+    }
   });
 });

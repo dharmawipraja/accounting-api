@@ -120,10 +120,21 @@ Guards run in registration order:
   **authenticated** rejections (403/429 with `req.user`) at **60 per user per
   minute**, never counted against — nor blocked by — the anonymous global ceiling.
   The limiter is ONE instance (an `AuditModule` provider) shared with
-  `AuditInterceptor`: its **anonymous 4xx rows** (login / refresh / logout 400/401)
+  `AuditInterceptor`: its **anonymous rows** — every 4xx (login / refresh /
+  logout 400/401) and every 2xx (e.g. logout, which always answers 200) —
   also consume — and are dropped past — the same **600/min anonymous global
   ceiling** (`allowAnonymousGlobal`; the routes' own per-IP throttles bound the
-  per-IP rate), so IPv6 rotation cannot multiply them either. Only
+  per-IP rate), so IPv6 rotation cannot multiply them either. **Exempt:** a
+  **successful login** (`@LoginIpThrottle()` handler, 2xx) and a **successful
+  refresh** (`@TokenGrant()` handler — `src/audit/token-grant.ts`, read with
+  `Reflector`, 2xx): they require valid credentials / a valid refresh token and
+  stay bounded by the per-email / per-IP / per-route throttles, so a flood of
+  cheap anonymous 401s can never starve them out of the audit trail. Every
+  successful login is also logged at info by `AuthService`
+  (`{ event: "login", userId, ip }`). A row dropped by the ceiling leaves only
+  the limiter's once-per-window **suppression log** (`RejectionAuditLimiter`,
+  global suppressed count) as evidence — check it when the audit trail looks
+  thin during an anonymous flood. Only
   401/403/429 are audited this way — a throttler-storage outage `503` and route 404s
   are not. A request-level `AUDITED` marker (`src/audit/audit-request.ts`) prevents
   a second row. Every row caps `path` (incl. query string) and serialized `params`

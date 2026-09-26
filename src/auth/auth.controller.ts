@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Ip, Post } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiExtraModels,
@@ -9,6 +9,7 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { THROTTLE, THROTTLE_TTL_MS } from '../config/throttle.config';
 import { LoginIpThrottle } from '../common/guards/login-ip-throttle';
+import { TokenGrant } from '../audit/token-grant';
 import { AuthService, TokenPair } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
@@ -40,12 +41,13 @@ export class AuthController {
   @Post('login')
   @HttpCode(200)
   @ApiOkResponse({ type: TokenPairDto })
-  login(@Body() dto: LoginDto): Promise<TokenPair> {
-    return this.auth.login(dto.email, dto.password);
+  login(@Body() dto: LoginDto, @Ip() ip: string): Promise<TokenPair> {
+    return this.auth.login(dto.email, dto.password, ip);
   }
 
   @Public()
   @Throttle({ default: { ttl: THROTTLE_TTL_MS, limit: THROTTLE.refresh } })
+  @TokenGrant()
   @Post('refresh')
   @HttpCode(200)
   @ApiOkResponse({ type: TokenPairDto })

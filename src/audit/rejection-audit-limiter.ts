@@ -16,9 +16,10 @@
  *    authenticated user's forbidden attempts from the audit trail.
  *
  * The anonymous global ceiling ALSO bounds anonymous rows written by
- * AuditInterceptor (login / refresh / logout, 2xx and 4xx —
- * `allowAnonymousGlobal`): the login throttle is per IP, so rotating
- * addresses must not multiply those rows either. Both writers share ONE limiter instance (AuditModule provider).
+ * AuditInterceptor (`allowAnonymousGlobal`: every anonymous 4xx and every
+ * anonymous 2xx except a successful login / refresh): the login throttle is
+ * per IP, so rotating addresses must not multiply those rows either. Both
+ * writers share ONE limiter instance (AuditModule provider).
  *
  * Suppressed rows are counted and reported ONCE per window (when that key's
  * window rolls over, is swept, or is evicted; the global count on the first

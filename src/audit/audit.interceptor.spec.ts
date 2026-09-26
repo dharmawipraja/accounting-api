@@ -6,6 +6,7 @@ import {
   Param,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { Prisma } from '@prisma/client';
 import { firstValueFrom, of, throwError } from 'rxjs';
 import {
@@ -13,9 +14,10 @@ import {
   entityIdOf,
   handlerBindsBody,
 } from './audit.interceptor';
-import { Reflector } from '@nestjs/core';
 import { RejectionAuditLimiter } from './rejection-audit-limiter';
 import { ReadOnlyPost } from './read-only-post';
+import { TokenGrant } from './token-grant';
+import { LoginIpThrottle } from '../common/guards/login-ip-throttle';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuditService } from './audit.service';
 import {
@@ -159,6 +161,11 @@ class RouteFixture {
   bodyless(@CurrentUser() _user: unknown, @Param('id') _id: string): void {}
   @ReadOnlyPost()
   readOnly(@Body() _dto: unknown): void {}
+  @LoginIpThrottle()
+  login(@Body() _dto: unknown): void {}
+  @TokenGrant()
+  refresh(@Body() _dto: unknown): void {}
+  logout(@Body() _dto: unknown): void {}
 }
 
 /** A routed context for a RouteFixture method (looked up by name, as Nest's
@@ -348,6 +355,71 @@ describe('AuditInterceptor iteration-5 ruling', () => {
       }),
     );
     expect(record).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('AuditInterceptor anonymous ceiling scope (final wave I1)', () => {
+  const exhausted = () => {
+    const limiter = new RejectionAuditLimiter({ globalLimit: 1 });
+    expect(limiter.allowAnonymousGlobal()).toBe(true);
+    expect(limiter.allowAnonymousGlobal()).toBe(false);
+    const record = jest.fn().mockResolvedValue(undefined);
+    const interceptor = new AuditInterceptor(
+      { record } as unknown as AuditService,
+      limiter,
+      new Reflector(),
+    );
+    return { record, interceptor };
+  };
+  const anonReq = () => ({
+    method: 'POST',
+    url: '/v1/auth/x',
+    params: {},
+    body: { email: 'a@b.c' },
+    ip: '1.2.3.4',
+  });
+  const run = (
+    interceptor: AuditInterceptor,
+    method: 'login' | 'refresh' | 'logout',
+    status = 200,
+  ) =>
+    firstValueFrom(
+      interceptor.intercept(routedCtx(method, anonReq(), status), {
+        handle: () => of({ ok: true }),
+      }),
+    );
+
+  it('ceiling exhausted: a successful login 2xx is still audited', async () => {
+    const { record, interceptor } = exhausted();
+    await expect(run(interceptor, 'login')).resolves.toEqual({ ok: true });
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({ statusCode: 200 }),
+    );
+  });
+
+  it('ceiling exhausted: a successful refresh 2xx (@TokenGrant) is still audited', async () => {
+    const { record, interceptor } = exhausted();
+    await expect(run(interceptor, 'refresh')).resolves.toEqual({ ok: true });
+    expect(record).toHaveBeenCalledTimes(1);
+  });
+
+  it('ceiling exhausted: a logout 2xx is suppressed (response still sent)', async () => {
+    const { record, interceptor } = exhausted();
+    await expect(run(interceptor, 'logout')).resolves.toEqual({ ok: true });
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it('ceiling exhausted: a failed login 4xx is still suppressed', async () => {
+    const { record, interceptor } = exhausted();
+    await expect(
+      firstValueFrom(
+        interceptor.intercept(routedCtx('login', anonReq(), 200), {
+          handle: () => throwError(() => new UnauthorizedException()),
+        }),
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(record).not.toHaveBeenCalled();
   });
 });
 
