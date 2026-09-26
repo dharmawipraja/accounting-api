@@ -13,6 +13,10 @@ import { CHART_OF_ACCOUNTS } from './chart-of-accounts.seed';
 import { Money } from '../../common/money/money';
 import { POSTED_JE } from '../balances/posted-entry.sql';
 import { assertCashAssignable } from './cash-role';
+import {
+  normalizeDisplayName,
+  normalizeIdentifierCode,
+} from '../../common/text/identifier';
 
 /**
  * Transaction-scoped advisory lock serializing CASH-account retirements, so
@@ -161,7 +165,34 @@ export class AccountsService implements OnModuleInit {
     return account;
   }
 
-  async create(input: CreateAccountInput): Promise<Account> {
+  /** The live account whose code equals `code` case-insensitively — the same
+   *  rule as the `accounts_code_lower_live_key` unique index (raw, so it bypasses
+   *  the soft-delete extension: `deleted_at IS NULL` is explicit). */
+  private async findLiveByCode(
+    code: string,
+  ): Promise<{ id: string; is_postable: boolean } | undefined> {
+    const rows = await this.prisma.client.$queryRaw<
+      { id: string; is_postable: boolean }[]
+    >`
+      SELECT id, is_postable FROM accounts
+      WHERE lower(code) = lower(${code}) AND deleted_at IS NULL
+      LIMIT 1`;
+    return rows[0];
+  }
+
+  async create(raw: CreateAccountInput): Promise<Account> {
+    // code / name / parentCode are stored and matched normalized (NFKC + trim
+    // / trim) — the DTO already normalized them; re-applied here so a caller
+    // bypassing the DTO gets the same rule (idempotent).
+    const input: CreateAccountInput = {
+      ...raw,
+      code: normalizeIdentifierCode(raw.code),
+      name: normalizeDisplayName(raw.name),
+      parentCode:
+        raw.parentCode === undefined
+          ? undefined
+          : normalizeIdentifierCode(raw.parentCode),
+    };
     // Type/subtype coherence check
     const validSubtypes = TYPE_SUBTYPES[input.type];
     if (!validSubtypes.includes(input.subtype)) {
@@ -171,9 +202,8 @@ export class AccountsService implements OnModuleInit {
       );
     }
 
-    const existing = await this.prisma.client.account.findFirst({
-      where: { code: input.code },
-    });
+    // Case-insensitive, like the unique index (which still backstops a race).
+    const existing = await this.findLiveByCode(input.code);
     if (existing) {
       throw new ConflictDomainError('Account code already exists', {
         code: input.code,
@@ -206,15 +236,15 @@ export class AccountsService implements OnModuleInit {
 
     let parentId: string | null = null;
     if (input.parentCode) {
-      const parent = await this.prisma.client.account.findFirst({
-        where: { code: input.parentCode },
-      });
+      // Case-insensitive: codes are unique case-insensitively, so "hdr-1"
+      // names the live "HDR-1" header unambiguously.
+      const parent = await this.findLiveByCode(input.parentCode);
       if (!parent) {
         throw new ValidationFailedError('Parent account not found', {
           parentCode: input.parentCode,
         });
       }
-      if (parent.isPostable) {
+      if (parent.is_postable) {
         throw new ValidationFailedError(
           'Parent account must be a non-postable header',
           { parentCode: input.parentCode },
@@ -244,7 +274,11 @@ export class AccountsService implements OnModuleInit {
     }
   }
 
-  async update(id: string, input: UpdateAccountInput): Promise<Account> {
+  async update(id: string, raw: UpdateAccountInput): Promise<Account> {
+    const input =
+      raw.name === undefined
+        ? raw
+        : { ...raw, name: normalizeDisplayName(raw.name) };
     const { role, ...data } = input;
     if (data.isActive === false || role !== undefined) {
       return this.prisma.transaction(async (tx) => {

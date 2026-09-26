@@ -19,6 +19,10 @@ import {
 } from '../common/errors/domain-errors';
 import { mapUniqueViolation } from '../common/errors/map-unique-violation';
 import { TAX_CODE_SEED } from './tax-codes.seed';
+import {
+  normalizeDisplayName,
+  normalizeIdentifierCode,
+} from '../common/text/identifier';
 
 export interface CreateTaxCodeInput {
   code: string;
@@ -98,7 +102,15 @@ export class TaxCodesService implements OnModuleInit {
     if (v) throw new ValidationFailedError(v.message, v.details);
   }
 
-  async create(input: CreateTaxCodeInput): Promise<TaxCode> {
+  async create(raw: CreateTaxCodeInput): Promise<TaxCode> {
+    // code / name are stored normalized (NFKC + trim / trim) — the DTO already
+    // normalized them; re-applied so a caller bypassing the DTO gets the same
+    // rule (idempotent).
+    const input = {
+      ...raw,
+      code: normalizeIdentifierCode(raw.code),
+      name: normalizeDisplayName(raw.name),
+    };
     this.validateRate(input.rate);
     try {
       return await this.prisma.transaction(async (tx) => {
@@ -159,7 +171,11 @@ export class TaxCodesService implements OnModuleInit {
     return code;
   }
 
-  async update(id: string, input: UpdateTaxCodeInput): Promise<TaxCode> {
+  async update(id: string, raw: UpdateTaxCodeInput): Promise<TaxCode> {
+    const input =
+      raw.name === undefined
+        ? raw
+        : { ...raw, name: normalizeDisplayName(raw.name) };
     await this.findById(id);
     if (input.rate !== undefined) this.validateRate(input.rate);
     return this.prisma.client.taxCode.update({

@@ -157,6 +157,53 @@ describe('Accounts (e2e)', () => {
       .expect(400);
   });
 
+  it('iter8-final: parentCode matches the header case-insensitively ("hdr-1" finds "HDR-1")', async () => {
+    const base = {
+      type: 'ASSET',
+      subtype: 'CURRENT_ASSET',
+      normalBalance: 'DEBIT',
+    };
+    const header = await request(app.getHttpServer() as App)
+      .post('/v1/ledger/accounts')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ ...base, code: 'HDR-1', name: 'Header', isPostable: false })
+      .expect(201);
+    const child = await request(app.getHttpServer() as App)
+      .post('/v1/ledger/accounts')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ ...base, code: 'HDR-1-01', name: 'Child', parentCode: 'hdr-1' })
+      .expect(201);
+    expect((child.body as { parentId: string }).parentId).toBe(
+      (header.body as { id: string }).id,
+    );
+  });
+
+  it('iter8-final: the service normalizes code / name / parentCode itself (a caller bypassing the DTO)', async () => {
+    const svc = app.get(AccountsService);
+    const created = await svc.create({
+      code: ' ＳＶＣ-1 ',
+      name: '  Service Direct  ',
+      type: 'ASSET',
+      subtype: 'CURRENT_ASSET',
+      normalBalance: 'DEBIT',
+      parentCode: ' hdr-1 ',
+    });
+    expect(created.code).toBe('SVC-1');
+    expect(created.name).toBe('Service Direct');
+    expect(created.parentId).toBeTruthy();
+    await expect(
+      svc.create({
+        code: 'svc-1',
+        name: 'Dup',
+        type: 'ASSET',
+        subtype: 'CURRENT_ASSET',
+        normalBalance: 'DEBIT',
+      }),
+    ).rejects.toMatchObject({ message: 'Account code already exists' });
+    const renamed = await svc.update(created.id, { name: ' Renamed ' });
+    expect(renamed.name).toBe('Renamed');
+  });
+
   it('rejects posting-account parent (422)', async () => {
     const res = await request(app.getHttpServer() as App)
       .post('/v1/ledger/accounts')

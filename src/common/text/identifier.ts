@@ -2,7 +2,10 @@
  * Normalization rules for identifier CODES (partner / account / tax-code
  * `code`, account `parentCode`) and display NAMES (partner / account /
  * tax-code `name`). Pure. Applied at the DTO boundary by the
- * `@IdentifierCode()` / `@DisplayName()` decorators and again in the services.
+ * `@IdentifierCode()` / `@DisplayName()` decorators and again (idempotently)
+ * in the create / update methods of BusinessPartnersService, AccountsService
+ * and TaxCodesService, so a caller bypassing the DTO gets the same rule.
+ * Account `parentCode` is matched case-insensitively, like code uniqueness.
  *
  *  - code: NFKC (full-width `ＤＵＰ` → `DUP`, `①` → `1`, ideographic space →
  *    space) then trimmed of Unicode White_Space. Stored in that form (case

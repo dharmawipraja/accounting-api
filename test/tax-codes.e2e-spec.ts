@@ -276,6 +276,21 @@ describe('TaxCodes (e2e)', () => {
     expect((reused.body as { code: string }).code).toBe('PPN-CI');
   });
 
+  it('iter8-final: the service normalizes code / name itself (a caller bypassing the DTO)', async () => {
+    const svc = app.get(TaxCodesService);
+    const created = await svc.create({
+      code: ' ＳＶＣ-ＴＸ ',
+      name: '  Direct  ',
+      kind: 'PPN_OUTPUT',
+      rate: '0.02',
+      taxAccountId: ppnKeluaranId,
+    });
+    expect(created.code).toBe('SVC-TX');
+    expect(created.name).toBe('Direct');
+    const renamed = await svc.update(created.id, { name: ' Renamed ' });
+    expect(renamed.name).toBe('Renamed');
+  });
+
   it('soft-deletes a tax code (204) then it disappears from the list', async () => {
     const created = await post({
       code: 'TEMP-DEL',
