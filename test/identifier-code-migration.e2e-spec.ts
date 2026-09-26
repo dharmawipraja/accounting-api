@@ -14,7 +14,7 @@ import { INestApplication } from '@nestjs/common';
  * back first (drop its three indexes + forget its _prisma_migrations row),
  * legacy rows the new API would refuse are written straight to the DB, and
  * `prisma migrate deploy` re-applies it. Mechanically fixable codes
- * (untrimmed, NFKC-different) are auto-normalized; case collisions, blank
+ * (untrimmed incl. edge tabs / newlines, NFKC-different) are auto-normalized; case collisions, blank
  * codes and codes holding format / control characters block the deploy.
  */
 const MIGRATION = '20261005000000_identifier_code_ci_unique';
@@ -74,6 +74,14 @@ describe('Migration 20261005000000_identifier_code_ci_unique on legacy data (e2e
     });
     const padded = await bp.create({
       data: { code: '  LEG-PAD ', name: 'C', isCustomer: true },
+    });
+    // Tab / CR / LF at the EDGES are white space the API trims: auto-fixed,
+    // not blocking. A control character INSIDE the code still blocks.
+    const tabPadded = await bp.create({
+      data: { code: '\tLEG-TAB\r\n', name: 'J', isCustomer: true },
+    });
+    const innerTab = await bp.create({
+      data: { code: 'LEG\tMID', name: 'K', isCustomer: true },
     });
     const blank = await bp.create({
       data: { code: '\u3000 ', name: 'G', isCustomer: true },
@@ -136,10 +144,10 @@ describe('Migration 20261005000000_identifier_code_ci_unique on legacy data (e2e
     expect(output).toMatch(/business_partners: live codes that cannot be/);
     expect(output).toMatch(/tax_codes: live codes that cannot be/);
     expect(output).toMatch(/equals a soft-deleted row's code/);
-    for (const blocking of [dupA, dupB, blank, zw, shadowed])
+    for (const blocking of [dupA, dupB, blank, zw, shadowed, innerTab])
       expect(output).toContain(blocking.id);
     // Fixable-only rows are not blocking; tombstones are ignored.
-    for (const fine of [padded, fw, tomb])
+    for (const fine of [padded, fw, tomb, tabPadded])
       expect(output).not.toContain(fine.id);
     expect(await presentIndexes()).toEqual([]);
     // The failed run changed nothing (the auto-fix runs only once the
@@ -161,6 +169,10 @@ describe('Migration 20261005000000_identifier_code_ci_unique on legacy data (e2e
     await prisma.client.businessPartner.update({
       where: { id: blank.id },
       data: { code: 'LEG-BLANK' },
+    });
+    await prisma.client.businessPartner.update({
+      where: { id: innerTab.id },
+      data: { code: 'LEG-MID' },
     });
     await prisma.client.businessPartner.update({
       where: { id: shadowed.id },
@@ -186,6 +198,13 @@ describe('Migration 20261005000000_identifier_code_ci_unique on legacy data (e2e
         })
       ).code,
     ).toBe('LEG-PAD');
+    expect(
+      (
+        await prisma.client.businessPartner.findFirstOrThrow({
+          where: { id: tabPadded.id },
+        })
+      ).code,
+    ).toBe('LEG-TAB');
     expect(
       (await prisma.client.account.findFirstOrThrow({ where: { id: fw.id } }))
         .code,

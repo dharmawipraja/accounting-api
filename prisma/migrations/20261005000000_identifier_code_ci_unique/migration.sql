@@ -26,9 +26,11 @@
 --        a. collides with another once normalized
 --           (lower(trim(NFKC(code)))) — rename or delete all but one;
 --        b. is blank once normalized (NFKC + trim) — give it a real code;
---        c. holds a zero-width / other Unicode format (Cf) or control (Cc)
---           character — not mechanically fixable (which visible code was
---           meant?), so a human picks the new code.
+--        c. still holds a zero-width / other Unicode format (Cf) or control
+--           (Cc) character once normalized — not mechanically fixable (which
+--           visible code was meant?), so a human picks the new code. Tested on
+--           the NORMALIZED form: edge tab / CR / LF are white space the API
+--           trims too, so they are auto-fixed (step 2), not blocking.
 --        d. would, once normalized, equal the exact code of a SOFT-DELETED
 --           row (a legacy tombstone without the #deleted-<id> rename) — the
 --           exact <table>_code_key unique would reject the rewrite.
@@ -75,9 +77,9 @@ BEGIN
     EXECUTE format($q$
       SELECT string_agg(quote_literal(code) || ' (id ' || id || ')', ', '
                         ORDER BY code)
-      FROM %I
+      FROM %1$I
       WHERE deleted_at IS NULL
-        AND (%s = '' OR code ~ '[[:cntrl:]]' OR code ~ %L) $q$, t, norm, cf)
+        AND (%2$s = '' OR %2$s ~ '[[:cntrl:]]' OR %2$s ~ %3$L) $q$, t, norm, cf)
       INTO found;
     IF found IS NOT NULL THEN
       problems := problems || format(E'\n  %s: live codes that cannot be normalized automatically (blank, or holding an invisible format / control character): %s', t, found);
