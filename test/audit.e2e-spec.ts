@@ -433,6 +433,43 @@ describe('Audit log (e2e)', () => {
     ).toBe(0);
   });
 
+  it('final: an unsupported JSON charset / content encoding is a 415 envelope (not a 500), no audit row', async () => {
+    // (charset=utf-7 is NOT rejected: body-parser only requires `utf-*` for
+    // JSON and iconv-lite decodes UTF-7 — so latin1 is the 415 probe.)
+    const cases: Array<{ id: string; headers: Record<string, string> }> = [
+      {
+        id: 'audit-415-charset',
+        headers: { 'Content-Type': 'application/json; charset=latin1' },
+      },
+      {
+        id: 'audit-415-encoding',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Encoding': 'br2',
+        },
+      },
+    ];
+    for (const c of cases) {
+      const res = await request(app.getHttpServer() as App)
+        .post('/v1/partners')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set(c.headers)
+        .set('X-Request-Id', c.id)
+        .send('{"code":"AUD-415"}');
+      expect(res.status).toBe(415);
+      expect((res.body as { code: string }).code).toBe('HTTP_415');
+      expect((res.body as { message: string }).message).toMatch(
+        /^unsupported (charset|content encoding)/,
+      );
+    }
+    await new Promise((r) => setTimeout(r, 100));
+    expect(
+      await prisma.client.auditLog.count({
+        where: { clientRequestId: { in: cases.map((c) => c.id) } },
+      }),
+    ).toBe(0);
+  });
+
   it('iter4: malformed JSON (entity.parse.failed) is already a clean 400, not a 500', async () => {
     const res = await request(app.getHttpServer() as App)
       .post('/v1/partners')

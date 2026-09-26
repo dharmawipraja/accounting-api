@@ -4,7 +4,7 @@ import {
   CONSTRAINT_VIOLATION,
   constraintNameOf,
   isConstraintViolation,
-  isPayloadTooLarge,
+  isBodyParserClientError,
   isTransientConflict,
   statusFromException,
   PRISMA_STATUS,
@@ -248,30 +248,59 @@ describe('isConstraintViolation (23514 / 23502 backstop → 422)', () => {
   });
 });
 
-describe('isPayloadTooLarge (body-parser over-limit → 413)', () => {
-  const parserError = (type: string, status: number) =>
-    Object.assign(new Error('request entity too large'), {
+describe('isBodyParserClientError (body-parser / http-errors 4xx)', () => {
+  const parserError = (type: string, status: number, message = 'x') =>
+    Object.assign(new Error(message), {
       type,
       status,
       statusCode: status,
       expose: true,
     });
 
-  it('matches entity.too.large and parameters.too.many (413)', () => {
-    expect(isPayloadTooLarge(parserError('entity.too.large', 413))).toBe(true);
-    expect(isPayloadTooLarge(parserError('parameters.too.many', 413))).toBe(
+  it('matches 413 entity.too.large and parameters.too.many', () => {
+    expect(isBodyParserClientError(parserError('entity.too.large', 413))).toBe(
       true,
     );
+    expect(
+      isBodyParserClientError(parserError('parameters.too.many', 413)),
+    ).toBe(true);
     expect(statusFromException(parserError('entity.too.large', 413))).toBe(413);
   });
 
-  it('does not match other shapes', () => {
-    expect(isPayloadTooLarge(parserError('entity.parse.failed', 400))).toBe(
-      false,
+  it('matches 415 charset.unsupported / encoding.unsupported with their status', () => {
+    for (const type of ['charset.unsupported', 'encoding.unsupported']) {
+      expect(isBodyParserClientError(parserError(type, 415))).toBe(true);
+      expect(statusFromException(parserError(type, 415))).toBe(415);
+    }
+  });
+
+  it('matches 400 request.aborted (status read from statusCode alone too)', () => {
+    expect(statusFromException(parserError('request.aborted', 400))).toBe(400);
+    const onlyStatusCode = Object.assign(new Error('aborted'), {
+      type: 'request.aborted',
+      statusCode: 400,
+    });
+    expect(isBodyParserClientError(onlyStatusCode)).toBe(true);
+    expect(statusFromException(onlyStatusCode)).toBe(400);
+  });
+
+  it('does not match non-4xx, untyped or non-object shapes', () => {
+    expect(
+      isBodyParserClientError(parserError('stream.not.readable', 500)),
+    ).toBe(false);
+    expect(statusFromException(parserError('stream.not.readable', 500))).toBe(
+      500,
     );
-    expect(isPayloadTooLarge(parserError('entity.too.large', 400))).toBe(false);
-    expect(isPayloadTooLarge(null)).toBe(false);
-    expect(isPayloadTooLarge('entity.too.large')).toBe(false);
+    expect(
+      isBodyParserClientError(Object.assign(new Error('x'), { status: 400 })),
+    ).toBe(false);
+    expect(
+      isBodyParserClientError(
+        Object.assign(new Error('x'), { type: 'a', status: '400' }),
+      ),
+    ).toBe(false);
+    expect(isBodyParserClientError(null)).toBe(false);
+    expect(isBodyParserClientError('entity.too.large')).toBe(false);
   });
 });
 

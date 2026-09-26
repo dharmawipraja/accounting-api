@@ -168,7 +168,7 @@ describe('AllExceptionsFilter', () => {
     expect(Sentry.captureException as jest.Mock).not.toHaveBeenCalled();
   });
 
-  it('maps a CHECK violation (P2010 + 23514) to 422 VALIDATION_FAILED without leaking SQL, no Sentry', () => {
+  it('maps a CHECK violation (P2010 + 23514) to 422 VALIDATION_FAILED without leaking SQL, Sentry warning captured', () => {
     (Sentry.captureException as jest.Mock).mockClear();
     const m = mockHost();
     const adapterErr = Object.assign(new Error('adapter'), {
@@ -283,6 +283,56 @@ describe('AllExceptionsFilter', () => {
       traceId: 'req-1',
     });
     expect(Sentry.captureException as jest.Mock).not.toHaveBeenCalled();
+  });
+
+  it('maps other body-parser client errors (415 charset/encoding, 400 aborted) to their status, no Sentry', () => {
+    (Sentry.captureException as jest.Mock).mockClear();
+    const cases = [
+      {
+        type: 'charset.unsupported',
+        status: 415,
+        message: 'unsupported charset "UTF-7"',
+      },
+      {
+        type: 'encoding.unsupported',
+        status: 415,
+        message: 'unsupported content encoding "br2"',
+      },
+      { type: 'request.aborted', status: 400, message: 'request aborted' },
+    ];
+    for (const c of cases) {
+      const m = mockHost();
+      const err = Object.assign(new Error(c.message), {
+        type: c.type,
+        status: c.status,
+        statusCode: c.status,
+        expose: true,
+      });
+      filter.catch(err, m.host);
+      expect(m.code()).toBe(c.status);
+      expect(m.payload()).toEqual({
+        code: `HTTP_${c.status}`,
+        message: c.message,
+        traceId: 'req-1',
+      });
+    }
+    expect(Sentry.captureException as jest.Mock).not.toHaveBeenCalled();
+  });
+
+  it('never echoes a non-exposed body-parser message', () => {
+    const m = mockHost();
+    const err = Object.assign(new Error('internal detail'), {
+      type: 'some.type',
+      statusCode: 400,
+      expose: false,
+    });
+    filter.catch(err, m.host);
+    expect(m.code()).toBe(400);
+    expect(m.payload()).toEqual({
+      code: 'HTTP_400',
+      message: 'Bad request',
+      traceId: 'req-1',
+    });
   });
 
   it('maps Prisma P2034 (write conflict) to 409 CONFLICT retryable', () => {

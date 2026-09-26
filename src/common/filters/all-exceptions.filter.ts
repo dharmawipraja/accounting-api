@@ -13,7 +13,7 @@ import {
   CONSTRAINT_VIOLATION,
   constraintNameOf,
   isConstraintViolation,
-  isPayloadTooLarge,
+  isBodyParserClientError,
   isTransientConflict,
   PAYLOAD_TOO_LARGE,
   PRISMA_STATUS,
@@ -161,14 +161,34 @@ export class AllExceptionsFilter implements ExceptionFilter {
     } else if (exception instanceof Prisma.PrismaClientValidationError) {
       envelope = { code: 'INVALID_INPUT', message: 'Invalid input' };
       this.logger.warn(`Prisma validation error -> 400 on ${url}`);
-    } else if (isPayloadTooLarge(exception)) {
-      // body-parser rejected an over-limit body before routing: a client
-      // error, not an incident (no Sentry, no audit row — no guard ran).
-      envelope = {
-        code: PAYLOAD_TOO_LARGE.code,
-        message: PAYLOAD_TOO_LARGE.message,
-      };
-      this.logger.log(`Request body over the parser limit -> 413 on ${url}`);
+    } else if (isBodyParserClientError(exception)) {
+      // body-parser rejected the body before routing (over the size cap,
+      // unsupported charset / encoding, aborted upload): a client error, not
+      // an incident (info log, no Sentry, no audit row — no guard ran).
+      if (status === PAYLOAD_TOO_LARGE.status) {
+        envelope = {
+          code: PAYLOAD_TOO_LARGE.code,
+          message: PAYLOAD_TOO_LARGE.message,
+        };
+      } else {
+        const { message, expose } = exception as {
+          message?: unknown;
+          expose?: unknown;
+        };
+        envelope = {
+          code: `HTTP_${status}`,
+          // http-errors marks client-safe messages `expose: true`.
+          message:
+            expose === true && typeof message === 'string'
+              ? message
+              : 'Bad request',
+        };
+      }
+      this.logger.log(
+        `Request body rejected by the parser (${
+          (exception as { type: string }).type
+        }) -> ${status} on ${url}`,
+      );
     } else {
       this.logger.error(
         `Unhandled exception on ${url}`,

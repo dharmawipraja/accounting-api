@@ -181,24 +181,33 @@ export const PAYLOAD_TOO_LARGE = {
   message: 'Request body is too large',
 } as const;
 
-/** body-parser error types for an over-limit request: the body exceeds the
- *  byte `limit` (`entity.too.large`) or the urlencoded parameter count
- *  (`parameters.too.many`). */
-const PAYLOAD_TOO_LARGE_TYPES = new Set([
-  'entity.too.large',
-  'parameters.too.many',
-]);
+/**
+ * The 4xx status of a body-parser / `http-errors` client error, else
+ * undefined. Such errors are not HttpExceptions — Nest passes them to the
+ * filter unmapped — and are recognised by a string `type` (e.g.
+ * `entity.too.large` / `parameters.too.many` 413, `charset.unsupported` /
+ * `encoding.unsupported` 415, `request.aborted` 400) plus a numeric 4xx
+ * `status` / `statusCode`. They are raised before routing (no guard ran), so
+ * they are client errors, never incidents. Pure.
+ */
+export function bodyParserClientStatus(err: unknown): number | undefined {
+  if (typeof err !== 'object' || err === null) return undefined;
+  const { type, status, statusCode } = err as {
+    type?: unknown;
+    status?: unknown;
+    statusCode?: unknown;
+  };
+  if (typeof type !== 'string') return undefined;
+  const s = typeof status === 'number' ? status : statusCode;
+  return typeof s === 'number' && Number.isInteger(s) && s >= 400 && s < 500
+    ? s
+    : undefined;
+}
 
-/** True for body-parser's over-limit error (an `http-errors` 413, not an
- *  HttpException: Nest passes it to the filter unmapped). Pure. */
-export function isPayloadTooLarge(err: unknown): boolean {
-  if (typeof err !== 'object' || err === null) return false;
-  const { type, status } = err as { type?: unknown; status?: unknown };
-  return (
-    typeof type === 'string' &&
-    PAYLOAD_TOO_LARGE_TYPES.has(type) &&
-    status === 413
-  );
+/** True for a body-parser / `http-errors` 4xx client error (see
+ *  `bodyParserClientStatus`). Pure. */
+export function isBodyParserClientError(err: unknown): boolean {
+  return bodyParserClientStatus(err) !== undefined;
 }
 
 /**
@@ -216,6 +225,7 @@ export function statusFromException(err: unknown): number {
     return PRISMA_STATUS[err.code]?.status ?? 500;
   }
   if (err instanceof Prisma.PrismaClientValidationError) return 400;
-  if (isPayloadTooLarge(err)) return PAYLOAD_TOO_LARGE.status;
+  const parserStatus = bodyParserClientStatus(err);
+  if (parserStatus !== undefined) return parserStatus;
   return 500;
 }

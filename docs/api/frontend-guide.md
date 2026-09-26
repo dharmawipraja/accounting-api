@@ -132,6 +132,7 @@ a short backoff.
 | **404**   | Resource not found (incl. soft-deleted)                                                                                           | `NOT_FOUND`                                                |
 | **409**   | Conflict / closed period / closed year / unique violation                                                                         | `CONFLICT`, `CLOSED_PERIOD`, `CLOSED_YEAR`                 |
 | **413**   | Request body over the 1 MB cap (rejected before auth/validation; the envelope has no `traceId`) — send smaller requests, never retry as-is | `PAYLOAD_TOO_LARGE`                                        |
+| **415**   | Unsupported request charset (JSON must be UTF-8/`utf-*`) or `Content-Encoding` (rejected before auth/validation; no `traceId`) — fix the request, never retry as-is | `HTTP_415`                                                 |
 | **422**   | **Domain-rule violation** — request was well-formed but breaks an accounting rule                                                 | `VALIDATION_FAILED`, `UNBALANCED_ENTRY`, `INVALID_ACCOUNT` |
 | **429**   | Rate-limited                                                                                                                      | (throttler)                                                |
 | 500       | Unexpected server error                                                                                                           | `INTERNAL_ERROR`                                           |

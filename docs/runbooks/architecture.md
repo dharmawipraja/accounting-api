@@ -159,7 +159,11 @@ Guards run in registration order:
     `audit-request.spec.ts`), so an **accepted write is never truncated**.
   - **Over-limit bodies:** a body over the 1 MB parser cap (`main.ts`) is
     answered by `AllExceptionsFilter` as **413 `PAYLOAD_TOO_LARGE`** (body-parser
-    `entity.too.large` / `parameters.too.many`; `isPayloadTooLarge` in
+    `entity.too.large` / `parameters.too.many`). Every other body-parser /
+    `http-errors` client error (string `type` + 4xx `status`/`statusCode`:
+    415 `charset.unsupported` / `encoding.unsupported`, 400 `request.aborted`)
+    keeps its own status with code `HTTP_<status>` and the error's exposed
+    message (`isBodyParserClientError` / `bodyParserClientStatus` in
     `exception-status.ts`) — a client error: no Sentry event, no audit row (the
     parser runs before guards, interceptors and the request-id middleware, so the
     envelope has no `traceId`). Malformed JSON is Nest's own 400 (`HTTP_400`).
@@ -210,7 +214,9 @@ All thrown errors funnel through **`AllExceptionsFilter`**
   for a validation gap (a code defect): ERROR-logged with the constraint name and
   Sentry-captured at `warning` (tag `kind: constraint-backstop`), but no
   SQL/constraint name in the response; primary validation stays in the services.
-- A body-parser over-limit error → **413 `PAYLOAD_TOO_LARGE`** (info log, no Sentry).
+- A body-parser over-limit error → **413 `PAYLOAD_TOO_LARGE`**; any other body-parser
+  4xx (415 charset/encoding, 400 aborted) → its own status as `HTTP_<status>` (info log,
+  no Sentry, no audit row).
 - Anything else → 500 `INTERNAL_ERROR`, logged + Sentry-captured (no stack leak).
 
 Every envelope gets a `traceId` (the server-generated `X-Request-Id`) when present.
