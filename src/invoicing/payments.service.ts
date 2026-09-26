@@ -374,6 +374,16 @@ export class PaymentsService {
         return locked[0];
       },
       applyInTx: async (tx) => {
+        // Voiding reopens the allocated documents' balances; refuse when the
+        // partner was soft-deleted (a fully settled partner may be deleted),
+        // or the receivable/payable would reappear behind a partner nobody
+        // can select. FOR SHARE serializes with a concurrent partner delete.
+        // An inactive (not deleted) partner may still be voided against.
+        if (!(await lockLivePartnerForShare(tx, payment.partnerId)))
+          throw new ValidationFailedError(
+            'Cannot void a payment whose partner has been deleted',
+            { id, partnerId: payment.partnerId, reason: 'PARTNER_DELETED' },
+          );
         const target = PAYMENT_TARGETS[payment.direction];
         for (const a of inLockOrder(target, allocations)) {
           await unwindInTx(tx, target, a);

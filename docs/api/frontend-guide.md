@@ -921,7 +921,7 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing).
 - `GET    /v1/payments/:id` · any · get one
 - `POST   /v1/payments` · ACCOUNTANT+ · create draft (RECEIPT/DISBURSEMENT + allocations) · **requires `Idempotency-Key`**
 - `POST   /v1/payments/:id/post` · APPROVER/ADMIN · post · **requires `Idempotency-Key`**
-- `POST   /v1/payments/:id/void` · APPROVER/ADMIN · void (optional body `{ date }` ≥ document date) · **requires `Idempotency-Key`**
+- `POST   /v1/payments/:id/void` · APPROVER/ADMIN · void (optional body `{ date }` ≥ document date) · **requires `Idempotency-Key`** · a payment whose partner has been deleted → `422 VALIDATION_FAILED` `{ id, partnerId, reason: 'PARTNER_DELETED' }` (voiding would reopen a balance on a deleted partner)
 - `DELETE /v1/payments/:id` · ACCOUNTANT+ · delete draft
 
 ### Business partners

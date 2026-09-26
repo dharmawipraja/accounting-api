@@ -724,6 +724,54 @@ describe('Payments (e2e)', () => {
     ).toBe((inv.body as { total: string }).total);
   });
 
+  it('refuses to void a payment whose partner is soft-deleted (422 PARTNER_DELETED) — would reopen a balance on a deleted partner', async () => {
+    const customerId = await newCustomer('CUST-VOID-DELETED');
+    const invoiceId = await makePostedInvoice(customerId);
+    const r = await request(server())
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        direction: 'RECEIPT',
+        partnerId: customerId,
+        date: '2026-02-15',
+        cashAccountId: acc['1-1000'],
+        allocations: [{ salesInvoiceId: invoiceId, amount: '1110000' }],
+      })
+      .expect(201);
+    const paymentId = (r.body as { id: string }).id;
+    await request(server())
+      .post(`/v1/payments/${paymentId}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    // Fully paid → no open items → the partner can be deleted.
+    await app.get(BusinessPartnersService).softDelete(customerId, 'test');
+    const res = await request(server())
+      .post(`/v1/payments/${paymentId}/void`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(422);
+    expect(res.body).toMatchObject({
+      code: 'VALIDATION_FAILED',
+      details: {
+        id: paymentId,
+        partnerId: customerId,
+        reason: 'PARTNER_DELETED',
+      },
+    });
+    const inv = await request(server())
+      .get(`/v1/sales-invoices/${invoiceId}`)
+      .set('Authorization', `Bearer ${acct}`)
+      .expect(200);
+    expect((inv.body as { outstanding: string }).outstanding).toBe('0.0000');
+    const pay = await request(server())
+      .get(`/v1/payments/${paymentId}`)
+      .set('Authorization', `Bearer ${acct}`)
+      .expect(200);
+    expect((pay.body as { status: string }).status).toBe('POSTED');
+  });
+
   it('I-29: void a DISBURSEMENT payment → 200; purchaseBill.amountPaid decremented back to 0 (DISBURSEMENT decrement arm)', async () => {
     // sign === -1 decrement arm in DISBURSEMENT applyPaid() via unwindInTx on void.
     const vendor = await app
