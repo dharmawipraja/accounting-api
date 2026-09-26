@@ -109,7 +109,12 @@ Work through this **once**, on the first deploy that includes migrations
 5. **Every user must log in again once**: tokens now carry a `typ` claim, so all
    access/refresh tokens issued before the deploy are rejected (`401`). Tell users
    (and the frontend team) beforehand.
-6. After the deploy: `/ready` is 200, `docker compose logs migrate` ends with
+6. **Legacy tax codes:** the tax-code account rule is now re-checked on every
+   invoice/bill post. Run the read-only query in `troubleshooting.md` → *Posting an
+   invoice/bill fails 422 with `details.taxAccountId`* against the rehearsal database;
+   any rows it lists must be replaced (new conforming code, deactivate the old one,
+   re-`PATCH` drafts) or their drafts cannot be posted.
+7. After the deploy: `/ready` is 200, `docker compose logs migrate` ends with
    `ensure-app-role: accounting_app role + grants are up to date`, and a login +
    one read works.
 

@@ -145,6 +145,61 @@ mechanics, and [`./deploy.md`](./deploy.md) for production deploys.
   body") — that's a client bug (don't reuse a key for a different operation), not a
   missing-header issue.
 
+### Posting an invoice/bill fails 422 with `details.taxAccountId` (legacy tax code)
+
+- **Symptom:** A draft invoice/bill that applies a tax code created **before** the
+  audit-3 release fails on `POST …/:id/post` (and new tax-code creates with the same
+  account fail) with `422 VALIDATION_FAILED`, `details: { taxAccountId, reason }`,
+  `reason` one of `NOT_POSTABLE`, `SYSTEM_ROLE`, `NORMAL_BALANCE`, `SUBTYPE`.
+- **Cause:** The tax-code account rule (`src/tax/tax-account-rule.ts`) is enforced on
+  create **and re-checked inside every document post**: the account must be postable,
+  hold no system role, and match the kind — `PPN_INPUT`/`PPH_PREPAID` need a
+  `DEBIT`-normal `TAX_RECEIVABLE` account, `PPN_OUTPUT`/`PPH_PAYABLE` a `CREDIT`-normal
+  `TAX_PAYABLE` one. Older codes were not checked, and a tax code's account cannot be
+  changed by `PATCH`. The seeded codes conform; hand-made ones may not.
+- **Find them (read-only, run as the owner or `accounting_app`):**
+  ```sql
+  SELECT * FROM (
+    SELECT t.id, t.code, t.kind, t.is_active,
+           a.code AS account_code, a.name AS account_name,
+           a.role, a.subtype, a.normal_balance, a.is_postable,
+           CASE
+             WHEN NOT a.is_postable THEN 'NOT_POSTABLE'
+             WHEN a.role IS NOT NULL THEN 'SYSTEM_ROLE'
+             WHEN a.normal_balance::text <> CASE WHEN t.kind::text IN ('PPN_INPUT', 'PPH_PREPAID')
+                                                THEN 'DEBIT' ELSE 'CREDIT' END THEN 'NORMAL_BALANCE'
+             WHEN a.subtype::text <> CASE WHEN t.kind::text IN ('PPN_INPUT', 'PPH_PREPAID')
+                                         THEN 'TAX_RECEIVABLE' ELSE 'TAX_PAYABLE' END THEN 'SUBTYPE'
+           END AS reason
+    FROM tax_codes t JOIN accounts a ON a.id = t.tax_account_id
+    WHERE t.deleted_at IS NULL
+  ) v WHERE reason IS NOT NULL ORDER BY code;
+  ```
+  Drafts that still reference them (replace the list with the ids found above):
+  ```sql
+  SELECT 'sales_invoice' AS doc, d.id, d.date FROM sales_invoices d
+  WHERE d.status = 'DRAFT' AND d.deleted_at IS NULL AND EXISTS (
+    SELECT 1 FROM sales_invoice_lines l
+    WHERE l.sales_invoice_id = d.id AND l.tax_code_ids && ARRAY['<tax-code-id>', '…']::text[])
+  UNION ALL
+  SELECT 'purchase_bill', d.id, d.date FROM purchase_bills d
+  WHERE d.status = 'DRAFT' AND d.deleted_at IS NULL AND EXISTS (
+    SELECT 1 FROM purchase_bill_lines l
+    WHERE l.purchase_bill_id = d.id AND l.tax_code_ids && ARRAY['<tax-code-id>', '…']::text[]);
+  ```
+- **Fix (through the API — never edit accounts/tax codes in SQL):**
+  1. If no conforming account exists, create one (`POST /v1/ledger/accounts`: postable,
+     no role, `subtype` `TAX_RECEIVABLE` + `normalBalance` `DEBIT` for input VAT /
+     prepaid PPh, `TAX_PAYABLE` + `CREDIT` for output VAT / withheld PPh).
+  2. Create a replacement tax code on it (`POST /v1/tax-codes`, a new `code`, same
+     `kind`/`rate`).
+  3. Deactivate the old code (`POST /v1/tax-codes/:id/deactivate`) so it cannot be
+     applied again. Posted documents keep their already-posted journal lines; nothing
+     historical changes. Any balance sitting on the old account can be moved with a
+     `MANUAL` journal if the accountant wants it on the new one.
+  4. Re-`PATCH` each draft from the second query with `lines` that use the new tax code
+     id, then post it.
+
 ### Request returns 408
 
 - **Symptom:** A request returns `408` ("Request timed out").
