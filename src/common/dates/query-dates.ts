@@ -6,7 +6,9 @@ import { optionalBusinessDate, businessDate } from './business-date';
  *  company's calendar day, not the UTC one (a WIB user at 04:00 local is still
  *  "yesterday" in UTC until 07:00). Read at module load like throttle.config. */
 export const REPORT_UTC_OFFSET_MINUTES = Number(
-  process.env.REPORT_UTC_OFFSET_MINUTES ?? 420,
+  // `||`, not `??`: an empty value (compose `${VAR:-}`) must mean unset → WIB,
+  // not Number('') = 0 (UTC). '0' is a non-empty string, so UTC stays settable.
+  process.env.REPORT_UTC_OFFSET_MINUTES || 420,
 );
 
 /** A validated as-of query string → its business date (calendar day from the

@@ -9,16 +9,16 @@ import { AuditService } from './audit/audit.service';
 import { RejectionAuditLimiter } from './audit/rejection-audit-limiter';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { corsOptions } from './config/cors-origins';
+import { sentryOptions } from './config/sentry-options';
 import { scrubSentryEvent } from './config/sentry-scrub';
 import { resolveTrustProxy } from './config/trust-proxy';
 
 async function bootstrap(): Promise<void> {
-  if (process.env.SENTRY_DSN) {
+  const sentry = sentryOptions(process.env);
+  if (sentry) {
     const Sentry = await import('@sentry/node');
     Sentry.init({
-      dsn: process.env.SENTRY_DSN,
-      environment: process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV,
-      release: process.env.SENTRY_RELEASE,
+      ...sentry,
       tracesSampleRate: 0,
       beforeSend: (event) => scrubSentryEvent(event),
     });

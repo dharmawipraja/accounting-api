@@ -109,3 +109,31 @@ describe('optionalDateRange with a custom parser', () => {
     expect(from?.toISOString()).toBe('2026-06-25T10:00:00.000Z');
   });
 });
+
+describe('REPORT_UTC_OFFSET_MINUTES (module load)', () => {
+  const ORIG = process.env.REPORT_UTC_OFFSET_MINUTES;
+  afterEach(() => {
+    if (ORIG === undefined) delete process.env.REPORT_UTC_OFFSET_MINUTES;
+    else process.env.REPORT_UTC_OFFSET_MINUTES = ORIG;
+    jest.resetModules();
+  });
+  const load = async (): Promise<number> => {
+    jest.resetModules();
+    return (await import('./query-dates')).REPORT_UTC_OFFSET_MINUTES;
+  };
+
+  it('defaults to 420 (WIB) when unset', async () => {
+    delete process.env.REPORT_UTC_OFFSET_MINUTES;
+    expect(await load()).toBe(420);
+  });
+  it('treats an empty value (compose `${VAR:-}`) as unset → 420, not 0 (UTC)', async () => {
+    process.env.REPORT_UTC_OFFSET_MINUTES = '';
+    expect(await load()).toBe(420);
+  });
+  it('honours an explicit value, including 0', async () => {
+    process.env.REPORT_UTC_OFFSET_MINUTES = '0';
+    expect(await load()).toBe(0);
+    process.env.REPORT_UTC_OFFSET_MINUTES = '-300';
+    expect(await load()).toBe(-300);
+  });
+});

@@ -48,12 +48,13 @@ the soft-delete-extended client (`applySoftDelete(this)`, a `$extends` result).
 > Several carry DDL that `prisma migrate dev` will never produce on its own.
 
 Migrations live at `prisma/migrations/<timestamp>_<name>/migration.sql`.
-**A new migration directory must sort after the latest existing one** — Prisma
-applies them in lexical order, and several recent ones are future-dated (latest:
-`20261002000000_document_journal_link_check_and_fk_indexes`). A `migrate dev`
-default timestamp of "now" would sort *before* them; name the directory with a
-timestamp greater than the last one (`command ls prisma/migrations | tail -2`),
-e.g. `20261003000000_<name>`. The
+**A new migration directory must sort after the newest existing one** — Prisma
+applies them in lexical order, and several recent ones are future-dated. A
+`migrate dev` default timestamp of "now" may sort *before* them; name the directory
+with a timestamp greater than the newest directory in `prisma/migrations` (find it
+with `command ls prisma/migrations | grep -v migration_lock | tail -1`) — e.g. if
+that prints `20261003000000_payment_allocations_payment_id_idx`, use
+`20261004000000_<name>`. The
 `schema.prisma` is the source of truth for **models**, but the migration SQL is
 reviewed and hand-edited — especially for ledger/numbering/trigger constructs that
 the Prisma schema cannot express:

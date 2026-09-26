@@ -54,8 +54,8 @@ services:
       # Least privilege: the api connects as `accounting_app` (DML only — no DDL,
       # no TRUNCATE, not the owner). Only `migrate` (and backups) use the owner.
       DATABASE_URL: postgresql://accounting_app:${APP_DB_PASSWORD:?APP_DB_PASSWORD is required (password for the accounting_app DB role)}@db:5432/accounting?schema=public
-      DB_POOL_MAX: 15
-      DB_STATEMENT_TIMEOUT_MS: 30000
+      DB_POOL_MAX: ${DB_POOL_MAX:-15}
+      DB_STATEMENT_TIMEOUT_MS: ${DB_STATEMENT_TIMEOUT_MS:-30000}
     healthcheck:
       test: ['CMD', 'node', '-e', "require('http').get('http://127.0.0.1:3000/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 15s

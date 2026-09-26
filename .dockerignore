@@ -4,7 +4,7 @@ dist
 .env
 .env.*
 !.env.example
-*.spec.ts
+**/*.spec.ts
 test
 docs
 # Local tooling / artifacts — never part of the build context or image

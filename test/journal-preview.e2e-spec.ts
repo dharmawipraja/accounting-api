@@ -10,6 +10,8 @@ import { TaxCodesService } from '../src/tax/tax-codes.service';
 import { BusinessPartnersService } from '../src/invoicing/business-partners.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
+import { CompanyService } from '../src/company/company.service';
+import { asOfOrToday } from '../src/common/dates/query-dates';
 import { bootstrapTestApp } from './e2e-helpers';
 
 describe('Journal preview (e2e)', () => {
@@ -82,11 +84,18 @@ describe('Journal preview (e2e)', () => {
   });
 
   it('optional date outside any open period previews the 409 a real post would give', async () => {
+    // Beyond the auto-generated window (current + next fiscal year, from the
+    // WIB "today") forever — a fixed future date would start auto-generating
+    // its year (and preview 200) once the calendar caught up with it.
+    const company = app.get(CompanyService);
+    const current = await company.fiscalYearFor(asOfOrToday());
+    const { start } = await company.fiscalYearBounds(current + 2);
     await request(server())
       .post('/v1/journal-entries/preview')
       .set('Authorization', `Bearer ${acct}`)
-      .send({ ...saleBody(), date: '2031-05-10' }) // no 2031 periods exist
+      .send({ ...saleBody(), date: start.toISOString().slice(0, 10) })
       .expect(409);
+    expect(await app.get(PeriodsService).list(current + 2)).toHaveLength(0);
   });
 
   it('rejects more than 100 lines with 400', async () => {

@@ -28,7 +28,27 @@
   default 8; callers queue ≤5s, then `503`),
   `TRUST_PROXY_HOPS` (Express `trust proxy` hop count; compose sets 1 for Caddy → api),
   `THROTTLE_REFRESH_LIMIT` (per-IP refresh attempts/min, default 30),
-  `THROTTLE_CHANGE_PASSWORD_LIMIT` (per-user change-password attempts/min, default 10).
+  `THROTTLE_CHANGE_PASSWORD_LIMIT` (per-user change-password attempts/min, default 10),
+  `JWT_ACCESS_TTL` / `JWT_REFRESH_TTL` (default `900s` / `7d`),
+  `REQUEST_TIMEOUT_MS` (per-request cap → `408`, default 35000; keep
+  `DB_STATEMENT_TIMEOUT_MS` < it < the 40s socket timeout),
+  `REPORT_UTC_OFFSET_MINUTES` (defaulted report "today", default 420 = WIB),
+  `IDEMPOTENCY_INFLIGHT_TTL_MS` / `IDEMPOTENCY_COMPLETED_TTL_MS` (default 120000 /
+  86400000), `LOG_LEVEL` (default `info`), `ENABLE_SWAGGER` (default `false`),
+  `CORS_ORIGIN` (comma-separated browser origins, e.g. `https://app.example.com`;
+  **unset = CORS disabled** — a browser frontend on another origin cannot call the
+  API, so set it to the real frontend origin, not the `.env.example` localhost value),
+  `METRICS_TOKEN` (bearer token for `/metrics`; unset = `/metrics` answers `401` in
+  production), `SENTRY_DSN` (unset = no error reporting), `SENTRY_ENVIRONMENT`
+  (default `NODE_ENV`), `SENTRY_RELEASE`.
+  Every one of these reaches the api only because `docker-compose.yml` (or, for the
+  two `DB_*` vars, `docker-compose.prod.yml`) passes it through as
+  `${VAR:-<default>}`; a var the app reads that is not listed there never reaches the
+  container. Numeric/enum vars carry the app's own default (an empty string would fail
+  startup validation); the empty-means-off vars (`CORS_ORIGIN`, `METRICS_TOKEN`,
+  `SENTRY_*`) default to `''`, which the app treats exactly like unset. Check what
+  the api will receive with
+  `docker compose -f docker-compose.yml -f docker-compose.prod.yml config api`.
 - **Redis** must be running and reachable at `REDIS_URL` before the API starts. The
   rate limiter is **fail-closed**: without Redis the API returns `503` on every
   throttled route, so a deploy can come up "running" (container healthy) yet 503 all
@@ -69,7 +89,7 @@ without it compose could reuse a stale locally-built image.
 
 This release adds schema invariants, a least-privilege DB role and token changes.
 Work through this **once**, on the first deploy that includes migrations
-`20260925100000_add_voided_on` … `20261003000000_payment_allocations_payment_id_idx`
+`20260925000000_accum_depreciation_cash_flow` … `20261003000000_payment_allocations_payment_id_idx`
 (if an earlier audit-3 deploy already applied some of them, the rehearsal simply
 skips those — the list below still applies to the ones that remain):
 
@@ -103,8 +123,16 @@ skips those — the list below still applies to the ones that remain):
      purchase bills or payments whose `journal_entry_id` does not match their
      status (a DRAFT with a journal entry, or a POSTED/VOID one without).
 
-   The others in the range cannot abort on data: `20260925100000_add_voided_on`
-   backfills `voided_on` before adding its CHECK, `20260929000000` only replaces a
+   The others in the range cannot abort on data: `20260925000000_accum_depreciation_cash_flow`
+   is a data-only reclassification — every credit-normal `ASSET` account (contra-asset,
+   i.e. accumulated depreciation) tagged `INVESTING` is re-tagged
+   `cash_flow_category = 'NONE'`, so the cash-flow statement treats its movement as a
+   non-cash add-back under *Operating* instead of an *Investing* flow. It **changes the
+   presentation of past periods' cash-flow reports** (re-running an already-reported
+   period moves those amounts from *Investing* to *Operating*; net change in cash is
+   unaffected) — tell whoever consumes
+   the reports, and check the rehearsal's before/after cash-flow for a closed year.
+   `20260925100000_add_voided_on` backfills `voided_on` before adding its CHECK, `20260929000000` only replaces a
    trigger function, and `20260926000000` / `20260928000000` / `20261001000000` /
    `20261003000000` (index on `payment_allocations(payment_id)`) are additive.
    Fix the data by hand, mark a failed attempt with
@@ -377,8 +405,11 @@ non-prod TLS setting). Instead either:
 - **Skip Caddy:** smoke-test `db`+`migrate`+`api` only and curl `http://127.0.0.1:3000/health`
   (`docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.hostport.yml up -d db migrate api`
   — the prod overlay alone publishes nothing but Caddy); or
-- **Throwaway internal TLS:** copy the Caddyfile, append `tls internal`, and mount the copy
-  via a one-off override file — e.g. `cp Caddyfile /tmp/Caddyfile.staging && printf '\n\ttls internal\n' >> /tmp/Caddyfile.staging`, then a small `docker-compose.staging.yml` that remaps `caddy.volumes` to `/tmp/Caddyfile.staging:/etc/caddy/Caddyfile:ro`, and add `-f docker-compose.staging.yml` to the up command. `DOMAIN=localhost`, then `curl -k https://localhost/health`.
+- **Throwaway internal TLS:** copy the Caddyfile with `tls internal` inserted **inside the
+  site block** (right after its first line, `{$DOMAIN} {` — appended after the closing `}`
+  Caddy rejects it: "parsed 'tls' as a site address"), and mount the copy
+  via a one-off override file — e.g. `awk 'NR==1{print; print "\ttls internal"; next}1' Caddyfile > /tmp/Caddyfile.staging`
+  (check it with `docker run --rm -e DOMAIN=localhost -v /tmp/Caddyfile.staging:/etc/caddy/Caddyfile:ro <the caddy image from docker-compose.prod.yml> caddy adapt --config /etc/caddy/Caddyfile`), then a small `docker-compose.staging.yml` that remaps `caddy.volumes` to `/tmp/Caddyfile.staging:/etc/caddy/Caddyfile:ro`, and add `-f docker-compose.staging.yml` to the up command. `DOMAIN=localhost`, then `curl -k https://localhost/health`.
 
 ### Activate offsite + encrypted backups (OPS-DB-1)
 

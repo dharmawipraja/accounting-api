@@ -38,10 +38,11 @@ services:
       DATABASE_URL: postgresql://accounting:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/accounting?schema=public
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET is required (min 32 chars)}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required (min 32 chars)}
-      JWT_ACCESS_TTL: 900s
-      JWT_REFRESH_TTL: 7d
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-900s}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-7d}
       REDIS_URL: redis://redis:6379
-      # Optional knobs from .env (defaults mirror the app's own defaults).
+      # Optional knobs from .env (defaults mirror the app's own defaults — a
+      # numeric/enum var must never arrive as '': startup validation rejects it).
       THROTTLE_LIMIT: ${THROTTLE_LIMIT:-300}
       THROTTLE_LOGIN_LIMIT: ${THROTTLE_LOGIN_LIMIT:-10}
       THROTTLE_LOGIN_IP_LIMIT: ${THROTTLE_LOGIN_IP_LIMIT:-30}
@@ -50,6 +51,22 @@ services:
       ARGON2_MAX_CONCURRENCY: ${ARGON2_MAX_CONCURRENCY:-8}
       # Caddy -> api is exactly one proxy hop.
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
+      REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-35000}
+      REPORT_UTC_OFFSET_MINUTES: ${REPORT_UTC_OFFSET_MINUTES:-420}
+      IDEMPOTENCY_INFLIGHT_TTL_MS: ${IDEMPOTENCY_INFLIGHT_TTL_MS:-120000}
+      IDEMPOTENCY_COMPLETED_TTL_MS: ${IDEMPOTENCY_COMPLETED_TTL_MS:-86400000}
+      # Enum-validated at startup: '' would be rejected, so default explicitly.
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      ENABLE_SWAGGER: ${ENABLE_SWAGGER:-false}
+      # Empty-means-off vars (an unset operator value arrives as ''):
+      #   CORS_ORIGIN ''  -> CORS disabled (fail-closed; no browser origin allowed)
+      #   METRICS_TOKEN '' -> /metrics fail-closed 401 in production
+      #   SENTRY_DSN ''   -> Sentry disabled; SENTRY_ENVIRONMENT/RELEASE '' -> NODE_ENV / no release
+      CORS_ORIGIN: ${CORS_ORIGIN:-}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
     ports:
       - '127.0.0.1:3000:3000'
 

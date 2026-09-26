@@ -151,4 +151,56 @@ describe('env validation', () => {
     expect(() => validate({ ...validEnv, TRUST_PROXY_HOPS: '-1' })).toThrow();
     expect(() => validate({ ...validEnv, TRUST_PROXY_HOPS: 'yes' })).toThrow();
   });
+
+  // docker-compose.yml passes optional vars as `${VAR:-<default>}`. With the
+  // operator's .env silent, these are exactly the values the api receives.
+  const composeUnsetDefaults = {
+    NODE_ENV: 'production',
+    REDIS_URL: 'redis://redis:6379',
+    THROTTLE_LIMIT: '300',
+    THROTTLE_LOGIN_LIMIT: '10',
+    THROTTLE_LOGIN_IP_LIMIT: '30',
+    THROTTLE_REFRESH_LIMIT: '30',
+    THROTTLE_CHANGE_PASSWORD_LIMIT: '10',
+    ARGON2_MAX_CONCURRENCY: '8',
+    TRUST_PROXY_HOPS: '1',
+    REQUEST_TIMEOUT_MS: '35000',
+    REPORT_UTC_OFFSET_MINUTES: '420',
+    IDEMPOTENCY_INFLIGHT_TTL_MS: '120000',
+    IDEMPOTENCY_COMPLETED_TTL_MS: '86400000',
+    LOG_LEVEL: 'info',
+    ENABLE_SWAGGER: 'false',
+    DB_POOL_MAX: '15',
+    DB_STATEMENT_TIMEOUT_MS: '30000',
+    CORS_ORIGIN: '',
+    METRICS_TOKEN: '',
+    SENTRY_DSN: '',
+    SENTRY_ENVIRONMENT: '',
+    SENTRY_RELEASE: '',
+  };
+
+  it('accepts the docker-compose passthrough values when the operator sets none', () => {
+    expect(() =>
+      validate({ ...validEnv, ...composeUnsetDefaults }),
+    ).not.toThrow();
+  });
+
+  it.each([
+    'REQUEST_TIMEOUT_MS',
+    'IDEMPOTENCY_INFLIGHT_TTL_MS',
+    'IDEMPOTENCY_COMPLETED_TTL_MS',
+    'DB_STATEMENT_TIMEOUT_MS',
+    'DB_POOL_MAX',
+    'THROTTLE_LIMIT',
+    'ARGON2_MAX_CONCURRENCY',
+    'LOG_LEVEL',
+    'ENABLE_SWAGGER',
+  ])(
+    'rejects an empty %s (why compose gives it an explicit default, not ${VAR:-})',
+    (key) => {
+      expect(() =>
+        validate({ ...validEnv, ...composeUnsetDefaults, [key]: '' }),
+      ).toThrow();
+    },
+  );
 });
