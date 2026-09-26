@@ -119,13 +119,18 @@ export class BusinessPartnersService {
     return p;
   }
 
-  /** PATCH a partner. The row is locked FOR UPDATE first and the
+  /** PATCH a partner. The row is locked FOR NO KEY UPDATE first and the
    *  customer-and/or-vendor rule is re-checked against the LOCKED row, so two
    *  concurrent PATCHes (one clearing isCustomer, the other isVendor) cannot
    *  both pass against a stale read and leave a partner that is neither (the
    *  DB CHECK `business_partners_customer_or_vendor` is the backstop). Draft
-   *  create / payment post read the partner FOR SHARE, so they serialize with
-   *  this update too. */
+   *  create / payment post read the partner FOR SHARE, which conflicts with
+   *  NO KEY UPDATE, so they serialize with this update too. NO KEY UPDATE
+   *  (not FOR UPDATE) leaves the FK checks' FOR KEY SHARE unblocked: an
+   *  invoice/bill/payment insert referencing the partner never waits on a
+   *  PATCH. (A PATCH that changes `code` — a unique, FK-referenceable column —
+   *  still takes FOR UPDATE on its own UPDATE statement, as Postgres does for
+   *  any key change.) */
   async update(
     id: string,
     input: UpdatePartnerInput,
@@ -135,7 +140,7 @@ export class BusinessPartnersService {
         { is_customer: boolean; is_vendor: boolean }[]
       >`
         SELECT is_customer, is_vendor FROM business_partners
-        WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
+        WHERE id = ${id} AND deleted_at IS NULL FOR NO KEY UPDATE`;
       if (rows.length === 0)
         throw new NotFoundDomainError('Partner not found', { id });
       this.assertRole(

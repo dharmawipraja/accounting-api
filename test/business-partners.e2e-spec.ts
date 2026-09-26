@@ -27,6 +27,19 @@ describe('BusinessPartners (e2e)', () => {
 
   afterAll(() => cleanup());
 
+  /** Poll pg_stat_activity until `n` backends running a statement matching
+   *  `pattern` are waiting on a lock (bounded: throws after ~10 s). */
+  async function waitForLockWaiters(pattern: string, n: number): Promise<void> {
+    for (let i = 0; i < 200; i++) {
+      const [{ w }] = await prisma.client.$queryRaw<{ w: number }[]>`
+        SELECT count(*)::int AS w FROM pg_stat_activity
+        WHERE wait_event_type = 'Lock' AND query ILIKE ${pattern}`;
+      if (w >= n) return;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    throw new Error(`expected ${n} lock waiter(s) matching ${pattern}`);
+  }
+
   it('creates a customer partner (201)', async () => {
     const res = await request(app.getHttpServer() as App)
       .post('/v1/partners')
@@ -115,7 +128,12 @@ describe('BusinessPartners (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ isVendor: false })
       .then((r) => r.status);
-    await new Promise((r) => setTimeout(r, 300));
+    // Both PATCHes must be parked behind the holder's row lock before it is
+    // released — otherwise the test would pass without ever racing them.
+    await waitForLockWaiters(
+      '%is_customer, is_vendor FROM business_partners%',
+      2,
+    );
     release();
     await holder;
     const statuses = (await Promise.all([a, b])).sort();
@@ -124,6 +142,71 @@ describe('BusinessPartners (e2e)', () => {
       where: { id },
     });
     expect(row.isCustomer || row.isVendor).toBe(true);
+  });
+
+  it('final: a partner PATCH holding its row lock does not block an FK insert referencing the partner, but still serializes with FOR SHARE readers', async () => {
+    const partners = app.get(BusinessPartnersService);
+    const p = await partners.create({
+      code: 'LOCK-MODE',
+      name: 'Before',
+      isCustomer: true,
+    });
+    const admin = await prisma.client.user.findFirstOrThrow({
+      where: { email: 'a@p.test' },
+    });
+    // Park the real PATCH transaction after its lock + UPDATE, before commit.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let held!: () => void;
+    const isHeld = new Promise<void>((r) => (held = r));
+    const original = prisma.transaction.bind(prisma);
+    const spy = jest
+      .spyOn(prisma, 'transaction')
+      .mockImplementationOnce((fn, opts) =>
+        original(async (tx) => {
+          const r = await fn(tx);
+          held();
+          await gate;
+          return r;
+        }, opts),
+      );
+    try {
+      const patch = partners.update(p.id, { name: 'After' });
+      await isHeld;
+      // An FK insert takes FOR KEY SHARE on the partner row: compatible with
+      // FOR NO KEY UPDATE, so it completes while the PATCH is still open.
+      // lock_timeout turns a regression (blocked insert) into a fast failure.
+      const inserted = await prisma.client.$transaction(async (tx) => {
+        await tx.$executeRaw`SET LOCAL lock_timeout = '3s'`;
+        return tx.$executeRaw`
+          INSERT INTO sales_invoices (id, partner_id, date, created_by, updated_at)
+          VALUES (gen_random_uuid()::text, ${p.id}, '2026-01-15', ${admin.id}, now())`;
+      });
+      expect(inserted).toBe(1);
+      // A FOR SHARE reader (draft create / payment post) still waits for it.
+      let shareDone = false;
+      const share = prisma.client
+        .$transaction(async (tx) => {
+          const rows = await tx.$queryRaw<{ name: string }[]>`
+            SELECT name FROM business_partners WHERE id = ${p.id} FOR SHARE`;
+          return rows[0].name;
+        })
+        .then((name) => {
+          shareDone = true;
+          return name;
+        });
+      await waitForLockWaiters(
+        '%FROM business_partners WHERE id = $1 FOR SHARE%',
+        1,
+      );
+      expect(shareDone).toBe(false);
+      release();
+      expect((await patch).name).toBe('After');
+      expect(await share).toBe('After');
+    } finally {
+      release();
+      spy.mockRestore();
+    }
   });
 
   it('iter6: the DB rejects a partner row that is neither customer nor vendor (CHECK)', async () => {

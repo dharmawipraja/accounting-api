@@ -369,6 +369,7 @@ model BusinessPartner {
   purchaseBills PurchaseBill[]
   payments      Payment[]
 
+  // + hand-authored CHECK business_partners_customer_or_vendor (is_customer OR is_vendor)
   @@unique([code], name: "business_partners_code_unique")
   @@index([deletedAt])
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "business_partners_name_trgm")
