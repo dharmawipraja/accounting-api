@@ -78,6 +78,8 @@ export async function bootstrapTestApp(
     .useValue(prisma)
     .compile();
   const app = mod.createNestApplication<NestExpressApplication>();
+  // Same as main.ts: no ETags (API responses are Cache-Control: no-store).
+  app.set('etag', false);
   // Same body caps as main.ts (the Nest default is 100 KB).
   app.useBodyParser('json', { limit: '1mb' });
   app.useBodyParser('urlencoded', { limit: '1mb', extended: true });

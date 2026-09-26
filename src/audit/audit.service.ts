@@ -18,6 +18,9 @@ export interface AuditEntry {
   requestId: string | null;
   clientRequestId: string | null;
   entityId: string | null;
+  /** true for an idempotent replay (stored response returned, no new
+   *  write); absent otherwise → NULL in the row. */
+  replayed?: true;
 }
 
 /** Body stored by the fallback row when the real one could not be inserted. */
@@ -66,6 +69,7 @@ export function storableRow(
     requestId: storableOrNull(entry.requestId),
     clientRequestId: storableOrNull(entry.clientRequestId),
     entityId: entry.entityId,
+    ...(entry.replayed ? { replayed: true } : {}),
   };
 }
 

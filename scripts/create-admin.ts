@@ -54,6 +54,7 @@ import {
   USER_ADMIN_LOCK_KEY,
 } from '../src/common/concurrency/advisory-lock-keys';
 import { CLI_AUDIT_METHOD } from '../src/audit/mutating-methods';
+import { normalizeEmail } from '../src/users/normalize-email';
 
 const USAGE =
   'Usage: create-admin <email> <password> "<name>"\n' +
@@ -107,9 +108,9 @@ export async function bootstrapAdmin(
       `Password must be ${PASSWORD_MIN}-${PASSWORD_MAX} characters (the login endpoint rejects anything else).`,
     );
   }
-  // Same canonical form as the app (src/users/normalize-email.ts): the DB
+  // Same canonical form as the app (trim + lowercase + NFC): the DB
   // enforces uniqueness on lower(email).
-  const email = input.email.trim().toLowerCase();
+  const email = normalizeEmail(input.email);
   if (email.length > EMAIL_MAX || !isEmail(email)) {
     throw new Error(
       `Email must be a valid email address (at most ${EMAIL_MAX} characters).`,

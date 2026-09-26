@@ -3,15 +3,23 @@ import {
   IsEnum,
   IsIn,
   IsString,
+  Matches,
   MaxLength,
   ValidateIf,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { CashFlowCategory } from '@prisma/client';
 import { OptionalNonNull } from '../../../common/validators/optional-non-null';
+import { NON_BLANK_MESSAGE } from '../../../common/text/identifier';
+import { DisplayName } from '../../../common/validators/identifier-code';
 
 export class UpdateAccountDto {
-  @OptionalNonNull() @IsString() @MaxLength(128) name?: string;
+  @OptionalNonNull()
+  @DisplayName()
+  @IsString()
+  @Matches(/\S/, { message: NON_BLANK_MESSAGE })
+  @MaxLength(128)
+  name?: string;
   @OptionalNonNull()
   @IsEnum(CashFlowCategory)
   cashFlowCategory?: CashFlowCategory;

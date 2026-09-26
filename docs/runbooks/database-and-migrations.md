@@ -167,6 +167,28 @@ the Prisma schema cannot express:
     `--disable-triggers`. Tests that must manufacture an "impossible" state
     (e.g. a soft-deleted posted entry) do it inside a tx with
     `SET LOCAL session_replication_role = replica` (superuser only).
+- **Case-insensitive identifier-code uniqueness**
+  (`20261005000000_identifier_code_ci_unique`): partial expression unique indexes
+  `accounts_code_lower_live_key` / `tax_codes_code_lower_live_key` /
+  `business_partners_code_lower_live_key` `ON <table> (lower(code)) WHERE deleted_at
+  IS NULL` — not modelled in `schema.prisma` (comments on the models); the exact
+  `<table>_code_key` uniques (`@@unique([code])`) stay, so `prisma migrate diff` is
+  empty (it does not try to drop the expression indexes — verified). Tombstoned rows
+  (`<code>#deleted-<id>`, `deleted_at` set) are outside the index. The API stores
+  codes normalized (NFKC + trim; blank / format / control characters → 400,
+  `src/common/text/identifier.ts`). **The migration pre-checks live rows and aborts
+  (P3018, SQLSTATE P0001) listing** every group of codes that collide under
+  `lower(trim(NFKC(code)))` and every code not already in normalized form, with
+  table + id. To recover: fix each listed row (`UPDATE <table> SET code = '<fixed>'
+  WHERE id = '<id>'`, or soft-delete it through the API), then
+  `npx prisma migrate resolve --rolled-back 20261005000000_identifier_code_ci_unique`
+  and re-run `prisma migrate deploy` (the failed run changed nothing — the check runs
+  before any index is created). Test: `test/identifier-code-migration.e2e-spec.ts`.
+- **FK indexes** (`20261005200000_payment_cash_account_and_tax_account_fk_indexes`):
+  `payments_cash_account_id_idx`, `tax_codes_tax_account_id_idx` (`@@index` in the
+  schema) — the last two FK columns without an index.
+- **`audit_log.replayed`** (`20261005100000_audit_log_replayed`): nullable boolean,
+  `true` on the row of an idempotent replay, NULL otherwise (catalog-only ADD COLUMN).
 - **Case-insensitive email uniqueness** (`20260926100000_auth_hardening`):
   `CREATE UNIQUE INDEX users_email_lower_key ON users (lower(email))` — an
   expression index Prisma can't model. The app stores/looks up emails via

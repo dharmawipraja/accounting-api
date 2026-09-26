@@ -32,4 +32,11 @@ export class AuditEntryDto {
     description: 'Id of the created/affected entity (response body `id`)',
   })
   entityId!: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: Boolean,
+    description:
+      'true when this row records an idempotent REPLAY — the same Idempotency-Key + request answered with the stored response (no new write; entityId is the entity the ORIGINAL request created). null otherwise.',
+  })
+  replayed!: boolean | null;
 }

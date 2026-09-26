@@ -40,6 +40,7 @@ import { AuditInterceptor } from './audit/audit.interceptor';
 import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout.interceptor';
 import { HttpDrainService } from './common/http/http-drain.service';
 import { jsonDepthGuard } from './common/http/json-depth';
+import { noStoreApiResponses } from './common/http/no-store';
 import { InputHygieneGuard } from './common/http/input-hygiene';
 import {
   THROTTLE,
@@ -136,12 +137,14 @@ import {
   ],
 })
 export class AppModule implements NestModule {
-  /** Runs after body parsing, before guards/interceptors/pipes: an
-   *  over-deep JSON body is a 400 before anything recurses over it
-   *  (AUDIT3-17) — including the InputHygieneGuard's body walk. */
+  /** Runs after body parsing, before guards/interceptors/pipes: every
+   *  `/v1` response is marked `Cache-Control: no-store` first (so even the
+   *  depth-guard 400 below carries it), then an over-deep JSON body is a 400
+   *  before anything recurses over it (AUDIT3-17) — including the
+   *  InputHygieneGuard's body walk. */
   configure(consumer: MiddlewareConsumer): void {
     consumer
-      .apply(jsonDepthGuard)
+      .apply(noStoreApiResponses, jsonDepthGuard)
       .forRoutes({ path: '{*splat}', method: RequestMethod.ALL });
   }
 }

@@ -11,6 +11,7 @@ import { CompanyService } from '../src/company/company.service';
 import { AccountsService } from '../src/ledger/accounts/accounts.service';
 import { PeriodsService } from '../src/ledger/periods/periods.service';
 import type { Prisma } from '@prisma/client';
+import { statusFromException } from '../src/common/errors/exception-status';
 import { bootstrapTestApp } from './e2e-helpers';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -109,6 +110,46 @@ describe('Audit log (e2e)', () => {
       .get('/v1/audit?method=POST')
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
+  });
+
+  it('iter8: ?from/?to must be real ISO dates / date-times in 1970–9999 (400, never a 500); valid instants work', async () => {
+    const get = (qs: string) =>
+      request(app.getHttpServer() as App)
+        .get(`/v1/audit?${qs}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+    for (const qs of [
+      'from=0000-01-01',
+      'to=0000-01-01T00:00:00Z',
+      'from=2026-02-30',
+      'to=2026-04-31T10:00:00Z',
+      'from=1969-12-31',
+      'from=2026-01-01T25:00:00Z',
+      'from=2026-W01',
+    ]) {
+      const res = await get(qs);
+      expect([qs, res.status]).toEqual([qs, 400]);
+      expect((res.body as { code: string }).code).toBe('HTTP_400');
+    }
+    const ok = await get(
+      'from=2020-01-01&to=2999-12-31T23:59:59.999%2B07:00',
+    ).expect(200);
+    expect((ok.body as unknown[]).length).toBeGreaterThan(0);
+    // Each row exposes the replay flag (null for an ordinary request).
+    expect((ok.body as { replayed: unknown }[])[0]).toHaveProperty(
+      'replayed',
+      null,
+    );
+  });
+
+  it('iter8: a year-0000 timestamp that reaches Postgres (22008) maps to 400, not 500 (backstop)', async () => {
+    const err: unknown = await prisma.client.auditLog
+      .findMany({ where: { timestamp: { gte: new Date('0000-01-01') } } })
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(err).not.toBeNull();
+    expect(statusFromException(err)).toBe(400);
   });
 
   it('final: ?method=CLI lists the create-admin CLI rows (and only them)', async () => {

@@ -251,6 +251,31 @@ describe('TaxCodes (e2e)', () => {
     expect((res.body as { code: string }).code).toBe('CONFLICT');
   });
 
+  it('iter8: tax codes are unique case-insensitively after NFKC + trim (409); blank / zero-width codes are 400; a tombstoned code is reusable', async () => {
+    const body = {
+      name: 'PPN Kasus',
+      kind: 'PPN_OUTPUT',
+      rate: '0.04',
+      taxAccountId: ppnKeluaranId,
+    };
+    const created = await post({ ...body, code: 'ppn-ci' }).expect(201);
+    for (const code of ['PPN-CI', 'ppn-ci ', 'ＰＰＮ-ＣＩ']) {
+      const res = await post({ ...body, code }).expect(409);
+      expect((res.body as { code: string }).code).toBe('CONFLICT');
+    }
+    for (const code of ['', ' \t ', 'PPN\u200BCI', '\uFEFF']) {
+      const res = await post({ ...body, code }).expect(400);
+      expect((res.body as { code: string }).code).toBe('HTTP_400');
+    }
+    await post({ ...body, code: 'PPN-NM', name: '  ' }).expect(400);
+    await request(app.getHttpServer() as App)
+      .delete(`/v1/tax/codes/${(created.body as { id: string }).id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(204);
+    const reused = await post({ ...body, code: ' PPN-CI ' }).expect(201);
+    expect((reused.body as { code: string }).code).toBe('PPN-CI');
+  });
+
   it('soft-deletes a tax code (204) then it disappears from the list', async () => {
     const created = await post({
       code: 'TEMP-DEL',

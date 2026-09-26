@@ -7,10 +7,12 @@ import {
   MaxLength,
 } from 'class-validator';
 import { OptionalNonNull } from '../../common/validators/optional-non-null';
-import { NON_BLANK_MESSAGE } from './create-business-partner.dto';
+import { NON_BLANK_MESSAGE } from '../../common/text/identifier';
+import { DisplayName } from '../../common/validators/identifier-code';
 
 export class UpdateBusinessPartnerDto {
   @OptionalNonNull()
+  @DisplayName()
   @IsString()
   @Matches(/\S/, { message: NON_BLANK_MESSAGE })
   @MaxLength(160)

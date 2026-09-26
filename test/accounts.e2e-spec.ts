@@ -104,6 +104,59 @@ describe('Accounts (e2e)', () => {
       .expect(409);
   });
 
+  it('iter8: account codes are unique case-insensitively after NFKC + trim (409); blank / zero-width codes and names are 400; parentCode is normalized', async () => {
+    const post = (body: object) =>
+      request(app.getHttpServer() as App)
+        .post('/v1/ledger/accounts')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          name: 'Kas Cabang',
+          type: 'ASSET',
+          subtype: 'CURRENT_ASSET',
+          normalBalance: 'DEBIT',
+          ...body,
+        });
+    const created = await post({
+      code: 'kc-1',
+      name: '  Kas Cabang  ',
+      parentCode: ' １-0000 ',
+    }).expect(201);
+    const body = created.body as {
+      code: string;
+      name: string;
+      parentId: string;
+    };
+    expect(body.name).toBe('Kas Cabang');
+    expect(body.parentId).toBeTruthy();
+    for (const code of ['KC-1', 'kc-1 ', 'ＫＣ-１']) {
+      const res = await post({ code }).expect(409);
+      expect((res.body as { code: string }).code).toBe('CONFLICT');
+    }
+    for (const bad of [
+      { code: '' },
+      { code: '   ' },
+      { code: 'KC\u200B2' },
+      { code: 'KC-3', name: ' ' },
+      { code: 'KC-4', name: 'Kas\u200D' },
+    ]) {
+      const res = await post(bad).expect(400);
+      expect((res.body as { code: string }).code).toBe('HTTP_400');
+    }
+    // PATCH name is trimmed / rejects zero-width characters too.
+    const id = (created.body as { id: string }).id;
+    const renamed = await request(app.getHttpServer() as App)
+      .patch(`/v1/ledger/accounts/${id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: ' Kas Cabang Bali ' })
+      .expect(200);
+    expect((renamed.body as { name: string }).name).toBe('Kas Cabang Bali');
+    await request(app.getHttpServer() as App)
+      .patch(`/v1/ledger/accounts/${id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: '\uFEFF' })
+      .expect(400);
+  });
+
   it('rejects posting-account parent (422)', async () => {
     const res = await request(app.getHttpServer() as App)
       .post('/v1/ledger/accounts')

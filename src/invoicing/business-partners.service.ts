@@ -7,6 +7,10 @@ import {
   ValidationFailedError,
 } from '../common/errors/domain-errors';
 import { mapUniqueViolation } from '../common/errors/map-unique-violation';
+import {
+  normalizeDisplayName,
+  normalizeIdentifierCode,
+} from '../common/text/identifier';
 import { trigramSearch } from '../common/search/trigram-search';
 import { listPaginated, Paginated } from '../common/pagination/paginated';
 import { tombstoneValue } from '../common/prisma/tombstone';
@@ -58,8 +62,15 @@ export class BusinessPartnersService {
   }
 
   async create(raw: CreatePartnerInput): Promise<BusinessPartner> {
-    // code / name are stored trimmed (the DTO already rejects blank ones).
-    const input = { ...raw, code: raw.code.trim(), name: raw.name.trim() };
+    // code / name are stored normalized (NFKC + trim / trim — the DTO already
+    // normalized them and rejects blank or zero-width ones). Code uniqueness
+    // among live partners is case-insensitive: the DB unique index on
+    // lower(code) turns a `dup` vs `DUP` race into P2002 → 409 below.
+    const input = {
+      ...raw,
+      code: normalizeIdentifierCode(raw.code),
+      name: normalizeDisplayName(raw.name),
+    };
     this.assertRole(input.isCustomer, input.isVendor);
     const existing = await this.prisma.client.businessPartner.findFirst({
       where: { code: input.code },
@@ -151,7 +162,9 @@ export class BusinessPartnersService {
    *  not updatable, and the FKs reference `id`.) `name` is stored trimmed. */
   async update(id: string, raw: UpdatePartnerInput): Promise<BusinessPartner> {
     const input =
-      raw.name === undefined ? raw : { ...raw, name: raw.name.trim() };
+      raw.name === undefined
+        ? raw
+        : { ...raw, name: normalizeDisplayName(raw.name) };
     return this.prisma.transaction(async (tx) => {
       const rows = await tx.$queryRaw<
         { is_customer: boolean; is_vendor: boolean }[]

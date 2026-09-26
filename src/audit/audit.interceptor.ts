@@ -21,6 +21,7 @@ import { RejectionAuditLimiter } from './rejection-audit-limiter';
 import { READ_ONLY_POST_KEY } from './read-only-post';
 import { TOKEN_GRANT_KEY, tokenGrantSubject } from './token-grant';
 import { isBodyValidated } from './validated-body';
+import { isIdempotentReplay } from '../common/idempotency/idempotency-replay';
 import {
   isLoginIpThrottled,
   markLoginAttempt,
@@ -146,6 +147,9 @@ export class AuditInterceptor implements NestInterceptor {
               bodyValidated: isBodyValidated(req.body),
             }),
             entityId: entityIdOf(data),
+            // An idempotent replay returned the stored response: flag it so
+            // it can't be read as a second creation of the same entity.
+            ...(isIdempotentReplay(req) ? { replayed: true } : {}),
             statusCode: res.statusCode,
             durationMs: Date.now() - start,
           }),

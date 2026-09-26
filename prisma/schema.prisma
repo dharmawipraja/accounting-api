@@ -146,6 +146,10 @@ model Account {
   taxCodes          TaxCode[]
 
   @@unique([code], name: "accounts_code_unique")
+  // + hand-authored UNIQUE INDEX accounts_code_lower_live_key ON accounts
+  //   (lower(code)) WHERE deleted_at IS NULL (20261005000000) — codes are
+  //   unique case-insensitively among live rows; the API stores them
+  //   normalized (NFKC + trim, src/common/text/identifier.ts).
   @@index([deletedAt])
   @@index([parentId])
   @@map("accounts")
@@ -335,7 +339,10 @@ model TaxCode {
   deletedBy    String?   @map("deleted_by")
 
   @@unique([code], name: "tax_codes_code_unique")
+  // + hand-authored UNIQUE INDEX tax_codes_code_lower_live_key ON tax_codes
+  //   (lower(code)) WHERE deleted_at IS NULL (20261005000000).
   @@index([deletedAt])
+  @@index([taxAccountId])
   @@map("tax_codes")
 }
 
@@ -371,6 +378,8 @@ model BusinessPartner {
 
   // + hand-authored CHECK business_partners_customer_or_vendor (is_customer OR is_vendor)
   @@unique([code], name: "business_partners_code_unique")
+  // + hand-authored UNIQUE INDEX business_partners_code_lower_live_key ON
+  //   business_partners (lower(code)) WHERE deleted_at IS NULL (20261005000000).
   @@index([deletedAt])
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "business_partners_name_trgm")
   @@index([code(ops: raw("gin_trgm_ops"))], type: Gin, map: "business_partners_code_trgm")
@@ -542,6 +551,7 @@ model Payment {
   @@index([deletedAt])
   @@index([partnerId])
   @@index([journalEntryId])
+  @@index([cashAccountId])
   @@index([ref(ops: raw("gin_trgm_ops"))], type: Gin, map: "payments_ref_trgm")
   @@index([description(ops: raw("gin_trgm_ops"))], type: Gin, map: "payments_description_trgm")
   @@map("payments")
@@ -608,6 +618,8 @@ model AuditLog {
   /// Caller-supplied X-Request-Id (sanitized ^[\w.-]{1,128}$, else NULL) — correlation only; request_id is always server-generated.
   clientRequestId String?  @map("client_request_id")
   entityId        String?  @map("entity_id")
+  /// true when the response was an idempotent REPLAY of an earlier request (no new write happened); NULL otherwise.
+  replayed        Boolean?
 
   @@index([timestamp])
   @@index([userId])

@@ -118,6 +118,18 @@ One stable error envelope, no leaked internals.
   free-text string with `@MaxLength` (codes/npwp 32, vendorInvoiceNo 64, new
   names 200, new descriptions/addresses 500; existing tighter caps stay). Both are
   asserted in `src/common/validators/dto-null-and-caps.spec.ts`.
+- **Identifier codes / display names: `@IdentifierCode()` / `@DisplayName()`**
+  (`src/common/validators/identifier-code.ts`). Every `code`-like field (partner /
+  account / tax-code `code`, `parentCode`) gets `@IdentifierCode()` (NFKC + trim
+  before validation; Cf/Cc characters → 400) and every entity `name` gets
+  `@DisplayName()` (trim; Cf → 400), each paired with `@IsString()`,
+  `@Matches(/\S/, { message: NON_BLANK_MESSAGE })` and `@MaxLength(n)` written on the
+  DTO (the Swagger plugin can't see through the composite). Code uniqueness is
+  case-insensitive among live rows (`lower(code) WHERE deleted_at IS NULL` unique
+  index per table) — a new coded entity needs the same index.
+- **Emails go through `normalizeEmail()`** (`src/users/normalize-email.ts`: trim +
+  lowercase + NFC) — every lookup, write, throttle key and audit email; never
+  re-implement it inline.
 - **Audit coverage:** one row per mutating request (interceptor), plus guard
   rejections 401/403/429 and input-hygiene 400 `INVALID_CHARACTERS` rejections
   (`InputHygieneGuard`, `src/common/http/input-hygiene.ts` — after auth + throttle,
@@ -136,6 +148,11 @@ One stable error envelope, no leaked internals.
   with it). `scripts/create-admin.ts` writes its own row (method `CLI`,
   `CLI_AUDIT_METHOD` in `src/audit/mutating-methods.ts`; `GET /v1/audit?method=CLI`
   lists them — the filter accepts `AUDIT_METHODS`).
+- **Idempotent replays are flagged in the audit log** (`audit_log.replayed = true`,
+  set via `markIdempotentReplay` by the idempotency interceptor); NULL otherwise.
+- **`Cache-Control: no-store` on every `/v1/*` response** (`noStoreApiResponses`
+  middleware in `AppModule`) and **no ETags** (`app.set('etag', false)` in `main.ts`
+  and `test/e2e-helpers.ts`) — never add HTTP caching to an API route.
 - **Trace ids are server-generated.** `req.id` / `X-Request-Id` response header /
   error `traceId` / `audit_log.request_id` is always a fresh UUID (`genReqId` in
   `app.module.ts`); a safe inbound `X-Request-Id` is only `clientRequestId`.

@@ -1,12 +1,24 @@
 import { IsEnum, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
 import { TaxKind } from '@prisma/client';
+import { NON_BLANK_MESSAGE } from '../../common/text/identifier';
+import {
+  DisplayName,
+  IdentifierCode,
+} from '../../common/validators/identifier-code';
 
+/** code: NFKC + trimmed, no format/control characters (see
+ *  common/text/identifier); name: trimmed, no format characters. Both
+ *  non-blank. */
 export class CreateTaxCodeDto {
+  @IdentifierCode()
   @IsString()
+  @Matches(/\S/, { message: NON_BLANK_MESSAGE })
   @MaxLength(32)
   code!: string;
 
+  @DisplayName()
   @IsString()
+  @Matches(/\S/, { message: NON_BLANK_MESSAGE })
   @MaxLength(128)
   name!: string;
 

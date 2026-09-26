@@ -7,3 +7,12 @@ describe('normalizeEmail', () => {
     );
   });
 });
+
+describe('normalizeEmail (Unicode)', () => {
+  it('NFC-normalizes so a decomposed and a precomposed address are one email', () => {
+    const composed = 'josé@example.com';
+    const decomposed = 'josé@example.com';
+    expect(normalizeEmail(decomposed)).toBe(composed);
+    expect(normalizeEmail(` JOSÉ@Example.com `)).toBe(composed);
+  });
+});

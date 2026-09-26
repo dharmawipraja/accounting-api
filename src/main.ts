@@ -52,6 +52,9 @@ async function bootstrap(): Promise<void> {
   // — and a client-forged X-Forwarded-For is ignored. See resolveTrustProxy.
   app.set('trust proxy', resolveTrustProxy(process.env));
   app.use(helmet());
+  // API responses are Cache-Control: no-store (common/http/no-store); no
+  // ETags either, so a conditional GET can never 304 an authenticated body.
+  app.set('etag', false);
   app.enableCors(corsOptions(process.env.CORS_ORIGIN));
   // Strict validation + the validated-body audit mark (audit/validated-body).
   app.useGlobalPipes(globalValidationPipe());

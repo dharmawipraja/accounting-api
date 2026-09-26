@@ -106,6 +106,24 @@ describe('create-admin bootstrap (e2e)', () => {
       .expect(200);
   });
 
+  it('iter8: stores the NFC form of the email, so a decomposed address resets the same user', async () => {
+    const first = await bootstrapAdmin(client, {
+      email: 'jose\u0301@admin.test',
+      password: 'operator-pw-1',
+      name: 'Jose',
+    });
+    expect(first).toMatchObject({
+      email: 'jos\u00E9@admin.test',
+      created: true,
+    });
+    const again = await bootstrapAdmin(client, {
+      email: 'JOS\u00C9@admin.test',
+      password: 'operator-pw-2',
+      name: 'Jose',
+    });
+    expect(again).toMatchObject({ id: first.id, created: false });
+  });
+
   it('resets an existing (demoted, deactivated) user: ADMIN + active + temp password, all refresh tokens revoked', async () => {
     const u = await app.get(UsersService).create({
       email: 'locked@admin.test',

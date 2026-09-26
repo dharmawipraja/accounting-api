@@ -328,6 +328,42 @@ describe('BusinessPartners (e2e)', () => {
       .expect(409);
   });
 
+  it('iter8: code uniqueness is case-insensitive after NFKC + trim (409); zero-width / blank codes are 400; a tombstoned code is reusable', async () => {
+    const post = (body: object) =>
+      request(app.getHttpServer() as App)
+        .post('/v1/partners')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ name: 'Case', isVendor: true, ...body });
+    const created = await post({ code: 'ci-dup' }).expect(201);
+    for (const code of ['CI-DUP', 'ci-dup ', ' Ci-Dup', 'ＣＩ-ＤＵＰ']) {
+      const res = await post({ code }).expect(409);
+      expect((res.body as { code: string }).code).toBe('CONFLICT');
+    }
+    // Full-width input is stored in its NFKC form.
+    const fw = await post({ code: 'ＦＷ-１' }).expect(201);
+    expect((fw.body as { code: string }).code).toBe('FW-1');
+    for (const code of [
+      'ci\u200Bdup',
+      '\u200D',
+      '\uFEFFci-x',
+      '\u3000',
+      'a\tb',
+    ]) {
+      const res = await post({ code }).expect(400);
+      expect((res.body as { code: string }).code).toBe('HTTP_400');
+    }
+    // A zero-width character in the name is a 400 too; Indonesian names pass.
+    await post({ code: 'ZW-NAME', name: 'PT\u200B Maju' }).expect(400);
+    await post({ code: 'ID-NAME', name: 'CV Sumber Rejeki Abadi' }).expect(201);
+    // Soft-deleting frees the code for reuse in any case (tombstone rename +
+    // the lower(code) index only spans live rows).
+    await request(app.getHttpServer() as App)
+      .delete(`/v1/partners/${(created.body as { id: string }).id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(204);
+    await post({ code: 'CI-DUP' }).expect(201);
+  });
+
   it('soft-deletes a partner (204) then it is gone from the list', async () => {
     const created = await request(app.getHttpServer() as App)
       .post('/v1/partners')

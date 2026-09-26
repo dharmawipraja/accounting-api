@@ -210,6 +210,29 @@ export function isUnstorableCharacters(err: unknown): boolean {
   return code !== undefined && UNSTORABLE_PG_CODES.has(code);
 }
 
+/** Postgres SQLSTATE 22008 datetime_field_overflow: a date/time value
+ *  outside what the column type accepts (e.g. year 0000 in an audit-log
+ *  `?from=` filter — Prisma 7 surfaces it as P2039 carrying
+ *  `meta.driverAdapterError`). The DTOs reject such values first
+ *  (`@IsAuditInstant()`); this is the backstop so none becomes a 500. */
+const OUT_OF_RANGE_PG_CODES = new Set(['22008']);
+
+/** Envelope for an out-of-range value (see OUT_OF_RANGE_PG_CODES) — the
+ *  same shape as a P2020 numeric overflow. */
+export const VALUE_OUT_OF_RANGE = {
+  status: 400,
+  code: 'INVALID_INPUT',
+  message: 'Value out of range',
+} as const;
+
+/** True for a Postgres 22008 however Prisma 7 + the pg adapter surfaces it
+ *  (P2039 / P2010 with `meta.driverAdapterError`, or a bare
+ *  DriverAdapterError). Pure. */
+export function isValueOutOfRange(err: unknown): boolean {
+  const code = pgSqlStateOf(err);
+  return code !== undefined && OUT_OF_RANGE_PG_CODES.has(code);
+}
+
 /** Envelope for a request body over the parser's size cap (1 MB, main.ts). */
 export const PAYLOAD_TOO_LARGE = {
   status: 413,
@@ -265,6 +288,7 @@ export function statusFromException(err: unknown): number {
   if (isTransientConflict(err)) return TRANSIENT_CONFLICT.status;
   if (isConstraintViolation(err)) return CONSTRAINT_VIOLATION.status;
   if (isUnstorableCharacters(err)) return UNSTORABLE_CHARACTERS.status;
+  if (isValueOutOfRange(err)) return VALUE_OUT_OF_RANGE.status;
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     return PRISMA_STATUS[err.code]?.status ?? 500;
   }

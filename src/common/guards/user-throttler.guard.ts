@@ -6,6 +6,7 @@ import {
 import { ThrottlerException, ThrottlerGuard } from '@nestjs/throttler';
 import type { ThrottlerLimitDetail, ThrottlerRequest } from '@nestjs/throttler';
 import { isLoginIpThrottled, markLoginAttempt } from './login-ip-throttle';
+import { normalizeEmail } from '../../users/normalize-email';
 
 /**
  * Keys the rate limit by the *verified* authenticated user (so concurrent users
@@ -50,7 +51,7 @@ export class UserThrottlerGuard extends ThrottlerGuard {
     if (context && isLoginIpThrottled(context.getHandler())) {
       const email =
         typeof req.body?.email === 'string'
-          ? req.body.email.trim().toLowerCase()
+          ? normalizeEmail(req.body.email)
           : null;
       if (email) return Promise.resolve(`login:${email}`);
     }

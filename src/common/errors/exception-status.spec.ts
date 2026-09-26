@@ -6,7 +6,9 @@ import {
   isConstraintViolation,
   isBodyParserClientError,
   isUnstorableCharacters,
+  isValueOutOfRange,
   UNSTORABLE_CHARACTERS,
+  VALUE_OUT_OF_RANGE,
   isTransientConflict,
   statusFromException,
   PRISMA_STATUS,
@@ -419,5 +421,45 @@ describe('isUnstorableCharacters (22021 / 22P05 backstop → 400)', () => {
     expect(isUnstorableCharacters(known('P2039'))).toBe(false);
     expect(isUnstorableCharacters(new Error('x'))).toBe(false);
     expect(statusFromException(known('P2039'))).toBe(500);
+  });
+});
+
+describe('isValueOutOfRange (22008 datetime_field_overflow backstop)', () => {
+  const known = (code: string, meta?: Record<string, unknown>) =>
+    new Prisma.PrismaClientKnownRequestError('m', {
+      code,
+      clientVersion: Prisma.prismaVersion.client,
+      meta,
+    });
+  const adapter = (originalCode: string) => {
+    const e = new Error('adapter') as Error & { cause: unknown };
+    e.name = 'DriverAdapterError';
+    e.cause = {
+      kind: 'postgres',
+      originalCode,
+      originalMessage: 'date/time field value out of range: "0000-01-01"',
+    };
+    return e;
+  };
+
+  it('maps P2039 / P2010 / a bare adapter error carrying 22008 to 400 INVALID_INPUT', () => {
+    for (const err of [
+      known('P2039', { driverAdapterError: adapter('22008') }),
+      known('P2010', { driverAdapterError: adapter('22008') }),
+      adapter('22008'),
+    ]) {
+      expect(isValueOutOfRange(err)).toBe(true);
+      expect(statusFromException(err)).toBe(400);
+    }
+    expect(VALUE_OUT_OF_RANGE).toMatchObject({
+      status: 400,
+      code: 'INVALID_INPUT',
+    });
+  });
+
+  it('does not match other SQLSTATEs or a bare P2039', () => {
+    expect(isValueOutOfRange(adapter('22021'))).toBe(false);
+    expect(isValueOutOfRange(known('P2039'))).toBe(false);
+    expect(isValueOutOfRange(new Error('x'))).toBe(false);
   });
 });

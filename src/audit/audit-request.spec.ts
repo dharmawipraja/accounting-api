@@ -375,6 +375,12 @@ describe('I2: failed-login forensic email', () => {
     ).toEqual({ email: 'foo@bar.io' });
   });
 
+  it('iter8: loginAttemptBody stores the NFC form of the email', () => {
+    expect(loginAttemptBody({ email: 'jose\u0301@b.io' })).toEqual({
+      email: 'jos\u00E9@b.io',
+    });
+  });
+
   it('caps the email at 254 code points without splitting a surrogate pair', () => {
     const out = loginAttemptBody({ email: 'a'.repeat(253) + '😀😀' }) as {
       email: string;

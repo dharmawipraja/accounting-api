@@ -2,6 +2,7 @@ import { sanitize } from './audit-sanitize';
 import { InvalidCharactersError } from '../common/errors/domain-errors';
 import { isLoginAttempt } from '../common/guards/login-ip-throttle';
 import { MUTATING_METHODS } from './mutating-methods';
+import { normalizeEmail } from '../users/normalize-email';
 import type { AuditEntry } from './audit.service';
 
 const MUTATING: Set<string> = new Set(MUTATING_METHODS);
@@ -162,17 +163,18 @@ export function auditBodyAllowed(
 export const AUDIT_LOGIN_EMAIL_MAX = 254;
 
 /** The only part of a LOGIN body kept on a rejected anonymous attempt:
- *  `{ email }` trimmed, lowercased and capped at 254 code points (surrogate
- *  safe) — enough to investigate credential stuffing against an account. The
- *  password (and every other field) is never stored. `{}` when there is no
- *  non-blank string email. Pure. */
+ *  `{ email }` normalized (normalizeEmail: trim + lowercase + NFC) and
+ *  capped at 254 code points (surrogate safe) — enough to investigate
+ *  credential stuffing against an account. The password (and every other
+ *  field) is never stored. `{}` when there is no non-blank string email.
+ *  Pure. */
 export function loginAttemptBody(body: unknown): { email?: string } {
   const email =
     body && typeof body === 'object' && 'email' in body
       ? body.email
       : undefined;
   if (typeof email !== 'string') return {};
-  const normalized = email.trim().toLowerCase();
+  const normalized = normalizeEmail(email);
   return normalized
     ? { email: truncateCodePoints(normalized, AUDIT_LOGIN_EMAIL_MAX) }
     : {};

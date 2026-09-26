@@ -99,6 +99,30 @@ describe('Idempotency (e2e)', () => {
     expect(count).toBe(1);
   });
 
+  it("iter8: the replay's audit row is flagged replayed=true; the original row is not", async () => {
+    const partnerId = await newCustomer('CUST-IDEM-AUDIT');
+    const key = randomUUID();
+    const body = invoiceBody(partnerId);
+    const send = () =>
+      request(server())
+        .post('/v1/sales-invoices')
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', key)
+        .send(body)
+        .expect(201);
+    const first = await send();
+    await send();
+    const id = (first.body as { id: string }).id;
+    const rows = await prisma.client.auditLog.findMany({
+      where: { entityId: id, method: 'POST' },
+      orderBy: { timestamp: 'asc' },
+    });
+    expect(rows.map((r) => [r.statusCode, r.replayed])).toEqual([
+      [201, null],
+      [201, true],
+    ]);
+  });
+
   it('scopes keys per user: a second user reusing the key gets a fresh execution', async () => {
     await app.get(UsersService).create({
       email: 'acct2@idem.test',

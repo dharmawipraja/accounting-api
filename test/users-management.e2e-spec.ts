@@ -245,6 +245,31 @@ describe('User management (e2e)', () => {
       expect(body.total).toBeGreaterThanOrEqual(1);
     });
 
+    it('iter8: a decomposed email is the same address as its precomposed form (NFC): 409 on create, login works either way', async () => {
+      const composed = 'jos\u00E9@um.test';
+      const decomposed = 'jose\u0301@um.test';
+      const created = await request(server())
+        .post('/v1/users')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ email: composed, name: 'Jose', role: 'VIEWER' })
+        .expect(201);
+      const body = created.body as {
+        user: { email: string };
+        tempPassword: string;
+      };
+      expect(body.user.email).toBe(composed);
+      const dup = await request(server())
+        .post('/v1/users')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ email: decomposed.toUpperCase(), name: 'Dup', role: 'VIEWER' })
+        .expect(409);
+      expect((dup.body as { code: string }).code).toBe('CONFLICT');
+      await request(server())
+        .post('/v1/auth/login')
+        .send({ email: decomposed, password: body.tempPassword })
+        .expect(200);
+    });
+
     it('gets one user by id; 404 for unknown', async () => {
       await request(server())
         .get(`/v1/users/${adminId}`)

@@ -16,11 +16,13 @@ import {
   isBodyParserClientError,
   isTransientConflict,
   isUnstorableCharacters,
+  isValueOutOfRange,
   PAYLOAD_TOO_LARGE,
   PRISMA_STATUS,
   statusFromException,
   TRANSIENT_CONFLICT,
   UNSTORABLE_CHARACTERS,
+  VALUE_OUT_OF_RANGE,
 } from '../errors/exception-status';
 import type { AuditService } from '../../audit/audit.service';
 import {
@@ -151,6 +153,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
       };
       this.logger.warn(
         `Unstorable character -> ${status} on ${url}: ${
+          exception instanceof Error ? exception.message : String(exception)
+        }`,
+      );
+    } else if (isValueOutOfRange(exception)) {
+      // A date/time outside the column's range reached Postgres (22008):
+      // client input, not an incident — 400 INVALID_INPUT, warn only.
+      envelope = {
+        code: VALUE_OUT_OF_RANGE.code,
+        message: VALUE_OUT_OF_RANGE.message,
+      };
+      this.logger.warn(
+        `Value out of range -> ${status} on ${url}: ${
           exception instanceof Error ? exception.message : String(exception)
         }`,
       );

@@ -1,9 +1,13 @@
 import { IsBoolean, IsString, Matches, MaxLength } from 'class-validator';
 import { OptionalNonNull } from '../../common/validators/optional-non-null';
+import { NON_BLANK_MESSAGE } from '../../common/text/identifier';
+import { DisplayName } from '../../common/validators/identifier-code';
 
 export class UpdateTaxCodeDto {
   @OptionalNonNull()
+  @DisplayName()
   @IsString()
+  @Matches(/\S/, { message: NON_BLANK_MESSAGE })
   @MaxLength(128)
   name?: string;
 

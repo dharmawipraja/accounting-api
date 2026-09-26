@@ -479,5 +479,21 @@ appear on sales vs purchase documents; `npwp` is the Indonesian tax ID.
   balance it settled, which then cannot receive a new payment of that direction
   ("Receipt requires a customer" / "Disbursement requires a vendor") until the role is
   re-enabled.
-  `code` / `name` are stored trimmed.
+  `code` / `name` are stored normalized — see *Identifier code* below.
 - `BusinessPartner` model in `prisma/schema.prisma`.
+
+### Identifier code (kode akun / kode pajak / kode mitra)
+The human-facing `code` of an account, tax code or business partner (and an account's
+`parentCode` reference). Normalized on write: Unicode **NFKC** (full-width `ＤＵＰ` →
+`DUP`), then surrounding white space trimmed; a blank code, or one holding an invisible
+format (Cf — zero-width space/joiner, BOM, bidi controls, soft hyphen) or control (Cc)
+character, is a `400`. Stored in that form (case kept) and **unique case-insensitively
+among live rows** — `dup` / `DUP` / `DUP ` / `ＤＵＰ` are one code (`409`). Names get
+the same trim + format-character rejection (the ZWJ of an emoji ZWJ sequence is
+allowed), without NFKC or uniqueness.
+- Pure rules in `src/common/text/identifier.ts`; DTO decorators `@IdentifierCode()` /
+  `@DisplayName()` (`src/common/validators/identifier-code.ts`).
+- DB: partial expression unique indexes `<table>_code_lower_live_key` on
+  `lower(code) WHERE deleted_at IS NULL` (migration `20261005000000`); the exact
+  `<table>_code_key` uniques stay (they model `@@unique([code])`). A soft delete
+  tombstones the code (`<code>#deleted-<id>`), so it is reusable in any case.

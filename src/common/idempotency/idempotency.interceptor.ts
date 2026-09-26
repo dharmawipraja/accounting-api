@@ -16,6 +16,7 @@ import { IDEMPOTENT_KEY } from './idempotent.decorator';
 const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9._:-]{1,128}$/;
 import { IdempotencyService } from './idempotency.service';
 import { idempotencyContext } from './idempotency-context';
+import { markIdempotentReplay } from './idempotency-replay';
 import { ValidationFailedError } from '../errors/domain-errors';
 
 interface IdempotentRequest {
@@ -83,6 +84,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
       switchMap((reserved) => {
         if (reserved.replay) {
           res.statusCode = reserved.httpStatus;
+          markIdempotentReplay(req);
           return of(reserved.response);
         }
         // Run the handler inside the idempotency ALS context so every

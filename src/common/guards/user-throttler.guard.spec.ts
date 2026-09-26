@@ -43,6 +43,15 @@ describe('UserThrottlerGuard.getTracker', () => {
     ).resolves.toBe('login:a@b.io');
   });
 
+  it('iter8: a decomposed and a precomposed email share ONE login bucket (NFC)', async () => {
+    await expect(
+      guard.getTracker(
+        { ip: '1.2.3.4', body: { email: 'JOSE\u0301@b.io' } },
+        loginCtx,
+      ),
+    ).resolves.toBe('login:jos\u00E9@b.io');
+  });
+
   it('login without a string email falls back to ip', async () => {
     await expect(
       guard.getTracker({ ip: '1.2.3.4', body: { email: 42 } }, loginCtx),

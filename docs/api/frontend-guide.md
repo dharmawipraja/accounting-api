@@ -38,10 +38,11 @@ POST /auth/login      { "email": "...", "password": "..." }
   → 200 { "accessToken": "<jwt>", "refreshToken": "<jwt>" }
 ```
 
-- **Emails are case-insensitive.** The server trims and lowercases the email on
-  login and user creation (`' Budi@Example.COM '` logs in as `budi@example.com`),
-  and `GET /auth/me` / user responses always return the lowercased form. Two users
-  cannot differ only by case (`409`). `password` is capped at **128** chars (`400`).
+- **Emails are case-insensitive.** The server trims, lowercases and Unicode
+  NFC-normalizes the email on login and user creation (`' Budi@Example.COM '` logs in
+  as `budi@example.com`; a decomposed `jose\u0301@…` is the same address as the
+  precomposed `jos\u00e9@…`), and `GET /auth/me` / user responses always return that
+  normalized form. Two users cannot differ only by case or Unicode composition (`409`). `password` is capped at **128** chars (`400`).
 - Send the access token on every authenticated request:
   `Authorization: Bearer <accessToken>`.
 - Tokens are typed (`typ: "access"` / `typ: "refresh"`): an access token is never
@@ -156,8 +157,20 @@ a short backoff.
     160, company `legalName` 200, document/line/payment descriptions 255, partner
     address 255, company address 500, journal entry and journal line descriptions
     500, `?q=` 100, refresh token 2048.
-  - **Non-blank** (`400` "`<field>` must not be blank"): partner `code` and `name` on
-    create, partner `name` on `PATCH` — an empty or whitespace-only value is rejected.
+  - **Non-blank** (`400` "`<field>` must not be blank"): partner / account / tax-code
+    `code` and `name` on create, their `name` on `PATCH` —
+    an empty or whitespace-only value is rejected.
+  - **Identifier codes are normalized** (partner / account / tax-code `code`, account
+    `parentCode`): the server applies Unicode **NFKC** (full-width `ＤＵＰ-１` → `DUP-1`)
+    and trims surrounding white space, and **stores that form** (case kept — show what
+    the response returns). A code containing an invisible **format** character (zero-width
+    space U+200B, zero-width joiner U+200D, BOM U+FEFF, bidi controls, soft hyphen …)
+    or a **control** character (tab, newline …) → `400`. Names are trimmed and reject
+    format characters the same way (no NFKC, no case change) — except the zero-width
+    joiner inside an emoji sequence such as 👨‍👩‍👧, which is kept. **Codes are unique
+    case-insensitively among live records:** `dup`, `DUP`, `DUP ` and `ＤＵＰ` are one
+    code → `409 CONFLICT` for the second one. A deleted record's code is reusable in
+    any case.
   - **Tax-code `rate`** (create / `PATCH`): a decimal string with at most 3 integer
     digits and 6 decimals, at most 10 characters (`^\d{1,3}(\.\d{1,6})?$`, e.g. `0.11`)
     — else `400`; the `(0, 1)` range is still a `422` from the service.
@@ -267,7 +280,9 @@ recommended). The covered endpoints are:
 Behavior:
 
 - **Replay** — a repeated call with the same key and identical body returns the
-  original response (201/200) without re-executing the write. Safe to retry.
+  original response (201/200) without re-executing the write. Safe to retry. Its
+  audit row (`GET /v1/audit`) carries **`replayed: true`** (same `entityId` as the
+  original row) — it is not a second creation.
 - **Retry after a timeout (408), a 5xx, or a network failure — reuse the SAME key.**
   A 408/500 does _not_ mean the write failed: the server may have committed it
   (or may still finish it) after responding. A same-key retry **never executes
@@ -309,7 +324,8 @@ Behavior:
 
 > **Not covered:** `POST /v1/partners`, `POST /v1/ledger/accounts`,
 > `POST /v1/tax/codes` — these are already idempotent by virtue of their unique
-> `code` constraint (duplicate → `409 CONFLICT`). `POST /v1/ledger/periods/generate`
+> `code` constraint (duplicate — compared case-insensitively after normalization,
+> see *Identifier codes* above → `409 CONFLICT`). `POST /v1/ledger/periods/generate`
 > and non-create mutations (`PATCH`, `DELETE`, `*/deactivate`, period `*/reopen`) are
 > also not covered. (Year-end close reopen **is** covered — see above.)
 
@@ -380,7 +396,10 @@ than **2 characters** (after trimming) is ignored (the normal list is returned).
   the **calendar day from its first 10 characters** and ignores the time and offset —
   `2026-07-01T00:30+07:00` is **July 1** (never shifted to June 30 by UTC conversion).
   An impossible day (e.g. `2026-02-30`) → `400`, like any malformed date. (Audit-log
-  `from`/`to` filters are timestamps and keep their time.)
+  `from`/`to` filters are timestamps and keep their time; they must be a strict ISO
+  `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM[:SS[.fff]][Z|±HH:MM]` on a real calendar day with a
+  year in 1970–9999 — anything else, e.g. `0000-01-01`, `2026-02-30`, `2026-W01`,
+  → `400`.)
 - Report query parameters:
   - `?asOf=YYYY-MM-DD` — **balance sheet**, **AR/AP aging**, **trial balance**,
     account balance. Defaults to **today in WIB** (UTC+7; server-configurable via
@@ -390,6 +409,14 @@ than **2 characters** (after trimming) is ignored (the normal list is returned).
     **general ledger**. `from` must be on or before `to` (else `422 VALIDATION_FAILED`);
     the general-ledger span is capped at 366 days.
 - Periods are **monthly**, grouped by fiscal year (an integer like `2026`).
+
+### Caching
+
+Every `/v1/*` response (including auth and error responses) is sent with
+**`Cache-Control: no-store`** and without an `ETag`: financial data is per-user and
+must never be kept by a browser, proxy or CDN. Don't add client-side HTTP caching on
+top; use your own in-memory state (e.g. a query cache) and refetch. The probes
+(`/health`, `/ready`, `/metrics`) are not affected.
 
 ### traceId
 
@@ -1046,7 +1073,7 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing).
 - `POST   /v1/partners` · ACCOUNTANT+ · create
 - `PATCH  /v1/partners/:id` · ACCOUNTANT+ · update
 - `POST   /v1/partners/:id/deactivate` · ADMIN · deactivate
-- `code` is stored trimmed (create); `name` is stored trimmed (create and `PATCH`).
+- `code` is stored normalized (NFKC + trimmed, create — unique case-insensitively among live partners, else `409`); `name` is stored trimmed (create and `PATCH`); zero-width / format characters → `400` (see *Identifier codes* under 400 vs 422).
 - **Removing a role that still has open items is refused (changed):** `PATCH`
   `isCustomer: false` while the partner has a draft invoice, a `POSTED` invoice with an
   outstanding balance, or a draft RECEIPT — or `isVendor: false` with the same for
@@ -1107,7 +1134,7 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing).
 
 ### Audit
 
-- `GET    /v1/audit` · ADMIN · audit log — **bare array** (no envelope) (filters: `userId, method, from, to, limit, offset`; `limit` default 50, **max 200**; `method` ∈ POST/PATCH/PUT/DELETE/CLI — `CLI` = rows written by the operator `create-admin` script, path `scripts/create-admin`). One row per mutating request — including requests cut off with `408` and requests rejected by auth/role/throttle guards (`401`/`403`/`429`; rejection rows are capped at 60 per client IP and 600 in total per minute for anonymous callers — anonymous login/refresh/logout rows, successful or failed, share that 600/min total — 60 per user per minute for signed-in ones). **`body`** is the sanitized request body, except: an **anonymous 4xx** row (no signed-in user — e.g. a failed refresh, any `401`) stores `{}`, except a **failed login** (`400`/`401`/`429` on `/v1/auth/login`), which stores only `{ "email": "<trimmed, lowercased>" }` (never the password); an endpoint that takes **no body** (e.g. `POST /v1/auth/logout-all`, `…/:id/post`, `DELETE`) stores `{}` for every row it writes itself — except a signed-in `403`/`429` guard rejection on such a route, which is written before routing and stores the body capped at 8192 bytes like any other rejection; a body whose JSON exceeds **512 KiB** (a signed-in caller's **successful** state-changing request — above any valid request, so an accepted write is always stored in full) or **8192 bytes** (every other row: signed-in rejections such as a `400`/`403`/`422`, anonymous rows, and **every** row of the read-only POSTs `POST /v1/tax/calculate` and `POST /v1/journal-entries/preview`, which change nothing) is stored as the object `{ "_truncated": true, "bytes": <n>, "preview": "<first 1024 chars of the JSON>" }` — always an object, render `preview` as text. **A `408` row does not mean nothing happened:** the timed-out handler may still commit afterwards (its record then exists with a later timestamp and no audit row of its own) — see *Retry after a timeout* under Idempotency. `path` (with query string) and `params` are truncated to 512 chars. `userId` filter must be a UUID (else `400`). `requestId` = the server trace id; `clientRequestId` = your sanitized `X-Request-Id` (or `null`)
+- `GET    /v1/audit` · ADMIN · audit log — **bare array** (no envelope) (filters: `userId, method, from, to, limit, offset`; `limit` default 50, **max 200**; `method` ∈ POST/PATCH/PUT/DELETE/CLI — `CLI` = rows written by the operator `create-admin` script, path `scripts/create-admin`). One row per mutating request — including requests cut off with `408` and requests rejected by auth/role/throttle guards (`401`/`403`/`429`; rejection rows are capped at 60 per client IP and 600 in total per minute for anonymous callers — anonymous login/refresh/logout rows, successful or failed, share that 600/min total — 60 per user per minute for signed-in ones). **`body`** is the sanitized request body, except: an **anonymous 4xx** row (no signed-in user — e.g. a failed refresh, any `401`) stores `{}`, except a **failed login** (`400`/`401`/`429` on `/v1/auth/login`), which stores only `{ "email": "<trimmed, lowercased>" }` (never the password); an endpoint that takes **no body** (e.g. `POST /v1/auth/logout-all`, `…/:id/post`, `DELETE`) stores `{}` for every row it writes itself — except a signed-in `403`/`429` guard rejection on such a route, which is written before routing and stores the body capped at 8192 bytes like any other rejection; a body whose JSON exceeds **512 KiB** (a signed-in caller's **successful** state-changing request — above any valid request, so an accepted write is always stored in full) or **8192 bytes** (every other row: signed-in rejections such as a `400`/`403`/`422`, anonymous rows, and **every** row of the read-only POSTs `POST /v1/tax/calculate` and `POST /v1/journal-entries/preview`, which change nothing) is stored as the object `{ "_truncated": true, "bytes": <n>, "preview": "<first 1024 chars of the JSON>" }` — always an object, render `preview` as text. **A `408` row does not mean nothing happened:** the timed-out handler may still commit afterwards (its record then exists with a later timestamp and no audit row of its own) — see *Retry after a timeout* under Idempotency. `path` (with query string) and `params` are truncated to 512 chars. `userId` filter must be a UUID (else `400`). `requestId` = the server trace id; `clientRequestId` = your sanitized `X-Request-Id` (or `null`); `replayed` = `true` on the row of an idempotent **replay** (same `Idempotency-Key` + request answered with the stored response — no new write; `entityId` is the entity the original created), `null` otherwise
 
 ### Response schema quick-map
 

@@ -60,7 +60,13 @@ service inventory.
    process-level `uncaughtException`/`unhandledRejection` handlers.
 2. `NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true })`,
    logger swapped to `nestjs-pino`.
-3. `trust proxy: 1` (single Caddy edge), `helmet()`, `enableCors(...)`.
+3. `trust proxy: 1` (single Caddy edge), `helmet()`, `etag: false`, `enableCors(...)`.
+   **No caching:** `noStoreApiResponses` (`src/common/http/no-store.ts`, the first
+   middleware in `AppModule.configure`, so the e2e bootstrap gets it too) sets
+   `Cache-Control: no-store` on every `/v1/*` response — success or error, incl.
+   guard 401/403/429. `/health`, `/ready`, `/metrics` and `/docs` are untouched.
+   (Body-parser rejections — 413/415/malformed JSON — happen before any Nest
+   middleware and carry no body data.) ETags are off in both bootstraps.
 4. **Global `ValidationPipe`** — `whitelist: true`, `forbidNonWhitelisted: true`,
    `transform: true` (DTOs are the validated trust boundary).
 5. **Global `AllExceptionsFilter`** + `enableShutdownHooks()`.
@@ -237,6 +243,11 @@ Guards run in registration order:
     entity (`createdAt`, document number), or the idempotency record of the same
     `Idempotency-Key`; a same-key client retry then gets the committed-`409` or a
     replay, never a second write.
+  - **Replay rows:** a replay (the `IdempotencyInterceptor` answers with the stored
+    response; no handler runs) is marked on the request
+    (`markIdempotentReplay`, `src/common/idempotency/idempotency-replay.ts`) and the
+    outer `AuditInterceptor` writes its row with `replayed = true` (NULL on every
+    other row) — same `entityId` as the original, never a second creation.
   - **Timeout caveat (outermost = outside the 408):** on success the response is
     emitted only after the audit INSERT resolves, and that INSERT runs *outside*
     `RequestTimeoutInterceptor`. A stalled audit write is therefore **not** cut

@@ -3347,6 +3347,7 @@
             "name": "from",
             "required": false,
             "in": "query",
+            "description": "Strict ISO date / date-time, real day, year 1970–9999 (IsAuditInstant).",
             "schema": {
               "type": "string"
             }
@@ -3355,6 +3356,7 @@
             "name": "to",
             "required": false,
             "in": "query",
+            "description": "Strict ISO date / date-time, real day, year 1970–9999 (IsAuditInstant).",
             "schema": {
               "type": "string"
             }
@@ -4011,11 +4013,13 @@
         "properties": {
           "code": {
             "type": "string",
-            "maxLength": 32
+            "maxLength": 32,
+            "pattern": "\\S"
           },
           "name": {
             "type": "string",
-            "maxLength": 128
+            "maxLength": 128,
+            "pattern": "\\S"
           },
           "type": {
             "type": "string",
@@ -4101,7 +4105,8 @@
           },
           "name": {
             "type": "string",
-            "maxLength": 128
+            "maxLength": 128,
+            "pattern": "\\S"
           },
           "cashFlowCategory": {
             "type": "string",
@@ -4714,11 +4719,13 @@
         "properties": {
           "code": {
             "type": "string",
-            "maxLength": 32
+            "maxLength": 32,
+            "pattern": "\\S"
           },
           "name": {
             "type": "string",
-            "maxLength": 128
+            "maxLength": 128,
+            "pattern": "\\S"
           },
           "kind": {
             "type": "string",
@@ -4753,7 +4760,8 @@
         "properties": {
           "name": {
             "type": "string",
-            "maxLength": 128
+            "maxLength": 128,
+            "pattern": "\\S"
           },
           "rate": {
             "type": "string",
@@ -6832,6 +6840,11 @@
             "type": "string",
             "nullable": true,
             "description": "Id of the created/affected entity (response body `id`)"
+          },
+          "replayed": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "true when this row records an idempotent REPLAY — the same Idempotency-Key + request answered with the stored response (no new write; entityId is the entity the ORIGINAL request created). null otherwise."
           }
         },
         "required": [
@@ -6848,7 +6861,8 @@
           "ip",
           "requestId",
           "clientRequestId",
-          "entityId"
+          "entityId",
+          "replayed"
         ]
       }
     }
