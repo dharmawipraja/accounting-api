@@ -13,8 +13,11 @@
 --      hand), then `prisma migrate resolve --rolled-back
 --      20261005300000_users_email_nfc` and re-run `prisma migrate deploy`.
 --   2. Backfill: every other non-NFC email is rewritten to its NFC form (case
---      untouched: stored emails are already lowercased by the app), reported
---      with RAISE NOTICE (id, old -> new).
+--      untouched: stored emails are already lowercased by the app), each
+--      recorded as an audit_log row (method 'MIGRATION', path = this
+--      migration's name, body {table, id, old, new}, user_id NULL — GET
+--      /v1/audit?method=MIGRATION; `prisma migrate deploy` does not print the
+--      RAISE NOTICE that repeats it). No rewrite, no row.
 -- Tombstoned rows (email '<email>#deleted-<id>') are rewritten too; their
 -- unique suffix keeps them collision-free.
 --
@@ -51,6 +54,16 @@ BEGIN
   LOOP
     RAISE NOTICE 'users email normalized to NFC: id % : % -> %',
       r.id, quote_literal(r.old_email), quote_literal(r.new_email);
+    -- `prisma migrate deploy` does not print NOTICEs: the durable record of
+    -- each rewrite is this audit row (GET /v1/audit?method=MIGRATION).
+    -- audit_log's append-only triggers block only UPDATE / DELETE /
+    -- TRUNCATE; the INSERT commits or rolls back with the rewrite.
+    INSERT INTO audit_log (id, method, path, body, status_code, duration_ms, entity_id)
+    VALUES (gen_random_uuid()::text, 'MIGRATION',
+            '20261005300000_users_email_nfc',
+            jsonb_build_object('table', 'users', 'id', r.id,
+                               'old', r.old_email, 'new', r.new_email),
+            200, 0, r.id);
   END LOOP;
 END $$;
 

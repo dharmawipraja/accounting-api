@@ -20,6 +20,14 @@ a correct frontend. Everything here is derived from the API source code.
 >   Existing codes that were untrimmed / full-width were normalized by the upgrade.
 > - **Audit `from` / `to` are strict**: ISO date or date-time on a real day, year
 >   1970–9999 — week/ordinal/basic forms and impossible days → `400`.
+> - **(iteration 9)** More invisible characters are rejected in codes / names
+>   (default-ignorable ones such as U+034F, Hangul fillers, variation selectors, tag
+>   characters; in codes also an interior U+2028 / U+2029) — emoji keep working.
+>   A code / name longer than 1024 characters is rejected by its length limit
+>   without being normalized. Accounts: deleting / deactivating a header with
+>   child accounts → `422 VALIDATION_FAILED` `details.reason: "HAS_CHILDREN"`; `parentCode` must name an **active**
+>   header. `GET /v1/audit?method=MIGRATION` lists the codes / emails the upgrade
+>   normalized. `Cache-Control: no-store` also on `/V1/...` spellings.
 > - **`Cache-Control: no-store`** on every `/v1/*` response, and **no `ETag`**
 >   headers (so no `304 Not Modified`) — don't rely on HTTP caching.
 > - Emails are NFC-normalized (see *Login & tokens*); audit rows of idempotent
@@ -179,10 +187,17 @@ a short backoff.
     `parentCode`): the server applies Unicode **NFKC** (full-width `ＤＵＰ-１` → `DUP-1`)
     and trims surrounding white space, and **stores that form** (case kept — show what
     the response returns). A code containing an invisible **format** character (zero-width
-    space U+200B, zero-width joiner U+200D, BOM U+FEFF, bidi controls, soft hyphen …)
-    or a **control** character (tab, newline …) → `400`. Names are trimmed and reject
-    format characters the same way (no NFKC, no case change) — except the zero-width
-    joiner inside an emoji sequence such as 👨‍👩‍👧, which is kept. **Codes are unique
+    space U+200B, zero-width joiner U+200D, BOM U+FEFF, bidi controls, soft hyphen, tag
+    characters …), a **control** character (tab, newline …), a line / paragraph
+    separator (U+2028 / U+2029) inside it, or any other **default-ignorable** character
+    (combining grapheme joiner U+034F, Hangul fillers U+115F / U+1160 / U+3164 / U+FFA0,
+    variation selectors U+FE00–FE0F …) → `400`. Names are trimmed and reject format and
+    default-ignorable characters the same way (no NFKC, no case change; control
+    characters are allowed) — except inside emoji: the zero-width joiner of a sequence
+    such as 👨‍👩‍👧 / 🏳️‍🌈 and the emoji-presentation selector VS16 (U+FE0F, ❤️, 1️⃣) are
+    kept. (Subdivision flags built from tag characters, e.g. 🏴󠁧󠁢󠁥󠁮󠁧󠁿, are rejected.) A code or
+    name longer than **1024** characters is not normalized at all — its length limit
+    rejects it (`400`). **Codes are unique
     case-insensitively among live records:** `dup`, `DUP`, `DUP ` and `ＤＵＰ` are one
     code → `409 CONFLICT` for the second one. A deleted record's code is reusable in
     any case. Account `parentCode` matches the header's code case-insensitively too
@@ -999,10 +1014,10 @@ no auth.
 - `GET    /v1/ledger/accounts` · any · list chart of accounts (**envelope** `{data,total,limit,offset}`; supports `?limit`/`?offset`)
 - `GET    /v1/ledger/accounts/:id` · any · get one account
 - `GET    /v1/ledger/accounts/:id/balance` · any · account balance (`?asOf=`)
-- `POST   /v1/ledger/accounts` · ACCOUNTANT+ · create account. With `role: 'CASH'` the same rule as PATCH applies: the account must be a postable (`isPostable` not `false`), debit-normal `ASSET` → otherwise `422 VALIDATION_FAILED`
+- `POST   /v1/ledger/accounts` · ACCOUNTANT+ · create account. With `role: 'CASH'` the same rule as PATCH applies: the account must be a postable (`isPostable` not `false`), debit-normal `ASSET` → otherwise `422 VALIDATION_FAILED`. A singleton role (AR/AP control, retained earnings, opening-balance equity, tax expense) already held by another account → `409 CONFLICT` "That account role is already assigned" `{ role }` (also when two requests race for it). `parentCode` must name a live, **active**, non-postable header → otherwise `422 VALIDATION_FAILED` ("Parent account not found" / "… must be a non-postable header" / "Parent account must be active", `details.parentCode`)
 - `PATCH  /v1/ledger/accounts/:id` · ACCOUNTANT+ · update account `{name?, cashFlowCategory?, isActive?, role?}` (`isActive: false` follows the deactivate rules). `role` accepts **only `'CASH'`**: it marks an existing postable, debit-normal `ASSET` account with no role as a cash/bank account so payments can use it; any other role value — including `null` (a role cannot be cleared) — → `400`, a credit-normal/non-ASSET/header account or one that already holds a singleton role → `422 VALIDATION_FAILED`; an account used by any tax code (including a deleted one) → `422 VALIDATION_FAILED` `{ id, reason: "TAX_ACCOUNT" }`. Singleton roles (AR/AP control, retained earnings, opening-balance equity, tax expense) are create-only.
 - `POST   /v1/ledger/accounts/:id/deactivate` · ADMIN · soft-deactivate account. Singleton system accounts (non-null `role` other than `CASH`) → `422`. A `CASH` account → `422` unless its balance is zero (`details.balance`) **and** another active, postable `CASH` account remains (`details.otherActiveCashAccounts: 0`). A reversal or document void may still post to an already-deactivated `CASH` account (it only undoes an earlier movement), which can leave it with a non-zero balance; move that balance with a manual entry after reactivating it (`PATCH { isActive: true }`)
-- `DELETE /v1/ledger/accounts/:id` · ADMIN · soft-delete account (same system-account / `CASH` rules as deactivate; accounts with posted lines → `422`)
+- `DELETE /v1/ledger/accounts/:id` · ADMIN · soft-delete account (same system-account / `CASH` rules as deactivate; accounts with posted lines → `422`). A header with any live (not deleted) child account → `422 VALIDATION_FAILED` `{ id, reason: "HAS_CHILDREN", children }` — delete the children first (or deactivate the header instead). Deactivating (`POST …/deactivate` or `PATCH { isActive: false }`) a header with **active** children → the same `422` (`reason: "HAS_CHILDREN"`) — deactivate the children first
 
 ### Ledger — journal
 
@@ -1150,7 +1165,7 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing).
 
 ### Audit
 
-- `GET    /v1/audit` · ADMIN · audit log — **bare array** (no envelope) (filters: `userId, method, from, to, limit, offset`; `limit` default 50, **max 200**; `method` ∈ POST/PATCH/PUT/DELETE/CLI — `CLI` = rows written by the operator `create-admin` script, path `scripts/create-admin`). One row per mutating request — including requests cut off with `408` and requests rejected by auth/role/throttle guards (`401`/`403`/`429`; rejection rows are capped at 60 per client IP and 600 in total per minute for anonymous callers — anonymous login/refresh/logout rows, successful or failed, share that 600/min total — 60 per user per minute for signed-in ones). **`body`** is the sanitized request body, except: an **anonymous 4xx** row (no signed-in user — e.g. a failed refresh, any `401`) stores `{}`, except a **failed login** (`400`/`401`/`429` on `/v1/auth/login`), which stores only `{ "email": "<trimmed, lowercased, NFC-normalized>" }` (never the password); an endpoint that takes **no body** (e.g. `POST /v1/auth/logout-all`, `…/:id/post`, `DELETE`) stores `{}` for every row it writes itself — except a signed-in `403`/`429` guard rejection on such a route, which is written before routing and stores the body capped at 8192 bytes like any other rejection; a body whose JSON exceeds **512 KiB** (a signed-in caller's **successful** state-changing request — above any valid request, so an accepted write is always stored in full) or **8192 bytes** (every other row: signed-in rejections such as a `400`/`403`/`422`, anonymous rows, and **every** row of the read-only POSTs `POST /v1/tax/calculate` and `POST /v1/journal-entries/preview`, which change nothing) is stored as the object `{ "_truncated": true, "bytes": <n>, "preview": "<first 1024 chars of the JSON>" }` — always an object, render `preview` as text. **A `408` row does not mean nothing happened:** the timed-out handler may still commit afterwards (its record then exists with a later timestamp and no audit row of its own) — see *Retry after a timeout* under Idempotency. `path` (with query string) and `params` are truncated to 512 chars. `userId` filter must be a UUID (else `400`). `requestId` = the server trace id; `clientRequestId` = your sanitized `X-Request-Id` (or `null`); `replayed` = `true` on the row of an idempotent **replay** (same `Idempotency-Key` + request answered with the stored response — no new write; `entityId` is the entity the original created), `null` otherwise
+- `GET    /v1/audit` · ADMIN · audit log — **bare array** (no envelope) (filters: `userId, method, from, to, limit, offset`; `limit` default 50, **max 200**; `method` ∈ POST/PATCH/PUT/DELETE/CLI/MIGRATION — `CLI` = rows written by the operator `create-admin` script, path `scripts/create-admin`; `MIGRATION` = one row per record a database upgrade normalized, path = the migration name, `body` `{ table, id, old, new }`, `userId` `null`). One row per mutating request — including requests cut off with `408` and requests rejected by auth/role/throttle guards (`401`/`403`/`429`; rejection rows are capped at 60 per client IP and 600 in total per minute for anonymous callers — anonymous login/refresh/logout rows, successful or failed, share that 600/min total — 60 per user per minute for signed-in ones). **`body`** is the sanitized request body, except: an **anonymous 4xx** row (no signed-in user — e.g. a failed refresh, any `401`) stores `{}`, except a **failed login** (`400`/`401`/`429` on `/v1/auth/login`), which stores only `{ "email": "<trimmed, lowercased, NFC-normalized>" }` (never the password); an endpoint that takes **no body** (e.g. `POST /v1/auth/logout-all`, `…/:id/post`, `DELETE`) stores `{}` for every row it writes itself — except a signed-in `403`/`429` guard rejection on such a route, which is written before routing and stores the body capped at 8192 bytes like any other rejection; a body whose JSON exceeds **512 KiB** (a signed-in caller's **successful** state-changing request — above any valid request, so an accepted write is always stored in full) or **8192 bytes** (every other row: signed-in rejections such as a `400`/`403`/`422`, anonymous rows, and **every** row of the read-only POSTs `POST /v1/tax/calculate` and `POST /v1/journal-entries/preview`, which change nothing) is stored as the object `{ "_truncated": true, "bytes": <n>, "preview": "<first 1024 chars of the JSON>" }` — always an object, render `preview` as text. **A `408` row does not mean nothing happened:** the timed-out handler may still commit afterwards (its record then exists with a later timestamp and no audit row of its own) — see *Retry after a timeout* under Idempotency. `path` (with query string) and `params` are truncated to 512 chars. `userId` filter must be a UUID (else `400`). `requestId` = the server trace id; `clientRequestId` = your sanitized `X-Request-Id` (or `null`); `replayed` = `true` on the row of an idempotent **replay** (same `Idempotency-Key` + request answered with the stored response — no new write; `entityId` is the entity the original created), `null` otherwise
 
 ### Response schema quick-map
 

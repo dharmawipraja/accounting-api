@@ -8,6 +8,7 @@ import { PostingService } from '../src/ledger/posting/posting.service';
 import { CompanyService } from '../src/company/company.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
+import { uniqueViolationIndex } from '../src/common/errors/map-unique-violation';
 import { bootstrapTestApp } from './e2e-helpers';
 
 describe('Accounts (e2e)', () => {
@@ -313,6 +314,144 @@ describe('Accounts (e2e)', () => {
         parentCode: '1-0000',
       })
       .expect(409);
+  });
+
+  it('iter9: a singleton-role race (pre-check passed, unique index fires) is the role 409, not "code already exists"', async () => {
+    // A live violation carries the index name where uniqueViolationIndex
+    // reads it.
+    const err: unknown = await prisma.client.account
+      .create({
+        data: {
+          code: 'RACE-RAW',
+          name: 'Raw',
+          type: 'ASSET',
+          subtype: 'CURRENT_ASSET',
+          normalBalance: 'DEBIT',
+          role: 'AR_CONTROL',
+        },
+      })
+      .catch((e: unknown) => e);
+    expect(uniqueViolationIndex(err)).toBe('accounts_singleton_role');
+
+    // The race itself: the role pre-check sees no holder (another request
+    // has not committed yet), then the insert hits accounts_singleton_role.
+    const spy = jest
+      .spyOn(prisma.client.account, 'findFirst')
+      .mockResolvedValueOnce(null);
+    try {
+      const res = await request(app.getHttpServer() as App)
+        .post('/v1/ledger/accounts')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          code: 'RACE-AR',
+          name: 'AR Control race',
+          type: 'ASSET',
+          subtype: 'CURRENT_ASSET',
+          normalBalance: 'DEBIT',
+          role: 'AR_CONTROL',
+        })
+        .expect(409);
+      expect(spy).toHaveBeenCalled();
+      expect(res.body).toMatchObject({
+        code: 'CONFLICT',
+        message: 'That account role is already assigned',
+        details: { role: 'AR_CONTROL' },
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  describe('iter9: account hierarchy — headers with live children, parentCode must be an active header', () => {
+    const base = {
+      type: 'ASSET',
+      subtype: 'CURRENT_ASSET',
+      normalBalance: 'DEBIT',
+    };
+    const post = (body: Record<string, unknown>) =>
+      request(app.getHttpServer() as App)
+        .post('/v1/ledger/accounts')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ ...base, ...body });
+    const del = (id: string) =>
+      request(app.getHttpServer() as App)
+        .delete(`/v1/ledger/accounts/${id}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+    const deactivate = (id: string) =>
+      request(app.getHttpServer() as App)
+        .post(`/v1/ledger/accounts/${id}/deactivate`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+    it('refuses to delete / deactivate a header with live children (422 reason HAS_CHILDREN) until they are gone', async () => {
+      const header = (
+        await post({ code: 'TREE-H', name: 'Tree', isPostable: false }).expect(
+          201,
+        )
+      ).body as { id: string };
+      const child = (
+        await post({
+          code: 'TREE-C',
+          name: 'Leaf',
+          parentCode: 'TREE-H',
+        }).expect(201)
+      ).body as { id: string };
+
+      for (const res of [
+        await del(header.id),
+        await deactivate(header.id),
+        await request(app.getHttpServer() as App)
+          .patch(`/v1/ledger/accounts/${header.id}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ isActive: false }),
+      ]) {
+        expect(res.status).toBe(422);
+        expect(res.body).toMatchObject({
+          code: 'VALIDATION_FAILED',
+          details: { id: header.id, reason: 'HAS_CHILDREN', children: 1 },
+        });
+      }
+
+      // An inactive child still blocks deletion (it would be orphaned under
+      // a deleted header) but no longer blocks deactivation.
+      await deactivate(child.id).expect(200);
+      expect((await del(header.id)).body).toMatchObject({
+        code: 'VALIDATION_FAILED',
+        details: { reason: 'HAS_CHILDREN' },
+      });
+      await deactivate(header.id).expect(200);
+
+      await del(child.id).expect(204);
+      await del(header.id).expect(204);
+    });
+
+    it('parentCode must name an active, live header (422 otherwise)', async () => {
+      const header = (
+        await post({ code: 'TREE-I', name: 'Idle', isPostable: false }).expect(
+          201,
+        )
+      ).body as { id: string };
+      await deactivate(header.id).expect(200);
+      const inactive = await post({
+        code: 'TREE-I-1',
+        name: 'Under inactive',
+        parentCode: 'tree-i',
+      }).expect(422);
+      expect(inactive.body).toMatchObject({
+        code: 'VALIDATION_FAILED',
+        message: 'Parent account must be active',
+        details: { parentCode: 'tree-i' },
+      });
+
+      await del(header.id).expect(204);
+      const gone = await post({
+        code: 'TREE-I-2',
+        name: 'Under deleted',
+        parentCode: 'TREE-I',
+      }).expect(422);
+      expect(gone.body).toMatchObject({
+        message: 'Parent account not found',
+      });
+    });
   });
 
   it('rejects deleting an account that has posted journal lines (422 VALIDATION_FAILED)', async () => {

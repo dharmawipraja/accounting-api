@@ -46,7 +46,10 @@ balance: a debit *increases* a debit-normal account and *decreases* a credit-nor
 The master list of all accounts you can post to. Each account has a `code`, `name`,
 `type`, `subtype`, `normalBalance`, a cash-flow classification, and an optional system
 `role`. Accounts form a tree (`parentId`); only `isPostable` leaf accounts accept journal
-lines (header accounts are for grouping).
+lines (header accounts are for grouping). A child's `parentCode` must name a live,
+active header (read `FOR SHARE` in the create tx); a header with live children cannot
+be deleted, nor deactivated while any child is active (`422` `details.reason
+'HAS_CHILDREN'`, `AccountsService.lockForRetire`).
 - `Account` model in `prisma/schema.prisma`; postable/active checks in
   `PostingService.assertPostableAccounts` (`src/ledger/posting/posting.service.ts`).
 
@@ -485,12 +488,16 @@ appear on sales vs purchase documents; `npwp` is the Indonesian tax ID.
 ### Identifier code (kode akun / kode pajak / kode mitra)
 The human-facing `code` of an account, tax code or business partner (and an account's
 `parentCode` reference). Normalized on write: Unicode **NFKC** (full-width `ＤＵＰ` →
-`DUP`), then surrounding white space trimmed; a blank code, or one holding an invisible
-format (Cf — zero-width space/joiner, BOM, bidi controls, soft hyphen) or control (Cc)
-character, is a `400`. Stored in that form (case kept) and **unique case-insensitively
+`DUP`), then surrounding white space trimmed (linear scan — never an alternation regex);
+a blank code, or one holding an invisible character — format (Cf — zero-width
+space/joiner, BOM, bidi controls, soft hyphen, tags), control (Cc), line / paragraph
+separator (Zl / Zp) or any other Default_Ignorable_Code_Point (`CODE_INVISIBLE`) — is a
+`400`. Values over 1024 characters skip normalization (their `@MaxLength` rejects
+them). Stored in that form (case kept) and **unique case-insensitively
 among live rows** — `dup` / `DUP` / `DUP ` / `ＤＵＰ` are one code (`409`). Names get
-the same trim + format-character rejection (the ZWJ of an emoji ZWJ sequence is
-allowed), without NFKC or uniqueness.
+the same trim + Cf / Default_Ignorable rejection (the ZWJ of an emoji ZWJ sequence and
+the VS16 after an emoji are allowed; control characters are allowed), without NFKC or
+uniqueness.
 - Pure rules in `src/common/text/identifier.ts`; DTO decorators `@IdentifierCode()` /
   `@DisplayName()` (`src/common/validators/identifier-code.ts`).
 - DB: partial expression unique indexes `<table>_code_lower_live_key` on

@@ -1,10 +1,16 @@
 import { isApiPath, noStoreApiResponses } from './no-store';
 
 describe('isApiPath', () => {
-  it.each(['/v1', '/v1/', '/v1/ledger/accounts', '/v1?x=1', '/v2/foo'])(
-    'is an API path: %s',
-    (p) => expect(isApiPath(p)).toBe(true),
-  );
+  it.each([
+    '/v1',
+    '/v1/',
+    '/v1/ledger/accounts',
+    '/v1?x=1',
+    '/v2/foo',
+    // Express routing is case-insensitive: /V1/... reaches the same handlers.
+    '/V1/ledger/accounts',
+    '/V1',
+  ])('is an API path: %s', (p) => expect(isApiPath(p)).toBe(true));
   it.each([
     '/health',
     '/ready',
@@ -12,6 +18,7 @@ describe('isApiPath', () => {
     '/docs',
     '/docs-json',
     '/v1x',
+    '/V1x',
     '/',
   ])('is not an API path: %s', (p) => expect(isApiPath(p)).toBe(false));
 });

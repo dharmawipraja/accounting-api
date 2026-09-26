@@ -86,6 +86,14 @@ describe('Hardening (e2e)', () => {
       ],
       [await request(server).post('/v1/auth/login').send({}), 400],
       [await request(server).get('/v1/ledger/accounts'), 401],
+      // Routing is case-insensitive, so the header must be too (iter9).
+      [
+        await request(server)
+          .get('/V1/ledger/accounts')
+          .set('Authorization', `Bearer ${token}`),
+        200,
+      ],
+      [await request(server).get('/V1/ledger/accounts'), 401],
     ] as const) {
       expect(res.status).toBe(status);
       expect(res.headers['cache-control']).toBe('no-store');

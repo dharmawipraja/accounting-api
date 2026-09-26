@@ -71,7 +71,7 @@ describe('OpenAPI response contract', () => {
     );
   });
 
-  it('GET /v1/audit ?method= accepts the CLI rows written by create-admin', () => {
+  it('GET /v1/audit ?method= accepts the CLI rows written by create-admin and the MIGRATION rows of data migrations', () => {
     const method = doc.paths['/v1/audit'].get.parameters?.find(
       (p) => p.name === 'method',
     );
@@ -81,6 +81,7 @@ describe('OpenAPI response contract', () => {
       'PUT',
       'DELETE',
       'CLI',
+      'MIGRATION',
     ]);
   });
 });

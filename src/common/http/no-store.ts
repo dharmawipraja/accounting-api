@@ -1,8 +1,9 @@
 /** True for a versioned API path (`/v1`, `/v1/...`, `/v1?...`) — every
- *  business and auth route. The operational probes (/health, /ready,
- *  /metrics) and Swagger (/docs) are left alone. Pure. */
+ *  business and auth route. Case-insensitive (`/V1/...`), like Express
+ *  routing, which serves the same handlers for it. The operational probes
+ *  (/health, /ready, /metrics) and Swagger (/docs) are left alone. Pure. */
 export function isApiPath(url: string): boolean {
-  return /^\/v\d+(?:[/?#]|$)/.test(url);
+  return /^\/v\d+(?:[/?#]|$)/i.test(url);
 }
 
 /** Express-style middleware (an app-level `app.use` in main.ts and the e2e

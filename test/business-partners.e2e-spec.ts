@@ -314,6 +314,33 @@ describe('BusinessPartners (e2e)', () => {
     ).rejects.toThrow(/business_partners_customer_or_vendor/);
   });
 
+  it('iter9: a ~900 KB white-space-padded name / code is a fast 400 (the trim is linear — no event-loop stall)', async () => {
+    const created = await request(app.getHttpServer() as App)
+      .post('/v1/partners')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ code: 'REDOS-1', name: 'Redos', isCustomer: true })
+      .expect(201);
+    const huge = `a${' '.repeat(900_000)}a`;
+    const started = Date.now();
+    await request(app.getHttpServer() as App)
+      .patch(`/v1/partners/${(created.body as { id: string }).id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: huge })
+      .expect(400);
+    await request(app.getHttpServer() as App)
+      .post('/v1/partners')
+      .set('Authorization', `Bearer ${token}`)
+      // Two ~450 KB fields: together still under the 1 MB body cap.
+      .send({
+        code: huge.slice(450_000),
+        name: huge.slice(450_000),
+        isCustomer: true,
+      })
+      .expect(400);
+    // The old /^\p{White_Space}+|\p{White_Space}+$/gu took minutes here.
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
   it('rejects a duplicate code (409)', async () => {
     const body = { code: 'DUP', name: 'Y', isVendor: true };
     await request(app.getHttpServer() as App)

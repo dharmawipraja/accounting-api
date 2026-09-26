@@ -147,7 +147,11 @@ One stable error envelope, no leaked internals.
   (incl. every row of a `@ReadOnlyPost()` handler — mark a new state-free POST
   with it). `scripts/create-admin.ts` writes its own row (method `CLI`,
   `CLI_AUDIT_METHOD` in `src/audit/mutating-methods.ts`; `GET /v1/audit?method=CLI`
-  lists them — the filter accepts `AUDIT_METHODS`).
+  lists them — the filter accepts `AUDIT_METHODS`). A data migration that
+  auto-fixes rows writes one row per fix in SQL (method `MIGRATION`,
+  `MIGRATION_AUDIT_METHOD`; path = migration name, body `{table, id, old, new}`,
+  `user_id` NULL) — `prisma migrate deploy` never shows `RAISE NOTICE`, so a
+  NOTICE alone is not an operator-visible record.
 - **Idempotent replays are flagged in the audit log** (`audit_log.replayed = true`,
   set via `markIdempotentReplay` by the idempotency interceptor); NULL otherwise.
 - **`Cache-Control: no-store` on every `/v1/*` response** (`app.use(noStoreApiResponses)`

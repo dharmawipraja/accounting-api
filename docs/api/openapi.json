@@ -3339,7 +3339,8 @@
                 "PATCH",
                 "PUT",
                 "DELETE",
-                "CLI"
+                "CLI",
+                "MIGRATION"
               ]
             }
           },

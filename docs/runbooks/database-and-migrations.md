@@ -175,15 +175,24 @@ the Prisma schema cannot express:
   `<table>_code_key` uniques (`@@unique([code])`) stay, so `prisma migrate diff` is
   empty (it does not try to drop the expression indexes — verified). Tombstoned rows
   (`<code>#deleted-<id>`, `deleted_at` set) are outside the index. The API stores
-  codes normalized (NFKC + trim; blank / format / control characters → 400,
+  codes normalized (NFKC + trim; blank codes and invisible characters — format /
+  control / default-ignorable / line separators, `CODE_INVISIBLE` — → 400,
   `src/common/text/identifier.ts`). The migration handles live legacy rows in one
   all-or-nothing block: it **aborts** (P3018, SQLSTATE P0001, nothing changed)
   listing table + code + id for codes that collide under `lower(trim(NFKC(code)))`,
-  codes blank once normalized, codes holding a format (Cf) / control (Cc) character,
+  codes blank once normalized, codes holding an invisible character (the same set
+  as the API's `CODE_INVISIBLE`, written out as Unicode 16 ranges — the e2e spec
+  compares the two code point by code point; shown escaped as `\uXXXX` in the
+  error, because a raw U+2028 in the error text makes `prisma migrate deploy` hang),
   and codes whose normalized form equals a soft-deleted row's exact code; otherwise
-  it **auto-fixes** every untrimmed / NFKC-different live code to `trim(NFKC(code))`
-  (case kept; a `RAISE NOTICE` per change — codes are not FK targets or copied
-  elsewhere), re-verifies, then creates the indexes. To recover from an abort: fix
+  it **auto-fixes** every untrimmed / NFKC-different live code to
+  `btrim(NFKC(code), <JS White_Space>)` (case kept; codes are not FK targets or
+  copied elsewhere), writing one `audit_log` row per change (`method 'MIGRATION'`,
+  `path` = the migration name, `body {table, id, old, new}`, `user_id NULL`; the
+  append-only triggers block only UPDATE / DELETE / TRUNCATE) — `prisma migrate
+  deploy` does not surface `RAISE NOTICE`, so `GET /v1/audit?method=MIGRATION` is
+  where an operator sees them (deploy.md has read-only preview queries for the
+  rehearsal). Re-verifies, then creates the indexes. To recover from an abort: fix
   each listed row (`UPDATE <table> SET code = '<fixed>' WHERE id = '<id>'`, or
   soft-delete it through the API), then
   `npx prisma migrate resolve --rolled-back 20261005000000_identifier_code_ci_unique`
@@ -191,7 +200,7 @@ the Prisma schema cannot express:
   — the migrate image has no npm/npx) and re-run `prisma migrate deploy`. Test: `test/identifier-code-migration.e2e-spec.ts`.
 - **Email NFC** (`20261005300000_users_email_nfc`): aborts listing users whose emails
   collide once NFC-normalized; otherwise rewrites every non-NFC (decomposed) email to
-  NFC (`NOTICE` per row) and adds `CHECK users_email_nfc (email IS NFC NORMALIZED)`,
+  NFC (one `MIGRATION` audit row per rewrite, as above) and adds `CHECK users_email_nfc (email IS NFC NORMALIZED)`,
   so `users_email_lower_key` on `lower(email)` stays a complete guard (case itself
   is not CHECKed — JS and Postgres lowercasing can differ on rare characters).
   Recovery like above (`resolve --rolled-back 20261005300000_users_email_nfc`).

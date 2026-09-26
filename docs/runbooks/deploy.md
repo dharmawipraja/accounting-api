@@ -280,17 +280,44 @@ skips those — the list below still applies to the ones that remain):
    - `20261005000000_identifier_code_ci_unique` — live account / tax-code / partner
      codes that **block**: codes that collide once normalized
      (`lower(trim(NFKC(code)))`, e.g. `KAS-1` / `kas-1` / ` KAS-1`), codes blank after
-     normalization, codes containing an invisible format (zero-width space, BOM, bidi
-     control, soft hyphen …) or control character, and codes whose normalized form
-     equals the exact code of a soft-deleted row. Everything else that is merely
-     **untrimmed or NFKC-different** (surrounding spaces, full-width `ＫＡＳ-１`) is
-     **auto-fixed** in place to `trim(NFKC(code))` (case kept) — each change is a
-     `NOTICE` in the migrate log (`identifier code normalized: <table> id <id> : 'old'
-     -> 'new'`); check the rehearsal's log and tell users whose codes changed;
+     normalization, codes containing an invisible character — format (zero-width
+     space, BOM, bidi control, soft hyphen, tag characters …), control, line /
+     paragraph separator, or other default-ignorable (combining grapheme joiner,
+     Hangul filler, variation selector …; the error shows them as `\uXXXX`) — and
+     codes whose normalized form equals the exact code of a soft-deleted row.
+     Everything else that is merely **untrimmed or NFKC-different** (surrounding
+     spaces incl. NEL / U+2028, full-width `ＫＡＳ-１`) is **auto-fixed** in place to
+     `trim(NFKC(code))` (case kept) — each change writes an **audit row** (below);
    - `20261005300000_users_email_nfc` — users whose emails are the same address once
      NFC-normalized (a precomposed and a decomposed `josé@…`). Every other
-     decomposed (NFD) email is rewritten to NFC (a `NOTICE` per row) — without that
-     such users could no longer log in — and a CHECK then keeps emails NFC.
+     decomposed (NFD) email is rewritten to NFC (an **audit row** each) — without
+     that such users could no longer log in — and a CHECK then keeps emails NFC.
+
+   **Preview the auto-fixes before migrating** (read-only; run against the scratch
+   database, or production itself — they change nothing), so you can tell users
+   whose codes / emails will change:
+   ```bash
+   $COMPOSE exec -T db psql -U accounting -d scratch <<'SQL'
+   SELECT t, id, code AS old, normalized AS new FROM (
+     SELECT 'accounts' t, id, code, btrim(normalize(code, NFKC), E'\u0009\u000A\u000B\u000C\u000D\u0020\u0085\u00A0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u2028\u2029\u202F\u205F\u3000') normalized
+       FROM accounts WHERE deleted_at IS NULL
+     UNION ALL
+     SELECT 'tax_codes', id, code, btrim(normalize(code, NFKC), E'\u0009\u000A\u000B\u000C\u000D\u0020\u0085\u00A0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u2028\u2029\u202F\u205F\u3000')
+       FROM tax_codes WHERE deleted_at IS NULL
+     UNION ALL
+     SELECT 'business_partners', id, code, btrim(normalize(code, NFKC), E'\u0009\u000A\u000B\u000C\u000D\u0020\u0085\u00A0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u2028\u2029\u202F\u205F\u3000')
+       FROM business_partners WHERE deleted_at IS NULL
+   ) c WHERE code <> normalized ORDER BY 1, 3;
+   SELECT id, email AS old, normalize(email, NFC) AS new
+     FROM users WHERE email IS NOT NFC NORMALIZED;
+   SQL
+   ```
+   (The escape list is JavaScript's `\p{White_Space}` — the trim the API applies.)
+   `prisma migrate deploy` does **not** print the migrations' `NOTICE` lines, so the
+   durable record is the audit log: **after migrating, `GET /v1/audit?method=MIGRATION`
+   (ADMIN) lists every change** — one row per rewritten code / email, `path` = the
+   migration name, `body` = `{ table, id, old, new }`, `userId` = `null`. No change,
+   no row.
 
    The others in the range cannot abort on data: `20260925000000_accum_depreciation_cash_flow`
    is a data-only reclassification — every credit-normal `ASSET` account (contra-asset,

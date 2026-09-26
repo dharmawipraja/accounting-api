@@ -36,7 +36,23 @@ describe('Migration 20261005300000_users_email_nfc on legacy NFD emails (e2e)', 
       env: { ...process.env, DATABASE_URL: db.url },
       encoding: 'utf8',
       stdio: 'pipe',
+      timeout: 90_000,
     });
+
+  const migrationAudit = () =>
+    prisma.client.auditLog.findMany({
+      where: { method: 'MIGRATION', path: MIGRATION },
+    });
+
+  /** Roll the migration under test back (the container is at head). */
+  const rollBack = async () => {
+    await prisma.client.$executeRawUnsafe(
+      'ALTER TABLE users DROP CONSTRAINT users_email_nfc',
+    );
+    await prisma.client.$executeRawUnsafe(
+      `DELETE FROM _prisma_migrations WHERE migration_name = '${MIGRATION}'`,
+    );
+  };
 
   /** A user created through the app, then its email rewritten around it. */
   const legacyUser = async (tmp: string, storedEmail: string) => {
@@ -64,12 +80,7 @@ describe('Migration 20261005300000_users_email_nfc on legacy NFD emails (e2e)', 
   });
 
   it('aborts on NFC collisions, then rewrites NFD emails to NFC: login works with either form, create-admin resets the same user, the CHECK blocks non-NFC writes', async () => {
-    await prisma.client.$executeRawUnsafe(
-      'ALTER TABLE users DROP CONSTRAINT users_email_nfc',
-    );
-    await prisma.client.$executeRawUnsafe(
-      `DELETE FROM _prisma_migrations WHERE migration_name = '${MIGRATION}'`,
-    );
+    await rollBack();
 
     const composed = await legacyUser('c@nfc.test', `jos${NFC_E}@nfc.test`);
     const decomposed = await legacyUser('d@nfc.test', `jos${NFD_E}@nfc.test`);
@@ -93,6 +104,7 @@ describe('Migration 20261005300000_users_email_nfc on legacy NFD emails (e2e)', 
     const [still] = await prisma.client.$queryRaw<{ email: string }[]>`
       SELECT email FROM users WHERE id = ${nfdOnly.id}`;
     expect(still.email).toBe(`ren${NFD_E}@nfc.test`);
+    expect(await migrationAudit()).toEqual([]);
 
     // Operator resolves the collision, then re-runs.
     await prisma.client
@@ -106,6 +118,27 @@ describe('Migration 20261005300000_users_email_nfc on legacy NFD emails (e2e)', 
     const [fixed] = await prisma.client.$queryRaw<{ email: string }[]>`
       SELECT email FROM users WHERE id = ${nfdOnly.id}`;
     expect(fixed.email).toBe(`ren${NFC_E}@nfc.test`);
+    // Exactly one audit row — for the one rewritten email.
+    expect(
+      (await migrationAudit()).map((r) => [
+        r.entityId,
+        r.userId,
+        r.statusCode,
+        r.body,
+      ]),
+    ).toEqual([
+      [
+        nfdOnly.id,
+        null,
+        200,
+        {
+          table: 'users',
+          id: nfdOnly.id,
+          old: `ren${NFD_E}@nfc.test`,
+          new: `ren${NFC_E}@nfc.test`,
+        },
+      ],
+    ]);
 
     // The formerly-NFD user logs in with either form.
     const auth = app.get(AuthService);
@@ -129,5 +162,12 @@ describe('Migration 20261005300000_users_email_nfc on legacy NFD emails (e2e)', 
       prisma.client
         .$executeRaw`UPDATE users SET email = ${`x${NFD_E}@nfc.test`} WHERE id = ${nfdOnly.id}`,
     ).rejects.toThrow(/users_email_nfc/);
+  }, 180_000);
+
+  it('re-applied on all-NFC emails it changes nothing and writes no audit row', async () => {
+    const before = (await migrationAudit()).length;
+    await rollBack();
+    expect(deploy()).toContain(MIGRATION);
+    expect((await migrationAudit()).length).toBe(before);
   }, 180_000);
 });

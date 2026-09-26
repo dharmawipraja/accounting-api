@@ -172,6 +172,27 @@ describe('Audit log (e2e)', () => {
     expect(rows.every((r) => r.method === 'CLI')).toBe(true);
   });
 
+  it('iter9: ?method=MIGRATION lists the rows data migrations wrote for their auto-fixes (and only them)', async () => {
+    const id = randomUUID();
+    await prisma.client.auditLog.create({
+      data: {
+        id,
+        method: 'MIGRATION',
+        path: '20261005000000_identifier_code_ci_unique',
+        body: { table: 'accounts', id: 'x', old: ' A ', new: 'A' },
+        statusCode: 200,
+        durationMs: 0,
+      },
+    });
+    const res = await request(app.getHttpServer() as App)
+      .get('/v1/audit?method=MIGRATION&limit=200')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const rows = res.body as { id: string; method: string; userId: null }[];
+    expect(rows.map((r) => r.id)).toContain(id);
+    expect(rows.every((r) => r.method === 'MIGRATION')).toBe(true);
+  });
+
   it('SEC-7: audit_log is append-only — UPDATE and DELETE are rejected', async () => {
     const id = randomUUID();
     await prisma.client.auditLog.create({

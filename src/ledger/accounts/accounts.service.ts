@@ -8,7 +8,10 @@ import {
   NotFoundDomainError,
   ValidationFailedError,
 } from '../../common/errors/domain-errors';
-import { mapUniqueViolation } from '../../common/errors/map-unique-violation';
+import {
+  mapUniqueViolation,
+  uniqueViolationIndex,
+} from '../../common/errors/map-unique-violation';
 import { CHART_OF_ACCOUNTS } from './chart-of-accounts.seed';
 import { Money } from '../../common/money/money';
 import { POSTED_JE } from '../balances/posted-entry.sql';
@@ -25,6 +28,10 @@ import {
  * range and the other 71_00x_001 keys (see domain-glossary.md lock table).
  */
 export const CASH_RETIRE_LOCK_KEY = 71_003_001;
+
+/** Partial unique index (migration 20260618000000_account_role) allowing one
+ *  holder per singleton role (every role except CASH). */
+const SINGLETON_ROLE_INDEX = 'accounts_singleton_role';
 
 export interface UpdateAccountInput {
   name?: string;
@@ -170,11 +177,9 @@ export class AccountsService implements OnModuleInit {
    *  the soft-delete extension: `deleted_at IS NULL` is explicit). */
   private async findLiveByCode(
     code: string,
-  ): Promise<{ id: string; is_postable: boolean } | undefined> {
-    const rows = await this.prisma.client.$queryRaw<
-      { id: string; is_postable: boolean }[]
-    >`
-      SELECT id, is_postable FROM accounts
+  ): Promise<{ id: string } | undefined> {
+    const rows = await this.prisma.client.$queryRaw<{ id: string }[]>`
+      SELECT id FROM accounts
       WHERE lower(code) = lower(${code}) AND deleted_at IS NULL
       LIMIT 1`;
     return rows[0];
@@ -234,44 +239,69 @@ export class AccountsService implements OnModuleInit {
       }
     }
 
-    let parentId: string | null = null;
-    if (input.parentCode) {
-      // Case-insensitive: codes are unique case-insensitively, so "hdr-1"
-      // names the live "HDR-1" header unambiguously.
-      const parent = await this.findLiveByCode(input.parentCode);
-      if (!parent) {
-        throw new ValidationFailedError('Parent account not found', {
-          parentCode: input.parentCode,
-        });
-      }
-      if (parent.is_postable) {
-        throw new ValidationFailedError(
-          'Parent account must be a non-postable header',
-          { parentCode: input.parentCode },
-        );
-      }
-      parentId = parent.id;
-    }
-
     try {
-      return await this.prisma.client.account.create({
-        data: {
-          code: input.code,
-          name: input.name,
-          type: input.type,
-          subtype: input.subtype,
-          normalBalance: input.normalBalance,
-          cashFlowCategory: input.cashFlowCategory ?? 'NONE',
-          role: input.role ?? null,
-          isPostable: input.isPostable ?? true,
-          parentId,
-        },
+      // One tx: the parent header is read FOR SHARE, so a concurrent
+      // delete / deactivate of it (FOR UPDATE in lockForRetire, which then
+      // counts children) serializes with this insert — either it sees the
+      // new child (422 HAS_CHILDREN) or this create sees the header retired.
+      return await this.prisma.transaction(async (tx) => {
+        const parentId = input.parentCode
+          ? await this.lockParentHeader(tx, input.parentCode)
+          : null;
+        return tx.account.create({
+          data: {
+            code: input.code,
+            name: input.name,
+            type: input.type,
+            subtype: input.subtype,
+            normalBalance: input.normalBalance,
+            cashFlowCategory: input.cashFlowCategory ?? 'NONE',
+            role: input.role ?? null,
+            isPostable: input.isPostable ?? true,
+            parentId,
+          },
+        });
       });
     } catch (err) {
+      // The role pre-check above lost a race with a concurrent create of the
+      // same singleton role: answer the role conflict, not a code conflict.
+      if (uniqueViolationIndex(err) === SINGLETON_ROLE_INDEX)
+        throw new ConflictDomainError('That account role is already assigned', {
+          role: input.role,
+        });
       mapUniqueViolation(err, 'Account code already exists', {
         code: input.code,
       });
     }
+  }
+
+  /** The live, ACTIVE, non-postable header `parentCode` names (matched
+   *  case-insensitively, like code uniqueness), read FOR SHARE; 422
+   *  otherwise. Returns its id. */
+  private async lockParentHeader(
+    tx: LedgerTx,
+    parentCode: string,
+  ): Promise<string> {
+    const [parent] = await tx.$queryRaw<
+      { id: string; is_postable: boolean; is_active: boolean }[]
+    >`
+      SELECT id, is_postable, is_active FROM accounts
+      WHERE lower(code) = lower(${parentCode}) AND deleted_at IS NULL
+      LIMIT 1 FOR SHARE`;
+    if (!parent)
+      throw new ValidationFailedError('Parent account not found', {
+        parentCode,
+      });
+    if (parent.is_postable)
+      throw new ValidationFailedError(
+        'Parent account must be a non-postable header',
+        { parentCode },
+      );
+    if (!parent.is_active)
+      throw new ValidationFailedError('Parent account must be active', {
+        parentCode,
+      });
+    return parent.id;
   }
 
   async update(id: string, raw: UpdateAccountInput): Promise<Account> {
@@ -387,6 +417,24 @@ export class AccountsService implements OnModuleInit {
       WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
     if (rows.length === 0)
       throw new NotFoundDomainError('Account not found', { id });
+    // A header must not be retired over live children: deleting it would
+    // orphan them (parent_id → a tombstone), deactivating it over ACTIVE
+    // children would leave active accounts under an inactive header.
+    // Children are created under the header's FOR SHARE lock
+    // (lockParentHeader), so this count under FOR UPDATE is race-free.
+    const [{ children }] = await tx.$queryRaw<{ children: number }[]>`
+      SELECT COUNT(*)::int AS children FROM accounts
+      WHERE parent_id = ${id} AND deleted_at IS NULL
+        AND (${action === 'delete'} OR is_active)`;
+    // 422 HAS_CHILDREN — the VALIDATION_FAILED + details.reason shape of
+    // OPEN_ITEMS / TAX_ACCOUNT.
+    if (children > 0)
+      throw new ValidationFailedError(
+        action === 'delete'
+          ? 'Cannot delete an account that still has child accounts; delete them first'
+          : 'Cannot deactivate an account that still has active child accounts; deactivate them first',
+        { id, reason: 'HAS_CHILDREN', children },
+      );
     if (rows[0].role === 'CASH') {
       await this.assertCashRetirable(tx, id, action);
     } else if (rows[0].role !== null) {
