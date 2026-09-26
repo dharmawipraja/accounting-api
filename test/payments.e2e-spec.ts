@@ -10,7 +10,7 @@ import { TaxCodesService } from '../src/tax/tax-codes.service';
 import { BusinessPartnersService } from '../src/invoicing/business-partners.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
-import { bootstrapTestApp, tomorrowWib } from './e2e-helpers';
+import { bootstrapTestApp, tomorrowWib, wibDayPlus } from './e2e-helpers';
 
 describe('Payments (e2e)', () => {
   let app: INestApplication;
@@ -1045,6 +1045,59 @@ describe('Payments (e2e)', () => {
       .set('Authorization', `Bearer ${acct}`)
       .expect(200);
     expect((inv.body as { amountPaid: string }).amountPaid).toBe('0.0000');
+  });
+
+  it('final: a future-dated payment voids with an explicit date equal to its own date (200); a date after both today and it → 422 { date, today, originalDate }', async () => {
+    const customerId = await newCustomer('CUST-PAY-VOID-FUTURE');
+    const invoiceId = await makePostedInvoice(customerId);
+    const own = wibDayPlus(3);
+    const r = await request(server())
+      .post('/v1/payments')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        direction: 'RECEIPT',
+        partnerId: customerId,
+        date: own,
+        cashAccountId: acc['1-1000'],
+        allocations: [{ salesInvoiceId: invoiceId, amount: '100000' }],
+      })
+      .expect(201);
+    const paymentId = (r.body as { id: string }).id;
+    await request(server())
+      .post(`/v1/payments/${paymentId}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+    const tooLate = await request(server())
+      .post(`/v1/payments/${paymentId}/void`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ date: wibDayPlus(4) })
+      .expect(422);
+    const tb = tooLate.body as {
+      code: string;
+      details: Record<string, string>;
+    };
+    expect(tb.code).toBe('VALIDATION_FAILED');
+    expect(tb.details).toEqual({
+      date: wibDayPlus(4),
+      today: wibDayPlus(0),
+      originalDate: own,
+    });
+    const still = await prisma.client.payment.findFirstOrThrow({
+      where: { id: paymentId },
+    });
+    expect(still.status).toBe('POSTED');
+    const res = await request(server())
+      .post(`/v1/payments/${paymentId}/void`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ date: own })
+      .expect(200);
+    const body = res.body as { status: string; voidedOn: string };
+    expect(body.status).toBe('VOID');
+    expect(body.voidedOn.slice(0, 10)).toBe(own);
   });
 
   it('no-body payment void stores voidedOn = payment date', async () => {

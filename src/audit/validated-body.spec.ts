@@ -1,6 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
 import { IsString, MaxLength } from 'class-validator';
-import { globalValidationPipe, isBodyValidated } from './validated-body';
+import {
+  GLOBAL_VALIDATION_OPTIONS,
+  globalValidationPipe,
+  isBodyValidated,
+} from './validated-body';
 
 class Dto {
   @IsString() @MaxLength(5) name!: string;
@@ -45,5 +49,17 @@ describe('AuditingValidationPipe (validated-body mark)', () => {
     for (const v of [undefined, null, 'x', 1]) {
       expect(isBodyValidated(v)).toBe(false);
     }
+  });
+
+  it('GLOBAL_VALIDATION_OPTIONS is frozen (shared by main.ts and every e2e bootstrap)', () => {
+    expect(Object.isFrozen(GLOBAL_VALIDATION_OPTIONS)).toBe(true);
+    expect(() => {
+      (GLOBAL_VALIDATION_OPTIONS as { whitelist?: boolean }).whitelist = false;
+    }).toThrow(TypeError);
+    expect(GLOBAL_VALIDATION_OPTIONS).toEqual({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    });
   });
 });

@@ -73,7 +73,9 @@ describe('Audit covers timed-out requests (e2e)', () => {
 
   it('iter6: a 408 on a body the ValidationPipe accepted stores the FULL body (512 KiB tier), not an 8 KiB marker', async () => {
     const journal = app.get(JournalService);
-    // The write "commits" (stub) but the handler outlives REQUEST_TIMEOUT_MS.
+    // A slow handler that never writes anything: the stub sleeps past
+    // REQUEST_TIMEOUT_MS and then throws (nothing is committed) — only the
+    // interceptor's 408 audit row, carrying the accepted body, is under test.
     jest.spyOn(journal, 'createDraft').mockImplementation(async () => {
       await sleep(2_500);
       throw new Error('stub handler should have been cut off');

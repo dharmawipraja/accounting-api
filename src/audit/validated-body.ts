@@ -51,13 +51,16 @@ export class AuditingValidationPipe extends ValidationPipe {
 }
 
 /** The app's strict global validation options (main.ts and every e2e
- *  bootstrap share them). */
-export const GLOBAL_VALIDATION_OPTIONS: ValidationPipeOptions = {
-  whitelist: true,
-  forbidNonWhitelisted: true,
-  transform: true,
-};
+ *  bootstrap share them). Frozen: a shared module-level object must not be
+ *  loosened at runtime by one consumer for all the others. */
+export const GLOBAL_VALIDATION_OPTIONS: Readonly<ValidationPipeOptions> =
+  Object.freeze({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
+  });
 
 export function globalValidationPipe(): AuditingValidationPipe {
-  return new AuditingValidationPipe(GLOBAL_VALIDATION_OPTIONS);
+  // A fresh copy per pipe: ValidationPipe's constructor takes a mutable type.
+  return new AuditingValidationPipe({ ...GLOBAL_VALIDATION_OPTIONS });
 }
