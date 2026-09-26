@@ -17,8 +17,8 @@ import { UnauthorizedDomainError } from '../common/errors/domain-errors';
 export const REFRESH_SESSION_LOCK_NS = 71_002;
 
 /**
- * Per-user serialization point for every refresh-token writer (rotate, revoke
- * one family, revoke all). Row locks alone are not enough: a revoke's UPDATE
+ * Per-user serialization point for every refresh-token writer (issue, rotate,
+ * revoke one family, revoke all). Row locks alone are not enough: a revoke's UPDATE
  * snapshot predates a successor that a concurrent rotate INSERTs, so the
  * successor would survive the revoke. Holding this lock first means the revoke's
  * UPDATE statement starts only after the rotate committed (READ COMMITTED → a
@@ -48,8 +48,13 @@ export class RefreshTokenService {
   async issue(userId: string): Promise<{ jti: string; familyId: string }> {
     const jti = randomUUID();
     const familyId = randomUUID();
-    await this.prisma.client.refreshToken.create({
-      data: { id: jti, userId, familyId, expiresAt: this.expiresAt() },
+    // Same per-user lock as rotate/revoke: a login racing a password reset /
+    // logout-all either commits first (and is then revoked) or runs after it.
+    await this.prisma.transaction(async (tx) => {
+      await lockUserSessions(tx, userId);
+      await tx.refreshToken.create({
+        data: { id: jti, userId, familyId, expiresAt: this.expiresAt() },
+      });
     });
     return { jti, familyId };
   }

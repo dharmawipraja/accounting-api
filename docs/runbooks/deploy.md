@@ -12,8 +12,9 @@
   only `A-Z a-z 0-9 . _ ~ -` (e.g. `openssl rand -hex 24`). A reserved character
   (`@ : / ? # % [ ]`, space…) breaks or mis-parses the URL. Where you build a URL by
   hand (e.g. a one-off `DATABASE_URL` for a rehearsal), percent-encode any such
-  character (`@` → `%40`). The `migrate` grants step (`ensure-app-role`) **refuses**
-  a non-URL-safe `APP_DB_PASSWORD` and fails the deploy before `api` starts. The two JWT secrets **must differ** (startup validation rejects equal
+  character (`@` → `%40`). The `migrate` service first runs `ensure-app-role --check-only`,
+  which **refuses** a non-URL-safe `APP_DB_PASSWORD` or `POSTGRES_PASSWORD` and fails
+  the deploy before any migration runs or `api` starts. The two JWT secrets **must differ** (startup validation rejects equal
   secrets); `JWT_ACCESS_TTL` must be ≤ 3600s and `JWT_REFRESH_TTL` ≤ 30d, each a whole
   number **with a unit** `s`/`m`/`h`/`d` (e.g. `900s`, `7d`) — a unitless `900` is rejected
   at startup (jsonwebtoken would read it as 900 ms).

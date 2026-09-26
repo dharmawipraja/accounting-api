@@ -3324,6 +3324,7 @@
             "required": false,
             "in": "query",
             "schema": {
+              "format": "uuid",
               "type": "string"
             }
           },
@@ -5058,18 +5059,22 @@
           },
           "npwp": {
             "type": "string",
+            "nullable": true,
             "maxLength": 32
           },
           "email": {
             "type": "string",
+            "nullable": true,
             "format": "email"
           },
           "phone": {
             "type": "string",
+            "nullable": true,
             "maxLength": 32
           },
           "address": {
             "type": "string",
+            "nullable": true,
             "maxLength": 255
           },
           "isCustomer": {

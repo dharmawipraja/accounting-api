@@ -207,13 +207,17 @@ describe('Auth Refresh Rotation (e2e)', () => {
   });
   describe('revocation serializes with a concurrent rotation', () => {
     /** Waits until at least `n` backends are blocked on a lock. */
-    async function waitForLockWaiters(n: number): Promise<void> {
-      for (let i = 0; i < 200; i++) {
+    async function waitForLockWaiters(
+      n: number,
+      stop: () => boolean = () => false,
+    ): Promise<void> {
+      for (let i = 0; i < 200 && !stop(); i++) {
         const [{ c }] = await prisma.client.$queryRaw<{ c: number }[]>`
           SELECT count(*)::int AS c FROM pg_locks WHERE NOT granted`;
         if (c >= n) return;
         await new Promise((r) => setTimeout(r, 25));
       }
+      if (stop()) return;
       throw new Error(`timed out waiting for ${n} lock waiter(s)`);
     }
 
@@ -282,6 +286,42 @@ describe('Auth Refresh Rotation (e2e)', () => {
       expect(
         await prisma.client.refreshToken.count({
           where: { userId, status: 'ACTIVE' },
+        }),
+      ).toBe(0);
+    }, 30_000);
+    it('a login (issue) racing revokeAllForUser cannot leave a surviving session', async () => {
+      const user = await app.get(UsersService).create({
+        email: 'race-issue@test.io',
+        password: 'secret123',
+        name: 'Race',
+        role: 'ACCOUNTANT',
+      });
+      const svc = app.get(RefreshTokenService);
+      const blocker = new Client({ connectionString: db.url });
+      await blocker.connect();
+      try {
+        await blocker.query('BEGIN');
+        // issue()'s INSERT stalls on its FK check (FOR KEY SHARE on users).
+        await blocker.query('SELECT 1 FROM users WHERE id = $1 FOR UPDATE', [
+          user.id,
+        ]);
+        const issueP = svc.issue(user.id);
+        await waitForLockWaiters(1);
+        let revokeDone = false;
+        const revokeP = svc.revokeAllForUser(user.id).then(() => {
+          revokeDone = true;
+        });
+        // With the per-user lock the revoke queues behind issue (2 waiters);
+        // without it the revoke finishes at once and misses the new family.
+        await waitForLockWaiters(2, () => revokeDone);
+        await blocker.query('COMMIT');
+        await Promise.all([issueP, revokeP]);
+      } finally {
+        await blocker.end();
+      }
+      expect(
+        await prisma.client.refreshToken.count({
+          where: { userId: user.id, status: 'ACTIVE' },
         }),
       ).toBe(0);
     }, 30_000);

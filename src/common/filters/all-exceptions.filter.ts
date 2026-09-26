@@ -22,6 +22,7 @@ import {
   shouldAuditRejection,
   type AuditableRequest,
 } from '../../audit/audit-request';
+import { RejectionAuditLimiter } from '../../audit/rejection-audit-limiter';
 
 interface ErrorEnvelope {
   code: string;
@@ -34,10 +35,26 @@ interface ErrorEnvelope {
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
 
+  private readonly rejectionLimiter: RejectionAuditLimiter;
+
   /** @param audit when given, mutating requests rejected by a GUARD (401/403/
    *  429 — guards run before AuditInterceptor) are audited here: one row, no
-   *  body for 401 (unauthenticated input is not trusted into the log). */
-  constructor(private readonly audit?: Pick<AuditService, 'record'>) {}
+   *  body for 401 (unauthenticated input is not trusted into the log). The row
+   *  is written fire-and-forget AFTER the response, and capped per client IP
+   *  (anonymous 401s are not throttled — JwtAuthGuard runs first). */
+  constructor(
+    private readonly audit?: Pick<AuditService, 'record'>,
+    limiter?: RejectionAuditLimiter,
+  ) {
+    this.rejectionLimiter =
+      limiter ??
+      new RejectionAuditLimiter({
+        onSuppressed: (ip, n) =>
+          this.logger.warn(
+            `Suppressed ${n} guard-rejection audit row(s) from ${ip} (per-IP cap)`,
+          ),
+      });
+  }
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
@@ -126,23 +143,31 @@ export class AllExceptionsFilter implements ExceptionFilter {
     }
 
     if (req.id) envelope.traceId = req.id;
-    const send = () => {
-      response.status(status).json(envelope);
-    };
-    const auditable = req as AuditableRequest;
-    if (this.audit && shouldAuditRejection(auditable, status)) {
-      markAudited(auditable);
-      // record() never throws; respond once the row is written.
-      void this.audit
-        .record({
-          ...auditBaseOf(auditable, { withBody: status !== 401 }),
-          entityId: null,
-          statusCode: status,
-          durationMs: 0, // rejected before any handler work
-        })
-        .finally(send);
-      return;
+    response.status(status).json(envelope);
+    this.auditRejection(req as AuditableRequest, status);
+  }
+
+  /** Guard rejection → one audit row, fire-and-forget after the response:
+   *  a slow or failing audit INSERT never delays or breaks the 401/403/429. */
+  private auditRejection(req: AuditableRequest, status: number): void {
+    if (!this.audit || !shouldAuditRejection(req, status)) return;
+    markAudited(req);
+    if (!this.rejectionLimiter.allow(req.ip ?? 'unknown')) return;
+    let pending: Promise<void>;
+    try {
+      pending = this.audit.record({
+        ...auditBaseOf(req, { withBody: status !== 401 }),
+        entityId: null,
+        statusCode: status,
+        durationMs: 0, // rejected before any handler work
+      });
+    } catch (err) {
+      pending = Promise.reject(
+        err instanceof Error ? err : new Error(String(err)),
+      );
     }
-    send();
+    pending.catch((err: unknown) =>
+      this.logger.warn(`Guard-rejection audit write failed: ${String(err)}`),
+    );
   }
 }

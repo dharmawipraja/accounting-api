@@ -5,6 +5,8 @@ import { type App } from 'supertest/types';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
+import { AuditService } from '../src/audit/audit.service';
+import type { Prisma } from '@prisma/client';
 import { bootstrapTestApp } from './e2e-helpers';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -40,6 +42,17 @@ describe('Audit log (e2e)', () => {
   }, 120_000);
 
   afterAll(() => cleanup());
+  afterEach(() => jest.restoreAllMocks());
+
+  /** Guard-rejection rows are written fire-and-forget AFTER the response. */
+  async function waitForRows(where: Prisma.AuditLogWhereInput, n = 1) {
+    for (let i = 0; i < 100; i++) {
+      const rows = await prisma.client.auditLog.findMany({ where });
+      if (rows.length >= n) return rows;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    return prisma.client.auditLog.findMany({ where });
+  }
 
   it('records a mutating request and redacts the password', async () => {
     const before = await prisma.client.auditLog.count();
@@ -184,9 +197,7 @@ describe('Audit log (e2e)', () => {
       .set('X-Request-Id', 'audit-guard-401')
       .send({ code: 'AUD-401', name: 'Anon', isCustomer: true })
       .expect(401);
-    const rows = await prisma.client.auditLog.findMany({
-      where: { clientRequestId: 'audit-guard-401' },
-    });
+    const rows = await waitForRows({ clientRequestId: 'audit-guard-401' });
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       method: 'POST',
@@ -205,9 +216,7 @@ describe('Audit log (e2e)', () => {
       .set('X-Request-Id', 'audit-guard-403')
       .send({ code: 'AUD-403', name: 'Viewer', isCustomer: true, token: 'x' })
       .expect(403);
-    const rows = await prisma.client.auditLog.findMany({
-      where: { clientRequestId: 'audit-guard-403' },
-    });
+    const rows = await waitForRows({ clientRequestId: 'audit-guard-403' });
     expect(rows).toHaveLength(1);
     expect(rows[0].statusCode).toBe(403);
     expect(rows[0].userId).toBeTruthy();
@@ -226,5 +235,28 @@ describe('Audit log (e2e)', () => {
       .get('/v1/partners')
       .expect(401);
     expect(await prisma.client.auditLog.count()).toBe(before);
+  });
+  it('a guard 401 is answered even when the audit write hangs (row is fire-and-forget)', async () => {
+    const record = jest
+      .spyOn(app.get(AuditService), 'record')
+      .mockImplementation(() => new Promise<void>(() => undefined));
+    const started = Date.now();
+    await request(app.getHttpServer() as App)
+      .post('/v1/partners')
+      .send({ code: 'AUD-HANG', name: 'Hang', isCustomer: true })
+      .expect(401);
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(record).toHaveBeenCalledTimes(1);
+  });
+
+  it('caps the audited path at 512 chars (query strings can be ~16KB)', async () => {
+    await request(app.getHttpServer() as App)
+      .post(`/v1/partners?pad=${'z'.repeat(2_000)}`)
+      .set('X-Request-Id', 'audit-long-path')
+      .send({ code: 'AUD-LONG', name: 'Long', isCustomer: true })
+      .expect(401);
+    const [row] = await waitForRows({ clientRequestId: 'audit-long-path' });
+    expect(row.path).toHaveLength(512);
+    expect(row.path.startsWith('/v1/partners?pad=zzz')).toBe(true);
   });
 });

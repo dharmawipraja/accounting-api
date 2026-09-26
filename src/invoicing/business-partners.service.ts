@@ -21,7 +21,14 @@ export interface CreatePartnerInput {
   isCustomer?: boolean;
   isVendor?: boolean;
 }
-export type UpdatePartnerInput = Partial<Omit<CreatePartnerInput, 'code'>> & {
+export type UpdatePartnerInput = Partial<
+  Omit<CreatePartnerInput, 'code' | 'npwp' | 'email' | 'phone' | 'address'>
+> & {
+  // nullable columns: `null` clears the stored value
+  npwp?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
   isActive?: boolean;
 };
 

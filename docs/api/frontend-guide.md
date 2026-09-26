@@ -969,7 +969,7 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing).
 
 ### Audit
 
-- `GET    /v1/audit` · ADMIN · audit log — **bare array** (no envelope) (filters: `userId, method, from, to, limit, offset`; `limit` default 50, **max 200**; `method` ∈ POST/PATCH/PUT/DELETE). One row per mutating request — including requests cut off with `408` and requests rejected by auth/role/throttle guards (`401`/`403`/`429`; a `401` row stores no body). `requestId` = the server trace id; `clientRequestId` = your sanitized `X-Request-Id` (or `null`)
+- `GET    /v1/audit` · ADMIN · audit log — **bare array** (no envelope) (filters: `userId, method, from, to, limit, offset`; `limit` default 50, **max 200**; `method` ∈ POST/PATCH/PUT/DELETE). One row per mutating request — including requests cut off with `408` and requests rejected by auth/role/throttle guards (`401`/`403`/`429`; a `401` row stores no body; these rejection rows are capped at 60 per client IP per minute). `path` (with query string) and `params` are truncated to 512 chars. `userId` filter must be a UUID (else `400`). `requestId` = the server trace id; `clientRequestId` = your sanitized `X-Request-Id` (or `null`)
 
 ### Response schema quick-map
 

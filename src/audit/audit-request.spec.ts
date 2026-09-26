@@ -75,3 +75,24 @@ describe('shouldAuditRejection', () => {
     expect(shouldAuditRejection(audited, 403)).toBe(false);
   });
 });
+
+describe('auditBaseOf size caps', () => {
+  it('caps path at 512 chars and serializes oversized params to ≤ 512 chars', () => {
+    const base = auditBaseOf(
+      req({
+        originalUrl: '/v1/partners?q=' + 'x'.repeat(2_000),
+        params: { a: 'y'.repeat(2_000) },
+      }),
+      { withBody: true },
+    );
+    expect(base.path).toHaveLength(512);
+    expect(typeof base.params).toBe('string');
+    expect((base.params as string).length).toBeLessThanOrEqual(512);
+  });
+
+  it('keeps small params as an object', () => {
+    expect(auditBaseOf(req(), { withBody: true }).params).toEqual({
+      id: 'p1',
+    });
+  });
+});

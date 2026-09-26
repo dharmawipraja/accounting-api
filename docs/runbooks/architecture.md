@@ -97,8 +97,14 @@ Guards run in registration order:
   blanket 500), exactly once — including a `408` (rxjs `timeout` unsubscribes from
   everything inside it, so an inner audit would miss it). Guard rejections
   (`401/403/429`) happen before any interceptor; `AllExceptionsFilter` (given the
-  `AuditService` in `main.ts`) writes their row (no body for 401). A request-level
-  `AUDITED` marker (`src/audit/audit-request.ts`) prevents a second row.
+  `AuditService` in `main.ts`) writes their row (no body for 401) **after** sending
+  the response, fire-and-forget (a failed write is logged at warn), capped at **60
+  rejection rows per client IP per minute** (`src/audit/rejection-audit-limiter.ts`,
+  in-process, ≤ 10k IPs; suppressed counts logged once per window). Only
+  401/403/429 are audited this way — a throttler-storage outage `503` and route 404s
+  are not. A request-level `AUDITED` marker (`src/audit/audit-request.ts`) prevents
+  a second row. Every row caps `path` (incl. query string) and serialized `params`
+  at 512 chars.
 - **`MetricsInterceptor`** (`src/metrics/metrics.module.ts`) — HTTP-duration
   histogram labelled by method/route/status.
 - **`RequestTimeoutInterceptor`** (`src/common/interceptors/request-timeout.interceptor.ts`,

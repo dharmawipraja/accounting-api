@@ -77,6 +77,37 @@ describe('DB app role — accounting_app is least-privilege and runs the app (e2
     await cleanup();
   });
 
+  const runEnsure = (env: Record<string, string>, args: string[] = []) => {
+    try {
+      execFileSync('node', ['scripts/db/ensure-app-role.js', ...args], {
+        env: { ...process.env, DATABASE_URL: db.url, ...env },
+        encoding: 'utf8',
+        stdio: 'pipe',
+      });
+      return { ok: true, stderr: '' };
+    } catch (err) {
+      return { ok: false, stderr: String((err as { stderr?: string }).stderr) };
+    }
+  };
+
+  it('ensure-app-role also refuses a non-URL-safe POSTGRES_PASSWORD, and --check-only validates without connecting', () => {
+    const bad = runEnsure(
+      { APP_DB_PASSWORD: APP_PW, POSTGRES_PASSWORD: 'own@er' },
+      ['--check-only'],
+    );
+    expect(bad.ok).toBe(false);
+    expect(bad.stderr).toMatch(/POSTGRES_PASSWORD must be URL-safe/);
+    const good = runEnsure(
+      {
+        APP_DB_PASSWORD: APP_PW,
+        POSTGRES_PASSWORD: 'owner-pw_1.2~x',
+        DATABASE_URL: 'postgresql://nobody:x@127.0.0.1:1/none',
+      },
+      ['--check-only'],
+    );
+    expect(good).toEqual({ ok: true, stderr: '' });
+  });
+
   it('ensure-app-role refuses an APP_DB_PASSWORD that is not URL-safe (it is interpolated raw into the api DATABASE_URL)', () => {
     for (const bad of ['p@ss', 'a/b', 'x:y', 'has space', '100%', 'q?z#']) {
       let stderr = '';

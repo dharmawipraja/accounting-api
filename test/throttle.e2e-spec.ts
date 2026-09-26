@@ -47,9 +47,16 @@ describe('Throttle policy (e2e)', () => {
 
     // A guard rejection (the throttler runs before interceptors) is still
     // audited — one row, status 429, body redacted as usual.
-    const throttled = await prisma.client.auditLog.findMany({
+    // (written fire-and-forget after the response — poll briefly)
+    let throttled = await prisma.client.auditLog.findMany({
       where: { path: '/v1/auth/login', statusCode: 429 },
     });
+    for (let i = 0; i < 100 && throttled.length === 0; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      throttled = await prisma.client.auditLog.findMany({
+        where: { path: '/v1/auth/login', statusCode: 429 },
+      });
+    }
     expect(throttled).toHaveLength(1);
     expect(throttled[0].body).toEqual({
       email: 'thr@test.io',

@@ -29,6 +29,21 @@ export type AuditBase = Omit<
   'statusCode' | 'durationMs' | 'entityId'
 >;
 
+/** Size caps for request-derived audit fields (every row). The path includes
+ *  the query string (up to the 16KB header limit) and params are caller input. */
+export const AUDIT_PATH_MAX = 512;
+export const AUDIT_PARAMS_MAX = 512;
+
+function capParams(params: Record<string, unknown> | undefined): unknown {
+  const value = params ?? {};
+  const json = JSON.stringify(value);
+  // Small (the normal case): keep the object. Oversized: store a truncated
+  // JSON string (still valid JSON for the column), never the full payload.
+  return json.length <= AUDIT_PARAMS_MAX
+    ? value
+    : json.slice(0, AUDIT_PARAMS_MAX);
+}
+
 export function isMutating(method: string): boolean {
   return MUTATING.has(method);
 }
@@ -47,8 +62,8 @@ export function auditBaseOf(
     userId: req.user?.id ?? null,
     userRole: req.user?.role ?? null,
     method: req.method,
-    path: req.originalUrl ?? req.url,
-    params: req.params ?? {},
+    path: (req.originalUrl ?? req.url).slice(0, AUDIT_PATH_MAX),
+    params: capParams(req.params),
     body: opts.withBody ? sanitize(req.body) : {},
     ip: req.ip ?? null,
     requestId:

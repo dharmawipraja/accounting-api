@@ -245,12 +245,16 @@ mechanics, and [`./deploy.md`](./deploy.md) for production deploys.
   only `/health` is public. Healthchecks and Prometheus reach `api:3000` directly.
 - **Fix:** Probe readiness from inside the network (see deploy.md "Edge exposure").
 
-### `migrate` fails: "APP_DB_PASSWORD must be URL-safe"
+### `migrate` fails: "APP_DB_PASSWORD / POSTGRES_PASSWORD must be URL-safe"
 
 - **Cause:** The password contains a character outside `A-Z a-z 0-9 . _ ~ -`. Compose
-  embeds it unencoded in the api's `DATABASE_URL`, which would break.
+  embeds it unencoded in a `DATABASE_URL` (api / migrate / backup), which would
+  break. `migrate` checks both (`ensure-app-role.js --check-only`) before
+  `prisma migrate deploy`.
 - **Fix:** Generate a new one (`openssl rand -hex 24`), put it in `.env`, redeploy
-  (`migrate` re-sets the role password). The same rule applies to `POSTGRES_PASSWORD`.
+  (`migrate` re-sets the role password). Changing `POSTGRES_PASSWORD` on an existing
+  volume also needs `ALTER ROLE accounting PASSWORD '…'` first — the owner password
+  lives in the data volume.
 
 ### The `X-Request-Id` I sent is not echoed back / not in `audit_log.request_id`
 

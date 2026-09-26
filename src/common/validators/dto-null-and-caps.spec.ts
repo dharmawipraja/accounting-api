@@ -13,6 +13,7 @@ import { CreateJournalEntryDto } from '../../ledger/journal/dto/create-journal-e
 import { JournalLineDto } from '../../ledger/journal/dto/journal-line.dto';
 import { RefreshDto } from '../../auth/dto/refresh.dto';
 import { LogoutDto } from '../../auth/dto/logout.dto';
+import { AuditQueryDto } from '../../audit/dto/audit-query.dto';
 
 type Ctor = new () => object;
 
@@ -129,5 +130,18 @@ describe('@MaxLength caps on free-text inputs', () => {
     const over = s(max + 1);
     expect(failing(cls, { ...base, [field]: value })).not.toContain(field);
     expect(failing(cls, { ...base, [field]: over })).toContain(field);
+  });
+});
+
+describe('AuditQueryDto', () => {
+  it('userId must be a UUID', () => {
+    expect(failing(AuditQueryDto, { userId: 'not-a-uuid' })).toEqual([
+      'userId',
+    ]);
+    expect(
+      failing(AuditQueryDto, {
+        userId: '8f14e45f-ceea-467a-9575-6a2c3a1c1e11',
+      }),
+    ).toEqual([]);
   });
 });

@@ -8,6 +8,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 import { ConflictDomainError } from '../errors/domain-errors';
+import { RejectionAuditLimiter } from '../../audit/rejection-audit-limiter';
 
 function mockHost(): {
   host: ArgumentsHost;
@@ -368,5 +369,47 @@ describe('AllExceptionsFilter guard-rejection audit', () => {
     expect(record).not.toHaveBeenCalled();
     expect(get.code()).toBe(401);
     expect(notFound.code()).toBe(404);
+  });
+  it('responds first; a failing or throwing audit write is swallowed (no unhandled rejection)', async () => {
+    const unhandled = jest.fn();
+    process.on('unhandledRejection', unhandled);
+    try {
+      for (const record of [
+        jest.fn().mockRejectedValue(new Error('db down')),
+        jest.fn(() => {
+          throw new Error('sync boom');
+        }),
+        jest.fn(() => new Promise<void>(() => undefined)), // hangs forever
+      ]) {
+        const filter = new AllExceptionsFilter({ record });
+        const m = hostFor({ method: 'POST', url: '/v1/x', params: {} });
+        filter.catch(new HttpException('Unauthorized', 401), m.host);
+        expect(m.code()).toBe(401); // sent synchronously, before the write settles
+        expect(record).toHaveBeenCalledTimes(1);
+      }
+      await flush();
+      await flush();
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
+  });
+
+  it('caps rejection rows per client IP', () => {
+    const record = jest.fn().mockResolvedValue(undefined);
+    const filter = new AllExceptionsFilter(
+      { record },
+      new RejectionAuditLimiter({ limit: 2 }),
+    );
+    const fire = (ip: string) =>
+      filter.catch(
+        new HttpException('Unauthorized', 401),
+        hostFor({ method: 'POST', url: '/v1/x', params: {}, ip }).host,
+      );
+    fire('1.1.1.1');
+    fire('1.1.1.1');
+    fire('1.1.1.1'); // suppressed
+    fire('2.2.2.2');
+    expect(record).toHaveBeenCalledTimes(3);
   });
 });

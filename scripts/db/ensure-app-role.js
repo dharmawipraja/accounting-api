@@ -3,6 +3,7 @@
  * after `prisma migrate deploy`:
  *
  *   DATABASE_URL=<owner url> APP_DB_PASSWORD=<pw> node scripts/db/ensure-app-role.js
+ *   (add --check-only to only validate that the DB passwords are URL-safe)
  *
  * Connects as the schema OWNER (DATABASE_URL — the same URL migrate used) and
  * applies scripts/db/app-role.sql: (re)creates the `accounting_app` role with
@@ -27,11 +28,27 @@ async function main() {
   const password = process.env.APP_DB_PASSWORD;
   if (!connectionString) throw new Error('DATABASE_URL (owner) is required');
   if (!password) throw new Error('APP_DB_PASSWORD is required');
+  // The owner password is interpolated the same way into the migrate
+  // DATABASE_URL (compose passes it as POSTGRES_PASSWORD too, for this check).
+  const ownerPassword = process.env.POSTGRES_PASSWORD;
+  if (ownerPassword !== undefined && !URL_SAFE_PASSWORD.test(ownerPassword)) {
+    throw new Error(
+      'POSTGRES_PASSWORD must be URL-safe (only A-Z a-z 0-9 . _ ~ -) because it is ' +
+        'embedded unencoded in the migrate/backup DATABASE_URL; generate one with `openssl rand -hex 24`',
+    );
+  }
   if (!URL_SAFE_PASSWORD.test(password)) {
     throw new Error(
       'APP_DB_PASSWORD must be URL-safe (only A-Z a-z 0-9 . _ ~ -) because it is ' +
         'embedded unencoded in the api DATABASE_URL; generate one with `openssl rand -hex 24`',
     );
+  }
+
+  // `--check-only`: validate the env and exit (the migrate service runs this
+  // BEFORE `prisma migrate deploy`, so a bad password fails with a clear message).
+  if (process.argv.includes('--check-only')) {
+    console.log('ensure-app-role: database passwords are URL-safe');
+    return;
   }
 
   const sql = fs.readFileSync(path.join(__dirname, 'app-role.sql'), 'utf8');
