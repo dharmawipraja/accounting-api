@@ -10,6 +10,9 @@ build
 .env
 .env.*
 !.env.example
+# Prometheus scrape token (docker-compose.monitoring.yml mounts this dir)
+monitoring/secrets/*
+!monitoring/secrets/.gitkeep
 
 # Test coverage
 coverage

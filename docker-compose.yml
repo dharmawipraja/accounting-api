@@ -49,8 +49,10 @@ services:
       THROTTLE_REFRESH_LIMIT: ${THROTTLE_REFRESH_LIMIT:-30}
       THROTTLE_CHANGE_PASSWORD_LIMIT: ${THROTTLE_CHANGE_PASSWORD_LIMIT:-10}
       ARGON2_MAX_CONCURRENCY: ${ARGON2_MAX_CONCURRENCY:-8}
-      # Caddy -> api is exactly one proxy hop.
-      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
+      # This base file publishes the api directly (no Caddy in front), so no
+      # proxy hop is trusted: a client-sent X-Forwarded-For must not set req.ip.
+      # docker-compose.prod.yml (Caddy -> api = one hop) defaults it to 1.
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-0}
       REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-35000}
       REPORT_UTC_OFFSET_MINUTES: ${REPORT_UTC_OFFSET_MINUTES:-420}
       IDEMPOTENCY_INFLIGHT_TTL_MS: ${IDEMPOTENCY_INFLIGHT_TTL_MS:-120000}

@@ -9,12 +9,15 @@ alerting:
 scrape_configs:
   - job_name: api
     metrics_path: /metrics
-    # PRODUCTION: METRICS_TOKEN MUST be set on the api and this block MUST be
-    # uncommented with the same token. /metrics is fail-closed — unset token in
-    # production, or a set token with this block commented, both 401 the
-    # scrape and ApiDown fires. Only a non-production stack may leave both off.
-    # authorization:
-    #   credentials: '<METRICS_TOKEN>'
+    # The bearer token is read from an UNTRACKED file (never put it here):
+    # monitoring/secrets/metrics_token on the host, mounted read-only by
+    # docker-compose.monitoring.yml, holding the same value as the api's
+    # METRICS_TOKEN. /metrics is fail-closed in production (the compose api
+    # runs NODE_ENV=production): a missing/unreadable file, an unset
+    # METRICS_TOKEN or a mismatch all fail the scrape (up == 0 -> ApiDown).
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/secrets/metrics_token
     static_configs:
       - targets: ['api:3000']
   - job_name: node-exporter

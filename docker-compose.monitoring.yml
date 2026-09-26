@@ -13,6 +13,11 @@ services:
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      # Untracked, git-ignored dir holding `metrics_token` (same value as the
+      # api's METRICS_TOKEN; prometheus.yml reads it via credentials_file). The
+      # secret never lives in a tracked file, so CD's `git checkout` is never
+      # blocked by operator config. See deploy.md -> Monitoring.
+      - ./monitoring/secrets:/etc/prometheus/secrets:ro
       - prometheus_data:/prometheus
     ports: ['127.0.0.1:9090:9090']
 
@@ -122,6 +127,8 @@ volumes:
   loki_data:
   alloy_data:
   grafana_data:
+  # Same key as docker-compose.prod.yml's volume: with both files in one
+  # compose command they merge into the project's own `<project>_backup_metrics`
+  # (whatever the checkout directory / project name is), so node-exporter reads
+  # the backup sidecar's textfile metrics.
   backup_metrics:
-    external: true
-    name: accounting-api_backup_metrics

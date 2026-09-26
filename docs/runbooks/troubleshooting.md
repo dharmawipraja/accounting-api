@@ -340,9 +340,11 @@ mechanics, and [`./deploy.md`](./deploy.md) for production deploys.
   **fail-closed**: if `METRICS_TOKEN` is *unset*, `/metrics` 401s rather than
   exposing metrics openly; dev/test allow it for convenience.)
 - **Fix:** Give the scraper the matching bearer token. Keep the api's
-  `METRICS_TOKEN` and `monitoring/prometheus.yml`'s
-  `authorization.credentials` in sync — see the metrics-auth coupling note
-  (OPS-OBS-4) in [`./deploy.md`](./deploy.md).
+  `METRICS_TOKEN` and the untracked `monitoring/secrets/metrics_token` (read by
+  `prometheus.yml`'s `credentials_file`) in sync; a target error `unable to read
+  authorization credentials` means the file is missing or not readable by uid 65534
+  — see the metrics-auth coupling note (OPS-OBS-4) and Monitoring step 2 in
+  [`./deploy.md`](./deploy.md).
 
 ---
 

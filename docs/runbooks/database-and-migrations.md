@@ -215,7 +215,8 @@ rename the DB index — Prisma still emits the default index name (e.g.
 | `npm run create-admin -- <email> <password> "<name>"` | Bootstrap the first ADMIN user (see Seeding). |
 
 All `db:*` and `create-admin` scripts load `.env.development` via `dotenv-cli`, so
-they target the local dev database.
+they target the local dev database. (`scripts/create-admin.ts` itself reads only
+`process.env` — the production path below runs its compiled form with no dotenv file.)
 
 > **Stale "property does not exist" editor errors** after a schema change almost
 > always mean the client is stale — run `npm run db:generate`. The source of truth
@@ -280,7 +281,19 @@ no separate seed command for the core reference data:
   npm run create-admin -- admin@acme.co 's3cret!' "Budi Admin"
   ```
   `scripts/create-admin.ts` argon2-hashes the password and upserts the user via the
-  adapter-pg client. In prod, run it once against the deployed DB.
+  adapter-pg client (password 8-128 chars, the login endpoint's bounds; optionally
+  from `ADMIN_PASSWORD` instead of argv: `create-admin <email> "<name>"`).
+  **In production** there is no npm/npx in the api image and no host DB port, so run
+  the compiled copy the api image ships (`dist/scripts/create-admin.js`) in a one-off
+  api container — it uses the service's own `DATABASE_URL` (`accounting_app`; the
+  upsert is plain DML):
+  ```bash
+  COMPOSE='docker compose -f docker-compose.yml -f docker-compose.prod.yml'
+  read -rs ADMIN_PASSWORD && export ADMIN_PASSWORD
+  $COMPOSE run --rm --no-deps -e ADMIN_PASSWORD api \
+    node dist/scripts/create-admin.js admin@acme.co "Budi Admin"
+  ```
+  See `deploy.md` → *First install on a fresh VM*.
 
 > **Hand-authored partial unique** `purchase_bills_partner_vendor_invoice_norm_live_key`
 > (`20260930000000`, replacing the exact-match `purchase_bills_partner_vendor_invoice_live_key`

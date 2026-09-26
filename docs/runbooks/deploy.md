@@ -26,7 +26,9 @@
   `THROTTLE_LOGIN_IP_LIMIT` (per-client-IP login attempts/min across all emails, default 30),
   `ARGON2_MAX_CONCURRENCY` (concurrent password hash/verify per process, 1-64,
   default 8; callers queue ≤5s, then `503`),
-  `TRUST_PROXY_HOPS` (Express `trust proxy` hop count; compose sets 1 for Caddy → api),
+  `TRUST_PROXY_HOPS` (Express `trust proxy` hop count; `docker-compose.prod.yml` defaults it
+  to 1 for Caddy → api, the base `docker-compose.yml` alone — api published directly,
+  no Caddy — to 0),
   `THROTTLE_REFRESH_LIMIT` (per-IP refresh attempts/min, default 30),
   `THROTTLE_CHANGE_PASSWORD_LIMIT` (per-user change-password attempts/min, default 10),
   `JWT_ACCESS_TTL` / `JWT_REFRESH_TTL` (default `900s` / `7d`),
@@ -48,7 +50,7 @@
   production), `SENTRY_DSN` (unset = no error reporting), `SENTRY_ENVIRONMENT`
   (default `NODE_ENV`), `SENTRY_RELEASE`.
   Every one of these reaches the api only because `docker-compose.yml` (or, for the
-  two `DB_*` vars, `docker-compose.prod.yml`) passes it through as
+  two `DB_*` vars and the prod `TRUST_PROXY_HOPS` default, `docker-compose.prod.yml`) passes it through as
   `${VAR:-<default>}`; a var the app reads that is not listed there never reaches the
   container. Numeric/enum vars carry the app's own default (an empty string would fail
   startup validation); the empty-means-off vars (`CORS_ORIGIN`, `METRICS_TOKEN`,
@@ -90,6 +92,31 @@ $COMPOSE up -d --no-build
 ```
 `--no-build` matters: `api`/`migrate` keep a `build:` section for local builds, and
 without it compose could reuse a stale locally-built image.
+
+## First install on a fresh VM (checklist)
+
+1. Clone the repo into `$DEPLOY_PATH`, write the `.env` (see *Prerequisites*), and
+   deploy (*Deploy / upgrade* above; on a fresh volume the db init hook creates the
+   `accounting_app` role before the first migration).
+2. **Create the first ADMIN.** There is no registration endpoint. The api image
+   ships the compiled bootstrap script (`dist/scripts/create-admin.js`) and already
+   carries its `DATABASE_URL` (the least-privilege `accounting_app` URL — an upsert
+   on `users` is plain DML), so run it in a one-off api container (no npm, no dotenv
+   file, no host DB port needed). Pass the password via `ADMIN_PASSWORD` so it stays
+   out of shell history and `ps`:
+   ```bash
+   COMPOSE='docker compose -f docker-compose.yml -f docker-compose.prod.yml'
+   read -rs ADMIN_PASSWORD && export ADMIN_PASSWORD     # 8-128 chars (login's limits)
+   $COMPOSE run --rm --no-deps -e ADMIN_PASSWORD api \
+     node dist/scripts/create-admin.js admin@acme.co "Budi Admin"
+   unset ADMIN_PASSWORD
+   ```
+   It prints `✓ ADMIN ready: <email> (id …)`. The email is trimmed + lower-cased; an
+   existing user with that email is **updated** (new password, role ADMIN,
+   re-activated) — so the same command is the break-glass reset for a locked-out
+   last admin. Every further user is created by that ADMIN via `POST /v1/users`.
+3. Log in once (`POST https://$DOMAIN/v1/auth/login`) and do one read, e.g.
+   `GET /v1/users`, to confirm the stack end to end.
 
 ## First deploy of the audit-3 release (checklist)
 
@@ -258,7 +285,9 @@ skips those — the list below still applies to the ones that remain):
 Caddy (the TLS edge) **ignores any client-supplied `X-Forwarded-For` by default**
 to prevent spoofing — it sets `X-Forwarded-For` to the real connecting client
 before proxying to `api`. The app's `trust proxy` hop count (`TRUST_PROXY_HOPS`,
-default **1 in production**, 0 elsewhere; compose passes 1) makes `req.ip` the
+default **1 in production**, 0 elsewhere; `docker-compose.prod.yml` passes 1, while the
+base `docker-compose.yml` alone — which publishes the api with no Caddy in front —
+passes 0) makes `req.ip` the
 right-most `X-Forwarded-For` entry — the one Caddy wrote — so the per-IP login
 ceiling (`THROTTLE_LOGIN_IP_LIMIT`) and audit IPs use the true client address and
 cannot be bypassed with a forged header. **If you add a CDN/LB in front of Caddy,
@@ -313,23 +342,48 @@ activation, in order:
 
    ```bash
    GRAFANA_ADMIN_PASSWORD=<strong password>        # required
+   METRICS_TOKEN=<openssl rand -hex 32>            # required in production (see step 2)
    ALERT_SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...   # or ALERT_WEBHOOK_URL (see below)
    # ALERT_SLACK_CHANNEL=#alerts                   # optional override
    # ALERT_HEARTBEAT_URL=https://hc-ping.com/<uuid>  # optional dead-man's switch
    ```
 
-2. **Deploy with the overlay added** (same command as always, one more `-f`):
+2. **Give Prometheus the same token in an untracked file.** `monitoring/prometheus.yml`
+   (tracked, no secret) reads the scrape bearer token from
+   `credentials_file: /etc/prometheus/secrets/metrics_token`; the overlay mounts the
+   git-ignored host dir `monitoring/secrets/` there read-only. Nothing tracked is
+   edited, so CD's `git checkout --detach` is never blocked by operator config.
+   Prometheus runs as `nobody` (uid/gid 65534), so the file must be readable by that
+   uid — a plain `chmod 600` owned by your login user is **not** (the scrape then
+   fails with `permission denied`):
+
+   ```bash
+   set -a; . ./.env; set +a
+   (umask 077; printf '%s\n' "$METRICS_TOKEN" > monitoring/secrets/metrics_token)
+   sudo chown 65534:65534 monitoring/secrets/metrics_token   # stays mode 600
+   ```
+
+   The file is re-read on every scrape: to rotate, change `METRICS_TOKEN` in `.env`,
+   rewrite the file (with `sudo`), and recreate the api (`up -d api`) — no Prometheus
+   restart. A missing file does not stop Prometheus from starting; the api target is
+   just `down` (`unable to read authorization credentials`) and `ApiDown` fires.
+   (`promtool check config`, by contrast, reports `FAILED … metrics_token: no such
+   file` until the file exists — so a green check also proves the file is in place:
+   `$COMPOSE -f docker-compose.monitoring.yml exec prometheus promtool check config /etc/prometheus/prometheus.yml`.)
+
+3. **Deploy with the overlay added** (same command as always, one more `-f`):
 
    ```bash
    docker compose -f docker-compose.yml -f docker-compose.prod.yml \
      -f docker-compose.monitoring.yml up -d --build
    ```
 
-3. **Confirm delivery is armed:** `docker compose logs alertmanager | head`
+4. **Confirm delivery is armed:** `docker compose logs alertmanager | head`
    must show `alert delivery ACTIVE (...)` — a `WARN: no ALERT_*_URL set`
-   means step 1's variable didn't reach the container.
+   means step 1's variable didn't reach the container. Also confirm the scrape:
+   `http://127.0.0.1:9090/targets` (via the tunnel in the next step) shows `api` **UP**.
 
-4. **Open Grafana — via SSH tunnel.** Grafana (3001) and Prometheus (9090)
+5. **Open Grafana — via SSH tunnel.** Grafana (3001) and Prometheus (9090)
    bind to `127.0.0.1` on the VM on purpose (not exposed through Caddy):
 
    ```bash
@@ -340,16 +394,16 @@ activation, in order:
    The accounting dashboard and both datasources (Prometheus, Loki) are
    auto-provisioned; logs live under **Explore → Loki**.
 
-5. **Fire-drill the alerting** (do this once — an alert channel you've never
+6. **Fire-drill the alerting** (do this once — an alert channel you've never
    seen a message in is not activated): `docker compose stop api`, wait ~3
    minutes, confirm `ApiDown` lands in the channel, then
    `docker compose start api` and confirm the resolved notice.
 
-6. **Create the external uptime check** (OPS-OBS-5): a free UptimeRobot /
+7. **Create the external uptime check** (OPS-OBS-5): a free UptimeRobot /
    healthchecks.io / Better Stack probe on `https://$DOMAIN/health`, 1-minute
    interval — see the failure-domain note at the end of this section.
 
-Steps 1–5 are one sitting on the VM; step 6 is a two-minute signup anywhere.
+Steps 1–6 are one sitting on the VM; step 7 is a two-minute signup anywhere.
 
 ### Logs (Loki + Alloy)
 
@@ -371,11 +425,28 @@ logs — harmless. Positions persist in the `alloy_data` volume, so restarts
 resume instead of re-reading.
 
 > **Metrics auth coupling (OPS-OBS-4):** in production `METRICS_TOKEN` MUST be set on
-> the api AND the `authorization.credentials` block in `monitoring/prometheus.yml` MUST be
-> uncommented with the same token. `/metrics` is fail-closed: with the token unset it
-> answers `401` in production, and with the token set but the Prometheus credentials still
-> commented out the scrape also gets `401` — either way `up == 0` and the `ApiDown` alert
-> fires. (Only a non-production stack may leave both unset.)
+> the api AND `monitoring/secrets/metrics_token` MUST hold the same value (step 2 above;
+> never paste the token into `monitoring/prometheus.yml`). `/metrics` is fail-closed:
+> with the token unset it answers `401` in production, a mismatched file gets `401`, and a
+> missing/unreadable file fails the scrape before it is sent — each way `up == 0` and the
+> `ApiDown` alert fires. The compose api always runs `NODE_ENV=production`, so this
+> applies to every stack built from these files. **Upgrading a VM whose
+> `prometheus.yml` still has the token pasted in (older releases):** do this *before*
+> the deploy of this release — CD's `git checkout --detach` under `set -eu` aborts on
+> that local edit because this release changes the file: `git checkout --
+> monitoring/prometheus.yml` (drops the local edit), then after the checkout create
+> `monitoring/secrets/metrics_token` as in step 2 (the directory arrives with the new
+> commit; `mkdir -p monitoring/secrets` if you create the file first).
+>
+> **`backup_metrics` volume:** the overlay no longer declares it `external` with a
+> hard-coded `accounting-api_backup_metrics` name; it merges into the prod file's
+> volume of the same key, i.e. `<project>_backup_metrics` for whatever the checkout
+> directory (compose project) is called. An existing install in a directory named
+> `accounting-api` keeps using the same volume — nothing to do. (If you had created
+> that volume by hand with `docker volume create`, compose warns it "was not created
+> by Docker Compose" but uses it; to silence that, `docker volume rm` it while the
+> `backup`/`node-exporter` containers are stopped — it only holds the last backup's
+> textfile metrics, rewritten on the next backup run.)
 
 ### Activate alert delivery (OPS-OBS-1)
 

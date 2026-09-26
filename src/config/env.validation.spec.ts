@@ -152,8 +152,9 @@ describe('env validation', () => {
     expect(() => validate({ ...validEnv, TRUST_PROXY_HOPS: 'yes' })).toThrow();
   });
 
-  // docker-compose.yml passes optional vars as `${VAR:-<default>}`. With the
-  // operator's .env silent, these are exactly the values the api receives.
+  // docker-compose.yml (+ docker-compose.prod.yml for DB_* and the Caddy hop
+  // TRUST_PROXY_HOPS=1) passes optional vars as `${VAR:-<default>}`. With the
+  // operator's .env silent, these are exactly the values the prod api receives.
   const composeUnsetDefaults = {
     NODE_ENV: 'production',
     REDIS_URL: 'redis://redis:6379',
@@ -182,6 +183,10 @@ describe('env validation', () => {
   it('accepts the docker-compose passthrough values when the operator sets none', () => {
     expect(() =>
       validate({ ...validEnv, ...composeUnsetDefaults }),
+    ).not.toThrow();
+    // The base file alone (no Caddy in front) defaults TRUST_PROXY_HOPS to 0.
+    expect(() =>
+      validate({ ...validEnv, ...composeUnsetDefaults, TRUST_PROXY_HOPS: '0' }),
     ).not.toThrow();
   });
 

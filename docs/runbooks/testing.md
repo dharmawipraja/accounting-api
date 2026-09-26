@@ -237,9 +237,13 @@ Key rules:
   so HTTP responses match production shapes.
 - List endpoints return the `{ data, total, limit, offset }` envelope for the
   transactional lists — destructure `const { data } = await ...list()`.
-- **Year-end close fixtures use PAST years** (the existing specs use 2006–2017, each
-  suite its own years; `generatePeriods(<year>)` first). Close refuses a fiscal year
-  that has not ended (WIB today), so closing the current or next year fails.
+- **Year-end close fixtures use PAST years** (the existing specs use 2006–2017;
+  `generatePeriods(<year>)` first). Close refuses a fiscal year that has not ended
+  (WIB today), so closing the current or next year fails. Each spec **file** gets its
+  own Postgres testcontainer (`bootstrapTestApp()` → `startTestDb()` in its
+  `beforeAll`), so different files may reuse the same years (2006 appears in several);
+  within one file the DB is shared across its tests, so a year closed by one test is
+  still closed for the next — give each close scenario in a file its own year(s).
 
 ### Unit test pattern
 

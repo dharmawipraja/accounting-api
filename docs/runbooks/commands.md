@@ -241,7 +241,10 @@ inserted directly. It hashes the password with argon2 (matching `UsersService`)
 and upserts by email, so re-running with the same email updates that user.
 
 **Prerequisites:** `.env.development` present (it supplies `DATABASE_URL` via
-`dotenv-cli`) and the dev Postgres reachable.
+`dotenv-cli`) and the dev Postgres reachable. The password may instead come from
+`ADMIN_PASSWORD` (then pass only `<email> "<name>"`); it must be 8-128 characters.
+Production has no npm in the image — see `deploy.md` → *First install on a fresh VM*
+(`$COMPOSE run --rm --no-deps -e ADMIN_PASSWORD api node dist/scripts/create-admin.js …`).
 
 **Gotcha:** mind the `--` separator — args after it go to the script, not to
 npm. For **production**, run the equivalent against the prod DB (e.g. exec into
