@@ -101,6 +101,11 @@ services:
   db:
     logging: *default-logging
     restart: unless-stopped
+    # Not published on the host in production (drops the base file's
+    # `127.0.0.1:5432:5432`): api/migrate/backup reach it as `db:5432` on the
+    # compose network, and operators use `$COMPOSE exec db psql …`. For a
+    # one-off host-side psql add -f docker-compose.hostport.yml.
+    ports: !reset []
     # Fresh volume only: the init script creates `accounting_app` + default
     # privileges before the first migration. Existing volumes are covered by the
     # migrate service's idempotent grants step (same SQL).
@@ -149,6 +154,10 @@ services:
   redis:
     logging: *default-logging
     restart: unless-stopped
+    # Not published on the host in production (drops the base file's
+    # `127.0.0.1:6379:6379`): the api reaches it as `redis:6379`; operators use
+    # `$COMPOSE exec redis redis-cli …` (or -f docker-compose.hostport.yml).
+    ports: !reset []
     deploy:
       resources:
         limits:

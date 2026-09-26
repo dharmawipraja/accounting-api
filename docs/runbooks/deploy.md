@@ -2,7 +2,7 @@
 
 ## Prerequisites
 - Docker + Docker Compose **v2.24.0 or newer** on the VM (`docker-compose.prod.yml`
-  uses `ports: !reset []` to drop the api's host port — older Compose fails to
+  uses `ports: !reset []` to drop the api/db/redis host ports — older Compose fails to
   parse it; check with `docker compose version`); ports 80 and 443 open; DNS A-record for
   `$DOMAIN` pointing at the VM (required for Caddy auto-HTTPS).
 - A `.env` next to the compose files (gitignored) with:
@@ -69,7 +69,9 @@ without it compose could reuse a stale locally-built image.
 
 This release adds schema invariants, a least-privilege DB role and token changes.
 Work through this **once**, on the first deploy that includes migrations
-`20260925100000_add_voided_on` … `20260928000000_idempotency_reservation_token`:
+`20260925100000_add_voided_on` … `20261003000000_payment_allocations_payment_id_idx`
+(if an earlier audit-3 deploy already applied some of them, the rehearsal simply
+skips those — the list below still applies to the ones that remain):
 
 1. **Rehearse the migration on a restored production backup first.** Restore the
    latest dump into a scratch database (`backup-and-restore.md` → *Test your
@@ -93,7 +95,18 @@ Work through this **once**, on the first deploy that includes migrations
      overlapping periods, and orphaned references (lines/documents/payments/tax
      codes pointing at missing accounts, partners, periods or journal entries);
    - `20260927000000_journal_link_fks` — `year_end_closings.closing_entry_id` /
-     `reversal_of_id` / `reversed_by_id` pointing at missing journal entries.
+     `reversal_of_id` / `reversed_by_id` pointing at missing journal entries;
+   - `20260930000000_purchase_bill_vendor_invoice_normalized` — live (not deleted,
+     not VOID) bills of one partner whose vendor invoice numbers collide once
+     normalized (`lower(btrim(...))`, e.g. `INV-1` / `inv-1` / ` INV-1 `);
+   - `20261002000000_document_journal_link_check_and_fk_indexes` — sales invoices,
+     purchase bills or payments whose `journal_entry_id` does not match their
+     status (a DRAFT with a journal entry, or a POSTED/VOID one without).
+
+   The others in the range cannot abort on data: `20260925100000_add_voided_on`
+   backfills `voided_on` before adding its CHECK, `20260929000000` only replaces a
+   trigger function, and `20260926000000` / `20260928000000` / `20261001000000` /
+   `20261003000000` (index on `payment_allocations(payment_id)`) are additive.
    Fix the data by hand, mark a failed attempt with
    `npx prisma migrate resolve --rolled-back <migration>`, and re-run. Only deploy to
    production once the rehearsal applies cleanly.
@@ -176,12 +189,20 @@ Work through this **once**, on the first deploy that includes migrations
 ## Health & shutdown
 - `api` is healthy when `/ready` returns 200 (DB + Redis reachable — a dependency outage now marks the container unhealthy); `/health` stays a bare liveness probe. Caddy proxies only a started app.
 - **Host exposure:** in production **only Caddy publishes ports** (80/443). The
-  base `docker-compose.yml` publishes the api on `127.0.0.1:3000` for local dev;
-  `docker-compose.prod.yml` removes it (`ports: !reset []`), so nothing on the VM
-  can reach the api around Caddy's headers, body cap and `/ready`/`/metrics`
-  blocking. Verify: `$COMPOSE config` shows no `ports` under `api`. For a
-  one-off host-side smoke/perf run add `-f docker-compose.hostport.yml` (opt-in,
-  never in a real deploy).
+  base `docker-compose.yml` publishes the api (`127.0.0.1:3000`), Postgres
+  (`127.0.0.1:5432`) and Redis (`127.0.0.1:6379`) for local dev;
+  `docker-compose.prod.yml` removes all three (`ports: !reset []`), so nothing on
+  the VM can reach the api around Caddy's headers, body cap and `/ready`/`/metrics`
+  blocking, nor the database/Redis directly. The services still talk over the
+  compose network (`db:5432`, `redis:6379`), and the `backup` sidecar and CD's
+  deploy script never use host ports. Verify: `$COMPOSE config` shows `ports`
+  only under `caddy`. Operator access goes through the containers:
+  `$COMPOSE exec db psql -U accounting -d accounting`,
+  `$COMPOSE exec redis redis-cli ping`. For a one-off host-side smoke/perf run or
+  a host `psql`/`redis-cli`, add `-f docker-compose.hostport.yml` (opt-in, never in
+  a real deploy; it re-publishes api/db/redis on loopback only, and applying it to
+  a running `db`/`redis` recreates that container — a brief restart; run `up -d`
+  without it afterwards to close the ports again).
 - **Edge exposure:** Caddy answers `404` for `/ready*` and `/metrics*` (dependency state and metrics are internal). The container healthcheck (`127.0.0.1:3000/ready`) and Prometheus (`api:3000/metrics`) bypass Caddy, so they are unaffected; external uptime probes use `https://$DOMAIN/health`. Check readiness from the VM with `docker compose exec api node -e "require('http').get('http://127.0.0.1:3000/ready',r=>console.log(r.statusCode))"`.
 - One-time caveat (AUDIT3-7, `20260926100000_auth_hardening`): the migration
   lowercases `users.email` and adds a unique index on `lower(email)`. It **aborts
@@ -355,7 +376,7 @@ Don't edit the committed `Caddyfile` (it would dirty the repo and risk shipping 
 non-prod TLS setting). Instead either:
 - **Skip Caddy:** smoke-test `db`+`migrate`+`api` only and curl `http://127.0.0.1:3000/health`
   (`docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.hostport.yml up -d db migrate api`
-  — the prod overlay alone publishes no api port); or
+  — the prod overlay alone publishes nothing but Caddy); or
 - **Throwaway internal TLS:** copy the Caddyfile, append `tls internal`, and mount the copy
   via a one-off override file — e.g. `cp Caddyfile /tmp/Caddyfile.staging && printf '\n\ttls internal\n' >> /tmp/Caddyfile.staging`, then a small `docker-compose.staging.yml` that remaps `caddy.volumes` to `/tmp/Caddyfile.staging:/etc/caddy/Caddyfile:ro`, and add `-f docker-compose.staging.yml` to the up command. `DOMAIN=localhost`, then `curl -k https://localhost/health`.
 
@@ -383,11 +404,11 @@ from the ref dropdown → **Run**. It builds/deploys exactly the selected ref.
    push-to-`main` run for the exact commit SHA** being released (Actions API query with
    `event=push&branch=main`). A green PR run for an unmerged head does not qualify, so
    only commits that landed on `main` (or tags cut from them) can be released.
-   **Recommended hardening (GitHub settings, not code):** create a GitHub
-   **Environment** (e.g. `production`) holding the `DEPLOY_SSH_*` secrets, with a
-   *deployment branch/tag policy* allowing only `main` and your release tag pattern
-   (e.g. `v*`) and, optionally, required reviewers; then add `environment: production`
-   to the `deploy` job. Environment secrets are only released to runs whose ref
+   **Environment hardening (GitHub settings):** the `deploy` job declares
+   `environment: production`. Create that GitHub **Environment** holding the
+   `DEPLOY_SSH_*` / `DEPLOY_PATH` secrets, with a *deployment branch/tag policy*
+   allowing only `main` and your release tag pattern (e.g. `v*`) and, optionally,
+   required reviewers. Environment secrets are only released to runs whose ref
    passes the policy, so a dispatch from an arbitrary branch cannot reach the VM.
 1. **Publish** — builds and pushes TWO images using the built-in `GITHUB_TOKEN` (no
    extra secret; ensure the repo's Package settings allow Actions to write packages):
@@ -399,16 +420,23 @@ from the ref dropdown → **Run**. It builds/deploys exactly the selected ref.
    `[A-Za-z0-9_.-]` — e.g. the `/` in `release/1.2` — replaced by `-`, since Docker
    tags can't contain it.) Tip: create an annotated tag first
    (`git tag -a v1.2.0 -m ... && git push origin v1.2.0`), then select it in the dropdown.
-2. **Deploy (optional, gated)** — runs ONLY if a `DEPLOY_SSH_HOST` secret is set. Add
-   `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_PATH` (repo dir on the
-   VM) as Actions secrets. Over SSH it checks the repo out at the released SHA (if
+2. **Deploy (optional, gated)** — runs ONLY if the repository **variable**
+   `DEPLOY_ENABLED` is `true` (Settings → Secrets and variables → Actions →
+   *Variables*). It is a variable, not a secret check, on purpose: `vars` is allowed
+   in a job-level `if:` and visible to every job, while a job probing a secret only
+   sees Environment secrets if it declares that Environment itself — a probe
+   without it would silently skip the deploy once the secrets moved into
+   `production`. Add `DEPLOY_SSH_HOST`, `DEPLOY_SSH_USER`, `DEPLOY_SSH_KEY`,
+   `DEPLOY_PATH` (repo dir on the VM) as **`production` Environment secrets**, then
+   set `DEPLOY_ENABLED=true`. With the variable set but a secret missing, the SSH
+   step fails loudly (it never skips). Over SSH it checks the repo out at the released SHA (if
    `DEPLOY_PATH` is a git checkout), exports `API_IMAGE` / `MIGRATE_IMAGE` = the
    immutable `:<sha>` images, and runs `compose pull`, `compose stop api` (the old api
    must not run against the new schema) and `compose up -d --no-build` (migrate, then
    the new api).
    The VM must be logged in to GHCR if the packages are private
    (`docker login ghcr.io` with a `read:packages` token) and its `.env` must contain
-   `APP_DB_PASSWORD`. Until the secrets exist, CD only publishes.
+   `APP_DB_PASSWORD`. Until `DEPLOY_ENABLED` is `true`, CD only publishes.
 
 All workflow actions are pinned to full commit SHAs (with a `# vX.Y.Z` comment);
 bump them by resolving the new tag's commit (`gh api repos/<o>/<r>/git/ref/tags/<tag>`,

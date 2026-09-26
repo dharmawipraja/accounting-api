@@ -7,3 +7,10 @@ dist
 *.spec.ts
 test
 docs
+# Local tooling / artifacts — never part of the build context or image
+# (they can hold session notes, plans and coverage dumps).
+.superpowers
+.claude
+coverage
+.nyc_output
+docs/superpowers

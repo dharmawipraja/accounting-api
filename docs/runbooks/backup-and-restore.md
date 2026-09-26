@@ -14,6 +14,10 @@ Copy a dump to the host: `docker compose -f docker-compose.yml -f docker-compose
 Run `pg_restore` **from inside the `backup` sidecar** — it is the only container
 that mounts the `backups` volume, it has the Postgres client tools, and its
 `PGPASSWORD`/`PGUSER`/`PGDATABASE` env let it reach `db` over the compose network.
+In production `db` is **not published on the host** (only Caddy is), so a host-side
+`psql`/`pg_restore` against `127.0.0.1:5432` fails by design — stay inside the
+containers, or add the opt-in `-f docker-compose.hostport.yml` for a one-off
+(see `deploy.md` → *Health & shutdown*).
 (`COMPOSE='-f docker-compose.yml -f docker-compose.prod.yml'`.)
 
 1. Stop writers: `docker compose $COMPOSE stop api migrate`.

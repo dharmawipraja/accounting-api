@@ -1,9 +1,20 @@
-# OPT-IN override for staging smoke tests / perf baselines ONLY — never in a
-# production deploy. docker-compose.prod.yml removes the api's host port (only
-# Caddy is exposed); this re-publishes it on the host's loopback:
+# OPT-IN override for staging smoke tests, perf baselines and one-off operator
+# debugging ONLY — never part of a production deploy. docker-compose.prod.yml
+# publishes nothing but Caddy (80/443); this re-publishes the api, db and redis
+# on the host's LOOPBACK only (same bindings as the base docker-compose.yml):
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
 #     -f docker-compose.hostport.yml up -d db migrate api
+# On a production VM prefer `docker compose … exec db psql -U accounting` /
+# `exec redis redis-cli` — applying this overlay to a running db/redis changes
+# its definition, so compose RECREATES it (a brief restart). Re-run `up -d`
+# without this file afterwards to close the ports again.
 services:
   api:
     ports:
       - '127.0.0.1:3000:3000'
+  db:
+    ports:
+      - '127.0.0.1:5432:5432'
+  redis:
+    ports:
+      - '127.0.0.1:6379:6379'

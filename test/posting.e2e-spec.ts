@@ -9,6 +9,7 @@ import {
   UnbalancedEntryError,
   ClosedPeriodError,
 } from '../src/common/errors/domain-errors';
+import { asOfOrToday } from '../src/common/dates/query-dates';
 import { bootstrapTestApp } from './e2e-helpers';
 
 describe('PostingService (e2e)', () => {
@@ -68,9 +69,17 @@ describe('PostingService (e2e)', () => {
   });
 
   it('rejects posting into a date with no open period', async () => {
+    // Must stay beyond the auto-generated window (current + next fiscal year,
+    // from the WIB "today") forever — a fixed date would start auto-generating
+    // its year (and post) once the calendar caught up with it.
+    const company = app.get(CompanyService);
+    const current = await company.fiscalYearFor(asOfOrToday());
+    const { start } = await company.fiscalYearBounds(current + 2);
+    expect(await company.fiscalYearFor(start)).toBeGreaterThan(current + 1);
     await expect(
-      posting.post({ ...balanced(), date: new Date('2030-01-01') }, 'poster1'),
+      posting.post({ ...balanced(), date: start }, 'poster1'),
     ).rejects.toBeInstanceOf(ClosedPeriodError);
+    expect(await app.get(PeriodsService).list(current + 2)).toHaveLength(0);
   });
 
   it('enforces segregation of duties when enabled (poster = creator -> 403)', async () => {

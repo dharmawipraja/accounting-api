@@ -73,14 +73,17 @@ mechanics, and [`./deploy.md`](./deploy.md) for production deploys.
 ### App boots but every business request returns 503 (and `/ready` returns 503)
 
 - **Symptom:** The process starts and `/health` is 200, but business routes (and
-  `/ready`) return `503`. The container can even look "healthy" (the healthcheck
-  only hits `/health`).
+  `/ready`) return `503`. In the prod compose stack the api container turns
+  **unhealthy** (its healthcheck probes `/ready`); anything probing only `/health`
+  still looks fine.
 - **Cause:** Redis is not reachable. The rate limiter is **fail-closed**: when the
   Redis storage is unavailable the throttler guard turns the error into a `503`
   ("Rate limiter unavailable") instead of silently disabling limiting. `REDIS_URL`
   is **required in dev & prod** (tests run in-memory).
 - **Fix:** Start Redis and point `REDIS_URL` at it (default
-  `redis://localhost:6379`; the prod compose stack ships a `redis` service). Then
+  `redis://localhost:6379`; the prod compose stack ships a `redis` service, not
+  published on the host — check it with
+  `docker compose -f docker-compose.yml -f docker-compose.prod.yml exec redis redis-cli ping`). Then
   check `/ready` — it pings the DB and Redis and the `503` message **names the
   failed dependency** ("Database unavailable" / "Redis unavailable"). See the
   Redis prerequisite note in [`./deploy.md`](./deploy.md).
@@ -121,10 +124,10 @@ mechanics, and [`./deploy.md`](./deploy.md) for production deploys.
 
 ### 404 on a business route that should exist
 
-- **Symptom:** A known endpoint returns `404`, e.g. `POST /journals` 404s.
+- **Symptom:** A known endpoint returns `404`, e.g. `POST /ledger/journal-entries` 404s.
 - **Cause:** Missing the **`/v1`** prefix. The API uses URI versioning with
   `defaultVersion: '1'`, so every business route is served under `/v1`
-  (`/v1/journals`, `/v1/accounts`, ...).
+  (`/v1/ledger/journal-entries`, `/v1/ledger/accounts`, ...).
 - **Fix:** Prefix the path with `/v1`. The operational probes are the exception —
   `/health`, `/ready`, and `/metrics` opt out via `VERSION_NEUTRAL` and stay at the
   **root** (no `/v1`). The frontend base URL should already include `/v1`.
@@ -191,9 +194,9 @@ mechanics, and [`./deploy.md`](./deploy.md) for production deploys.
   1. If no conforming account exists, create one (`POST /v1/ledger/accounts`: postable,
      no role, `subtype` `TAX_RECEIVABLE` + `normalBalance` `DEBIT` for input VAT /
      prepaid PPh, `TAX_PAYABLE` + `CREDIT` for output VAT / withheld PPh).
-  2. Create a replacement tax code on it (`POST /v1/tax-codes`, a new `code`, same
+  2. Create a replacement tax code on it (`POST /v1/tax/codes`, a new `code`, same
      `kind`/`rate`).
-  3. Deactivate the old code (`POST /v1/tax-codes/:id/deactivate`) so it cannot be
+  3. Deactivate the old code (`POST /v1/tax/codes/:id/deactivate`) so it cannot be
      applied again. Posted documents keep their already-posted journal lines; nothing
      historical changes. Any balance sitting on the old account can be moved with a
      `MANUAL` journal if the accountant wants it on the new one.

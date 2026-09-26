@@ -10,10 +10,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
-  # Superseded PR runs are cancelled; push runs always finish — CD's ci-gate
-  # needs a SUCCESSFUL push-to-main run for the exact commit it deploys, so a
-  # cancelled main run would make that commit undeployable.
+  # PRs group by ref, so a new push to the PR supersedes (cancels) the old run.
+  # Pushes group by COMMIT SHA: CD's ci-gate needs a SUCCESSFUL push-to-main run
+  # for the exact commit it deploys, and a ref-wide group would not be enough
+  # even with cancel-in-progress off — GitHub keeps only ONE pending run per
+  # group and silently cancels an older queued one when a newer push arrives,
+  # leaving that commit undeployable. One group per SHA means queued pushes
+  # never displace each other.
+  group: ci-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

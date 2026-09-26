@@ -150,7 +150,7 @@ One stable error envelope, no leaked internals.
   query (`BalanceQueryOpts.tx`, `accountBalance(id, asOf, { tx })`, raw
   `tx.$queryRaw`) — never mix in a query on the base client, which would read
   outside the snapshot (and hold a second pooled connection). Single-query,
-  single-figure endpoints (e.g. `GET /v1/accounts/:id/balance`, trial balance)
+  single-figure endpoints (e.g. `GET /v1/ledger/accounts/:id/balance`, trial balance)
   intentionally don't snapshot — one statement is already consistent.
 
 ## 4. Idempotency

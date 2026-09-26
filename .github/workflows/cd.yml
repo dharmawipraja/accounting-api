@@ -91,29 +91,21 @@ jobs:
             ${{ steps.names.outputs.repo }}-migrate:${{ steps.names.outputs.ref_tag }}
             ${{ steps.names.outputs.repo }}-migrate:${{ github.sha }}
             ${{ steps.names.outputs.repo }}-migrate:latest
-  # The `secrets` context cannot be used in a job-level `if:` (GitHub errors with
-  # "Unrecognized named-value: 'secrets'"). So read the secret into an output here,
-  # then gate the deploy job on it via the (allowed) `needs` context.
-  gate:
+  # Deploy is gated on a repository VARIABLE, not on a secret: the `secrets`
+  # context is not allowed in a job-level `if:`, and a separate job that probes
+  # the secret would need `environment: production` too — otherwise it only sees
+  # REPO secrets and, once the DEPLOY_SSH_* secrets live in the Environment (as
+  # they should), it reports "no secret" and deploy is silently skipped. `vars`
+  # IS allowed in a job-level `if:` and is visible to every job, so the switch is
+  # explicit: set repo variable DEPLOY_ENABLED=true to activate; anything else
+  # (unset) keeps CD publish-only. The DEPLOY_SSH_* / DEPLOY_PATH secrets live in
+  # the `production` Environment and are released only to this job, and only
+  # for refs its deployment branch/tag policy allows (see deploy.md §CD).
+  deploy:
     needs: [push]
     runs-on: ubuntu-latest
-    outputs:
-      deploy: ${{ steps.check.outputs.deploy }}
-    steps:
-      - id: check
-        env:
-          DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
-        run: |
-          if [ -n "$DEPLOY_SSH_HOST" ]; then
-            echo "deploy=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
-          fi
-  deploy:
-    needs: [push, gate]
-    runs-on: ubuntu-latest
-    # Inert until the deploy secrets exist. Add DEPLOY_SSH_HOST/USER/KEY to activate.
-    if: ${{ needs.gate.outputs.deploy == 'true' }}
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    environment: production
     steps:
       - name: Deploy over SSH
         uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
