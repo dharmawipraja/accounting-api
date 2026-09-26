@@ -1309,6 +1309,169 @@ describe('Payments (e2e)', () => {
       expect(row!.status).toBe('DRAFT');
     });
 
+    /** AR aging (as of `asOf`) → this invoice's outstanding + the grand
+     *  total, which must equal the AR control balance on the same day. */
+    const agingTie = async (invoiceId: string, asOf: string) => {
+      const inv = await prisma.client.salesInvoice.findFirst({
+        where: { id: invoiceId },
+      });
+      const res = await request(server())
+        .get(`/v1/reports/ar-aging?asOf=${asOf}`)
+        .set('Authorization', `Bearer ${appr}`)
+        .expect(200);
+      const body = res.body as {
+        partners: {
+          documents: { ref: string | null; outstanding: string }[];
+        }[];
+        totalOutstanding: string;
+      };
+      const doc = body.partners
+        .flatMap((p) => p.documents)
+        .find((d) => d.ref === inv!.invoiceRef);
+      const arControl = await app
+        .get(BalancesService)
+        .accountBalance(acc['1-1200'], new Date(asOf));
+      return {
+        outstanding: doc?.outstanding,
+        agingTotal: body.totalOutstanding,
+        control: Number(arControl.balance).toFixed(4),
+      };
+    };
+
+    it('partial accepted: AR aging == AR control for as-of dates inside the void window', async () => {
+      const customerId = await newCustomer('CUST-PAY-BACKVOID-TIE');
+      const invoiceId = await makePostedInvoice(customerId); // 1,110,000 @ 02-10
+      const p1 = await postedPayment(
+        customerId,
+        invoiceId,
+        '2026-02-20',
+        '600000',
+      );
+      await voidPay(p1, '2026-03-10');
+      await postedPayment(customerId, invoiceId, '2026-03-05', '510000');
+      const expectations: [string, string | undefined][] = [
+        ['2026-02-25', '510000.0000'], // P1 live
+        ['2026-03-05', undefined], // P1 (live) + P2 settle it fully
+        ['2026-03-09', undefined], // last day P1 is live
+        ['2026-03-10', '600000.0000'], // P1 voided
+      ];
+      for (const [asOf, outstanding] of expectations) {
+        const t = await agingTie(invoiceId, asOf);
+        expect({ asOf, outstanding: t.outstanding }).toEqual({
+          asOf,
+          outstanding,
+        });
+        expect({ asOf, total: t.agingTotal }).toEqual({
+          asOf,
+          total: t.control,
+        });
+      }
+    });
+
+    it('one payment with two allocations to the same document is summed against a later-voided payment (draft + post)', async () => {
+      const customerId = await newCustomer('CUST-PAY-BACKVOID-2ALLOC');
+      const invoiceId = await makePostedInvoice(customerId); // 1,110,000
+      const p1 = await postedPayment(
+        customerId,
+        invoiceId,
+        '2026-02-20',
+        '600000',
+      );
+      const twoAllocs = (a: string, b: string) =>
+        request(server())
+          .post('/v1/payments')
+          .set('Authorization', `Bearer ${acct}`)
+          .set('Idempotency-Key', randomUUID())
+          .send({
+            direction: 'RECEIPT',
+            partnerId: customerId,
+            date: '2026-03-05',
+            cashAccountId: acc['1-1000'],
+            allocations: [
+              { salesInvoiceId: invoiceId, amount: a },
+              { salesInvoiceId: invoiceId, amount: b },
+            ],
+          });
+      // Draft created while P1 is POSTED: 600k + 300k + 211k > 1.11M is
+      // already over-allocation, so draft a fitting one and void P1 after.
+      const fitting = await twoAllocs('300000', '210000').expect(201);
+      const fittingId = (fitting.body as { id: string }).id;
+      await voidPay(p1, '2026-03-10');
+
+      // Draft-time (allocatedByDoc): each allocation alone fits beside the
+      // voided 600k on 03-05..03-09, but together 300k + 211k do not.
+      const over = await twoAllocs('300000', '211000').expect(422);
+      expect(
+        (over.body as { details: Record<string, unknown> }).details,
+      ).toEqual({
+        documentId: invoiceId,
+        paymentDate: '2026-03-05',
+        conflictingVoidedOn: '2026-03-10',
+      });
+
+      // Post-time (settledBefore): the fitting draft's two allocations sum to
+      // exactly the room left (600k + 510k = 1.11M) → accepted.
+      await postPay(fittingId).expect(200);
+      // A second fitting-looking draft after that is over on 03-05..03-09.
+      await twoAllocs('1', '1').expect(422);
+
+      const inv = await prisma.client.salesInvoice.findFirst({
+        where: { id: invoiceId },
+      });
+      expect(inv!.amountPaid.toString()).toBe('510000');
+      for (const asOf of ['2026-03-05', '2026-03-09', '2026-03-10']) {
+        const t = await agingTie(invoiceId, asOf);
+        expect({ asOf, total: t.agingTotal }).toEqual({
+          asOf,
+          total: t.control,
+        });
+      }
+    });
+
+    it("post re-check sums a draft's two allocations to the same document (settledBefore)", async () => {
+      const customerId = await newCustomer('CUST-PAY-BACKVOID-2ALLOC-POST');
+      const invoiceId = await makePostedInvoice(customerId); // 1,110,000
+      const p1 = await postedPayment(
+        customerId,
+        invoiceId,
+        '2026-02-20',
+        '600000',
+      );
+      // Draft @03-05 with 300k + 210k: fits beside the posted P1.
+      const draft = await request(server())
+        .post('/v1/payments')
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          direction: 'RECEIPT',
+          partnerId: customerId,
+          date: '2026-03-05',
+          cashAccountId: acc['1-1000'],
+          allocations: [
+            { salesInvoiceId: invoiceId, amount: '300000' },
+            { salesInvoiceId: invoiceId, amount: '210000' },
+          ],
+        })
+        .expect(201);
+      const draftId = (draft.body as { id: string }).id;
+      await voidPay(p1, '2026-03-10');
+      // 1 @ 03-07 leaves 03-07..03-09 room of 509,999 < 510,000: each draft
+      // allocation alone fits, only their sum does not.
+      await postedPayment(customerId, invoiceId, '2026-03-07', '1');
+      const res = await postPay(draftId).expect(422);
+      expect(
+        (res.body as { details: Record<string, unknown> }).details,
+      ).toEqual({
+        documentId: invoiceId,
+        paymentDate: '2026-03-05',
+        conflictingVoidedOn: '2026-03-10',
+      });
+      const row = await prisma.client.payment.findFirst({
+        where: { id: draftId },
+      });
+      expect(row!.status).toBe('DRAFT');
+    });
+
     it('a document with a same-day-voided payment (never live) is unaffected', async () => {
       const customerId = await newCustomer('CUST-PAY-BACKVOID-4');
       const invoiceId = await makePostedInvoice(customerId);
