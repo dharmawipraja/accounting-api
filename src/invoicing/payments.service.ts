@@ -1,4 +1,3 @@
-import { assertNotAfterToday } from '../common/dates/not-after-today';
 import { Injectable } from '@nestjs/common';
 import {
   DocumentStatus,
@@ -6,6 +5,7 @@ import {
   PaymentDirection,
   Prisma,
 } from '@prisma/client';
+import { assertNotAfterToday } from '../common/dates/not-after-today';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { trigramSearch } from '../common/search/trigram-search';
 import { Money } from '../common/money/money';
