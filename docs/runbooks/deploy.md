@@ -100,17 +100,33 @@ without it compose could reuse a stale locally-built image.
    `accounting_app` role before the first migration).
 2. **Create the first ADMIN.** There is no registration endpoint. The api image
    ships the compiled bootstrap script (`dist/scripts/create-admin.js`) and already
-   carries its `DATABASE_URL` (the least-privilege `accounting_app` URL — an upsert
-   on `users` is plain DML), so run it in a one-off api container (no npm, no dotenv
-   file, no host DB port needed). Pass the password via `ADMIN_PASSWORD` so it stays
-   out of shell history and `ps`:
+   carries its `DATABASE_URL` (the least-privilege `accounting_app` URL — enough:
+   the script only needs SELECT/INSERT/UPDATE on `users`, UPDATE on
+   `refresh_tokens`, row locks and advisory locks; `test/db-app-role.e2e-spec.ts`
+   runs it as that role). Run it **inside the running api container** with
+   `exec` — that is the exact image and environment that is deployed (no npm, no
+   dotenv file, no host DB port needed). Pass the password via `ADMIN_PASSWORD` so
+   it stays out of shell history and `ps`:
    ```bash
    COMPOSE='docker compose -f docker-compose.yml -f docker-compose.prod.yml'
    read -rs ADMIN_PASSWORD && export ADMIN_PASSWORD     # 8-128 chars (login's limits)
+   $COMPOSE exec -e ADMIN_PASSWORD api \
+     node dist/scripts/create-admin.js admin@acme.co "Budi Admin"
+   unset ADMIN_PASSWORD
+   ```
+   **Only if the api is not running** (e.g. it cannot start yet), use a one-off
+   container instead — but first point compose at the image that is actually
+   deployed: outside CD's session `API_IMAGE` is unset, so `run` would fall back to
+   `accounting-api:local` and build or run a **stale** image (an older script
+   without the temp-password / session-revoke semantics):
+   ```bash
+   export API_IMAGE=ghcr.io/<owner>/<repo>:<sha>        # the deployed/pulled tag
    $COMPOSE run --rm --no-deps -e ADMIN_PASSWORD api \
      node dist/scripts/create-admin.js admin@acme.co "Budi Admin"
    unset ADMIN_PASSWORD
    ```
+   (When you built on the VM with `$COMPOSE build`, `accounting-api:local` IS the
+   deployed image and no export is needed.)
    It prints `✓ ADMIN ready: <email> (id …; created)`. The email is trimmed +
    lower-cased. The password you chose is a **temporary** one, exactly like an
    admin-issued temp password: `mustChangePassword` is set, so login works but every
@@ -196,7 +212,13 @@ skips those — the list below still applies to the ones that remain):
    invoice/bill fails 422 with `details.taxAccountId`* against the rehearsal database;
    any rows it lists must be replaced (new conforming code, deactivate the old one,
    re-`PATCH` drafts) or their drafts cannot be posted.
-7. After the deploy: `/ready` is 200, `docker compose logs migrate` ends with
+7. **Metrics token out of tracked `prometheus.yml`:** if an operator pasted the
+   `/metrics` bearer token into `monitoring/prometheus.yml` (older releases), drop
+   that local edit **before** deploying — `git checkout -- monitoring/prometheus.yml`
+   — or CD's `git checkout --detach` aborts on it; then put the token in
+   `monitoring/secrets/metrics_token` (*Monitoring* step 2 below; *Metrics auth
+   coupling* note).
+8. After the deploy: `/ready` is 200, `docker compose logs migrate` ends with
    `ensure-app-role: accounting_app role + grants are up to date`, and a login +
    one read works.
 
@@ -370,8 +392,13 @@ activation, in order:
    ```
 
    The file is re-read on every scrape: to rotate, change `METRICS_TOKEN` in `.env`,
-   rewrite the file (with `sudo`), and recreate the api (`up -d api`) — no Prometheus
-   restart. **The overlay needs this file for the api scrape to succeed** — without it
+   rewrite the file in place with `sudo` (it is owned by `65534` now, and `tee` keeps
+   that owner and mode 600 — re-run the `chown` above if you ever recreate it):
+   ```bash
+   set -a; . ./.env; set +a
+   printf '%s\n' "$METRICS_TOKEN" | sudo tee monitoring/secrets/metrics_token >/dev/null
+   ```
+   then recreate the api (`up -d api`) — no Prometheus restart. **The overlay needs this file for the api scrape to succeed** — without it
    Prometheus still starts, but the api target is `down` (`unable to read
    authorization credentials`) and `ApiDown` fires.
    (`promtool check config`, by contrast, reports `FAILED … metrics_token: no such

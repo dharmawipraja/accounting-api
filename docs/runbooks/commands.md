@@ -227,18 +227,19 @@ npm run audit:dev    # full tree, advisory only
 
 | Script | Command | What it does |
 | --- | --- | --- |
-| `create-admin` | `dotenv -e .env.development -- ts-node scripts/create-admin.ts` | Creates (upserts) an **ADMIN** user directly in the dev DB. |
+| `create-admin` | `dotenv -e .env.development -- ts-node scripts/create-admin.ts` | Creates an **ADMIN** user directly in the dev DB, or resets an existing one. |
 
 ```bash
 npm run create-admin -- <email> <password> "<name>"
 # e.g.
-npm run create-admin -- admin@acme.co 's3cret!' "Budi Admin"
+npm run create-admin -- admin@acme.co 's3cret-pw' "Budi Admin"
 ```
 
 **Why it exists:** the API has **no public registration endpoint**, so
-`create-admin` is the **only way to create a user** — the first ADMIN must be
-inserted directly. It hashes the password with argon2 (matching `UsersService`)
-and upserts by email, so re-running with the same email resets that user.
+`create-admin` is the **only way to create the first user** — the first ADMIN must
+be inserted directly (every further user is created by an ADMIN via
+`POST /v1/users`). It hashes the password with argon2 (matching `UsersService`)
+and creates the user, or — for an existing email — resets it.
 
 **Prerequisites:** `.env.development` present (it supplies `DATABASE_URL` via
 `dotenv-cli`) and the dev Postgres reachable. The password may instead come from
@@ -246,13 +247,15 @@ and upserts by email, so re-running with the same email resets that user.
 It is a temporary password (`mustChangePassword`): the first login must call
 `POST /v1/auth/change-password` before anything else. An existing email is reset
 (ADMIN, active, temp password) and all its refresh tokens are revoked.
-Production has no npm in the image — see `deploy.md` → *First install on a fresh VM*
-(`$COMPOSE run --rm --no-deps -e ADMIN_PASSWORD api node dist/scripts/create-admin.js …`).
+The email must be valid (≤ 254 chars) and the name 1-120 non-blank chars; all
+inputs are checked before the DB is touched.
 
 **Gotcha:** mind the `--` separator — args after it go to the script, not to
-npm. For **production**, run the equivalent against the prod DB (e.g. exec into
-the API container with `DATABASE_URL` set and run the script, or run it as a
-one-off with the prod env loaded). See [`./deploy.md`](./deploy.md).
+npm. **Production** has no npm in the image: run the compiled script inside the
+running api container
+(`$COMPOSE exec -e ADMIN_PASSWORD api node dist/scripts/create-admin.js <email> "<name>"`)
+— the full procedure (and the `run` + `API_IMAGE` fallback when the api is not
+running) is in [`./deploy.md`](./deploy.md) → *First install on a fresh VM*.
 
 ---
 

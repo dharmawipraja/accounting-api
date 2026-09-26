@@ -278,10 +278,12 @@ no separate seed command for the core reference data:
   (`TaxCodesService.seedIfEmpty`) seed on boot the same way.
 - **First ADMIN user** — there is no registration endpoint; bootstrap it explicitly:
   ```bash
-  npm run create-admin -- admin@acme.co 's3cret!' "Budi Admin"
+  npm run create-admin -- admin@acme.co 's3cret-pw' "Budi Admin"
   ```
   `scripts/create-admin.ts` argon2-hashes the password and upserts the user via the
-  adapter-pg client (password 8-128 chars, the login endpoint's bounds; optionally
+  adapter-pg client (email must be valid and ≤ 254 chars, name 1-120 non-blank,
+  password 8-128 chars — the login endpoint's bounds — all checked before the DB is
+  touched; password optionally
   from `ADMIN_PASSWORD` instead of argv: `create-admin <email> "<name>"`). The
   password is a **temporary** one: `mustChangePassword` is set, so the first login
   must `POST /v1/auth/change-password` before any other route (403
@@ -289,16 +291,20 @@ no separate seed command for the core reference data:
   (temp password, ADMIN, active) and revokes all its refresh tokens in one
   transaction — the break-glass reset.
   **In production** there is no npm/npx in the api image and no host DB port, so run
-  the compiled copy the api image ships (`dist/scripts/create-admin.js`) in a one-off
-  api container — it uses the service's own `DATABASE_URL` (`accounting_app`; the
-  upsert is plain DML):
+  the compiled copy the api image ships (`dist/scripts/create-admin.js`) inside the
+  **running** api container with `exec` (the exact deployed image and env) — it uses
+  the service's own `DATABASE_URL` (`accounting_app`, which has every privilege the
+  script needs: SELECT/INSERT/UPDATE on `users`, UPDATE on `refresh_tokens`, locks):
   ```bash
   COMPOSE='docker compose -f docker-compose.yml -f docker-compose.prod.yml'
   read -rs ADMIN_PASSWORD && export ADMIN_PASSWORD
-  $COMPOSE run --rm --no-deps -e ADMIN_PASSWORD api \
+  $COMPOSE exec -e ADMIN_PASSWORD api \
     node dist/scripts/create-admin.js admin@acme.co "Budi Admin"
   unset ADMIN_PASSWORD
   ```
+  If the api is not running, `$COMPOSE run --rm --no-deps …` works too, but only
+  after `export API_IMAGE=<the deployed image tag>` — otherwise compose falls back to
+  `accounting-api:local`, a possibly stale image.
   See `deploy.md` → *First install on a fresh VM*.
 
 > **Hand-authored partial unique** `purchase_bills_partner_vendor_invoice_norm_live_key`

@@ -222,6 +222,50 @@ describe('DB app role — accounting_app is least-privilege and runs the app (e2
     expect(auditRows).toBe(1);
   });
 
+  it('scripts/create-admin runs as accounting_app (create, then break-glass reset revoking sessions)', async () => {
+    // The production procedure runs the script inside the api container with
+    // the api's own (least-privilege) DATABASE_URL: it needs SELECT/INSERT/
+    // UPDATE on users, UPDATE on refresh_tokens, row locks and advisory locks.
+    const createAdmin = () =>
+      execFileSync(
+        'npx',
+        [
+          'ts-node',
+          'scripts/create-admin.ts',
+          'Break@Glass.Test',
+          'Break Glass',
+        ],
+        {
+          env: {
+            ...process.env,
+            DATABASE_URL: appUrl,
+            ADMIN_PASSWORD: 'operator-pw-1',
+          },
+          encoding: 'utf8',
+          stdio: 'pipe',
+        },
+      );
+    expect(createAdmin()).toMatch(/ADMIN ready: break@glass\.test .*created/);
+
+    const server = app.getHttpServer() as App;
+    const login = await request(server)
+      .post('/v1/auth/login')
+      .send({ email: 'break@glass.test', password: 'operator-pw-1' })
+      .expect(200);
+    const { refreshToken } = login.body as { refreshToken: string };
+
+    expect(createAdmin()).toMatch(/existing user reset, all sessions revoked/);
+    await request(server)
+      .post('/v1/auth/refresh')
+      .send({ refreshToken })
+      .expect(401);
+    const row = await appClient.query<{ role: string; mcp: boolean }>(
+      `SELECT role::text AS role, must_change_password AS mcp FROM users
+       WHERE email = 'break@glass.test' AND deleted_at IS NULL`,
+    );
+    expect(row.rows).toEqual([{ role: 'ADMIN', mcp: true }]);
+  }, 120_000);
+
   it('denies TRUNCATE and every kind of DDL', async () => {
     await expectDenied('TRUNCATE journal_lines');
     await expectDenied('CREATE TABLE app_role_probe (id int)');

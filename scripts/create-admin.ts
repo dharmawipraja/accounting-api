@@ -11,6 +11,9 @@
  * /v1/auth/change-password), and for an existing user every refresh token is
  * revoked in the same transaction (stale sessions die with the reset).
  *
+ * Email (valid, ≤ 254), name (1-120 non-blank) and password (8-128) are
+ * validated BEFORE anything touches the DB.
+ *
  * It reads ONLY `process.env` (never a dotenv file itself): DATABASE_URL is
  * required, and the password may come from ADMIN_PASSWORD instead of argv
  * (keeps it out of shell history and `ps`).
@@ -29,6 +32,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, Role } from '@prisma/client';
 import { Pool } from 'pg';
 import * as argon2 from 'argon2';
+import { isEmail } from 'class-validator';
 import {
   REFRESH_SESSION_LOCK_NS,
   USER_ADMIN_LOCK_KEY,
@@ -41,6 +45,10 @@ const USAGE =
 // Same bounds as LoginDto: a password outside them could never log in.
 export const PASSWORD_MIN = 8;
 export const PASSWORD_MAX = 128;
+// Same bounds as CreateUserDto / UpdateUserDto: the app's own user
+// management would reject anything else.
+export const EMAIL_MAX = 254;
+export const NAME_MAX = 120;
 
 export interface BootstrapAdminInput {
   email: string;
@@ -81,7 +89,15 @@ export async function bootstrapAdmin(
   // Same canonical form as the app (src/users/normalize-email.ts): the DB
   // enforces uniqueness on lower(email).
   const email = input.email.trim().toLowerCase();
-  const name = input.name;
+  if (email.length > EMAIL_MAX || !isEmail(email)) {
+    throw new Error(
+      `Email must be a valid email address (at most ${EMAIL_MAX} characters).`,
+    );
+  }
+  const name = input.name.trim();
+  if (name.length < 1 || name.length > NAME_MAX) {
+    throw new Error(`Name must be 1-${NAME_MAX} non-blank characters.`);
+  }
   const passwordHash = await argon2.hash(input.password);
 
   return prisma.$transaction(async (tx) => {

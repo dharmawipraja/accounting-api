@@ -176,4 +176,30 @@ describe('create-admin bootstrap (e2e)', () => {
       await prisma.client.user.count({ where: { email: 'short@admin.test' } }),
     ).toBe(0);
   });
+
+  it.each([
+    ['a malformed email', 'not-an-email', 'Ok Name', /valid email/],
+    ['an over-long email', `${'a'.repeat(250)}@x.co`, 'Ok Name', /valid email/],
+    ['an empty name', 'noname@admin.test', '', /Name must be/],
+    ['a whitespace-only name', 'blank@admin.test', '   ', /Name must be/],
+    ['an over-long name', 'long@admin.test', 'n'.repeat(121), /Name must be/],
+  ])(
+    'rejects %s before touching the DB',
+    async (_label, email, name, message) => {
+      const before = await prisma.client.user.count();
+      // A client whose every call throws: validation must run first.
+      const untouchable = new Proxy({} as PrismaClient, {
+        get: () => {
+          throw new Error('DB touched');
+        },
+      });
+      await expect(
+        bootstrapAdmin(untouchable, { email, password: 'operator-pw-1', name }),
+      ).rejects.toThrow(message);
+      await expect(
+        bootstrapAdmin(client, { email, password: 'operator-pw-1', name }),
+      ).rejects.toThrow(message);
+      expect(await prisma.client.user.count()).toBe(before);
+    },
+  );
 });
