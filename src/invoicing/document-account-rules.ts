@@ -153,6 +153,12 @@ export async function assertTaxLineAccounts(
   taxes: { kind: TaxKind; accountId: string }[],
 ): Promise<void> {
   if (taxes.length === 0) return;
+  // Plain (unlocked) read on purpose: the attributes checked here — subtype,
+  // normal balance, postable, role — are either immutable after create or
+  // only changed via paths that refuse tax accounts (PATCH role:'CASH' is
+  // rejected for an account used by any tax code). The postable/active/live
+  // check that DOES race (deactivate, soft-delete) is re-done under FOR SHARE
+  // by PostingService's in-tx account check for every journal line.
   const accounts = await db.account.findMany({
     where: { id: { in: [...new Set(taxes.map((t) => t.accountId))] } },
     select: {

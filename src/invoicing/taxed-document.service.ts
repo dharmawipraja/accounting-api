@@ -9,6 +9,7 @@ import {
 } from '../common/errors/domain-errors';
 import { BusinessPartnersService } from './business-partners.service';
 import { DocumentPostingService } from './document-posting.service';
+import { lockLivePartnerForShare } from './partner-lock';
 import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
 import {
   LedgerTx,
@@ -126,7 +127,17 @@ export class TaxedDocumentService {
     };
     // A single insert, but still a transaction: under an Idempotency-Key the
     // key is marked committed atomically with it (see PrismaService.transaction).
-    return this.prisma.transaction((tx) => spec.createRow(tx, common, input));
+    // The partner is re-read FOR SHARE first so a concurrent partner delete
+    // (FOR UPDATE) serializes with the insert: the delete then sees this draft
+    // (422 OPEN_ITEMS), or this create sees the partner gone (422).
+    return this.prisma.transaction(async (tx) => {
+      const p = await lockLivePartnerForShare(tx, input.partnerId);
+      if (!p || !p[spec.partnerFlag] || !p.isActive)
+        throw new ValidationFailedError(m.partnerInactive, {
+          partnerId: input.partnerId,
+        });
+      return spec.createRow(tx, common, input);
+    });
   }
 
   /** Edit a DRAFT. The whole edit runs in one transaction that first locks the

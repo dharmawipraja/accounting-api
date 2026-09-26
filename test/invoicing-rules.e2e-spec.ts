@@ -480,7 +480,15 @@ describe('Invoicing rules (e2e)', () => {
         const pid = await newPartner({ isCustomer: true });
         const d = await createInvoice({ partnerId: pid }).expect(201);
         await postDoc('sales-invoices', idOf(d)).expect(200);
-        await deletePartner(pid).expect(422);
+        const res = await deletePartner(pid).expect(422);
+        expect(codeOf(res)).toBe('VALIDATION_FAILED');
+        expect(detailsOf(res)).toEqual({
+          id: pid,
+          reason: 'OPEN_ITEMS',
+          draftDocuments: 0,
+          outstandingDocuments: 1,
+          draftPayments: 0,
+        });
       });
 
       it('refuses a partner with a draft payment (422)', async () => {
@@ -510,6 +518,94 @@ describe('Invoicing rules (e2e)', () => {
           200,
         );
         await deletePartner(pid).expect(204);
+      });
+
+      /** Hold the partner row FOR UPDATE (what softDelete takes first) in a
+       *  separate tx, start the create, wait until it is blocked on that row,
+       *  then tombstone the partner and commit: a create that reads the
+       *  partner FOR SHARE in its own tx must now see it gone (422). Without
+       *  the lock the create never waits and inserts a draft for a partner
+       *  that is deleted a moment later. */
+      async function raceCreateAgainstDelete(
+        pid: string,
+        create: () => request.Test,
+      ): Promise<request.Response> {
+        let release!: () => void;
+        const gate = new Promise<void>((r) => (release = r));
+        let locked!: () => void;
+        const isLocked = new Promise<void>((r) => (locked = r));
+        const holder = prisma.client.$transaction(
+          async (tx) => {
+            await tx.$queryRaw`
+              SELECT id FROM business_partners WHERE id = ${pid} FOR UPDATE`;
+            locked();
+            await gate;
+            await tx.$executeRaw`
+              UPDATE business_partners
+              SET deleted_at = now(), code = code || '#deleted'
+              WHERE id = ${pid}`;
+          },
+          { maxWait: 5000, timeout: 20000 },
+        );
+        await isLocked;
+        const pending = create().then((r) => r);
+        // Poll for a blocked lock request on business_partners (bounded: a
+        // create that takes no lock never shows up and just runs through).
+        for (let i = 0; i < 60; i++) {
+          const [{ n }] = await prisma.client.$queryRaw<{ n: number }[]>`
+            SELECT count(*)::int AS n FROM pg_locks l
+            JOIN pg_class c ON c.oid = l.relation
+            WHERE NOT l.granted AND c.relname = 'business_partners'`;
+          const [{ w }] = await prisma.client.$queryRaw<{ w: number }[]>`
+            SELECT count(*)::int AS w FROM pg_locks
+            WHERE NOT granted AND locktype = 'transactionid'`;
+          if (n + w > 0) break;
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        release();
+        await holder;
+        return pending;
+      }
+
+      it('a draft invoice create racing a partner delete is refused once the delete commits (422)', async () => {
+        const pid = await newPartner({ isCustomer: true });
+        const res = await raceCreateAgainstDelete(pid, () =>
+          createInvoice({ partnerId: pid }),
+        );
+        expect(res.status).toBe(422);
+        expect(detailsOf(res)).toEqual({ partnerId: pid });
+        expect(
+          await prisma.client.salesInvoice.count({ where: { partnerId: pid } }),
+        ).toBe(0);
+      });
+
+      it('a draft bill create racing a partner delete is refused once the delete commits (422)', async () => {
+        const pid = await newPartner({ isVendor: true });
+        const res = await raceCreateAgainstDelete(pid, () =>
+          createBill({ partnerId: pid }),
+        );
+        expect(res.status).toBe(422);
+        expect(detailsOf(res)).toEqual({ partnerId: pid });
+      });
+
+      it('a draft payment create racing a partner delete is refused once the delete commits (422)', async () => {
+        const pid = await newPartner({ isCustomer: true });
+        const d = await createInvoice({ partnerId: pid }).expect(201);
+        await postDoc('sales-invoices', idOf(d)).expect(200);
+        const res = await raceCreateAgainstDelete(pid, () =>
+          send('post', '/v1/payments', acct, {
+            direction: 'RECEIPT',
+            partnerId: pid,
+            date: '2026-03-10',
+            cashAccountId: acc['1-1000'],
+            allocations: [{ salesInvoiceId: idOf(d), amount: '1000' }],
+          }),
+        );
+        expect(res.status).toBe(422);
+        expect(detailsOf(res)).toEqual({ partnerId: pid });
+        expect(
+          await prisma.client.payment.count({ where: { partnerId: pid } }),
+        ).toBe(0);
       });
     });
 

@@ -145,8 +145,9 @@ export class BusinessPartnersService {
    *  invoice/bill/payment and no POSTED invoice/bill with an outstanding
    *  balance — deleting it would orphan receivables/payables (aging, payment
    *  allocation) behind a partner nobody can select any more. The partner row
-   *  is locked FOR UPDATE first; payment post re-reads it FOR SHARE, so a
-   *  post and a delete serialize. 422 `{ id, reason: 'OPEN_ITEMS' }`. */
+   *  is locked FOR UPDATE first; draft create (invoice/bill/payment) and
+   *  payment post re-read it FOR SHARE (lockLivePartnerForShare), so those
+   *  writes and a delete serialize. 422 `{ id, reason: 'OPEN_ITEMS' }`. */
   async softDelete(id: string, deletedBy: string): Promise<void> {
     await this.prisma.transaction(async (tx) => {
       const rows = await tx.$queryRaw<{ code: string }[]>`

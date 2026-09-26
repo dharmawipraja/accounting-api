@@ -14,7 +14,7 @@ describe('TaxCodes (e2e)', () => {
   let adminToken: string;
   let ppnKeluaranId: string; // 2-1100 CREDIT-normal (suits PPN_OUTPUT / PPH_COLLECTED)
   let ppnMasukanId: string; // 1-1400 DEBIT-normal (suits PPN_INPUT / PPH_PREPAID)
-  let kasId: string; // 1-1000 DEBIT-normal (wrong side for PPN_OUTPUT)
+  let kasId: string; // 1-1000 Kas: CASH role (SYSTEM_ROLE for any tax kind)
   let headerAccountId: string; // 1-0000 non-postable header account
   let utangBankId: string; // 2-2000 CREDIT-normal NON_CURRENT_LIABILITY (not a tax subtype)
 
@@ -86,7 +86,8 @@ describe('TaxCodes (e2e)', () => {
   });
 
   // T-1 (CREDIT arm of requiredNormalBalance): PPN_OUTPUT requires CREDIT-normal account.
-  // Using a DEBIT-normal account (1-1000 Kas) must reject at the service layer.
+  // Using a DEBIT-normal role-less account (1-1400 PPN Masukan) must reject at the
+  // service layer (1-1000 Kas would trip SYSTEM_ROLE first — see the next test).
   it('rejects a PPN_OUTPUT code pointed at a DEBIT-normal account — wrong normalBalance (422)', async () => {
     const res = await post({
       code: 'BAD-SIDE',

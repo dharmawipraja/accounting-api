@@ -27,6 +27,7 @@ import {
 } from './document-helpers';
 import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
 import { assertCashAccount } from './document-account-rules';
+import { lockLivePartnerForShare } from './partner-lock';
 import {
   AllocationInput,
   PAYMENT_TARGETS,
@@ -127,9 +128,12 @@ export class PaymentsService {
     }
 
     // Transaction so an idempotent create marks its key committed atomically
-    // with the insert (see PrismaService.transaction).
-    return this.prisma.transaction((tx) =>
-      tx.payment.create({
+    // with the insert (see PrismaService.transaction). The partner is re-read
+    // FOR SHARE first so a concurrent partner delete (FOR UPDATE) serializes
+    // with this insert instead of orphaning a draft behind a deleted partner.
+    return this.prisma.transaction(async (tx) => {
+      await this.assertPartnerInTx(tx, input.partnerId, target);
+      return tx.payment.create({
         data: {
           direction: input.direction,
           partnerId: input.partnerId,
@@ -147,8 +151,8 @@ export class PaymentsService {
           },
         },
         include: { allocations: true },
-      }),
-    );
+      });
+    });
   }
 
   async getById(id: string): Promise<PaymentWithAllocations> {
@@ -323,22 +327,16 @@ export class PaymentsService {
     return this.getById(id);
   }
 
-  /** In-tx partner re-check for payment post (422 on failure). */
+  /** In-tx partner re-check for payment create and post (422 on failure). */
   private async assertPartnerInTx(
     tx: LedgerTx,
     partnerId: string,
     target: (typeof PAYMENT_TARGETS)[PaymentDirection],
   ): Promise<void> {
-    const rows = await tx.$queryRaw<
-      { is_active: boolean; is_customer: boolean; is_vendor: boolean }[]
-    >`
-      SELECT is_active, is_customer, is_vendor FROM business_partners
-      WHERE id = ${partnerId} AND deleted_at IS NULL FOR SHARE`;
-    const p = rows[0];
-    if (!p || !p.is_active)
+    const p = await lockLivePartnerForShare(tx, partnerId);
+    if (!p || !p.isActive)
       throw new ValidationFailedError('Partner is inactive', { partnerId });
-    const hasFlag =
-      target.partnerFlag === 'isCustomer' ? p.is_customer : p.is_vendor;
+    const hasFlag = p[target.partnerFlag];
     if (!hasFlag)
       throw new ValidationFailedError(target.partnerRequiredMessage, {
         partnerId,
