@@ -173,7 +173,10 @@ export class TaxedDocumentService {
           date: input.date ?? row.date,
           // Explicit null clears; omitted (undefined) keeps the stored value.
           dueDate: input.dueDate === undefined ? row.dueDate : input.dueDate,
-          description: input.description ?? row.description,
+          description:
+            input.description === undefined
+              ? row.description
+              : input.description,
           subtotal: totals.subtotal,
           taxTotal: totals.taxTotal,
           withholdingTotal: totals.withholdingTotal,

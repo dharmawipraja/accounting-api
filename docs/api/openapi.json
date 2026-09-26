@@ -5396,12 +5396,14 @@
             "format": "date",
             "description": "Send `null` to clear the due date; omit to keep it."
           },
-          "date": {
-            "type": "string"
-          },
           "description": {
             "type": "string",
-            "maxLength": 255
+            "nullable": true,
+            "maxLength": 255,
+            "description": "Send `null` to clear the description; omit to keep it."
+          },
+          "date": {
+            "type": "string"
           },
           "lines": {
             "minItems": 1,
@@ -5714,12 +5716,14 @@
             "format": "date",
             "description": "Send `null` to clear the due date; omit to keep it."
           },
-          "date": {
-            "type": "string"
-          },
           "description": {
             "type": "string",
-            "maxLength": 255
+            "nullable": true,
+            "maxLength": 255,
+            "description": "Send `null` to clear the description; omit to keep it."
+          },
+          "date": {
+            "type": "string"
           },
           "lines": {
             "minItems": 1,

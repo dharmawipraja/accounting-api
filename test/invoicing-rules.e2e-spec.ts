@@ -627,6 +627,41 @@ describe('Invoicing rules (e2e)', () => {
         }).expect(200);
         expect((res.body as { dueDate: unknown }).dueDate).toBeNull();
       });
+
+      it('clears the description on an invoice and a bill with null; omitted keeps it (200)', async () => {
+        const inv = await createInvoice({ description: 'to clear' }).expect(
+          201,
+        );
+        const kept = await send(
+          'patch',
+          `/v1/sales-invoices/${idOf(inv)}`,
+          acct,
+          { dueDate: '2026-03-31' },
+        ).expect(200);
+        expect((kept.body as { description: string }).description).toBe(
+          'to clear',
+        );
+        const invRes = await send(
+          'patch',
+          `/v1/sales-invoices/${idOf(inv)}`,
+          acct,
+          { description: null },
+        ).expect(200);
+        expect(
+          (invRes.body as { description: unknown }).description,
+        ).toBeNull();
+
+        const bill = await createBill({ description: 'to clear' }).expect(201);
+        const billRes = await send(
+          'patch',
+          `/v1/purchase-bills/${idOf(bill)}`,
+          acct,
+          { description: null },
+        ).expect(200);
+        expect(
+          (billRes.body as { description: unknown }).description,
+        ).toBeNull();
+      });
     });
   });
 });

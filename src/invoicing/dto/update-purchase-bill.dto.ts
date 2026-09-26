@@ -37,7 +37,16 @@ export class UpdatePurchaseBillDto {
   @IsDateString()
   @IsBusinessDate()
   dueDate?: string | null;
-  @IsOptional() @IsString() @MaxLength(255) description?: string;
+  @ApiPropertyOptional({
+    type: String,
+    maxLength: 255,
+    nullable: true,
+    description: 'Send `null` to clear the description; omit to keep it.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  description?: string | null;
   @OptionalNonNull()
   @IsArray()
   @ArrayMinSize(1)

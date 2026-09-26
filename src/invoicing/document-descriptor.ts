@@ -65,7 +65,8 @@ export interface UpdateDocumentInput {
   date?: Date;
   /** `null` clears the stored due date; `undefined` keeps it. */
   dueDate?: Date | null;
-  description?: string;
+  /** `null` clears the stored description; `undefined` keeps it. */
+  description?: string | null;
   lines?: DocumentLineInput[];
 }
 
