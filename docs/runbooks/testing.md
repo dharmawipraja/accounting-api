@@ -85,10 +85,8 @@ Thresholds in `.nycrc.json` (ratcheted to achieved on 2026-06-25, merged baselin
 **Why branches land at 86, not 90:** the 14-point residual is fully accounted for
 by documented (b)-exclusions — DTO-shadowed guards, concurrency-only in-tx
 re-checks, and singleton-unique-index fixtures — none of which are meaningful to
-exercise. See the reconcile list in
-[`docs/superpowers/plans/2026-06-25-coverage-gap-analysis.md`](../superpowers/plans/2026-06-25-coverage-gap-analysis.md)
-(§ "Post-implementation exclusions (effectively-(b))"). **Never write a test
-purely to tick a branch that is documented there.**
+exercise. **Never write a test purely to tick a branch in one of these
+categories.**
 
 The branch threshold is a **ratchet**: when future work adds genuinely-testable
 branches that are exercised, update `.nycrc.json` upward to the new achieved floor;
