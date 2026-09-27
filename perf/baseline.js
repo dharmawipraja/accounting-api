@@ -1,7 +1,9 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 
-const BASE = __ENV.BASE_URL || 'http://localhost:3000';
+const ORIGIN = __ENV.BASE_URL || 'http://localhost:3000';
+// Every business route lives under the /v1 URI version.
+const BASE = `${ORIGIN}/v1`;
 
 export const options = {
   stages: [
@@ -27,14 +29,22 @@ export function setup() {
   check(res, { 'login 200': (r) => r.status === 200 });
   const token = res.json('accessToken');
   // Resolve two posting accounts for the optional write scenario (cash + capital).
-  const accRes = http.get(`${BASE}/ledger/accounts`, {
+  const accRes = http.get(`${BASE}/ledger/accounts?limit=200`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  const accounts = accRes.json('data') || accRes.json() || [];
-  const find = (code) => (accounts.find((a) => a.code === code) || {}).id;
-  return { token, cashId: find('1-1000'), capitalId: find('3-1000') };
+  const accounts = /** @type {Account[]} */ (accRes.json('data') || []);
+  // Cash is a system account, identified by role; Modal is plain seeded equity.
+  const cash = accounts.find((a) => a.role === 'CASH');
+  const capital = accounts.find((a) => a.code === '3-1000');
+  return { token, cashId: cash?.id, capitalId: capital?.id };
 }
 
+/**
+ * @typedef {{ id: string, code: string, role: string | null }} Account
+ * @typedef {{ token: string, cashId?: string, capitalId?: string }} SetupData
+ */
+
+/** @param {SetupData} data */
 export default function (data) {
   const headers = { Authorization: `Bearer ${data.token}` };
   // read-heavy hot paths

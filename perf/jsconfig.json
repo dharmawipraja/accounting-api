@@ -1,0 +1,14 @@
+{
+  // k6 load-test scripts: ES modules run by the k6 runtime, not Node.
+  "compilerOptions": {
+    "target": "ES2021",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "checkJs": true,
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["k6"]
+  },
+  "include": ["*.js"]
+}
