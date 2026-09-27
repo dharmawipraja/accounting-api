@@ -1,5 +1,5 @@
 import { INestApplication, Logger } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import { type App } from 'supertest/types';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../src/common/prisma/prisma.service';

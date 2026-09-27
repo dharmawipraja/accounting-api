@@ -1,4 +1,4 @@
-import * as request from 'supertest';
+import request from 'supertest';
 import { type App } from 'supertest/types';
 import { INestApplication } from '@nestjs/common';
 import { UsersService } from '../src/users/users.service';

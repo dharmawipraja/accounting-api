@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
-import * as ms from 'ms';
+import ms from 'ms';
 import type { StringValue } from 'ms';
 import { RefreshTokenStatus } from '@prisma/client';
 import { LedgerTx, PrismaService } from '../common/prisma/prisma.service';

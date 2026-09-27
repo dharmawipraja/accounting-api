@@ -1,7 +1,7 @@
 // Must stay the first import: pins THROTTLE_LOGIN_IP_LIMIT before throttle.config loads.
 import './throttle-default-env';
 import { INestApplication } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import { type App } from 'supertest/types';
 import { UsersService } from '../src/users/users.service';
 import { AuthService } from '../src/auth/auth.service';

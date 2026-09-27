@@ -1,6 +1,6 @@
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
-import * as request from 'supertest';
+import request from 'supertest';
 import { type App } from 'supertest/types';
 import { bootstrapTestApp, TestApp } from './e2e-helpers';
 import { THROTTLE } from '../src/config/throttle.config';

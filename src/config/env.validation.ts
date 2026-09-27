@@ -2,7 +2,7 @@
 // in isolation, without NestJS bootstrapping reflect-metadata for us.
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
-import * as ms from 'ms';
+import ms from 'ms';
 import { productionCorsViolations } from './cors-origins';
 import type { StringValue } from 'ms';
 import {

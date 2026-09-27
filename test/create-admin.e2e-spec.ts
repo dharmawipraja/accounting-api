@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
-import * as request from 'supertest';
+import request from 'supertest';
 import { type App } from 'supertest/types';
 import { AuthService } from '../src/auth/auth.service';
 import { PrismaService } from '../src/common/prisma/prisma.service';

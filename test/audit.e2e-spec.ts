@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { INestApplication, Logger } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import { type App } from 'supertest/types';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { AuthService } from '../src/auth/auth.service';
