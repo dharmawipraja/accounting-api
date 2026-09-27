@@ -176,8 +176,8 @@ npm run test:e2e:cov     # e2e + coverage
 | --- | --- | --- |
 | `verify` | `npm run typecheck && npm run lint:ci && npm run test && npm run test:e2e:cov` | **THE pre-merge gate.** Runs typecheck → lint (zero warnings) → unit → e2e+coverage, in order, failing fast. CI runs the same chain. |
 | `typecheck` | `tsc --noEmit` | Type-checks the whole project without emitting JS. |
-| `lint` | `eslint "{src,apps,libs,test}/**/*.ts" --fix` | Lints **and auto-fixes** TS. Use while developing. |
-| `lint:ci` | `eslint "{src,apps,libs,test}/**/*.ts" --max-warnings 0` | Lints with **no auto-fix** and fails on any warning. Used by `verify`/CI. |
+| `lint` | `eslint . --fix` | Lints **and auto-fixes** the whole repo (TS + JS; generated `dist/`/coverage output is ignored in `eslint.config.mjs`). Use while developing. |
+| `lint:ci` | `eslint . --max-warnings 0` | Lints the whole repo with **no auto-fix** and fails on any warning. Used by `verify`/CI. |
 
 **Run `npm run verify` before every push/merge.** It is the single command that
 must pass green. Prerequisite: Docker running (for the e2e leg).

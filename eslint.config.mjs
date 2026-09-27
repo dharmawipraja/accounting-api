@@ -1,12 +1,23 @@
 // @ts-check
 import eslint from '@eslint/js';
+import { defineConfig } from 'eslint/config';
 import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
-export default tseslint.config(
+export default defineConfig(
   {
-    ignores: ['eslint.config.mjs'],
+    // Generated output (build, coverage reports) is never linted.
+    ignores: [
+      'eslint.config.mjs',
+      'dist/**',
+      'build/**',
+      'coverage/**',
+      'coverage-e2e/**',
+      'coverage-merged/**',
+      '.nyc_output/**',
+      '.superpowers/**',
+    ],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -34,6 +45,31 @@ export default tseslint.config(
         { varsIgnorePattern: '^_', argsIgnorePattern: '^_' },
       ],
       "prettier/prettier": ["error", { endOfLine: "auto" }],
+    },
+  },
+  {
+    // Plain JS files sit outside every tsconfig, so type-aware rules can't run
+    // on them; lint them with the syntactic rules only.
+    files: ['**/*.js'],
+    ...tseslint.configs.disableTypeChecked,
+  },
+  {
+    // Operational scripts run by bare node (CommonJS, e.g. the migrate image).
+    files: ['scripts/**/*.js'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: { ...globals.node },
+    },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
+  {
+    // k6 load-test scripts: ES modules executed by the k6 runtime.
+    files: ['perf/**/*.js'],
+    languageOptions: {
+      sourceType: 'module',
+      globals: { __ENV: 'readonly', __VU: 'readonly', __ITER: 'readonly' },
     },
   },
   {

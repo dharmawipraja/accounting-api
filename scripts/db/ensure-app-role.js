@@ -59,7 +59,10 @@ async function main() {
   await client.connect();
   try {
     // Bound parameter → the password never appears in statement text/logs.
-    await client.query("SELECT set_config('accounting.app_db_password', $1, false)", [password]);
+    await client.query(
+      "SELECT set_config('accounting.app_db_password', $1, false)",
+      [password],
+    );
     // Simple-query protocol: the multi-statement file runs as one implicit tx.
     await client.query(sql);
   } finally {
@@ -71,6 +74,8 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error(`ensure-app-role: ${err instanceof Error ? err.message : String(err)}`);
+  console.error(
+    `ensure-app-role: ${err instanceof Error ? err.message : String(err)}`,
+  );
   process.exit(1);
 });

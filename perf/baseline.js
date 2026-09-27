@@ -30,7 +30,7 @@ export function setup() {
   const accRes = http.get(`${BASE}/ledger/accounts`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  const accounts = (accRes.json('data') || accRes.json() || []);
+  const accounts = accRes.json('data') || accRes.json() || [];
   const find = (code) => (accounts.find((a) => a.code === code) || {}).id;
   return { token, cashId: find('1-1000'), capitalId: find('3-1000') };
 }
