@@ -27,10 +27,17 @@ groups:
         labels: { severity: warning }
         annotations: { summary: 'Password guessing: an account hit its failed-login ceiling, or >100 failed logins in 15m (see app logs: login_failure_ceiling)' }
       - alert: BackupStale
-        expr: time() - backup_last_success_timestamp_seconds > 93600
+        # absent(): a backup sidecar that never wrote the metric must alert too.
+        expr: time() - backup_last_success_timestamp_seconds > 93600 or absent(backup_last_success_timestamp_seconds)
         for: 10m
         labels: { severity: critical }
-        annotations: { summary: 'No successful DB backup in >26h' }
+        annotations: { summary: 'No successful DB backup in >26h (or the backup metric is missing)' }
+      - alert: OffsiteBackupStale
+        # Offsite configured but no successful upload in >26h (0 = never shipped).
+        expr: (time() - backup_last_offsite_success_timestamp_seconds > 93600) and on() backup_offsite_configured == 1
+        for: 10m
+        labels: { severity: critical }
+        annotations: { summary: 'Offsite backup configured but no successful upload in >26h — backups exist only on this host (see backup logs: WARN)' }
       - alert: DiskSpaceLow
         # Real filesystems only; the VM disk hosts Postgres + backups +
         # Prometheus + Loki, so a full disk takes everything down at once.

@@ -783,6 +783,13 @@ clear WARN and keeps the local dump if a configured tool is missing (a missing `
 with a recipient set also skips the offsite upload, as above). Restore: decrypt
 with `age -d -i <key> file.dump.age > file.dump`, then follow `backup-and-restore.md`.
 
+Each run writes `backup_offsite_configured` and `backup_last_offsite_success_timestamp_seconds`
+(updated only by a successful upload; `0` = never shipped) next to the local
+`backup_last_success_timestamp_seconds`. **`OffsiteBackupStale`** fires when offsite is
+configured but nothing shipped for 26h — a failing upload (expired credentials, missing tool,
+encryption failure) is no longer hidden behind a fresh local dump. `BackupStale` also fires
+when the metric is missing entirely.
+
 ## CD pipeline (OPS-CI-1)
 
 `.github/workflows/cd.yml` is **manual** (`workflow_dispatch`) — it does NOT run on push.

@@ -21,6 +21,10 @@ All notable changes to this project are documented here. The format is based on
   (`LOGIN_FAILURE_LIMIT`, default 20 per 15 min) that only refuses IPs the
   account has never logged in from. New metrics `auth_login_failures_total` /
   `auth_login_lockouts_total` and a `LoginAttack` alert.
+- **Offsite backup failures now alert** — `backup.sh` tracks the offsite upload
+  separately (`backup_last_offsite_success_timestamp_seconds`,
+  `backup_offsite_configured`); new `OffsiteBackupStale` alert, and `BackupStale`
+  also fires when the metric is absent.
 - **Tax rates freeze once used** — `PATCH /tax/codes/:id` with a different `rate`
   returns 409 when any document line uses the code; create a new code instead.
 

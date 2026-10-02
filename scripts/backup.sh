@@ -53,6 +53,7 @@ while true; do
   # A plaintext `.dump` left by such a run is never re-encrypted or shipped
   # later — it stays local-only until retention removes it.
   ship=1
+  shipped=0   # set to 1 only by a successful offsite upload below
   if [ -n "${BACKUP_AGE_RECIPIENT:-}" ]; then
     ship=0
     if command -v age >/dev/null 2>&1; then
@@ -76,22 +77,34 @@ while true; do
     fi
   elif [ -n "${BACKUP_S3_BUCKET:-}" ]; then
     if command -v aws >/dev/null 2>&1; then
-      aws s3 cp "$dump" "s3://$BACKUP_S3_BUCKET/$(basename "$dump")" && echo "offsite (s3/aws): $(basename "$dump")" || echo "WARN: s3 (aws) upload failed — local dump retained" >&2
+      aws s3 cp "$dump" "s3://$BACKUP_S3_BUCKET/$(basename "$dump")" && shipped=1 && echo "offsite (s3/aws): $(basename "$dump")" || echo "WARN: s3 (aws) upload failed — local dump retained" >&2
     elif command -v rclone >/dev/null 2>&1; then
-      rclone copyto "$dump" "$BACKUP_S3_BUCKET/$(basename "$dump")" && echo "offsite (s3/rclone): $(basename "$dump")" || echo "WARN: s3 (rclone) upload failed — local dump retained" >&2
+      rclone copyto "$dump" "$BACKUP_S3_BUCKET/$(basename "$dump")" && shipped=1 && echo "offsite (s3/rclone): $(basename "$dump")" || echo "WARN: s3 (rclone) upload failed — local dump retained" >&2
     else
       echo "WARN: BACKUP_S3_BUCKET set but neither 'aws' nor 'rclone' on PATH — local dump only" >&2
     fi
   elif [ -n "${BACKUP_RSYNC_TARGET:-}" ]; then
     if command -v rsync >/dev/null 2>&1; then
-      rsync -a "$dump" "$BACKUP_RSYNC_TARGET" && echo "offsite (rsync): $(basename "$dump")" || echo "WARN: rsync upload failed — local dump retained" >&2
+      rsync -a "$dump" "$BACKUP_RSYNC_TARGET" && shipped=1 && echo "offsite (rsync): $(basename "$dump")" || echo "WARN: rsync upload failed — local dump retained" >&2
     else
       echo "WARN: BACKUP_RSYNC_TARGET set but 'rsync' not on PATH — local dump only" >&2
     fi
   fi
 
+  # Metrics: the local dump and the offsite copy are tracked SEPARATELY, so a
+  # failing upload (expired credentials, age missing) alerts instead of being
+  # hidden behind a fresh local dump (OffsiteBackupStale in monitoring/alerts.yml).
   mkdir -p "$BACKUP_METRICS_DIR"
-  printf 'backup_last_success_timestamp_seconds %s\n' "$(date +%s)" > "$BACKUP_METRICS_DIR/backup.prom.tmp"
+  now=$(date +%s)
+  offsite_configured=0
+  if [ -n "${BACKUP_S3_BUCKET:-}" ] || [ -n "${BACKUP_RSYNC_TARGET:-}" ]; then offsite_configured=1; fi
+  [ "$shipped" -eq 1 ] && echo "$now" > "$BACKUP_METRICS_DIR/offsite.last"
+  offsite_last=$(cat "$BACKUP_METRICS_DIR/offsite.last" 2>/dev/null || echo 0)
+  {
+    printf 'backup_last_success_timestamp_seconds %s\n' "$now"
+    printf 'backup_offsite_configured %s\n' "$offsite_configured"
+    printf 'backup_last_offsite_success_timestamp_seconds %s\n' "$offsite_last"
+  } > "$BACKUP_METRICS_DIR/backup.prom.tmp"
   mv "$BACKUP_METRICS_DIR/backup.prom.tmp" "$BACKUP_METRICS_DIR/backup.prom"
   find "$BACKUP_DIR" -name 'accounting-*.dump*' -mtime +"$RETENTION_DAYS" -delete
   sleep "$BACKUP_INTERVAL"
