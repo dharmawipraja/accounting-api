@@ -279,4 +279,13 @@ export const CHART_OF_ACCOUNTS: SeedAccount[] = [
     role: 'TAX_EXPENSE',
     parentCode: '5-0000',
   },
+  {
+    code: '5-9100',
+    name: 'Beban PPh Final',
+    type: 'EXPENSE',
+    subtype: 'OTHER_EXPENSE',
+    normalBalance: 'DEBIT',
+    cashFlowCategory: 'OPERATING',
+    parentCode: '5-0000',
+  },
 ];

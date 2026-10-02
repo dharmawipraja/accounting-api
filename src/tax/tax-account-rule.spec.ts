@@ -23,6 +23,14 @@ describe('taxAccountViolation (tax-code account rule)', () => {
     expect(taxAccountViolation(kind, acct)).toBeNull();
   });
 
+  it('accepts PPH_PREPAID on a debit-normal expense (final PPh)', () => {
+    const expense = { ...receivable, subtype: 'OTHER_EXPENSE' } as const;
+    expect(taxAccountViolation('PPH_PREPAID', expense)).toBeNull();
+    expect(taxAccountViolation('PPN_INPUT', expense)).toMatchObject({
+      details: { reason: 'SUBTYPE' },
+    });
+  });
+
   it('rejects a non-postable account', () => {
     expect(
       taxAccountViolation('PPN_OUTPUT', { ...payable, isPostable: false }),

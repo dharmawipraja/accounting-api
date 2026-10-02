@@ -22,6 +22,11 @@ export interface TaxAccountViolation {
   };
 }
 
+const FINAL_PPH_EXPENSE: AccountSubtype[] = [
+  'OPERATING_EXPENSE',
+  'OTHER_EXPENSE',
+];
+
 /** Input VAT / prepaid PPh are recoverable (debit-normal receivables); output
  *  VAT / withheld PPh are owed (credit-normal payables). */
 function isReceivableKind(kind: TaxKind): boolean {
@@ -33,8 +38,8 @@ function isReceivableKind(kind: TaxKind): boolean {
  * re-checked inside the document post transaction): postable, no system role
  * (a tax posting must never land on cash, AR/AP control, equity or tax-expense
  * accounts), and shaped for the kind — PPN_INPUT/PPH_PREPAID need a
- * DEBIT-normal TAX_RECEIVABLE account, PPN_OUTPUT/PPH_PAYABLE a CREDIT-normal
- * TAX_PAYABLE one. Returns null when the account is acceptable.
+ * DEBIT-normal TAX_RECEIVABLE account (PPH_PREPAID: or a DEBIT-normal expense,
+ * for final PPh), PPN_OUTPUT/PPH_PAYABLE a CREDIT-normal TAX_PAYABLE one. Returns null when the account is acceptable.
  */
 export function taxAccountViolation(
   kind: TaxKind,
@@ -62,6 +67,11 @@ export function taxAccountViolation(
         normalBalance: a.normalBalance,
       },
     };
+  // PPH_PREPAID may also land on an expense: final PPh (e.g. 4(2) on rent)
+  // withheld by the customer is not creditable, so it is Beban PPh Final, not
+  // a prepaid-tax asset.
+  if (kind === 'PPH_PREPAID' && FINAL_PPH_EXPENSE.includes(a.subtype))
+    return null;
   const requiredSubtype: AccountSubtype = receivable
     ? 'TAX_RECEIVABLE'
     : 'TAX_PAYABLE';

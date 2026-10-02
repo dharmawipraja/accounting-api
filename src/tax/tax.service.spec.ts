@@ -35,6 +35,14 @@ const CODES = [
     isActive: true,
   },
   {
+    id: 'pph42-pay',
+    code: 'PPH42-PAY',
+    kind: 'PPH_PAYABLE',
+    rate: '0.10',
+    taxAccountId: 'acc-pph42',
+    isActive: true,
+  },
+  {
     id: 'inactive',
     code: 'OLD',
     kind: 'PPN_OUTPUT',
@@ -169,6 +177,34 @@ describe('TaxService.calculate', () => {
         ],
       }),
     ).rejects.toBeInstanceOf(ValidationFailedError);
+  });
+
+  it('rejects two PPh codes stacked on one line (422)', async () => {
+    await expect(
+      make().calculate({
+        nature: 'PURCHASE',
+        settlementAccountId: 'ap',
+        lines: [
+          {
+            accountId: 'exp',
+            amount: '1000000',
+            taxCodeIds: ['ppn-in', 'pph-pay', 'pph42-pay'],
+          },
+        ],
+      }),
+    ).rejects.toThrow('at most one PPN code and one PPh code');
+  });
+
+  it('allows different PPh codes on different lines', async () => {
+    const r = await make().calculate({
+      nature: 'PURCHASE',
+      settlementAccountId: 'ap',
+      lines: [
+        { accountId: 'exp', amount: '1000000', taxCodeIds: ['pph-pay'] },
+        { accountId: 'rent', amount: '1000000', taxCodeIds: ['pph42-pay'] },
+      ],
+    });
+    expect(r.withholdingTotal).toBe('120000.0000');
   });
 
   it('rejects an unknown tax code (422)', async () => {

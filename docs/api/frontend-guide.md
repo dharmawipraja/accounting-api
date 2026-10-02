@@ -958,6 +958,7 @@ Codes are `N-NNNN`; the `N-0000` rows are non-postable headers. Seeded leaves in
 | `3-9000` | Saldo Awal            | Opening-balance equity (plug)    |
 | `4-1000` | Pendapatan Penjualan  | Sales revenue                    |
 | `5-1000` | Harga Pokok Penjualan | Cost of goods sold (HPP / COGS)  |
+| `5-9100` | Beban PPh Final       | Final PPh 4(2) withheld by customers (expense) |
 
 Header ranges: **1 = Aset (assets), 2 = Liabilitas (liabilities), 3 = Ekuitas
 (equity), 4 = Pendapatan (revenue), 5 = Beban (expenses).**

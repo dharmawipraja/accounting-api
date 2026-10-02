@@ -335,7 +335,11 @@ before it.
 ### Tax code & `TaxKind`
 A `TaxCode` is a reusable rate + GL account with a `kind` (`TaxKind` enum): `PPN_OUTPUT`,
 `PPN_INPUT`, `PPH_PAYABLE`, `PPH_PREPAID`. Sales may only carry `PPN_OUTPUT` / `PPH_PREPAID`;
-purchases only `PPN_INPUT` / `PPH_PAYABLE`.
+purchases only `PPN_INPUT` / `PPH_PAYABLE`. A line carries at most **one PPN code and
+one PPh code** (two of the same bucket would tax the same DPP twice → 422).
+A code's **rate is frozen once any document line uses it** (409 `TAX_CODE_IN_USE`):
+a rate change (e.g. PPN 11% → 12%) is a new code, and the old one is deactivated, so
+every document keeps the rate it was taxed at.
 - `TaxCode` model (`kind`, `rate Decimal(9,6)`, `taxAccountId`); `ALLOWED_KINDS` map in
   `src/tax/tax.service.ts`.
 
@@ -345,13 +349,16 @@ tax-payable account); on a purchase you pay **input VAT** (`PPN_INPUT`, a debit 
 tax-receivable account). Computed as base × rate, rounded once to whole rupiah per code.
 - `TaxService.calculate`: output → credit, input → debit; `base.multiplyToRupiah(rate)`.
 - A tax code's account must be postable, carry no system role, and match the kind:
-  input/prepaid → DEBIT-normal `TAX_RECEIVABLE`, output/payable → CREDIT-normal
+  input/prepaid → DEBIT-normal `TAX_RECEIVABLE` (prepaid may also be a DEBIT-normal
+  `OPERATING_EXPENSE`/`OTHER_EXPENSE` — final PPh), output/payable → CREDIT-normal
   `TAX_PAYABLE` (`src/tax/tax-account-rule.ts`; checked on tax-code create and re-checked
   inside the document post transaction).
 
 ### PPh — Pajak Penghasilan (withholding income tax)
 Tax withheld on income. On a sale your customer withholds from you → `PPH_PREPAID`
-(a debit prepayment, an asset). On a purchase you withhold from the vendor → `PPH_PAYABLE`
+(a debit prepayment, an asset — creditable PPh 23 goes to `1-1500 Uang Muka PPh`). **Final**
+PPh (4(2), e.g. rent) is not creditable, so it is an expense: the seeded `PPH42-PRE` posts
+to `5-9100 Beban PPh Final`. On a purchase you withhold from the vendor → `PPH_PAYABLE`
 (a credit you owe the tax office). Withholding *reduces* the cash settled.
 - `TaxService.calculate`: prepaid → debit, payable → credit.
 

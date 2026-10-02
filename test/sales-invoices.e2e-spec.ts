@@ -810,4 +810,32 @@ describe('SalesInvoices (e2e)', () => {
       expectInvalid(res, a.id);
     });
   });
+
+  it('refuses a rate change on a tax code already used on a document (409); same rate is a no-op', async () => {
+    const taxCodes = app.get(TaxCodesService);
+    const tc = await taxCodes.create({
+      code: 'PPN-RATE-LOCK',
+      name: 'PPN rate lock',
+      kind: 'PPN_OUTPUT',
+      rate: '0.11',
+      taxAccountId: acc['2-1100'],
+    });
+    // Unused: the rate may still be corrected.
+    await taxCodes.update(tc.id, { rate: '0.12' });
+    await taxCodes.update(tc.id, { rate: '0.11' });
+    const body = draftBody();
+    body.lines[0].taxCodeIds = [tc.id];
+    await request(app.getHttpServer() as App)
+      .post('/v1/sales-invoices')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send(body)
+      .expect(201);
+    await expect(taxCodes.update(tc.id, { rate: '0.12' })).rejects.toThrow(
+      'rate cannot change',
+    );
+    await expect(
+      taxCodes.update(tc.id, { rate: '0.110000', name: 'Renamed' }),
+    ).resolves.toMatchObject({ name: 'Renamed' });
+  });
 });

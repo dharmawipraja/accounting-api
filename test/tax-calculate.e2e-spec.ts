@@ -125,6 +125,51 @@ describe('Tax calculate (e2e)', () => {
     expect(findLine(body.journalLines, acc['1-1500']).debit).toBe('20000.0000');
   });
 
+  it('books customer-withheld final PPh 4(2) to Beban PPh Final (5-9100), not Uang Muka PPh', async () => {
+    const res = await request(app.getHttpServer() as App)
+      .post('/v1/tax/calculate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        nature: 'SALE',
+        settlementAccountId: acc['1-1200'],
+        lines: [
+          {
+            accountId: acc['4-1000'],
+            amount: '1000000',
+            taxCodeIds: [code['PPH42-PRE']],
+          },
+        ],
+      })
+      .expect(200);
+    const body = res.body as {
+      journalLines: { accountId: string; debit?: string; credit?: string }[];
+    };
+    expect(findLine(body.journalLines, acc['5-9100']).debit).toBe(
+      '100000.0000',
+    );
+    expect(
+      body.journalLines.find((l) => l.accountId === acc['1-1500']),
+    ).toBeUndefined();
+  });
+
+  it('rejects PPh 23 + PPh 4(2) stacked on one line (422)', async () => {
+    await request(app.getHttpServer() as App)
+      .post('/v1/tax/calculate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        nature: 'PURCHASE',
+        settlementAccountId: acc['2-1000'],
+        lines: [
+          {
+            accountId: acc['5-3000'],
+            amount: '1000000',
+            taxCodeIds: [code['PPH23-PAY'], code['PPH42-PAY']],
+          },
+        ],
+      })
+      .expect(422);
+  });
+
   it('rejects a PPN_INPUT code on a SALE (422 kind-vs-nature)', async () => {
     await request(app.getHttpServer() as App)
       .post('/v1/tax/calculate')

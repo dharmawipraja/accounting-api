@@ -46,9 +46,10 @@ export const TAX_CODE_SEED: SeedTaxCode[] = [
   },
   {
     code: 'PPH42-PRE',
-    name: 'PPh 4(2) Sewa 10% (dipungut)',
+    name: 'PPh 4(2) Sewa 10% (dipotong pelanggan, final)',
     kind: 'PPH_PREPAID',
     rate: '0.10',
-    accountCode: '1-1500',
+    // Final tax — not creditable, so an expense rather than Uang Muka PPh.
+    accountCode: '5-9100',
   },
 ];

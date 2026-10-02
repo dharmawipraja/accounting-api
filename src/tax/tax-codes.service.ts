@@ -176,12 +176,40 @@ export class TaxCodesService implements OnModuleInit {
       raw.name === undefined
         ? raw
         : { ...raw, name: normalizeDisplayName(raw.name) };
-    await this.findById(id);
-    if (input.rate !== undefined) this.validateRate(input.rate);
+    const current = await this.findById(id);
+    if (input.rate !== undefined) {
+      this.validateRate(input.rate);
+      if (!new Decimal(input.rate).equals(current.rate.toString()))
+        await this.assertRateUnused(id);
+    }
     return this.prisma.client.taxCode.update({
       where: { id },
       data: { name: input.name, rate: input.rate, isActive: input.isActive },
     });
+  }
+
+  /** A rate change on a code already on a document would silently re-rate its
+   *  drafts at post and leave posted documents with no record of the rate they
+   *  used. Rate changes (11% → 12%) are a new code; deactivate the old one.
+   *  ponytail: check-then-update, not locked against a concurrent document
+   *  create — worst case one draft posts at the new rate, never a posted one. */
+  private async assertRateUnused(id: string): Promise<void> {
+    const where = { taxCodeIds: { has: id } };
+    const [invoiceLine, billLine] = await Promise.all([
+      this.prisma.client.salesInvoiceLine.findFirst({
+        where,
+        select: { id: true },
+      }),
+      this.prisma.client.purchaseBillLine.findFirst({
+        where,
+        select: { id: true },
+      }),
+    ]);
+    if (invoiceLine || billLine)
+      throw new ConflictDomainError(
+        'Tax code is used on documents; its rate cannot change. Create a new tax code and deactivate this one.',
+        { taxCodeId: id, reason: 'TAX_CODE_IN_USE' },
+      );
   }
 
   async deactivate(id: string): Promise<TaxCode> {

@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **Tax codes no longer stack** — a document line may carry at most one PPN code
+  and one PPh code (e.g. `PPH23-PAY` + `PPH42-PAY` on one line → 422).
+- **Final PPh 4(2) is an expense** — the seeded `PPH42-PRE` now posts to the new
+  `5-9100 Beban PPh Final`, not `1-1500 Uang Muka PPh`; `PPH_PREPAID` codes may
+  target a debit-normal expense account. *Existing installs* (seeding only runs
+  on an empty DB): create `5-9100` (EXPENSE / OTHER_EXPENSE / DEBIT), create a new
+  `PPH_PREPAID` code on it, and deactivate the old `PPH42-PRE`.
+- **Tax rates freeze once used** — `PATCH /tax/codes/:id` with a different `rate`
+  returns 409 when any document line uses the code; create a new code instead.
+
 ## [1.1.0] - 2026-06-25
 
 ### Added

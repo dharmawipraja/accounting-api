@@ -51,6 +51,9 @@ const ALLOWED_KINDS: Record<TaxNature, TaxKind[]> = {
   PURCHASE: ['PPN_INPUT', 'PPH_PAYABLE'],
 };
 
+const taxBucket = (kind: TaxKind): 'PPN' | 'PPH' =>
+  kind === 'PPN_OUTPUT' || kind === 'PPN_INPUT' ? 'PPN' : 'PPH';
+
 @Injectable()
 export class TaxService {
   constructor(private readonly prisma: PrismaService) {}
@@ -107,6 +110,20 @@ export class TaxService {
         throw new ValidationFailedError(
           `Tax kind ${c.kind} is not allowed for a ${input.nature}`,
           { taxCodeId: c.id, kind: c.kind, nature: input.nature },
+        );
+      }
+    }
+
+    // At most one PPN and one PPh code per line: two codes of the same bucket
+    // (PPh 23 + PPh 4(2), or two PPN rates) tax the same DPP twice.
+    for (const line of input.lines) {
+      const buckets = line.taxCodeIds.map((id) =>
+        taxBucket(byId.get(id)!.kind),
+      );
+      if (new Set(buckets).size !== buckets.length) {
+        throw new ValidationFailedError(
+          'A line may carry at most one PPN code and one PPh code',
+          { accountId: line.accountId, taxCodeIds: line.taxCodeIds },
         );
       }
     }

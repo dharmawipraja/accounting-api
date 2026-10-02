@@ -59,7 +59,7 @@ describe('Accounts (e2e)', () => {
   it('seedIfEmpty is idempotent', async () => {
     await app.get(AccountsService).seedIfEmpty();
     const count = await prisma.client.account.count();
-    expect(count).toBe(28);
+    expect(count).toBe(29);
   });
 
   it('seedIfEmpty assigns system-account roles', async () => {
