@@ -14,6 +14,17 @@ All notable changes to this project are documented here. The format is based on
   WIB client after midnight posted to the previous day). Audit-log `from`/`to`
   filters still accept timestamps.
 
+### Changed
+
+- **Audit log stores less for anonymous requests** — a login row (success or
+  failure) keeps only `{ email }`; refresh/logout rows store `{}` (previously
+  the redacted body). Anonymous interceptor rows now also count against the
+  per-IP audit budget.
+- Internal simplifications (no API change): one soft-delete `$allOperations`
+  hook + shared `tombstoneData()` (now also covering `updateManyAndReturn`),
+  one ordered `classifyException()` shared by the exception filter and audit
+  status, and a single-key-space audit rejection limiter.
+
 ### Removed
 
 - `GET /v1/auth/admin-only` (Phase-1 RBAC smoke route) and the
