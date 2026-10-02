@@ -17,6 +17,12 @@ describe('Soft-delete extension hardening (integration)', () => {
     await db?.stop();
   });
 
+  const softDelete = (id: string) =>
+    prisma.client.businessPartner.update({
+      where: { id },
+      data: { deletedAt: new Date(), deletedBy: 'tester' },
+    });
+
   const newPartner = (code: string) =>
     prisma.client.businessPartner.create({
       data: { code, name: `P-${code}`, isCustomer: true },
@@ -24,7 +30,7 @@ describe('Soft-delete extension hardening (integration)', () => {
 
   it('a raw update cannot mutate a soft-deleted row (P2025)', async () => {
     const p = await newPartner('SD-UPD');
-    await prisma.client.businessPartner.softDelete({ id: p.id }, 'tester');
+    await softDelete(p.id);
     await expect(
       prisma.client.businessPartner.update({
         where: { id: p.id },
@@ -35,7 +41,7 @@ describe('Soft-delete extension hardening (integration)', () => {
 
   it('updateMany skips soft-deleted rows (count 0)', async () => {
     const p = await newPartner('SD-UPDM');
-    await prisma.client.businessPartner.softDelete({ id: p.id }, 'tester');
+    await softDelete(p.id);
     const res = await prisma.client.businessPartner.updateMany({
       where: { id: p.id },
       data: { name: 'HACKED' },
@@ -52,7 +58,7 @@ describe('Soft-delete extension hardening (integration)', () => {
       _count: { _all: true },
     });
     expect(mid._count._all).toBe(before._count._all + 1);
-    await prisma.client.businessPartner.softDelete({ id: p.id }, 'tester');
+    await softDelete(p.id);
     const after = await prisma.client.businessPartner.aggregate({
       _count: { _all: true },
     });

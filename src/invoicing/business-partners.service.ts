@@ -13,7 +13,7 @@ import {
 } from '../common/text/identifier';
 import { trigramSearch } from '../common/search/trigram-search';
 import { listPaginated, Paginated } from '../common/pagination/paginated';
-import { tombstoneValue } from '../common/prisma/tombstone';
+import { tombstoneData } from '../common/prisma/tombstone';
 import type { LedgerTx } from '../common/prisma/prisma.service';
 
 /** A partner role and the open items that depend on it. */
@@ -288,15 +288,9 @@ export class BusinessPartnersService {
             draftPayments: open.draftPayments,
           },
         );
-      // Same tombstone semantics as the extension's tombstoneDelete() (not
-      // available on `tx`): free the unique code, stamp deletedAt/By.
       await tx.businessPartner.update({
         where: { id },
-        data: {
-          code: tombstoneValue(rows[0].code, id),
-          deletedAt: new Date(),
-          deletedBy,
-        },
+        data: tombstoneData('code', rows[0].code, id, deletedBy),
       });
     });
   }

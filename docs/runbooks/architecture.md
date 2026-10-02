@@ -372,8 +372,8 @@ replay reproduces the original status + body.
 extension over the models in `SOFT_DELETE_MODELS` (User, Account, JournalEntry,
 TaxCode, BusinessPartner, SalesInvoice, PurchaseBill, Payment). It auto-injects
 `deletedAt: null` into reads/updates, **forbids hard `delete`/`deleteMany`/`upsert`**
-(throws → 500, a loud programmer-error guard), and adds a `softDelete()` model
-method. Always go through `PrismaService.client` so this applies.
+(throws → 500, a loud programmer-error guard). Soft delete is a plain `update`
+with `tombstoneData()`. Always go through `PrismaService.client` so this applies.
 
 ### `AccountRole` — system accounts by role, not code
 System accounts are identified by the `AccountRole` enum on `Account.role`, **never**
@@ -406,8 +406,8 @@ missing). Singleton roles (e.g. `AR_CONTROL`, `AP_CONTROL`, `RETAINED_EARNINGS`,
 - **`POSTED_JE`** (`src/ledger/balances/posted-entry.sql.ts`): shared
   `Prisma.sql` predicate `je.posted_at IS NOT NULL AND je.deleted_at IS NULL` used
   by all raw-SQL balance queries.
-- **`tombstoneDelete` / `tombstoneValue`** (`src/common/prisma/soft-delete.extension.ts`
-  + tombstone.ts): tombstone deletes for reference-master rows (users, accounts,
+- **`tombstoneData` / `tombstoneValue`** (`src/common/prisma/tombstone.ts`):
+  `update` data for tombstone deletes (works on the client or a `tx`) for reference-master rows (users, accounts,
   tax-codes, business-partners), where the unique field (e.g. `email`, `code`) is
   mangled on delete to free the value for re-use.
 - **Dates**: `fiscalYearForDate(date, startMonth)` (`src/common/dates/fiscal-year.ts`)

@@ -14,6 +14,12 @@ describe('Soft delete extension (e2e)', () => {
     await db?.stop();
   });
 
+  const softDelete = (id: string) =>
+    client.user.update({
+      where: { id },
+      data: { deletedAt: new Date(), deletedBy: 'tester' },
+    });
+
   it('hides soft-deleted rows from findMany/findFirst/count', async () => {
     const user = await client.user.create({
       data: {
@@ -23,7 +29,7 @@ describe('Soft delete extension (e2e)', () => {
         role: 'VIEWER',
       },
     });
-    await client.user.softDelete({ id: user.id }, 'tester');
+    await softDelete(user.id);
     expect(
       await client.user.findMany({ where: { email: 'sd1@example.com' } }),
     ).toEqual([]);
@@ -42,7 +48,7 @@ describe('Soft delete extension (e2e)', () => {
         role: 'VIEWER',
       },
     });
-    await client.user.softDelete({ id: user.id }, 'tester');
+    await softDelete(user.id);
     expect(await client.user.findUnique({ where: { id: user.id } })).toBeNull();
   });
 
@@ -69,7 +75,7 @@ describe('Soft delete extension (e2e)', () => {
         role: 'VIEWER',
       },
     });
-    await client.user.softDelete({ id: user.id }, 'tester');
+    await softDelete(user.id);
     const found = await client.user.findUnique({
       where: { id: user.id },
       select: { id: true, email: true },
@@ -86,7 +92,7 @@ describe('Soft delete extension (e2e)', () => {
         role: 'VIEWER',
       },
     });
-    await client.user.softDelete({ id: user.id }, 'tester');
+    await softDelete(user.id);
     await expect(
       client.user.findUniqueOrThrow({ where: { id: user.id } }),
     ).rejects.toMatchObject({ code: 'P2025' });

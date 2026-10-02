@@ -19,6 +19,7 @@ import {
 } from '../common/errors/domain-errors';
 import { mapUniqueViolation } from '../common/errors/map-unique-violation';
 import { TAX_CODE_SEED } from './tax-codes.seed';
+import { tombstoneData } from '../common/prisma/tombstone';
 import {
   normalizeDisplayName,
   normalizeIdentifierCode,
@@ -222,12 +223,10 @@ export class TaxCodesService implements OnModuleInit {
 
   async softDelete(id: string, deletedBy: string): Promise<void> {
     const taxCode = await this.findById(id);
-    await this.prisma.client.taxCode.tombstoneDelete(
-      id,
-      'code',
-      taxCode.code,
-      deletedBy,
-    );
+    await this.prisma.client.taxCode.update({
+      where: { id },
+      data: tombstoneData('code', taxCode.code, id, deletedBy),
+    });
   }
 
   async seedIfEmpty(): Promise<void> {

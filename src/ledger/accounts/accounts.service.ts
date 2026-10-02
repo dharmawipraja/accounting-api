@@ -1,7 +1,7 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { Account, AccountSubtype, AccountType, Prisma } from '@prisma/client';
 import { LedgerTx, PrismaService } from '../../common/prisma/prisma.service';
-import { tombstoneValue } from '../../common/prisma/tombstone';
+import { tombstoneData } from '../../common/prisma/tombstone';
 import { listPaginated, Paginated } from '../../common/pagination/paginated';
 import {
   ConflictDomainError,
@@ -388,15 +388,9 @@ export class AccountsService implements OnModuleInit {
           { id },
         );
       }
-      // Same tombstone semantics as the extension's tombstoneDelete() (which
-      // is not available on `tx`): free the unique code, stamp deletedAt/By.
       await tx.account.update({
         where: { id },
-        data: {
-          code: tombstoneValue(account.code, id),
-          deletedAt: new Date(),
-          deletedBy,
-        },
+        data: tombstoneData('code', account.code, id, deletedBy),
       });
     });
   }

@@ -2,6 +2,7 @@ import { PrismaService } from '../src/common/prisma/prisma.service';
 import { UsersService } from '../src/users/users.service';
 import { ConflictDomainError } from '../src/common/errors/domain-errors';
 import { makePrismaOverride } from './e2e-helpers';
+import { tombstoneData } from '../src/common/prisma/tombstone';
 import { startTestDb, TestDb } from './testcontainers';
 
 describe('UsersService (e2e)', () => {
@@ -16,10 +17,13 @@ describe('UsersService (e2e)', () => {
     users = new UsersService(prisma);
   }, 120_000);
 
-  /** Tombstone a user the way the soft-delete extension does (the app's only
-   *  deletion path is UserAdminService.remove, covered in users-management e2e). */
+  /** Tombstone a user the way the app does (the app's only deletion path is
+   *  UserAdminService.remove, covered in users-management e2e). */
   const tombstone = (id: string, email: string) =>
-    prisma.client.user.tombstoneDelete(id, 'email', email, 'admin-id');
+    prisma.client.user.update({
+      where: { id },
+      data: tombstoneData('email', email, id, 'admin-id'),
+    });
 
   afterAll(async () => {
     await prisma.$disconnect();
