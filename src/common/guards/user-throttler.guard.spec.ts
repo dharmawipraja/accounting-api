@@ -34,13 +34,13 @@ describe('UserThrottlerGuard.getTracker', () => {
     );
   });
 
-  it('keys the LOGIN handler by the normalized email', async () => {
+  it('keys the LOGIN handler by (normalized email, IP)', async () => {
     await expect(
       guard.getTracker(
         { ip: '1.2.3.4', body: { email: ' A@B.io ' } },
         loginCtx,
       ),
-    ).resolves.toBe('login:a@b.io');
+    ).resolves.toBe('login:a@b.io|1.2.3.4');
   });
 
   it('iter8: a decomposed and a precomposed email share ONE login bucket (NFC)', async () => {
@@ -49,7 +49,7 @@ describe('UserThrottlerGuard.getTracker', () => {
         { ip: '1.2.3.4', body: { email: 'JOSE\u0301@b.io' } },
         loginCtx,
       ),
-    ).resolves.toBe('login:jos\u00E9@b.io');
+    ).resolves.toBe('login:jos\u00E9@b.io|1.2.3.4');
   });
 
   it('login without a string email falls back to ip', async () => {

@@ -15,6 +15,12 @@ All notable changes to this project are documented here. The format is based on
   target a debit-normal expense account. *Existing installs* (seeding only runs
   on an empty DB): create `5-9100` (EXPENSE / OTHER_EXPENSE / DEBIT), create a new
   `PPH_PREPAID` code on it, and deactivate the old `PPH42-PRE`.
+- **Login throttle can no longer lock the owner out** — the per-minute login
+  bucket is keyed by (email, client IP) instead of email alone. Guessing one
+  account from many IPs is capped by a new per-account failed-login ceiling
+  (`LOGIN_FAILURE_LIMIT`, default 20 per 15 min) that only refuses IPs the
+  account has never logged in from. New metrics `auth_login_failures_total` /
+  `auth_login_lockouts_total` and a `LoginAttack` alert.
 - **Tax rates freeze once used** — `PATCH /tax/codes/:id` with a different `rate`
   returns 409 when any document line uses the code; create a new code instead.
 

@@ -24,6 +24,15 @@ export const THROTTLE = {
   changePassword: Number(process.env.THROTTLE_CHANGE_PASSWORD_LIMIT) || 10,
 } as const;
 
+/** Per-account failed-login ceiling (LoginFailureLimiter): after `limit`
+ *  failures within `windowMs`, the account refuses logins from IPs it has never
+ *  logged in from (known IPs are remembered for `knownIpTtlMs`). */
+export const LOGIN_FAILURE = {
+  limit: Number(process.env.LOGIN_FAILURE_LIMIT) || 20,
+  windowMs: 15 * 60_000,
+  knownIpTtlMs: 30 * 24 * 60 * 60_000,
+} as const;
+
 /** Per-request timeout (ms) for the RequestTimeoutInterceptor.
  *  Deliberately ABOVE the 30s DB statement timeout: the RxJS timeout can only
  *  stop observing the handler (the query keeps running server-side), so the

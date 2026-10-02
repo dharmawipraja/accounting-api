@@ -26,7 +26,9 @@
   parsing such as `'"30"'`) makes the `backup` sidecar log the error and exit 64
   **without dumping** (it restarts ~once a minute until fixed; check
   `$COMPOSE logs backup`), `THROTTLE_LIMIT` (per-user requests/min, default 300),
-  `THROTTLE_LOGIN_LIMIT` (per-email login attempts/min, default 10),
+  `THROTTLE_LOGIN_LIMIT` (login attempts/min per (email, client IP), default 10),
+  `LOGIN_FAILURE_LIMIT` (failed logins per account per 15 min, default 20; past it the
+  account refuses logins from IPs it has never logged in from — `auth_login_lockouts_total`),
   `THROTTLE_LOGIN_IP_LIMIT` (per-client-IP login attempts/min across all emails, default 30),
   `ARGON2_MAX_CONCURRENCY` (concurrent password hash/verify per process, 1-64,
   default 8; callers queue ≤5s, then `503`),

@@ -21,6 +21,11 @@ groups:
         for: 5m
         labels: { severity: warning }
         annotations: { summary: 'DB pool has waiting requests for 5m (raise DB_POOL_MAX?)' }
+      - alert: LoginAttack
+        expr: increase(auth_login_lockouts_total[15m]) > 0 or increase(auth_login_failures_total[15m]) > 100
+        for: 0m
+        labels: { severity: warning }
+        annotations: { summary: 'Password guessing: an account hit its failed-login ceiling, or >100 failed logins in 15m (see app logs: login_failure_ceiling)' }
       - alert: BackupStale
         expr: time() - backup_last_success_timestamp_seconds > 93600
         for: 10m

@@ -4,7 +4,15 @@ import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UnauthorizedDomainError } from '../common/errors/domain-errors';
+import { LoginFailureLimiter } from './login-failure-limiter';
+import { MetricsService } from '../metrics/metrics.service';
 import { RefreshTokenService } from './refresh-token.service';
+
+const limiter = () =>
+  new LoginFailureLimiter(null, {
+    incLoginFailure: jest.fn(),
+    incLoginLockout: jest.fn(),
+  } as unknown as MetricsService);
 
 describe('AuthService.login (constant-time)', () => {
   it('verifies a hash even when the user does not exist (no early return)', async () => {
@@ -18,6 +26,7 @@ describe('AuthService.login (constant-time)', () => {
       {} as unknown as JwtService,
       {} as unknown as ConfigService,
       {} as unknown as RefreshTokenService,
+      limiter(),
     );
 
     await expect(auth.login('ghost@x.com', 'whatever')).rejects.toBeInstanceOf(
@@ -43,6 +52,7 @@ describe('AuthService.login (constant-time)', () => {
       {} as unknown as JwtService,
       {} as unknown as ConfigService,
       {} as unknown as RefreshTokenService,
+      limiter(),
     );
 
     await expect(auth.login('x@y.com', 'correct')).rejects.toBeInstanceOf(
@@ -74,6 +84,7 @@ describe('AuthService.login (success log)', () => {
       {
         issue: jest.fn().mockResolvedValue({ jti: 'j1' }),
       } as unknown as RefreshTokenService,
+      limiter(),
     );
     try {
       await expect(

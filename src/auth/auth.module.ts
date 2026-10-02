@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RefreshTokenService } from './refresh-token.service';
+import { LoginFailureLimiter } from './login-failure-limiter';
 import { RefreshTokenPurgeService } from './refresh-token-purge.service';
 
 @Module({
@@ -15,6 +16,7 @@ import { RefreshTokenPurgeService } from './refresh-token-purge.service';
     JwtStrategy,
     RefreshTokenService,
     RefreshTokenPurgeService,
+    LoginFailureLimiter,
   ],
   controllers: [AuthController],
   exports: [AuthService, RefreshTokenService],

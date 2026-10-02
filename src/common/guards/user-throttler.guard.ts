@@ -40,20 +40,21 @@ export class UserThrottlerGuard extends ThrottlerGuard {
   ): Promise<string> {
     const userId = req.user?.id;
     if (userId) return Promise.resolve(`user:${userId}`);
-    // Login only: key by the submitted email so per-account brute force is
-    // bounded regardless of a spoofed X-Forwarded-For (combining with IP would
-    // let a rotating spoofed IP restore a fresh budget). The complementary
-    // per-client-IP ceiling (rotating EMAILS) is the separate `loginIp` named
-    // throttler — see common/guards/login-ip-throttle.ts.
+    // Login only: key by (email, IP). Email alone let anyone lock any account
+    // (the admin included) out from every IP by sending bad logins for it.
+    // Guessing one account from MANY IPs is bounded by the per-account
+    // failed-login ceiling (auth/login-failure-limiter.ts); rotating EMAILS
+    // from one IP by the `loginIp` named throttler (login-ip-throttle.ts).
     // Every OTHER anonymous route is keyed by IP: honouring `email` there let a
     // caller add a rotating `email` field to e.g. /auth/refresh and get a fresh
-    // bucket per request (AUDIT3-17).
+    // bucket per request.
     if (context && isLoginIpThrottled(context.getHandler())) {
       const email =
         typeof req.body?.email === 'string'
           ? normalizeEmail(req.body.email)
           : null;
-      if (email) return Promise.resolve(`login:${email}`);
+      if (email)
+        return Promise.resolve(`login:${email}|${req.ip ?? 'unknown'}`);
     }
     return Promise.resolve(`ip:${req.ip ?? 'unknown'}`);
   }

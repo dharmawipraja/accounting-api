@@ -13,6 +13,8 @@ export class MetricsService {
   readonly registry = new Registry();
   readonly httpDuration: Histogram<string>;
   private readonly ledgerPosted: Counter<string>;
+  private readonly loginFailures: Counter<string>;
+  private readonly loginLockouts: Counter<string>;
 
   constructor(private readonly prisma: PrismaService) {
     collectDefaultMetrics({ register: this.registry });
@@ -26,6 +28,16 @@ export class MetricsService {
     this.ledgerPosted = new Counter({
       name: 'ledger_entries_posted_total',
       help: 'Total posted journal entries',
+      registers: [this.registry],
+    });
+    this.loginFailures = new Counter({
+      name: 'auth_login_failures_total',
+      help: 'Failed login attempts (wrong password, unknown or inactive user)',
+      registers: [this.registry],
+    });
+    this.loginLockouts = new Counter({
+      name: 'auth_login_lockouts_total',
+      help: 'Logins refused by the per-account failed-login ceiling',
       registers: [this.registry],
     });
     const stats = () => this.prisma.getPoolStats();
@@ -57,6 +69,14 @@ export class MetricsService {
 
   incLedgerEntriesPosted(): void {
     this.ledgerPosted.inc();
+  }
+
+  incLoginFailure(): void {
+    this.loginFailures.inc();
+  }
+
+  incLoginLockout(): void {
+    this.loginLockouts.inc();
   }
 
   async metrics(): Promise<string> {

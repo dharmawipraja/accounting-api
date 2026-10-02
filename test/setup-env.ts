@@ -11,3 +11,5 @@ process.env.JWT_REFRESH_TTL = '7d';
 // 429 "flakiness". Raised for the suite; throttle.e2e-spec.ts pins the real
 // default back via ./throttle-default-env (imported first).
 process.env.THROTTLE_LOGIN_IP_LIMIT ??= '1000';
+// Same for the per-account failed-login ceiling (specs probe many bad logins).
+process.env.LOGIN_FAILURE_LIMIT ??= '1000';

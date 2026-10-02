@@ -70,20 +70,47 @@ describe('Throttle policy (e2e)', () => {
     }
   });
 
-  it('SEC-3: login throttle is per-email, not bypassable by rotating X-Forwarded-For', async () => {
-    const statuses: number[] = [];
-    for (let i = 0; i < 11; i++) {
-      const res = await request(app.getHttpServer() as App)
+  it('an attacker IP cannot lock the owner out: the per-minute login bucket is per (email, IP)', async () => {
+    await app.get(UsersService).create({
+      email: 'owner@test.io',
+      password: 'secret123',
+      name: 'Owner',
+      role: 'ADMIN',
+    });
+    const attempt = (ip: string, password: string) =>
+      request(app.getHttpServer() as App)
         .post('/v1/auth/login')
-        .set('X-Forwarded-For', `203.0.113.${i}`) // a DIFFERENT client IP each attempt
-        // distinct email → fresh bucket, isolated from the per-IP test above
-        .send({ email: 'sec3@test.io', password: 'wrong-password' });
-      statuses.push(res.status);
-    }
-    // The first 10 genuinely land under the cap (proves no bucket bleed)...
+        .set('X-Forwarded-For', ip)
+        .send({ email: 'owner@test.io', password });
+    const statuses: number[] = [];
+    for (let i = 0; i < 11; i++)
+      statuses.push((await attempt('198.51.100.7', 'wrong-password')).status);
     expect(statuses.slice(0, 10).every((s) => s === 401)).toBe(true);
-    // ...then the email-keyed bucket trips regardless of the rotating IP.
-    expect(statuses[10]).toBe(429);
+    expect(statuses[10]).toBe(429); // the attacker's own IP is throttled...
+    // ...while the owner, from their own IP, still logs in.
+    await attempt('198.51.100.8', 'secret123').expect(200);
+  });
+
+  it('caps guessing one account from MANY IPs; IPs that logged in before keep working', async () => {
+    await app.get(UsersService).create({
+      email: 'spray@test.io',
+      password: 'secret123',
+      name: 'Spray',
+      role: 'ACCOUNTANT',
+    });
+    const attempt = (ip: string, password: string) =>
+      request(app.getHttpServer() as App)
+        .post('/v1/auth/login')
+        .set('X-Forwarded-For', ip)
+        .send({ email: 'spray@test.io', password });
+    await attempt('192.0.2.200', 'secret123').expect(200); // a known IP
+    // LOGIN_FAILURE_LIMIT (default 20) failures, each from a fresh IP.
+    for (let i = 0; i < 20; i++)
+      await attempt(`203.0.113.${i}`, 'wrong-password').expect(401);
+    // An unseen IP is now refused even with the right password...
+    await attempt('203.0.113.99', 'secret123').expect(429);
+    // ...but the owner's known IP is not locked out.
+    await attempt('192.0.2.200', 'secret123').expect(200);
   });
 
   it('AUDIT3-7: login is ALSO capped per client IP — rotating emails cannot bypass it', async () => {

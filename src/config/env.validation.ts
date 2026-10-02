@@ -196,6 +196,11 @@ export class EnvVars {
   @IsOptional()
   @IsInt()
   @Min(1)
+  LOGIN_FAILURE_LIMIT?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
   THROTTLE_REFRESH_LIMIT?: number;
 
   /** Max concurrent argon2 hash/verify operations per process (64 MiB each). */

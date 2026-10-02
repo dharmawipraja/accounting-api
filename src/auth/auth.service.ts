@@ -10,6 +10,7 @@ import {
   JwtPayload,
   RefreshJwtPayload,
 } from './strategies/jwt.strategy';
+import { LoginFailureLimiter } from './login-failure-limiter';
 import { RefreshTokenService } from './refresh-token.service';
 
 export interface TokenPair {
@@ -26,6 +27,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly refreshTokens: RefreshTokenService,
+    private readonly loginFailures: LoginFailureLimiter,
   ) {}
 
   /** @param ip the client address (`req.ip`), logged on success so every
@@ -35,12 +37,15 @@ export class AuthService {
     password: string,
     ip?: string,
   ): Promise<TokenPair> {
+    await this.loginFailures.assertAllowed(email, ip);
     const user = await this.users.findByEmailWithHash(email);
     // Always run a verify (decoy when the user is absent) so timing is constant.
     const valid = await this.users.verifyPasswordOrDecoy(user, password);
     if (!user || !user.isActive || !valid) {
+      await this.loginFailures.recordFailure(email);
       throw new UnauthorizedDomainError('Invalid credentials');
     }
+    await this.loginFailures.recordSuccess(email, ip);
     const { jti } = await this.refreshTokens.issue(user.id);
     const tokens = await this.issueTokens(
       { id: user.id, email: user.email, role: user.role },
