@@ -25,6 +25,13 @@ export interface UpdateCompanyInput {
   isPkp?: boolean;
 }
 
+const SOD_SOURCES = new Set([
+  'MANUAL',
+  'SALES_INVOICE',
+  'PURCHASE_BILL',
+  'PAYMENT',
+]);
+
 @Injectable()
 export class CompanyService implements OnModuleInit {
   constructor(private readonly prisma: PrismaService) {}
@@ -78,7 +85,11 @@ export class CompanyService implements OnModuleInit {
     };
   }
 
-  /** Whether a post violates segregation of duties (enabled + MANUAL + poster is the creator). */
+  /** Whether a post violates segregation of duties: enabled, a user-authored
+   *  source (manual journal, invoice, bill, payment) and the poster is its
+   *  creator. Without the documents a single user could create and post a
+   *  vendor bill and then pay it. OPENING (admin-only, created-and-posted in
+   *  one call) and system CLOSING entries are exempt. */
   async isSegregationViolation(args: {
     sourceType: string;
     createdBy: string;
@@ -87,7 +98,7 @@ export class CompanyService implements OnModuleInit {
     const { segregationOfDutiesEnabled } = await this.get();
     return (
       segregationOfDutiesEnabled &&
-      args.sourceType === 'MANUAL' &&
+      SOD_SOURCES.has(args.sourceType) &&
       args.postedBy === args.createdBy
     );
   }

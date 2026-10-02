@@ -49,12 +49,22 @@ describe('CompanyService.isSegregationViolation', () => {
       false,
     );
   });
-  it('false for non-MANUAL source types', async () => {
-    const svc = build({ segregationOfDutiesEnabled: true });
-    expect(
-      await svc.isSegregationViolation({ ...A, sourceType: 'SALES_INVOICE' }),
-    ).toBe(false);
-  });
+  it.each(['SALES_INVOICE', 'PURCHASE_BILL', 'PAYMENT'])(
+    'true for %s created and posted by the same user',
+    async (sourceType) => {
+      const svc = build({ segregationOfDutiesEnabled: true });
+      expect(await svc.isSegregationViolation({ ...A, sourceType })).toBe(true);
+    },
+  );
+  it.each(['OPENING', 'CLOSING', 'REVERSAL'])(
+    'false for the exempt source %s',
+    async (sourceType) => {
+      const svc = build({ segregationOfDutiesEnabled: true });
+      expect(await svc.isSegregationViolation({ ...A, sourceType })).toBe(
+        false,
+      );
+    },
+  );
   it('false when the flag is disabled', async () => {
     const svc = build({ segregationOfDutiesEnabled: false });
     expect(await svc.isSegregationViolation(A)).toBe(false);

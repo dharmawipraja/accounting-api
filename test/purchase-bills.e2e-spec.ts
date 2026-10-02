@@ -600,4 +600,24 @@ describe('PurchaseBills (e2e)', () => {
       expectInvalid(await create(a.id).expect(422), a.id);
     });
   });
+
+  it('segregation of duties: the user who created a bill cannot post it (403), another user can', async () => {
+    const draft = await request(app.getHttpServer() as App)
+      .post('/v1/purchase-bills')
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({ ...draftBody(), vendorInvoiceNo: 'SOD-1' })
+      .expect(201);
+    const id = (draft.body as { id: string }).id;
+    const res = await request(app.getHttpServer() as App)
+      .post(`/v1/purchase-bills/${id}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(403);
+    expect((res.body as { code: string }).code).toBe('SEGREGATION_OF_DUTIES');
+    const bill = await prisma.client.purchaseBill.findUniqueOrThrow({
+      where: { id },
+    });
+    expect(bill.status).toBe('DRAFT');
+  });
 });

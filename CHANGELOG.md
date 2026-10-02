@@ -25,6 +25,10 @@ All notable changes to this project are documented here. The format is based on
   separately (`backup_last_offsite_success_timestamp_seconds`,
   `backup_offsite_configured`); new `OffsiteBackupStale` alert, and `BackupStale`
   also fires when the metric is absent.
+- **Segregation of duties covers documents** — with
+  `segregationOfDutiesEnabled` (default on), the creator of a sales invoice,
+  purchase bill or payment can no longer post it (403 `SEGREGATION_OF_DUTIES`),
+  closing the create-bill-then-pay-it path. Previously only manual journals.
 - **Tax rates freeze once used** — `PATCH /tax/codes/:id` with a different `rate`
   returns 409 when any document line uses the code; create a new code instead.
 

@@ -156,9 +156,13 @@ debits/credits are swapped, which nets the original to zero. The original is mar
   by voiding the document, and `CLOSING` entries by reopening the year.
 
 ### Segregation of duties (SoD)
-Internal control: for `MANUAL` entries, the user who posts must differ from the user who
-created the entry (toggleable per company). Document-sourced entries are exempt.
-- `CompanySettings.segregationOfDutiesEnabled`; enforced in `preparePosting` / `postDraft`.
+Internal control: for manual journal entries, sales invoices, purchase bills and payments,
+the user who posts must differ from the user who created it (toggleable per company; 403
+`SEGREGATION_OF_DUTIES`). Otherwise one user could create and post a vendor bill and then
+pay it. `OPENING` (admin-only, created and posted in one call), `CLOSING` and `REVERSAL`
+entries are exempt.
+- `CompanySettings.segregationOfDutiesEnabled`; `SOD_SOURCES` in `company.service.ts`;
+  enforced in `preparePosting` (documents and payments post through it) / `postDraft`.
 
 ---
 
