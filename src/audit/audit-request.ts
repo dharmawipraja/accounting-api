@@ -61,22 +61,18 @@ function capParams(params: Record<string, unknown> | undefined): unknown {
     : truncateCodePoints(json, AUDIT_PARAMS_MAX);
 }
 
-/** Serialized-body byte cap (UTF-8) for an AUTHENTICATED 2xx row on a handler
- *  that binds a `@Body()` DTO — or a 408 / 5xx row whose body the global
- *  ValidationPipe accepted (`bodyValidated`): the only rows whose body passed
- *  validation (forbidNonWhitelisted bounds every accepted write). It sits above the
- *  largest DTO-valid body: a 100-line JE whose 500-char descriptions are all
- *  JSON-escaped control characters (6 bytes/unit) serializes to ~317 KB, a
- *  maximal bill ~210 KB — so a legitimate write is never truncated in the
- *  append-only log. Asserted by audit-request.spec.ts. */
+/** Serialized-body byte cap (UTF-8) for an AUTHENTICATED row whose body the
+ *  global ValidationPipe accepted (`auditBodyOf`; forbidNonWhitelisted bounds
+ *  every accepted write). It sits above the largest DTO-valid body: a 100-line
+ *  JE whose 500-char descriptions are all JSON-escaped control characters
+ *  (6 bytes/unit) serializes to ~317 KB, a maximal bill ~210 KB — so a
+ *  legitimate write is never truncated in the append-only log. Asserted by
+ *  audit-request.spec.ts. */
 export const AUDIT_BODY_MAX_BYTES = 512 * 1024;
-/** Byte cap for every OTHER row that stores a body: authenticated rejections
- *  (status >= 400 — a guard 403, a 400 on an any-role route: the body never
- *  passed validation) and anonymous success / 5xx rows. Junk input stays small
- *  (disk-fill DoS, AUDIT3-17 / iteration-4). */
+/** Byte cap for every OTHER authenticated row: a rejected body (a 400, a
+ *  guard 403 / 429 — it never passed validation) or a read-only POST. Junk
+ *  input stays small (disk-fill DoS, AUDIT3-17 / iteration-4 / iteration-5). */
 export const AUDIT_SMALL_BODY_MAX_BYTES = 8192;
-/** Byte cap for ANONYMOUS rows that may store a body (success / 5xx). */
-export const AUDIT_ANON_BODY_MAX_BYTES = AUDIT_SMALL_BODY_MAX_BYTES;
 /** Preview length (code points of the JSON text) kept when a body is capped. */
 export const AUDIT_BODY_PREVIEW_CODE_POINTS = 1024;
 
@@ -88,10 +84,11 @@ export interface TruncatedAuditBody {
   preview: string;
 }
 
-/** Caps an (already sanitized) body at `maxBytes` (default: the authenticated
- *  AUDIT_BODY_MAX_BYTES) of serialized UTF-8. Small bodies are returned unchanged; larger ones become a
- *  `TruncatedAuditBody` whose preview is the first
- *  AUDIT_BODY_PREVIEW_CODE_POINTS code points of the JSON (surrogate-safe). Pure. */
+/** Caps an (already sanitized) body at `maxBytes` (default
+ *  AUDIT_BODY_MAX_BYTES) of serialized UTF-8. Small bodies are returned
+ *  unchanged; larger ones become a `TruncatedAuditBody` whose preview is the
+ *  first AUDIT_BODY_PREVIEW_CODE_POINTS code points of the JSON
+ *  (surrogate-safe). Pure. */
 export function capBody(
   body: unknown,
   maxBytes: number = AUDIT_BODY_MAX_BYTES,
@@ -106,30 +103,6 @@ export function capBody(
     preview: truncateCodePoints(json, AUDIT_BODY_PREVIEW_CODE_POINTS),
   };
   return marker;
-}
-
-/** The body byte cap for a row: `AUDIT_BODY_MAX_BYTES` only for an
- *  authenticated request on a state-changing handler that either succeeded
- *  (status < 300) or — when the global ValidationPipe accepted its body DTO
- *  (`bodyValidated`, see `audit/validated-body`) — ended in a 408 (request
- *  timeout: the write may still have committed) or a 5xx: that body is
- *  DTO-bounded and may record a committed write, so it is never truncated.
- *  The caller must also have checked that the handler binds a body
- *  (`auditBodyOf`). `AUDIT_SMALL_BODY_MAX_BYTES` for everything else,
- *  including every other 4xx and every row of a read-only POST (`readOnly`,
- *  `@ReadOnlyPost()`: it writes nothing, so its body never needs the large
- *  tier). Pure. */
-export function auditBodyCap(
-  req: Pick<AuditableRequest, 'user'>,
-  status: number,
-  readOnly = false,
-  bodyValidated = false,
-): number {
-  const largeTierStatus =
-    status < 300 || (bodyValidated && (status === 408 || status >= 500));
-  return req.user && largeTierStatus && !readOnly
-    ? AUDIT_BODY_MAX_BYTES
-    : AUDIT_SMALL_BODY_MAX_BYTES;
 }
 
 /** Route-argument paramtypes (Nest `RouteParamtypes`) that hand the handler
@@ -147,27 +120,15 @@ export function bindsRequestBody(routeArgs: unknown): boolean {
   );
 }
 
-/** Whether an audit row for this outcome may store the request body. An
- *  ANONYMOUS (no `req.user`) client error (4xx) stores `withheldBody` instead:
- *  unauthenticated junk is never copied into the append-only log (disk-fill
- *  DoS, AUDIT3-17). */
-export function auditBodyAllowed(
-  req: Pick<AuditableRequest, 'user'>,
-  status: number,
-): boolean {
-  return !(status >= 400 && status < 500 && !req.user);
-}
-
-/** Max code points of the forensic email kept for a failed login (RFC 5321
+/** Max code points of the forensic email kept for a login attempt (RFC 5321
  *  path limit). */
 export const AUDIT_LOGIN_EMAIL_MAX = 254;
 
-/** The only part of a LOGIN body kept on a rejected anonymous attempt:
- *  `{ email }` normalized (normalizeEmail: trim + lowercase + NFC) and
- *  capped at 254 code points (surrogate safe) — enough to investigate
- *  credential stuffing against an account. The password (and every other
- *  field) is never stored. `{}` when there is no non-blank string email.
- *  Pure. */
+/** The only part of a LOGIN body ever stored: `{ email }` normalized
+ *  (normalizeEmail: trim + lowercase + NFC) and capped at 254 code points
+ *  (surrogate safe) — enough to investigate credential stuffing against an
+ *  account. The password (and every other field) is never stored. `{}` when
+ *  there is no non-blank string email. Pure. */
 export function loginAttemptBody(body: unknown): { email?: string } {
   const email =
     body && typeof body === 'object' && 'email' in body
@@ -180,12 +141,6 @@ export function loginAttemptBody(body: unknown): { email?: string } {
     : {};
 }
 
-/** The body stored when the full body is withheld (`auditBodyAllowed` false):
- *  the forensic email on a login attempt, `{}` everywhere else. */
-export function withheldBody(req: AuditableRequest): unknown {
-  return isLoginAttempt(req) ? loginAttemptBody(req.body) : {};
-}
-
 export function isMutating(method: string): boolean {
   return MUTATING.has(method);
 }
@@ -194,41 +149,46 @@ export function markAudited(req: AuditableRequest): void {
   req[AUDITED] = true;
 }
 
+/** Whether a row with outcome `status` carries a body the global
+ *  ValidationPipe ACCEPTED: every body-binding handler takes a whole-body DTO
+ *  and a pipe rejection is always a 400, so any outcome other than a client
+ *  error — a 2xx, a 5xx, or a 408 (request timeout: the write may still have
+ *  committed) — got past the pipe. Guard rejections are 4xx. Pure. */
+function bodyAccepted(status: number): boolean {
+  return status < 400 || status === 408 || status >= 500;
+}
+
 /** The stored body for a row with outcome `status`:
- *  - a handler that binds no body (`bindsBody: false`) → `{}`, whatever the status;
- *  - an anonymous 4xx → `withheldBody` (`{}`, or `{ email }` on a login attempt);
- *  - otherwise the sanitized body, size-capped (`capBody`) at `auditBodyCap`:
- *    512 KiB only for an authenticated 2xx — or 408 / 5xx with a validated
- *    body (`bodyValidated`) — on a state-changing handler, 8 KiB for every
- *    other row (incl. a read-only POST, `readOnly`). Pure. */
+ *  - a handler that binds no body (`bindsBody: false`) → `{}`;
+ *  - an ANONYMOUS request → `{}`, except a login attempt (`LOGIN_ATTEMPT`),
+ *    which keeps only `{ email }` (`loginAttemptBody`): unauthenticated input
+ *    is never copied into the append-only log (disk-fill DoS, AUDIT3-17);
+ *  - an authenticated request → the sanitized body, size-capped (`capBody`)
+ *    at `AUDIT_BODY_MAX_BYTES` when the pipe accepted it (`bodyAccepted`) on
+ *    a state-changing handler, else `AUDIT_SMALL_BODY_MAX_BYTES` (incl. every
+ *    row of a `@ReadOnlyPost()` handler, `readOnly`). Pure. */
 export function auditBodyOf(
   req: AuditableRequest,
   status: number,
-  bindsBody: boolean,
+  bindsBody = true,
   readOnly = false,
-  bodyValidated = false,
 ): unknown {
   if (!bindsBody) return {};
-  if (!auditBodyAllowed(req, status)) return withheldBody(req);
+  if (!req.user) return isLoginAttempt(req) ? loginAttemptBody(req.body) : {};
+  const large = !readOnly && bodyAccepted(status);
   return capBody(
     sanitize(req.body),
-    auditBodyCap(req, status, readOnly, bodyValidated),
+    large ? AUDIT_BODY_MAX_BYTES : AUDIT_SMALL_BODY_MAX_BYTES,
   );
 }
 
 /** The request-derived audit fields shared by the interceptor and the
- *  exception filter, for a row with outcome `status`. `bindsBody` (default
- *  true: the exception filter has no handler; its guard rejections are >= 400
- *  and so take the small cap anyway; `readOnly` / `bodyValidated` default
- *  false) — see `auditBodyOf`. */
+ *  exception filter, for a row with outcome `status` — see `auditBodyOf`
+ *  (`bindsBody` defaults to true: the exception filter has no handler; its
+ *  rejections are 4xx and so take the small cap anyway). */
 export function auditBaseOf(
   req: AuditableRequest,
-  opts: {
-    status: number;
-    bindsBody?: boolean;
-    readOnly?: boolean;
-    bodyValidated?: boolean;
-  },
+  opts: { status: number; bindsBody?: boolean; readOnly?: boolean },
 ): AuditBase {
   return {
     userId: req.user?.id ?? null,
@@ -236,13 +196,7 @@ export function auditBaseOf(
     method: req.method,
     path: truncateCodePoints(req.originalUrl ?? req.url, AUDIT_PATH_MAX),
     params: capParams(req.params),
-    body: auditBodyOf(
-      req,
-      opts.status,
-      opts.bindsBody ?? true,
-      opts.readOnly ?? false,
-      opts.bodyValidated ?? false,
-    ),
+    body: auditBodyOf(req, opts.status, opts.bindsBody, opts.readOnly),
     ip: req.ip ?? null,
     requestId:
       typeof req.id === 'string' || typeof req.id === 'number'

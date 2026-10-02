@@ -5,8 +5,6 @@ function setup(
     limit?: number;
     maxKeys?: number;
     globalLimit?: number;
-    userLimit?: number;
-    tokenGrantUserLimit?: number;
   } = {},
 ) {
   let t = 1_000_000;
@@ -15,8 +13,6 @@ function setup(
   const limiter = new RejectionAuditLimiter({
     limit: opts.limit ?? 3,
     globalLimit: opts.globalLimit,
-    userLimit: opts.userLimit,
-    tokenGrantUserLimit: opts.tokenGrantUserLimit,
     windowMs: 60_000,
     maxKeys: opts.maxKeys ?? 10_000,
     now: () => t,
@@ -123,8 +119,8 @@ describe('RejectionAuditLimiter', () => {
     expect(allowed).toBe(600);
   });
 
-  it('authenticated rejections use a per-user bucket (default 60/window), not the IP one', () => {
-    const { limiter, reports, advance } = setup({ limit: 1 });
+  it('user rows use a per-user bucket (same limit), not the IP one', () => {
+    const { limiter, reports, advance } = setup({ limit: 60 });
     let allowed = 0;
     for (let i = 0; i < 70; i++) if (limiter.allow('1.1.1.1', 'u1')) allowed++;
     expect(allowed).toBe(60);
@@ -137,82 +133,24 @@ describe('RejectionAuditLimiter', () => {
     expect(reports).toContainEqual(['user:u1', 10]);
   });
 
-  it('authenticated rows are never blocked by, nor consume, the anonymous global ceiling', () => {
-    const { limiter } = setup({ limit: 100, globalLimit: 2, userLimit: 5 });
+  it('user rows are never blocked by, nor consume, the anonymous global ceiling', () => {
+    const { limiter } = setup({ limit: 100, globalLimit: 2 });
     expect(limiter.allow('a')).toBe(true);
     expect(limiter.allow('b')).toBe(true);
     expect(limiter.allow('c')).toBe(false); // anonymous global cap reached
-    expect(limiter.allow('c', 'u1')).toBe(true); // authenticated still audited
-    // and a fresh window's anonymous budget is not eaten by authenticated rows
-    const { limiter: l2 } = setup({ limit: 100, globalLimit: 2, userLimit: 5 });
+    // a user row (authenticated rejection, or a successful login / refresh
+    // keyed to its token owner) is still audited
+    expect(limiter.allow('c', 'u1')).toBe(true);
+    // and a fresh window's anonymous budget is not eaten by user rows
+    const { limiter: l2 } = setup({ limit: 100, globalLimit: 2 });
     for (let i = 0; i < 5; i++) l2.allow('x', 'u1');
     expect(l2.allow('a')).toBe(true);
     expect(l2.allow('b')).toBe(true);
   });
 
-  it('honours a custom userLimit', () => {
-    const { limiter } = setup({ userLimit: 2 });
-    expect([1, 2, 3].map(() => limiter.allow('9.9.9.9', 'u1'))).toEqual([
-      true,
-      true,
-      false,
-    ]);
-  });
-
-  it('allowAnonymousGlobal (interceptor rows) shares the anonymous global ceiling', () => {
-    const { limiter, globalReports, advance } = setup({
-      limit: 100,
-      globalLimit: 3,
-    });
-    expect(limiter.allowAnonymousGlobal()).toBe(true);
-    expect(limiter.allow('1.1.1.1')).toBe(true);
-    expect(limiter.allowAnonymousGlobal()).toBe(true);
-    // Ceiling reached by the two writers together.
-    expect(limiter.allowAnonymousGlobal()).toBe(false);
-    expect(limiter.allow('2.2.2.2')).toBe(false);
-    // Authenticated rejections are never blocked by it.
-    expect(limiter.allow('3.3.3.3', 'u1')).toBe(true);
-    advance(60_000);
-    expect(limiter.allowAnonymousGlobal()).toBe(true);
-    expect(globalReports).toEqual([2]);
-  });
-
-  it('iter6: token-grant (refresh) 2xx rows use a per-user bucket (default 60/window) that never touches the global ceiling', () => {
-    const { limiter, advance } = setup({ globalLimit: 1 });
-    for (let i = 0; i < 60; i++) {
-      expect(limiter.allowTokenGrant('u1')).toBe(true);
-    }
-    // Global ceiling untouched by those 60 rows.
-    expect(limiter.allowAnonymousGlobal()).toBe(true);
-    // Past the per-user bucket: falls back to the (now exhausted) global ceiling.
-    expect(limiter.allowTokenGrant('u1')).toBe(false);
-    // Another user has its own bucket.
-    expect(limiter.allowTokenGrant('u2')).toBe(true);
-    advance(60_000);
-    expect(limiter.allowTokenGrant('u1')).toBe(true);
-  });
-
-  it('iter6: past the per-user token-grant bucket the global ceiling still admits rows while it has budget', () => {
-    const { limiter } = setup({ globalLimit: 2, tokenGrantUserLimit: 1 });
-    expect(limiter.allowTokenGrant('u1')).toBe(true); // bucket
-    expect(limiter.allowTokenGrant('u1')).toBe(true); // global 1
-    expect(limiter.allowTokenGrant('u1')).toBe(true); // global 2
-    expect(limiter.allowTokenGrant('u1')).toBe(false);
-    expect(limiter.allowAnonymousGlobal()).toBe(false);
-  });
-
-  it('iter6: an unknown token-grant subject goes straight to the global ceiling', () => {
-    const { limiter } = setup({ globalLimit: 1 });
-    expect(limiter.allowTokenGrant(null)).toBe(true);
-    expect(limiter.allowTokenGrant(null)).toBe(false);
-    expect(limiter.allowTokenGrant('')).toBe(false);
-  });
-
-  it('iter6: the token-grant key space is memory-bounded (maxKeys) and counted in size', () => {
-    const { limiter } = setup({ maxKeys: 2, globalLimit: 0 });
-    expect(limiter.allowTokenGrant('a')).toBe(true);
-    expect(limiter.allowTokenGrant('b')).toBe(true);
-    expect(limiter.allowTokenGrant('c')).toBe(true); // evicts 'a'
-    expect(limiter.size).toBe(2);
+  it('a null / empty user id falls back to the IP bucket + global ceiling', () => {
+    const { limiter } = setup({ limit: 100, globalLimit: 1 });
+    expect(limiter.allow('a', null)).toBe(true);
+    expect(limiter.allow('b', '')).toBe(false);
   });
 });

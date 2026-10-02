@@ -133,19 +133,20 @@ One stable error envelope, no leaked internals.
 - **Audit coverage:** one row per mutating request (interceptor), plus guard
   rejections 401/403/429 and input-hygiene 400 `INVALID_CHARACTERS` rejections
   (`InputHygieneGuard`, `src/common/http/input-hygiene.ts` — after auth + throttle,
-  so an authenticated caller's row carries its user) from `AllExceptionsFilter` (fire-and-forget, capped 60/min
-  per IP and 600/min globally — anonymous interceptor rows, 2xx, 4xx and 5xx, share
-  that global ceiling; a successful login is exempt and a successful refresh gets
-  60/min per token owner first). A 503 from an unavailable throttler store and 404s
-  are **not** audited.
+  so an authenticated caller's row carries its user) from `AllExceptionsFilter` (fire-and-forget).
+  One shared `RejectionAuditLimiter` bounds those rows and every anonymous
+  interceptor row: 60/min per IP + 600/min globally for anonymous rows; 60/min per
+  user (never touching the global ceiling) for an authenticated rejection or a
+  successful login / refresh (keyed to the issued token's `sub`). A 503 from an
+  unavailable throttler store and 404s are **not** audited.
   Stored bodies: `{}` for a handler with no `@Body()` (interceptor rows; a
   filter-written authenticated 403/429 on such a route has no handler context and
-  stores ≤ 8 KiB) and anonymous 4xx, 512 KiB
-  cap only for an authenticated 2xx on a `@Body()` handler — or a 408 / 5xx whose
-  body the global ValidationPipe accepted (`src/audit/validated-body.ts`; register
-  the pipe only via `globalValidationPipe()`) — 8 KiB for every other row
-  (incl. every row of a `@ReadOnlyPost()` handler — mark a new state-free POST
-  with it). `scripts/create-admin.ts` writes its own row (method `CLI`,
+  stores ≤ 8 KiB) and for every anonymous row (a login attempt stores only
+  `{ email }`); for an authenticated row a 512 KiB cap when the status is not a
+  client error (2xx / 408 / 5xx — the body got past the pipe, so keep every
+  body-binding handler on a whole-body `@Body() dto` and register the pipe only via
+  `globalValidationPipe()`), 8 KiB for every other row (incl. every row of a
+  `@ReadOnlyPost()` handler — mark a new state-free POST with it). `scripts/create-admin.ts` writes its own row (method `CLI`,
   `CLI_AUDIT_METHOD` in `src/audit/mutating-methods.ts`; `GET /v1/audit?method=CLI`
   lists them — the filter accepts `AUDIT_METHODS`). A data migration that
   auto-fixes rows writes one row per fix in SQL (method `MIGRATION`,

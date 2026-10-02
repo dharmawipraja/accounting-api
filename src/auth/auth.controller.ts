@@ -9,7 +9,6 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { THROTTLE, THROTTLE_TTL_MS } from '../config/throttle.config';
 import { LoginIpThrottle } from '../common/guards/login-ip-throttle';
-import { TokenGrant } from '../audit/token-grant';
 import { AuthService, TokenPair } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
@@ -45,7 +44,6 @@ export class AuthController {
 
   @Public()
   @Throttle({ default: { ttl: THROTTLE_TTL_MS, limit: THROTTLE.refresh } })
-  @TokenGrant()
   @Post('refresh')
   @HttpCode(200)
   @ApiOkResponse({ type: TokenPairDto })

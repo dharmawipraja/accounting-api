@@ -731,7 +731,7 @@ describe('AllExceptionsFilter guard-rejection audit', () => {
     const record = jest.fn().mockResolvedValue(undefined);
     const filter = new AllExceptionsFilter(
       { record },
-      new RejectionAuditLimiter({ limit: 1, userLimit: 2 }),
+      new RejectionAuditLimiter({ limit: 2 }),
     );
     const fire = (user?: { id: string; role: string }) =>
       filter.catch(
@@ -744,12 +744,13 @@ describe('AllExceptionsFilter guard-rejection audit', () => {
           user,
         }).host,
       );
-    fire(); // anonymous: IP budget 1
+    fire(); // anonymous: IP budget 2
+    fire();
     fire(); // suppressed
     fire({ id: 'u1', role: 'VIEWER' });
     fire({ id: 'u1', role: 'VIEWER' });
     fire({ id: 'u1', role: 'VIEWER' }); // suppressed (user cap 2)
-    expect(record).toHaveBeenCalledTimes(3);
+    expect(record).toHaveBeenCalledTimes(4);
   });
 
   it('caps rejection rows per client IP', () => {

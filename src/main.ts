@@ -7,7 +7,7 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AuditService } from './audit/audit.service';
 import { RejectionAuditLimiter } from './audit/rejection-audit-limiter';
-import { globalValidationPipe } from './audit/validated-body';
+import { globalValidationPipe } from './common/validators/global-validation-pipe';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { noStoreApiResponses } from './common/http/no-store';
 import { corsOptions } from './config/cors-origins';
@@ -63,7 +63,7 @@ async function bootstrap(): Promise<void> {
   app.use(noStoreApiResponses);
   app.set('etag', false);
   app.enableCors(corsOptions(process.env.CORS_ORIGIN));
-  // Strict validation + the validated-body audit mark (audit/validated-body).
+  // Strict validation + the validator-throw backstop.
   app.useGlobalPipes(globalValidationPipe());
   app.useGlobalFilters(
     new AllExceptionsFilter(

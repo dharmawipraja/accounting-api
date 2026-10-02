@@ -1,20 +1,16 @@
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import {
-  AUDIT_ANON_BODY_MAX_BYTES,
   AUDIT_BODY_MAX_BYTES,
   AUDIT_LOGIN_EMAIL_MAX,
   AUDIT_SMALL_BODY_MAX_BYTES,
   auditBaseOf,
-  auditBodyAllowed,
-  auditBodyCap,
   auditBodyOf,
   bindsRequestBody,
   capBody,
   markAudited,
   loginAttemptBody,
   shouldAuditRejection,
-  withheldBody,
   type AuditableRequest,
 } from './audit-request';
 import { markLoginAttempt } from '../common/guards/login-ip-throttle';
@@ -169,7 +165,7 @@ describe('capBody (AUDIT3-17)', () => {
 
   it('keeps a body of exactly the byte cap (both caps)', () => {
     // {"k":"…"} = 8 bytes of JSON syntax + payload
-    for (const cap of [AUDIT_BODY_MAX_BYTES, AUDIT_ANON_BODY_MAX_BYTES]) {
+    for (const cap of [AUDIT_BODY_MAX_BYTES, AUDIT_SMALL_BODY_MAX_BYTES]) {
       const body = { k: 'x'.repeat(cap - 8) };
       expect(JSON.stringify(body)).toHaveLength(cap);
       expect(capBody(body, cap)).toBe(body);
@@ -201,22 +197,21 @@ describe('capBody (AUDIT3-17)', () => {
   it('measures UTF-8 bytes, not UTF-16 units, and never splits a surrogate pair', () => {
     // 2100 emoji = 4200 UTF-16 units but 8400 UTF-8 bytes → over the anon cap
     const body = { e: '😀'.repeat(2100) };
-    expect(JSON.stringify(body).length).toBeLessThan(AUDIT_ANON_BODY_MAX_BYTES);
-    const capped = capBody(body, AUDIT_ANON_BODY_MAX_BYTES) as {
+    expect(JSON.stringify(body).length).toBeLessThan(
+      AUDIT_SMALL_BODY_MAX_BYTES,
+    );
+    const capped = capBody(body, AUDIT_SMALL_BODY_MAX_BYTES) as {
       preview: string;
       bytes: number;
     };
-    expect(capped.bytes).toBeGreaterThan(AUDIT_ANON_BODY_MAX_BYTES);
+    expect(capped.bytes).toBeGreaterThan(AUDIT_SMALL_BODY_MAX_BYTES);
     expect(hasLoneSurrogate(capped.preview)).toBe(false);
   });
 
-  it('auditBaseOf stores the capped (sanitized) body — anonymous rows at 8 KiB', () => {
+  it('auditBaseOf stores the capped (sanitized) body — authenticated rejection at 8 KiB', () => {
     const base = auditBaseOf(
-      req({
-        user: undefined,
-        body: { password: 'p', junk: 'y'.repeat(20_000) },
-      }),
-      { status: 201 },
+      req({ body: { password: 'p', junk: 'y'.repeat(20_000) } }),
+      { status: 403 },
     );
     expect(base.body).toMatchObject({ _truncated: true });
     expect((base.body as { preview: string }).preview).toContain(
@@ -225,19 +220,22 @@ describe('capBody (AUDIT3-17)', () => {
   });
 });
 
-describe('auditBodyAllowed', () => {
-  it('anonymous 4xx never stores the body', () => {
-    for (const status of [400, 401, 404, 408, 413, 429]) {
-      expect(auditBodyAllowed({}, status)).toBe(false);
+describe('anonymous rows never store the body (AUDIT3-17)', () => {
+  it('stores {} for every outcome, whatever the body', () => {
+    const big = { refreshToken: 'tok', junk: 'y'.repeat(20_000) };
+    for (const status of [200, 201, 400, 401, 404, 408, 413, 429, 500]) {
+      expect(auditBodyOf(req({ user: undefined, body: big }), status)).toEqual(
+        {},
+      );
     }
   });
 
-  it('anonymous success / 5xx and every authenticated outcome keep it', () => {
-    expect(auditBodyAllowed({}, 200)).toBe(true);
-    expect(auditBodyAllowed({}, 500)).toBe(true);
-    const user = { id: 'u1', role: 'ADMIN' };
+  it('every authenticated outcome keeps it (sanitized)', () => {
     for (const status of [200, 400, 403, 429, 500]) {
-      expect(auditBodyAllowed({ user }, status)).toBe(true);
+      expect(auditBodyOf(req(), status)).toEqual({
+        name: 'A',
+        password: '[REDACTED]',
+      });
     }
   });
 });
@@ -351,7 +349,7 @@ describe('I1: the authenticated body cap never truncates a DTO-valid write', () 
       });
       expect(errors).toEqual([]);
       const bytes = Buffer.byteLength(JSON.stringify(body));
-      expect(bytes).toBeGreaterThan(AUDIT_ANON_BODY_MAX_BYTES); // would have been lost
+      expect(bytes).toBeGreaterThan(AUDIT_SMALL_BODY_MAX_BYTES); // would have been lost
       expect(bytes).toBeLessThanOrEqual(AUDIT_BODY_MAX_BYTES);
       expect(capBody(body)).toBe(body);
       const base = auditBaseOf(req({ body }), { status: 201 });
@@ -359,11 +357,11 @@ describe('I1: the authenticated body cap never truncates a DTO-valid write', () 
     },
   );
 
-  it('anonymous rows keep the 8 KiB cap', () => {
-    const body = { note: 'x'.repeat(AUDIT_ANON_BODY_MAX_BYTES) };
+  it('anonymous rows store {} even for a DTO-valid body', () => {
+    const body = { note: 'x'.repeat(AUDIT_SMALL_BODY_MAX_BYTES) };
     expect(
       auditBaseOf(req({ user: undefined, body }), { status: 201 }).body,
-    ).toMatchObject({ _truncated: true });
+    ).toEqual({});
     expect(auditBaseOf(req({ body }), { status: 201 }).body).toEqual(body);
   });
 });
@@ -403,25 +401,27 @@ describe('I2: failed-login forensic email', () => {
     }
   });
 
-  it('withheldBody is {} except on a marked login attempt', () => {
+  it('an anonymous row is {} except on a marked login attempt', () => {
     const plain = req({
       user: undefined,
       body: { email: 'A@b.io', password: 'p' },
     });
-    expect(withheldBody(plain)).toEqual({});
+    expect(auditBodyOf(plain, 401)).toEqual({});
     markLoginAttempt(plain);
-    expect(withheldBody(plain)).toEqual({ email: 'a@b.io' });
+    expect(auditBodyOf(plain, 401)).toEqual({ email: 'a@b.io' });
   });
 
-  it('auditBaseOf on an anonymous 4xx stores the email for a login attempt, never the password', () => {
+  it('auditBaseOf on a login attempt stores the email (any outcome), never the password', () => {
     const r = req({
       user: undefined,
       body: { email: 'X@Y.io', password: 'secret' },
     });
     markLoginAttempt(r);
-    const base = auditBaseOf(r, { status: 400 });
-    expect(base.body).toEqual({ email: 'x@y.io' });
-    expect(JSON.stringify(base)).not.toContain('secret');
+    for (const status of [200, 400, 401, 429, 500]) {
+      const base = auditBaseOf(r, { status });
+      expect(base.body).toEqual({ email: 'x@y.io' });
+      expect(JSON.stringify(base)).not.toContain('secret');
+    }
   });
 });
 
@@ -429,19 +429,8 @@ describe('iteration-4 audit body cap ruling', () => {
   const big = { junk: 'q'.repeat(500 * 1024) };
   const size = (v: unknown) => Buffer.byteLength(JSON.stringify(v));
 
-  it('auditBodyCap: 512 KiB only for an authenticated 2xx, 8 KiB otherwise', () => {
-    const user = { id: 'u1', role: 'VIEWER' };
-    expect(auditBodyCap({ user }, 200)).toBe(AUDIT_BODY_MAX_BYTES);
-    expect(auditBodyCap({ user }, 201)).toBe(AUDIT_BODY_MAX_BYTES);
-    for (const status of [400, 403, 408, 422, 429, 500]) {
-      expect(auditBodyCap({ user }, status)).toBe(AUDIT_SMALL_BODY_MAX_BYTES);
-    }
-    expect(auditBodyCap({}, 200)).toBe(AUDIT_SMALL_BODY_MAX_BYTES);
-    expect(auditBodyCap({}, 500)).toBe(AUDIT_SMALL_BODY_MAX_BYTES);
-  });
-
-  it('an authenticated rejection (403 / 400 / 5xx) stores <= 8 KiB of a 500 KB body', () => {
-    for (const status of [400, 403, 409, 422, 429, 500]) {
+  it('an authenticated 4xx (rejected body: 400, guard 403 / 429, …) stores <= 8 KiB of a 500 KB body', () => {
+    for (const status of [400, 401, 403, 404, 409, 413, 422, 429]) {
       const body = auditBodyOf(req({ body: big }), status, true);
       expect(body).toMatchObject({ _truncated: true });
       expect(size(body)).toBeLessThanOrEqual(AUDIT_SMALL_BODY_MAX_BYTES);
@@ -483,15 +472,14 @@ describe('iteration-4 audit body cap ruling', () => {
 describe('iteration-5: read-only POST handlers always use the 8 KiB tier', () => {
   const size = (v: unknown) => Buffer.byteLength(JSON.stringify(v));
 
-  it('auditBodyCap: a read-only handler is 8 KiB even for an authenticated 2xx', () => {
-    const user = { id: 'u1', role: 'VIEWER' };
-    for (const status of [200, 201, 400, 422, 500]) {
-      expect(auditBodyCap({ user }, status, true)).toBe(
-        AUDIT_SMALL_BODY_MAX_BYTES,
-      );
-      expect(auditBodyCap({}, status, true)).toBe(AUDIT_SMALL_BODY_MAX_BYTES);
+  it('a read-only handler is 8 KiB even for an authenticated 2xx / 408 / 5xx', () => {
+    const body = { note: 'n'.repeat(300 * 1024) };
+    for (const status of [200, 201, 400, 408, 422, 500]) {
+      const stored = auditBodyOf(req({ body }), status, true, true);
+      expect(stored).toMatchObject({ _truncated: true });
+      expect(size(stored)).toBeLessThanOrEqual(AUDIT_SMALL_BODY_MAX_BYTES);
     }
-    expect(auditBodyCap({ user }, 200, false)).toBe(AUDIT_BODY_MAX_BYTES);
+    expect(auditBodyOf(req({ body }), 200, true, false)).toEqual(body);
   });
 
   it.each(READ_ONLY_MAX_BODIES)(
@@ -521,57 +509,21 @@ describe('iteration-5: read-only POST handlers always use the 8 KiB tier', () =>
   });
 });
 
-describe('iteration-6: a validated body keeps the 512 KiB tier on an authenticated 408 / 5xx', () => {
-  const user = { id: 'u1', role: 'ADMIN' };
+describe('iteration-6: an authenticated 408 / 5xx keeps the 512 KiB tier (the pipe accepted the body)', () => {
+  // A pipe rejection is always a 400, so a 408 / 5xx on a body-binding
+  // (whole-body DTO) handler means the body got past validation — and the
+  // write may have committed.
   const body = { note: 'n'.repeat(300 * 1024) };
 
-  it('auditBodyCap: 408 / 5xx + bodyValidated → 512 KiB; every other combination 8 KiB', () => {
+  it('stores the full body on a 408 / 5xx', () => {
     for (const status of [408, 500, 502, 503]) {
-      expect(auditBodyCap({ user }, status, false, true)).toBe(
-        AUDIT_BODY_MAX_BYTES,
-      );
-      // not validated (pipe rejected / never ran / no DTO)
-      expect(auditBodyCap({ user }, status, false, false)).toBe(
-        AUDIT_SMALL_BODY_MAX_BYTES,
-      );
-      // read-only POST
-      expect(auditBodyCap({ user }, status, true, true)).toBe(
-        AUDIT_SMALL_BODY_MAX_BYTES,
-      );
-      // anonymous
-      expect(auditBodyCap({}, status, false, true)).toBe(
-        AUDIT_SMALL_BODY_MAX_BYTES,
-      );
-    }
-    // other rejections stay small even with a validated body
-    for (const status of [400, 401, 403, 404, 409, 422, 429]) {
-      expect(auditBodyCap({ user }, status, false, true)).toBe(
-        AUDIT_SMALL_BODY_MAX_BYTES,
-      );
+      expect(auditBaseOf(req({ body }), { status }).body).toEqual(body);
     }
   });
 
-  it('auditBaseOf / auditBodyOf store the full validated body on a 408 / 500', () => {
-    for (const status of [408, 500]) {
-      expect(
-        auditBaseOf(req({ body }), { status, bodyValidated: true }).body,
-      ).toEqual(body);
-      expect(auditBodyOf(req({ body }), status, true, false, true)).toEqual(
-        body,
-      );
-      expect(auditBaseOf(req({ body }), { status }).body).toMatchObject({
-        _truncated: true,
-      });
-    }
-  });
-
-  it('a bodyless handler still stores {} even if flagged', () => {
+  it('a bodyless handler still stores {}', () => {
     expect(
-      auditBaseOf(req({ body }), {
-        status: 408,
-        bindsBody: false,
-        bodyValidated: true,
-      }).body,
+      auditBaseOf(req({ body }), { status: 408, bindsBody: false }).body,
     ).toEqual({});
   });
 });

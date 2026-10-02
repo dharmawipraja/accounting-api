@@ -1,55 +1,40 @@
 /**
- * Bounds how many GUARD-REJECTION audit rows (401/403/429 written by
- * AllExceptionsFilter) a caller can cause. Anonymous 401s are rejected by
- * JwtAuthGuard BEFORE the throttler runs, so without this an attacker could
- * turn unauthenticated junk requests into unbounded audit_log INSERTs.
+ * Bounds how many audit rows a caller can cause where nothing else bounds them:
+ * GUARD-REJECTION rows (401/403/429 written by AllExceptionsFilter — anonymous
+ * 401s are rejected by JwtAuthGuard BEFORE the throttler runs) and every
+ * ANONYMOUS row AuditInterceptor writes. Without it an attacker could turn
+ * unauthenticated junk requests into unbounded audit_log INSERTs.
  *
- * Two independent key spaces, each a fixed window (`windowMs`), in-process,
- * pure (clock and reporter injected, no timers):
- *  - ANONYMOUS rejections: `limit` rows per client IP, plus a GLOBAL ceiling
- *    (`globalLimit` rows, all anonymous IPs together) so rotating source
- *    addresses (e.g. across an IPv6 /64) cannot multiply the per-IP budget.
- *    Globally suppressed rows do not consume the IP's own budget.
- *  - AUTHENTICATED rejections (403 role / password-change, 429): `userLimit`
- *    rows per user id. They never consume — and are never blocked by — the
- *    anonymous global ceiling, so an anonymous flood cannot hide an
- *    authenticated user's forbidden attempts from the audit trail.
+ * One fixed-window key space (`windowMs`), in-process, pure (clock and
+ * reporter injected, no timers), `limit` rows per key per window:
+ *  - an ANONYMOUS row is keyed by client IP, and also counts against a GLOBAL
+ *    ceiling (`globalLimit` rows, all anonymous IPs together) so rotating
+ *    source addresses (e.g. across an IPv6 /64) cannot multiply the per-IP
+ *    budget. Globally suppressed rows do not consume the IP's own budget.
+ *  - a row with a verified user (`req.user.id`, or the owner of the access
+ *    token a successful login / refresh just issued) is keyed `user:<id>` and
+ *    never consumes — nor is blocked by — the global ceiling, so an anonymous
+ *    flood cannot hide an authenticated user's forbidden attempts or a
+ *    successful login / refresh from the audit trail.
  *
- * The anonymous global ceiling ALSO bounds anonymous rows written by
- * AuditInterceptor (`allowAnonymousGlobal`: every anonymous 4xx and every
- * anonymous 2xx except a successful login, and every anonymous 5xx): the
- * login throttle is per IP, so rotating addresses must not multiply those rows
- * either. Both writers share ONE limiter instance (AuditModule provider).
- *
- * A successful REFRESH (`@TokenGrant()` 2xx, `allowTokenGrant`) gets a third
- * key space: `tokenGrantUserLimit` rows per token owner (default 60 — far
- * above any legitimate client's refresh rate) that never touch the global
- * ceiling, so a 401 flood cannot hide it; past that per-user budget (one
- * stolen-and-chained refresh token across rotating IPs) the row falls back to
- * the anonymous global ceiling instead of being unbounded.
- *
- * Suppressed rows are counted and reported ONCE per window (when that key's
- * window rolls over, is swept, or is evicted; the global count on the first
- * call after its window rolls). Memory is bounded: at most `maxKeys` keys per
- * key space; past that the oldest is evicted.
+ * Both writers share ONE limiter instance (AuditModule provider). Suppressed
+ * rows are counted and reported ONCE per window (when that key's window rolls
+ * over, is swept, or is evicted; the global count on the first call after its
+ * window rolls). Memory is bounded: at most `maxKeys` keys; past that the
+ * oldest is evicted.
  */
-/** Default total anonymous guard-rejection audit rows per window (all IPs). */
+/** Default total anonymous audit rows per window (all IPs). */
 export const REJECTION_AUDIT_GLOBAL_LIMIT = 600;
 
 export interface RejectionAuditLimiterOptions {
-  /** Anonymous rows per client IP per window (default 60). */
+  /** Rows per key (client IP, or user) per window (default 60). */
   limit?: number;
   /** Anonymous rows per window across all IPs (default 600). */
   globalLimit?: number;
-  /** Authenticated rows per user per window (default 60). */
-  userLimit?: number;
-  /** Successful token-grant (refresh) rows per token owner per window before
-   *  falling back to the anonymous global ceiling (default 60). */
-  tokenGrantUserLimit?: number;
   windowMs?: number;
   maxKeys?: number;
   now?: () => number;
-  /** `key` is the client IP, or `user:<id>` for an authenticated bucket. */
+  /** `key` is the client IP, or `user:<id>` for a user bucket. */
   onSuppressed?: (key: string, suppressed: number) => void;
   onGlobalSuppressed?: (suppressed: number) => void;
 }
@@ -60,26 +45,58 @@ interface Bucket {
   suppressed: number;
 }
 
-/** A bounded map of fixed-window buckets (one key space). */
-class KeyedWindows {
+export class RejectionAuditLimiter {
+  private readonly limit: number;
+  private readonly globalLimit: number;
+  private readonly windowMs: number;
+  private readonly maxKeys: number;
+  private readonly now: () => number;
+  private readonly onSuppressed: (key: string, suppressed: number) => void;
+  private readonly onGlobalSuppressed: (suppressed: number) => void;
   private readonly buckets = new Map<string, Bucket>();
+  private readonly global: Bucket;
   private lastSweep: number;
 
-  constructor(
-    private readonly windowMs: number,
-    private readonly maxKeys: number,
-    private readonly report: (key: string, suppressed: number) => void,
-    start: number,
-  ) {
-    this.lastSweep = start;
+  constructor(opts: RejectionAuditLimiterOptions = {}) {
+    this.limit = opts.limit ?? 60;
+    this.globalLimit = opts.globalLimit ?? REJECTION_AUDIT_GLOBAL_LIMIT;
+    this.windowMs = opts.windowMs ?? 60_000;
+    this.maxKeys = opts.maxKeys ?? 10_000;
+    this.now = opts.now ?? Date.now;
+    this.onSuppressed = opts.onSuppressed ?? (() => undefined);
+    this.onGlobalSuppressed = opts.onGlobalSuppressed ?? (() => undefined);
+    this.lastSweep = this.now();
+    this.global = { windowStart: this.lastSweep, count: 0, suppressed: 0 };
   }
 
+  /** Live buckets. */
   get size(): number {
     return this.buckets.size;
   }
 
+  /** True if an audit row may be written now. `userId` (verified) selects the
+   *  per-user bucket; otherwise the per-IP bucket plus the global ceiling. */
+  allow(ip: string, userId?: string | null): boolean {
+    const now = this.now();
+    const bucket = this.bucket(userId ? `user:${userId}` : ip, now);
+    if (bucket.count >= this.limit) {
+      bucket.suppressed++;
+      return false;
+    }
+    if (!userId) {
+      this.rollGlobal(now);
+      if (this.global.count >= this.globalLimit) {
+        this.global.suppressed++;
+        return false;
+      }
+      this.global.count++;
+    }
+    bucket.count++;
+    return true;
+  }
+
   /** The key's live bucket (created / rolled over as needed). */
-  bucket(key: string, now: number): Bucket {
+  private bucket(key: string, now: number): Bucket {
     if (now - this.lastSweep >= this.windowMs) this.sweep(now);
     let bucket = this.buckets.get(key);
     if (bucket && now - bucket.windowStart >= this.windowMs) {
@@ -87,7 +104,10 @@ class KeyedWindows {
       bucket = undefined;
     }
     if (!bucket) {
-      if (this.buckets.size >= this.maxKeys) this.evictOldest();
+      const oldest = this.buckets.entries().next();
+      if (this.buckets.size >= this.maxKeys && !oldest.done) {
+        this.retire(oldest.value[0], oldest.value[1]);
+      }
       bucket = { windowStart: now, count: 0, suppressed: 0 };
       this.buckets.set(key, bucket);
     }
@@ -101,117 +121,9 @@ class KeyedWindows {
     }
   }
 
-  private evictOldest(): void {
-    const oldest = this.buckets.entries().next();
-    if (!oldest.done) this.retire(oldest.value[0], oldest.value[1]);
-  }
-
   private retire(key: string, bucket: Bucket): void {
     this.buckets.delete(key);
-    if (bucket.suppressed > 0) this.report(key, bucket.suppressed);
-  }
-}
-
-export class RejectionAuditLimiter {
-  private readonly limit: number;
-  private readonly userLimit: number;
-  private readonly windowMs: number;
-  private readonly now: () => number;
-  private readonly globalLimit: number;
-  private readonly onGlobalSuppressed: (suppressed: number) => void;
-  private readonly ips: KeyedWindows;
-  private readonly users: KeyedWindows;
-  private readonly tokenGrantUserLimit: number;
-  private readonly grants: KeyedWindows;
-  private readonly global: Bucket;
-
-  constructor(opts: RejectionAuditLimiterOptions = {}) {
-    this.limit = opts.limit ?? 60;
-    this.userLimit = opts.userLimit ?? 60;
-    this.windowMs = opts.windowMs ?? 60_000;
-    const maxKeys = opts.maxKeys ?? 10_000;
-    this.now = opts.now ?? Date.now;
-    const onSuppressed = opts.onSuppressed ?? (() => undefined);
-    this.globalLimit = opts.globalLimit ?? REJECTION_AUDIT_GLOBAL_LIMIT;
-    this.onGlobalSuppressed = opts.onGlobalSuppressed ?? (() => undefined);
-    const start = this.now();
-    this.ips = new KeyedWindows(this.windowMs, maxKeys, onSuppressed, start);
-    this.users = new KeyedWindows(this.windowMs, maxKeys, onSuppressed, start);
-    this.tokenGrantUserLimit = opts.tokenGrantUserLimit ?? 60;
-    // Never reports: past its budget a grant row falls back to the global
-    // ceiling, which counts (and reports) what it suppresses.
-    this.grants = new KeyedWindows(
-      this.windowMs,
-      maxKeys,
-      () => undefined,
-      start,
-    );
-    this.global = { windowStart: start, count: 0, suppressed: 0 };
-  }
-
-  /** Live buckets across all key spaces. */
-  get size(): number {
-    return this.ips.size + this.users.size + this.grants.size;
-  }
-
-  /** True if a rejection row may be written now. `userId` (the verified
-   *  `req.user.id`) selects the per-user bucket; otherwise the per-IP bucket
-   *  plus the anonymous global ceiling apply. */
-  allow(ip: string, userId?: string | null): boolean {
-    const now = this.now();
-    if (userId) {
-      const bucket = this.users.bucket(`user:${userId}`, now);
-      if (bucket.count >= this.userLimit) {
-        bucket.suppressed++;
-        return false;
-      }
-      bucket.count++;
-      return true;
-    }
-
-    this.rollGlobal(now);
-    const bucket = this.ips.bucket(ip, now);
-    if (bucket.count >= this.limit) {
-      bucket.suppressed++;
-      return false;
-    }
-    if (this.global.count >= this.globalLimit) {
-      this.global.suppressed++;
-      return false;
-    }
-    bucket.count++;
-    this.global.count++;
-    return true;
-  }
-
-  /** True if an ANONYMOUS interceptor-written row (a logout 2xx, any 4xx /
-   *  5xx, a refresh 2xx past its per-owner budget) may be written now: only the anonymous GLOBAL ceiling applies (the
-   *  routes carry their own per-IP throttles). Consumes the same budget as
-   *  anonymous guard rejections. */
-  allowAnonymousGlobal(): boolean {
-    this.rollGlobal(this.now());
-    if (this.global.count >= this.globalLimit) {
-      this.global.suppressed++;
-      return false;
-    }
-    this.global.count++;
-    return true;
-  }
-
-  /** True if a SUCCESSFUL token-grant (refresh) row for token owner
-   *  `subject` may be written now: within `tokenGrantUserLimit` rows per
-   *  owner per window it is always written (without consuming the global
-   *  ceiling); past that — or with no known subject — the anonymous global
-   *  ceiling decides (`allowAnonymousGlobal`). */
-  allowTokenGrant(subject: string | null | undefined): boolean {
-    if (subject) {
-      const bucket = this.grants.bucket(`grant:${subject}`, this.now());
-      if (bucket.count < this.tokenGrantUserLimit) {
-        bucket.count++;
-        return true;
-      }
-    }
-    return this.allowAnonymousGlobal();
+    if (bucket.suppressed > 0) this.onSuppressed(key, bucket.suppressed);
   }
 
   private rollGlobal(now: number): void {
@@ -236,12 +148,10 @@ export function loggingRejectionAuditLimiter(
   return new RejectionAuditLimiter({
     ...opts,
     onSuppressed: (key, n) =>
-      logger.warn(
-        `Suppressed ${n} rejection audit row(s) from ${key} (per-caller cap)`,
-      ),
+      logger.warn(`Suppressed ${n} audit row(s) from ${key} (per-caller cap)`),
     onGlobalSuppressed: (n) =>
       logger.warn(
-        `Suppressed ${n} anonymous rejection audit row(s) across all IPs (global cap)`,
+        `Suppressed ${n} anonymous audit row(s) across all IPs (global cap)`,
       ),
   });
 }

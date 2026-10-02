@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { AppModule } from '../src/app.module';
 import { AuditService } from '../src/audit/audit.service';
 import { RejectionAuditLimiter } from '../src/audit/rejection-audit-limiter';
-import { globalValidationPipe } from '../src/audit/validated-body';
+import { globalValidationPipe } from '../src/common/validators/global-validation-pipe';
 import { AllExceptionsFilter } from '../src/common/filters/all-exceptions.filter';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { noStoreApiResponses } from '../src/common/http/no-store';

@@ -150,72 +150,58 @@ Guards run in registration order:
   everything inside it, so an inner audit would miss it). Guard rejections
   (`401/403/429`) happen before any interceptor; `AllExceptionsFilter` (given the
   `AuditService` and the shared `RejectionAuditLimiter` in `main.ts`) writes their row **after** sending
-  the response, fire-and-forget (a failed write is logged at warn), capped
-  (`src/audit/rejection-audit-limiter.ts`, in-process, ≤ 10k keys per key space;
-  suppressed counts logged once per window): **anonymous** rejections at **60 rows
-  per client IP per minute** plus **600 per minute across all IPs** (the global
-  ceiling stops IPv6 address rotation from multiplying the per-IP budget);
-  **authenticated** rejections (403/429 with `req.user`) at **60 per user per
-  minute**, never counted against — nor blocked by — the anonymous global ceiling.
-  The limiter is ONE instance (an `AuditModule` provider) shared with
-  `AuditInterceptor`: its **anonymous rows** — every 4xx (login / refresh /
-  logout 400/401), every 5xx / 408, and every 2xx (e.g. logout, which always
-  answers 200) — also consume — and are dropped past — the same **600/min anonymous global
-  ceiling** (`allowAnonymousGlobal`; the routes' own per-IP throttles bound the
-  per-IP rate), so IPv6 rotation cannot multiply them either. **Exempt:** a
-  **successful login** (`@LoginIpThrottle()` handler, 2xx) — it requires valid
-  credentials and stays bounded by the per-email / per-IP throttles, so a flood
-  of cheap anonymous 401s can never starve it out of the audit trail. A
-  **successful refresh** (`@TokenGrant()` handler — `src/audit/token-grant.ts`,
-  read with `Reflector`, 2xx) is written within a **per-owner budget of 60 per
-  minute** (`allowTokenGrant`, keyed on the `sub` of the access token the
-  response just issued; its own ≤ 10k-key space) that never touches the global
-  ceiling; past it (one chained refresh token replayed across rotating IPs) it
-  falls back to the anonymous global ceiling. Every
-  successful login is also logged at info by `AuthService`
-  (`{ event: "login", userId, ip }`). A row dropped by the ceiling leaves only
-  the limiter's once-per-window **suppression log** (`RejectionAuditLimiter`,
-  global suppressed count) as evidence — check it when the audit trail looks
-  thin during an anonymous flood. Only
+  the response, fire-and-forget (a failed write is logged at warn). **Bounded
+  writes** (`src/audit/rejection-audit-limiter.ts`, ONE in-process instance — an
+  `AuditModule` provider shared by the filter and `AuditInterceptor` — one
+  fixed-window key space of ≤ 10k keys, suppressed counts logged once per window):
+  every filter-written rejection row and every **anonymous** interceptor row
+  (login / refresh / logout 2xx, 4xx, 5xx, 408) goes through it. An anonymous row
+  is keyed by client IP — **60 rows per IP per minute** — and also counts against
+  **600 per minute across all IPs** (the global ceiling stops IPv6 address
+  rotation from multiplying the per-IP budget). A row with a verified user —
+  an authenticated 403/429 (`req.user`), or a **successful login / refresh**,
+  keyed to the `sub` of the access token the response just issued
+  (`accessTokenSubject` in `audit.interceptor.ts`) — is keyed `user:<id>` at
+  **60 per user per minute** and never counts against, nor is blocked by, the
+  anonymous global ceiling: a flood of cheap anonymous 401s can never starve a
+  credential-proving success or a signed-in user's forbidden attempt out of the
+  audit trail. Authenticated interceptor rows are not limited (the per-user
+  throttler bounds them). Every successful login is also logged at info by
+  `AuthService` (`{ event: "login", userId, ip }`). A row dropped by the limiter
+  leaves only its once-per-window **suppression log** (`RejectionAuditLimiter`)
+  as evidence — check it when the audit trail looks thin during a flood. Only
   401/403/429 are audited this way — a throttler-storage outage `503` and route 404s
   are not. A request-level `AUDITED` marker (`src/audit/audit-request.ts`) prevents
   a second row. Every row caps `path` (incl. query string) and serialized `params`
   at 512 characters (code points — a surrogate pair is never split, so the jsonb
   insert cannot fail on a lone surrogate).
-  - **Body storage (AUDIT3-17):** an **anonymous** (no `req.user`) **4xx** row —
-    interceptor or filter, e.g. a 400/401 on `/auth/refresh` — stores `{}`:
-    unauthenticated input is never copied into the append-only log. **Exception —
-    failed-login forensics:** on the LOGIN route only (`@LoginIpThrottle()`; the
-    request is stamped `LOGIN_ATTEMPT` by `UserThrottlerGuard` before the
+  - **Body storage (AUDIT3-17, `auditBodyOf` in `audit-request.ts`):** an
+    **anonymous** (no `req.user`) row — interceptor or filter, any status —
+    stores `{}`: unauthenticated input is never copied into the append-only log.
+    **Exception — login forensics:** on the LOGIN route only (`@LoginIpThrottle()`;
+    the request is stamped `LOGIN_ATTEMPT` by `UserThrottlerGuard` before the
     throttlers run and by `AuditInterceptor`, so the filter-written 429 row sees
-    it too) the anonymous 400/401/429 row stores `{ "email": <trimmed,
-    lowercased, ≤ 254 code points> }` — never the password or any other field
-    (`withheldBody` / `loginAttemptBody`). A **bodyless handler** — one whose
-    Nest route-argument metadata (`ROUTE_ARGS_METADATA`) binds no `@Body()` /
-    `@Req()` / `@RawBody()`, e.g. `POST /auth/logout-all`, `/:id/post`, `DELETE`
-    — stores `{}` on every interceptor-written row whatever the status
-    (`handlerBindsBody` in `audit.interceptor.ts`): nothing it received was
-    used. (A filter-written authenticated 403/429 guard rejection on such a
-    route has no handler context, so it stores the body capped at 8 KiB.) Every other row stores
-    the sanitized body, **capped** (`auditBodyOf` / `capBody` in
-    `audit-request.ts`) at **512 KiB** only for an **authenticated 2xx on a
-    body-binding, state-changing handler** (the body passed DTO validation) — and
-    for an authenticated **408 / 5xx** on such a handler **when the global
-    ValidationPipe accepted its body DTO** (the write may have committed before
-    the timeout / failure). That flag is set by `AuditingValidationPipe`
-    (`src/audit/validated-body.ts`, the `globalValidationPipe()` registered in
-    `main.ts` and every e2e bootstrap): after `super.transform` succeeds for a
-    whole-body `@Body() dto` it marks the raw `req.body` object (a `WeakSet`), so a
-    pipe 400, a guard rejection, `@Body('field')`, `@Req()` and untyped bodies are
-    never marked. (A pipe, not an interceptor: interceptors run before pipes and
-    see a pipe 400 and a handler throw as the same `next.handle()` error.)
-    **8192 bytes** for every other row — authenticated rejections (a guard 403
-    — the filter has no handler, but guard statuses are ≥ 400 — any
-    400/409/422/5xx), anonymous success / 5xx rows, and every row of a
-    **read-only POST** marked `@ReadOnlyPost()` (`src/audit/read-only-post.ts`,
-    read with `Reflector` — `POST /tax/calculate`, `POST /journal-entries/preview`:
-    they change nothing, so they never need the large tier). Mark any new
-    state-free POST the same way. So no caller, whatever its role, can park more than 8 KiB
+    it too) every row stores `{ "email": <trimmed, lowercased, NFC, ≤ 254 code
+    points> }` — never the password or any other field (`loginAttemptBody`). A
+    **bodyless handler** — one whose Nest route-argument metadata
+    (`ROUTE_ARGS_METADATA`) binds no `@Body()` / `@Req()` / `@RawBody()`, e.g.
+    `POST /auth/logout-all`, `/:id/post`, `DELETE` — stores `{}` on every
+    interceptor-written row whatever the status (`handlerBindsBody` in
+    `audit.interceptor.ts`): nothing it received was used. (A filter-written
+    authenticated 403/429 guard rejection on such a route has no handler context,
+    so it stores the body capped at 8 KiB.) An **authenticated** row stores the
+    sanitized body, **capped** (`capBody`) at **512 KiB** when the body got past
+    the global ValidationPipe — any status that is not a client error: a 2xx, a
+    5xx, or a **408** (the write may have committed after the timeout). This
+    holds because every body-binding handler takes a whole-body `@Body() dto` and
+    a pipe rejection is always a 400 (`globalValidationPipe()`,
+    `src/common/validators/global-validation-pipe.ts`); keep new handlers on a
+    whole-body DTO. **8192 bytes** for every other authenticated row — a 4xx
+    (pipe 400, guard 403/429, 409/422) and every row of a **read-only POST**
+    marked `@ReadOnlyPost()` (`src/audit/read-only-post.ts`, read with
+    `Reflector` — `POST /tax/calculate`, `POST /journal-entries/preview`: they
+    change nothing, so they never need the large tier). Mark any new state-free
+    POST the same way. So no caller, whatever its role, can park more than 8 KiB
     of unvalidated junk per row. An over-cap body is replaced by the object
     `{ "_truncated": true, "bytes": <n>, "preview": "<first 1024 code points of
     the JSON text>" }` — still a JSON object in the jsonb column (never a string
@@ -288,7 +274,7 @@ All thrown errors funnel through **`AllExceptionsFilter`**
 - A Postgres **22021 / 22P05** (an unstorable character — e.g. U+0000 — reaching the DB
   on a path the `InputHygieneGuard` does not cover; `isUnstorableCharacters`) →
   **400 `INVALID_CHARACTERS`** (warn log, no Sentry). A validator that *throws* inside
-  the global pipe → 400 "Request validation failed" (`AuditingValidationPipe`
+  the global pipe → 400 "Request validation failed" (`BackstopValidationPipe`
   backstop): a `URIError` (validator.js `isEmail` on a lone surrogate — client
   input) is a warn log only; any other throw is a validator defect, so it is also
   Sentry-captured at `warning` (tag `kind: validator-backstop`).
