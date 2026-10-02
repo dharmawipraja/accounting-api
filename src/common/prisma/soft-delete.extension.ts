@@ -3,7 +3,7 @@ import { Prisma, PrismaClient } from '@prisma/client';
 /**
  * Models subject to soft delete. Add new soft-deletable models here.
  *
- * Guarded operations: find* / count / aggregate / groupBy / update / updateMany
+ * Guarded operations: find* / count / aggregate / groupBy / update / updateMany*
  * inject `deletedAt: null` into `where` (findUnique* and update accept it alongside
  * the unique key, so a tombstoned row reads as missing: null / P2025 -> 404 via the
  * exception filter); delete / deleteMany / upsert throw (hard delete and upsert are
@@ -33,6 +33,7 @@ const FILTERED_OPERATIONS = new Set([
   'groupBy',
   'update',
   'updateMany',
+  'updateManyAndReturn',
 ]);
 
 /** Programmer-error guards: no route hard-deletes or upserts a soft-deletable
