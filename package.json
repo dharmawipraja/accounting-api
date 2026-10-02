@@ -34,7 +34,7 @@
     "test:e2e:cov": "jest --config ./test/jest-e2e.json --coverage"
   },
   "engines": {
-    "node": ">=22 <23",
+    "node": ">=22",
     "npm": ">=10"
   },
   "dependencies": {
