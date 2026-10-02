@@ -4,6 +4,7 @@ import {
   ArgumentsHost,
   BadRequestException,
   HttpException,
+  Logger,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AllExceptionsFilter } from './all-exceptions.filter';
@@ -769,5 +770,100 @@ describe('AllExceptionsFilter guard-rejection audit', () => {
     fire('1.1.1.1'); // suppressed
     fire('2.2.2.2');
     expect(record).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('AllExceptionsFilter log level per family', () => {
+  const known = (code: string) =>
+    new Prisma.PrismaClientKnownRequestError(`prisma ${code}`, {
+      code,
+      clientVersion: Prisma.prismaVersion.client,
+    });
+  const adapter = (originalCode: string) =>
+    Object.assign(new Error(`pg ${originalCode}`), {
+      name: 'DriverAdapterError',
+      cause: { kind: 'postgres', originalCode },
+    });
+
+  it.each<[string, unknown, 'log' | 'warn' | 'error' | null, unknown[]]>([
+    ['DomainError', new ConflictDomainError('x'), null, []],
+    ['HttpException', new BadRequestException('bad'), null, []],
+    [
+      'transient',
+      adapter('40P01'),
+      'warn',
+      ['Transient transaction conflict -> 409 on /test: pg 40P01'],
+    ],
+    [
+      'constraint',
+      adapter('23514'),
+      'error',
+      ['Constraint violation (unknown) -> 422 on /test: pg 23514'],
+    ],
+    [
+      'unstorable',
+      adapter('22021'),
+      'warn',
+      ['Unstorable character -> 400 on /test: pg 22021'],
+    ],
+    [
+      'out of range',
+      adapter('22008'),
+      'warn',
+      ['Value out of range -> 400 on /test: pg 22008'],
+    ],
+    [
+      'mapped Prisma',
+      known('P2002'),
+      'warn',
+      ['Prisma P2002 -> 409 on /test: prisma P2002'],
+    ],
+    [
+      'unmapped Prisma',
+      known('P2037'),
+      'error',
+      ['Unmapped Prisma P2037 on /test', expect.any(String)],
+    ],
+    [
+      'Prisma validation',
+      new Prisma.PrismaClientValidationError('v', {
+        clientVersion: Prisma.prismaVersion.client,
+      }),
+      'warn',
+      ['Prisma validation error -> 400 on /test'],
+    ],
+    [
+      'body parser',
+      Object.assign(new Error('too big'), {
+        type: 'entity.too.large',
+        status: 413,
+        expose: true,
+      }),
+      'log',
+      [
+        'Request body rejected by the parser (entity.too.large) -> 413 on /test',
+      ],
+    ],
+    [
+      'unhandled string',
+      'boom',
+      'error',
+      ['Unhandled exception on /test', 'boom'],
+    ],
+  ])('%s', (_name, err, level, args) => {
+    const spies = {
+      log: jest.spyOn(Logger.prototype, 'log').mockImplementation(),
+      warn: jest.spyOn(Logger.prototype, 'warn').mockImplementation(),
+      error: jest.spyOn(Logger.prototype, 'error').mockImplementation(),
+    };
+    try {
+      new AllExceptionsFilter().catch(err, mockHost().host);
+      for (const [name, spy] of Object.entries(spies)) {
+        if (name === level) expect(spy.mock.calls).toEqual([args]);
+        else expect(spy).not.toHaveBeenCalled();
+      }
+    } finally {
+      for (const spy of Object.values(spies)) spy.mockRestore();
+    }
   });
 });

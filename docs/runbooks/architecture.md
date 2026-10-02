@@ -257,7 +257,9 @@ Guards run in registration order:
 ### Error → envelope
 
 All thrown errors funnel through **`AllExceptionsFilter`**
-(`src/common/filters/all-exceptions.filter.ts`), which classifies:
+(`src/common/filters/all-exceptions.filter.ts`), which applies the one ordered
+classification `classifyException` (`src/common/errors/exception-status.ts` —
+status, envelope, log level, Sentry) to:
 
 - `DomainError` → its own `status` + `code` + `details` (the normal 4xx path).
 - `HttpException` (incl. ValidationPipe) → `HTTP_<status>`; class-validator arrays
@@ -386,9 +388,11 @@ missing). Singleton roles (e.g. `AR_CONTROL`, `AP_CONTROL`, `RETAINED_EARNINGS`,
   `dateRange` / `optionalDateRange` — the controller date-boundary seam (audit
   `from > to` → 422). **`parseDate`** (`src/common/dates/parse-date.ts`) =
   `value ? new Date(value) : undefined` for optional date conversion in controllers.
-- **`statusFromException`** (`src/common/errors/exception-status.ts`): single
-  exception → HTTP status resolver, shared by `AllExceptionsFilter` AND
-  `AuditInterceptor` so the audit log records the resolved status, not a blanket 500.
+- **`classifyException`** / **`statusFromException`** (`src/common/errors/exception-status.ts`):
+  the single exception classification (status + envelope + log level + Sentry);
+  `AllExceptionsFilter` applies it, `AuditInterceptor` reads its status via
+  `statusFromException`, so the audit log records the resolved status, not a blanket 500.
+  Add a new error family there, never as a filter branch.
 - **`POSTED_JE`** (`src/ledger/balances/posted-entry.sql.ts`): shared
   `Prisma.sql` predicate `je.posted_at IS NOT NULL AND je.deleted_at IS NULL` used
   by all raw-SQL balance queries.

@@ -4,9 +4,7 @@ import { DomainError } from './domain-errors';
 
 /**
  * Prisma known-request error code → HTTP envelope. The single source for how a
- * Prisma error becomes an HTTP status/code/message, shared by `AllExceptionsFilter`
- * (which builds the response from `code`/`message`) and `statusFromException`
- * (which reads `status`).
+ * Prisma error becomes an HTTP status/code/message (read by `classifyException`).
  */
 export const PRISMA_STATUS: Record<
   string,
@@ -99,13 +97,8 @@ export function isTransientConflict(err: unknown): boolean {
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     if (TRANSIENT_PRISMA_CODES.has(err.code)) return true;
     if (err.code === 'P2028') return isRetryableP2028(err);
-    const code = driverAdapterCode(
-      (err.meta as { driverAdapterError?: unknown } | undefined)
-        ?.driverAdapterError,
-    );
-    return code !== undefined && TRANSIENT_PG_CODES.has(code);
   }
-  const code = driverAdapterCode(err);
+  const code = pgSqlStateOf(err);
   return code !== undefined && TRANSIENT_PG_CODES.has(code);
 }
 
@@ -131,15 +124,12 @@ export const CONSTRAINT_VIOLATION = {
  * Pure.
  */
 export function isConstraintViolation(err: unknown): boolean {
-  if (err instanceof Prisma.PrismaClientKnownRequestError) {
-    if (err.code === 'P2011') return true;
-    const code = driverAdapterCode(
-      (err.meta as { driverAdapterError?: unknown } | undefined)
-        ?.driverAdapterError,
-    );
-    return code !== undefined && CONSTRAINT_PG_CODES.has(code);
-  }
-  const code = driverAdapterCode(err);
+  if (
+    err instanceof Prisma.PrismaClientKnownRequestError &&
+    err.code === 'P2011'
+  )
+    return true;
+  const code = pgSqlStateOf(err);
   return code !== undefined && CONSTRAINT_PG_CODES.has(code);
 }
 
@@ -276,24 +266,224 @@ export function isBodyParserClientError(err: unknown): boolean {
   return bodyParserClientStatus(err) !== undefined;
 }
 
+/** How `AllExceptionsFilter` answers, logs and reports one exception. */
+export interface ExceptionClass {
+  status: number;
+  envelope: {
+    code: string;
+    message: string;
+    details?: Record<string, unknown>;
+  };
+  /** Logger method + its arguments (built from the request URL); absent =
+   *  not logged (DomainError / HttpException — expected outcomes). */
+  log?: {
+    level: 'log' | 'warn' | 'error';
+    args: (url: string) => [message: string, ...rest: unknown[]];
+  };
+  /** Absent = not reported. The filter adds `traceId` / `path`. */
+  sentry?: { level?: 'warning'; tags?: Record<string, string> };
+}
+
+const INTERNAL_ERROR = {
+  status: 500,
+  envelope: { code: 'INTERNAL_ERROR', message: 'Internal server error' },
+} as const;
+
+const messageOf = (err: unknown): string =>
+  err instanceof Error ? err.message : String(err);
+
 /**
- * The HTTP status an exception maps to — the single source shared by
- * `AllExceptionsFilter` (the client response) and `AuditInterceptor` (the recorded
- * audit-row status), so the two can never disagree. Pure: no logging or Sentry
- * side effects (the filter owns those). Family order mirrors the filter exactly.
+ * THE exception classification — one ordered chain (first match wins) that
+ * `AllExceptionsFilter` (response, log, Sentry) and `statusFromException`
+ * (audit-row status) both read, so they can never disagree. Pure: it only
+ * describes side effects; the filter performs them.
  */
-export function statusFromException(err: unknown): number {
-  if (err instanceof DomainError) return err.status;
-  if (err instanceof HttpException) return err.getStatus();
-  if (isTransientConflict(err)) return TRANSIENT_CONFLICT.status;
-  if (isConstraintViolation(err)) return CONSTRAINT_VIOLATION.status;
-  if (isUnstorableCharacters(err)) return UNSTORABLE_CHARACTERS.status;
-  if (isValueOutOfRange(err)) return VALUE_OUT_OF_RANGE.status;
-  if (err instanceof Prisma.PrismaClientKnownRequestError) {
-    return PRISMA_STATUS[err.code]?.status ?? 500;
+export function classifyException(err: unknown): ExceptionClass {
+  if (err instanceof DomainError) {
+    return {
+      status: err.status,
+      envelope: { code: err.code, message: err.message, details: err.details },
+    };
   }
-  if (err instanceof Prisma.PrismaClientValidationError) return 400;
+  if (err instanceof HttpException) {
+    const status = err.getStatus();
+    const res = err.getResponse();
+    if (typeof res === 'string') {
+      return { status, envelope: { code: `HTTP_${status}`, message: res } };
+    }
+    const rawMessage = (res as { message?: string | string[] }).message;
+    // class-validator (ValidationPipe) yields an array of per-field
+    // messages — preserve them so the frontend can show field errors.
+    return {
+      status,
+      envelope: Array.isArray(rawMessage)
+        ? {
+            code: `HTTP_${status}`,
+            message: 'Validation failed',
+            details: { errors: rawMessage },
+          }
+        : { code: `HTTP_${status}`, message: rawMessage ?? err.message },
+    };
+  }
+  if (isTransientConflict(err)) {
+    // Deadlock / serialization failure: the tx rolled back — a client retry
+    // is safe. Expected under contention, so warn (no Sentry).
+    const { status, code, message, details } = TRANSIENT_CONFLICT;
+    return {
+      status,
+      envelope: { code, message, details: { ...details } },
+      log: {
+        level: 'warn',
+        args: (url) => [
+          `Transient transaction conflict -> ${status} on ${url}: ${messageOf(err)}`,
+        ],
+      },
+    };
+  }
+  if (isConstraintViolation(err)) {
+    // CHECK / NOT NULL violation that escaped service validation: a generic
+    // 422 backstop (no SQL / constraint names in the response). It only
+    // fires on a validation gap (a code defect — e.g. the deferred
+    // journal_entry_balanced trigger), so it is logged at ERROR with the
+    // constraint name and reported to Sentry at warning level.
+    const { status, code, message } = CONSTRAINT_VIOLATION;
+    const constraint = constraintNameOf(err) ?? 'unknown';
+    return {
+      status,
+      envelope: { code, message },
+      log: {
+        level: 'error',
+        args: (url) => [
+          `Constraint violation (${constraint}) -> ${status} on ${url}: ${messageOf(err)}`,
+        ],
+      },
+      sentry: {
+        level: 'warning',
+        tags: { kind: 'constraint-backstop', constraint },
+      },
+    };
+  }
+  if (isUnstorableCharacters(err)) {
+    // A U+0000 / untranslatable character reached Postgres (22021/22P05):
+    // client input, not an incident — 400 INVALID_CHARACTERS, warn only.
+    const { status, code, message } = UNSTORABLE_CHARACTERS;
+    return {
+      status,
+      envelope: { code, message },
+      log: {
+        level: 'warn',
+        args: (url) => [
+          `Unstorable character -> ${status} on ${url}: ${messageOf(err)}`,
+        ],
+      },
+    };
+  }
+  if (isValueOutOfRange(err)) {
+    // A date/time outside the column's range reached Postgres (22008):
+    // answered 400 INVALID_INPUT, but the DTOs should have caught it (or a
+    // server-computed date overflowed), so it is also a Sentry warning.
+    const { status, code, message } = VALUE_OUT_OF_RANGE;
+    return {
+      status,
+      envelope: { code, message },
+      log: {
+        level: 'warn',
+        args: (url) => [
+          `Value out of range -> ${status} on ${url}: ${messageOf(err)}`,
+        ],
+      },
+      sentry: { level: 'warning', tags: { kind: 'datetime-overflow' } },
+    };
+  }
+  if (err instanceof Prisma.PrismaClientKnownRequestError) {
+    const mapped = PRISMA_STATUS[err.code];
+    if (mapped) {
+      const { status, code, message } = mapped;
+      return {
+        status,
+        envelope: { code, message },
+        log: {
+          level: 'warn',
+          args: (url) => [
+            `Prisma ${err.code} -> ${status} on ${url}: ${err.message}`,
+          ],
+        },
+      };
+    }
+    // Unknown Prisma code: stay 500 + INTERNAL_ERROR, but log loudly.
+    return {
+      ...INTERNAL_ERROR,
+      log: {
+        level: 'error',
+        args: (url) => [`Unmapped Prisma ${err.code} on ${url}`, err.stack],
+      },
+      sentry: {},
+    };
+  }
+  if (err instanceof Prisma.PrismaClientValidationError) {
+    return {
+      status: 400,
+      envelope: { code: 'INVALID_INPUT', message: 'Invalid input' },
+      log: {
+        level: 'warn',
+        args: (url) => [`Prisma validation error -> 400 on ${url}`],
+      },
+    };
+  }
   const parserStatus = bodyParserClientStatus(err);
-  if (parserStatus !== undefined) return parserStatus;
-  return 500;
+  if (parserStatus !== undefined) {
+    // body-parser rejected the body before routing (over the size cap,
+    // unsupported charset / encoding, aborted upload, corrupt gzip/deflate
+    // stream): a client error, not an incident (info log, no Sentry, no
+    // audit row — no guard ran).
+    const { message, expose, type, code } = err as {
+      message?: unknown;
+      expose?: unknown;
+      type?: unknown;
+      code?: unknown;
+    };
+    const kind =
+      typeof type === 'string'
+        ? type
+        : typeof code === 'string'
+          ? code
+          : 'untyped';
+    return {
+      status: parserStatus,
+      envelope:
+        parserStatus === PAYLOAD_TOO_LARGE.status
+          ? { code: PAYLOAD_TOO_LARGE.code, message: PAYLOAD_TOO_LARGE.message }
+          : {
+              code: `HTTP_${parserStatus}`,
+              // http-errors marks client-safe messages `expose: true`.
+              message:
+                expose === true && typeof message === 'string'
+                  ? message
+                  : 'Bad request',
+            },
+      log: {
+        level: 'log',
+        args: (url) => [
+          `Request body rejected by the parser (${kind}) -> ${parserStatus} on ${url}`,
+        ],
+      },
+    };
+  }
+  return {
+    ...INTERNAL_ERROR,
+    log: {
+      level: 'error',
+      args: (url) => [
+        `Unhandled exception on ${url}`,
+        err instanceof Error ? err.stack : String(err),
+      ],
+    },
+    sentry: {},
+  };
+}
+
+/** The HTTP status an exception maps to (see `classifyException`) — what
+ *  `AuditInterceptor` records, identical to the filter's response status. */
+export function statusFromException(err: unknown): number {
+  return classifyException(err).status;
 }

@@ -1,29 +1,7 @@
-import {
-  ArgumentsHost,
-  Catch,
-  ExceptionFilter,
-  HttpException,
-  Logger,
-} from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { ArgumentsHost, Catch, ExceptionFilter, Logger } from '@nestjs/common';
 import type { Response } from 'express';
 import * as Sentry from '@sentry/node';
-import { DomainError } from '../errors/domain-errors';
-import {
-  CONSTRAINT_VIOLATION,
-  constraintNameOf,
-  isConstraintViolation,
-  isBodyParserClientError,
-  isTransientConflict,
-  isUnstorableCharacters,
-  isValueOutOfRange,
-  PAYLOAD_TOO_LARGE,
-  PRISMA_STATUS,
-  statusFromException,
-  TRANSIENT_CONFLICT,
-  UNSTORABLE_CHARACTERS,
-  VALUE_OUT_OF_RANGE,
-} from '../errors/exception-status';
+import { classifyException } from '../errors/exception-status';
 import type { AuditService } from '../../audit/audit.service';
 import {
   auditBaseOf,
@@ -73,169 +51,21 @@ export class AllExceptionsFilter implements ExceptionFilter {
     >();
     const url = req.url ?? 'unknown';
 
-    const status = statusFromException(exception);
-    let envelope: ErrorEnvelope = {
-      code: 'INTERNAL_ERROR',
-      message: 'Internal server error',
-    };
-
-    if (exception instanceof DomainError) {
-      envelope = {
-        code: exception.code,
-        message: exception.message,
-        details: exception.details,
-      };
-    } else if (exception instanceof HttpException) {
-      const res = exception.getResponse();
-      if (typeof res === 'string') {
-        envelope = { code: `HTTP_${status}`, message: res };
-      } else {
-        const rawMessage = (res as { message?: string | string[] }).message;
-        if (Array.isArray(rawMessage)) {
-          // class-validator (ValidationPipe) yields an array of per-field
-          // messages — preserve them so the frontend can show field errors.
-          envelope = {
-            code: `HTTP_${status}`,
-            message: 'Validation failed',
-            details: { errors: rawMessage },
-          };
-        } else {
-          envelope = {
-            code: `HTTP_${status}`,
-            message: rawMessage ?? exception.message,
-          };
-        }
-      }
-    } else if (isTransientConflict(exception)) {
-      // Deadlock / serialization failure: the tx rolled back — a client retry
-      // is safe. Expected under contention, so warn (no Sentry).
-      envelope = {
-        code: TRANSIENT_CONFLICT.code,
-        message: TRANSIENT_CONFLICT.message,
-        details: { ...TRANSIENT_CONFLICT.details },
-      };
-      this.logger.warn(
-        `Transient transaction conflict -> ${status} on ${url}: ${
-          exception instanceof Error ? exception.message : String(exception)
-        }`,
-      );
-    } else if (isConstraintViolation(exception)) {
-      // CHECK / NOT NULL violation that escaped service validation: a generic
-      // 422 backstop (no SQL / constraint names in the response). It only
-      // fires on a validation gap (a code defect — e.g. the deferred
-      // journal_entry_balanced trigger), so it is logged at ERROR with the
-      // constraint name and reported to Sentry at warning level.
-      envelope = {
-        code: CONSTRAINT_VIOLATION.code,
-        message: CONSTRAINT_VIOLATION.message,
-      };
-      const constraint = constraintNameOf(exception) ?? 'unknown';
-      this.logger.error(
-        `Constraint violation (${constraint}) -> ${status} on ${url}: ${
-          exception instanceof Error ? exception.message : String(exception)
-        }`,
-      );
+    const {
+      status,
+      envelope: base,
+      log,
+      sentry,
+    } = classifyException(exception);
+    const envelope: ErrorEnvelope = { ...base };
+    if (log) {
+      const [message, ...rest] = log.args(url);
+      this.logger[log.level](message, ...rest);
+    }
+    if (sentry) {
       Sentry.captureException(exception, {
-        level: 'warning',
-        tags: {
-          kind: 'constraint-backstop',
-          constraint,
-          traceId: req.id,
-        },
-        extra: { path: url },
-      });
-    } else if (isUnstorableCharacters(exception)) {
-      // A U+0000 / untranslatable character reached Postgres (22021/22P05):
-      // client input, not an incident — 400 INVALID_CHARACTERS, warn only.
-      envelope = {
-        code: UNSTORABLE_CHARACTERS.code,
-        message: UNSTORABLE_CHARACTERS.message,
-      };
-      this.logger.warn(
-        `Unstorable character -> ${status} on ${url}: ${
-          exception instanceof Error ? exception.message : String(exception)
-        }`,
-      );
-    } else if (isValueOutOfRange(exception)) {
-      // A date/time outside the column's range reached Postgres (22008):
-      // answered 400 INVALID_INPUT, but the DTOs should have caught it (or a
-      // server-computed date overflowed), so it is also a Sentry warning.
-      envelope = {
-        code: VALUE_OUT_OF_RANGE.code,
-        message: VALUE_OUT_OF_RANGE.message,
-      };
-      this.logger.warn(
-        `Value out of range -> ${status} on ${url}: ${
-          exception instanceof Error ? exception.message : String(exception)
-        }`,
-      );
-      Sentry.captureException(exception, {
-        level: 'warning',
-        tags: { kind: 'datetime-overflow', traceId: req.id },
-        extra: { path: url },
-      });
-    } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
-      const mapped = PRISMA_STATUS[exception.code];
-      if (mapped) {
-        envelope = { code: mapped.code, message: mapped.message };
-        this.logger.warn(
-          `Prisma ${exception.code} -> ${status} on ${url}: ${exception.message}`,
-        );
-      } else {
-        // Unknown Prisma code: stay 500 + INTERNAL_ERROR, but log loudly.
-        this.logger.error(
-          `Unmapped Prisma ${exception.code} on ${url}`,
-          exception.stack,
-        );
-        Sentry.captureException(exception, {
-          tags: { traceId: req.id },
-          extra: { path: url },
-        });
-      }
-    } else if (exception instanceof Prisma.PrismaClientValidationError) {
-      envelope = { code: 'INVALID_INPUT', message: 'Invalid input' };
-      this.logger.warn(`Prisma validation error -> 400 on ${url}`);
-    } else if (isBodyParserClientError(exception)) {
-      // body-parser rejected the body before routing (over the size cap,
-      // unsupported charset / encoding, aborted upload, corrupt gzip/deflate
-      // stream): a client error, not an incident (info log, no Sentry, no
-      // audit row — no guard ran).
-      if (status === PAYLOAD_TOO_LARGE.status) {
-        envelope = {
-          code: PAYLOAD_TOO_LARGE.code,
-          message: PAYLOAD_TOO_LARGE.message,
-        };
-      } else {
-        const { message, expose } = exception as {
-          message?: unknown;
-          expose?: unknown;
-        };
-        envelope = {
-          code: `HTTP_${status}`,
-          // http-errors marks client-safe messages `expose: true`.
-          message:
-            expose === true && typeof message === 'string'
-              ? message
-              : 'Bad request',
-        };
-      }
-      const { type, code } = exception as { type?: unknown; code?: unknown };
-      const kind =
-        typeof type === 'string'
-          ? type
-          : typeof code === 'string'
-            ? code
-            : 'untyped';
-      this.logger.log(
-        `Request body rejected by the parser (${kind}) -> ${status} on ${url}`,
-      );
-    } else {
-      this.logger.error(
-        `Unhandled exception on ${url}`,
-        exception instanceof Error ? exception.stack : String(exception),
-      );
-      Sentry.captureException(exception, {
-        tags: { traceId: req.id },
+        ...(sentry.level ? { level: sentry.level } : {}),
+        tags: { ...sentry.tags, traceId: req.id },
         extra: { path: url },
       });
     }
