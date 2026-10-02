@@ -1,4 +1,4 @@
-import { isBusinessDateString } from './business-date';
+import { hasRealLeadingDay } from './business-date';
 
 /** Convert an optional ISO date string from a validated DTO into a Date (or undefined). */
 export function parseDate(value?: string | null): Date | undefined {
@@ -22,7 +22,7 @@ export const AUDIT_YEAR_MAX = 9999;
 export function isAuditInstantString(value: unknown): boolean {
   if (typeof value !== 'string') return false;
   const m = AUDIT_INSTANT.exec(value);
-  if (!m || !isBusinessDateString(value)) return false;
+  if (!m || !hasRealLeadingDay(value)) return false;
   const year = Number(m[1]);
   return (
     year >= AUDIT_YEAR_MIN &&

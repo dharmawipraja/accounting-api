@@ -24,9 +24,9 @@ describe('asOfOrToday', () => {
     const d = asOfOrToday(undefined, new Date('2026-07-01T18:00:00Z'));
     expect(d.toISOString().slice(0, 10)).toBe('2026-07-02');
   });
-  it('an explicit asOf with an offset keeps its own calendar day (no UTC shift)', () => {
-    expect(asOfOrToday('2026-07-01T00:30+07:00').toISOString()).toBe(
-      '2026-07-01T00:00:00.000Z',
+  it('an explicit asOf must be a plain YYYY-MM-DD (a timestamp is 422)', () => {
+    expect(() => asOfOrToday('2026-07-01T00:30+07:00')).toThrow(
+      'expected YYYY-MM-DD',
     );
   });
   it('an explicit asOf is untouched by the timezone default', () => {
@@ -49,13 +49,10 @@ describe('dateRange', () => {
       '`from` must be on or before `to`',
     );
   });
-  it("takes each bound's calendar day from its first 10 chars", () => {
-    const { from, to } = dateRange(
-      '2026-07-01T00:30+07:00',
-      '2026-07-31T23:59:59-05:00',
+  it('rejects timestamp bounds (422): business dates are YYYY-MM-DD only', () => {
+    expect(() => dateRange('2026-07-01T00:30+07:00', '2026-07-31')).toThrow(
+      'expected YYYY-MM-DD',
     );
-    expect(from.toISOString()).toBe('2026-07-01T00:00:00.000Z');
-    expect(to.toISOString()).toBe('2026-07-31T00:00:00.000Z');
   });
   it('allows from === to (equal boundary)', () => {
     const { from, to } = dateRange('2026-01-01', '2026-01-01');

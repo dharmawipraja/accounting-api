@@ -11,8 +11,8 @@ export const REPORT_UTC_OFFSET_MINUTES = Number(
   process.env.REPORT_UTC_OFFSET_MINUTES || 420,
 );
 
-/** A validated as-of query string → its business date (calendar day from the
- *  first 10 chars, see businessDate); missing means *today in the report
+/** A validated as-of query string → its business date (`YYYY-MM-DD`, see
+ *  businessDate); missing means *today in the report
  *  timezone* (see REPORT_UTC_OFFSET_MINUTES). The offset-shifted instant
  *  truncates downstream (truncateToUtcDay) to the local calendar day. */
 export function asOfOrToday(asOf?: string, now: Date = new Date()): Date {

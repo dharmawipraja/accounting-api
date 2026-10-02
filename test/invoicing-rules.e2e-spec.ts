@@ -121,13 +121,9 @@ describe('Invoicing rules (e2e)', () => {
       await createInvoice({ dueDate: '2026-04-31' }).expect(400);
     });
 
-    it('stores the calendar day of an offset timestamp, not the UTC-shifted day', async () => {
-      const res = await createInvoice({
-        date: '2026-07-01T00:30+07:00',
-      }).expect(201);
-      expect((res.body as { date: string }).date.slice(0, 10)).toBe(
-        '2026-07-01',
-      );
+    it('rejects a timestamp for a business date (400): only YYYY-MM-DD names a day unambiguously', async () => {
+      await createInvoice({ date: '2026-06-30T17:30:00.000Z' }).expect(400);
+      await createInvoice({ date: '2026-07-01T00:30+07:00' }).expect(400);
     });
   });
 

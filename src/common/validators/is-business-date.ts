@@ -16,7 +16,7 @@ export function IsBusinessDate(options?: ValidationOptions) {
       validator: {
         validate: (value: unknown) => isBusinessDateString(value),
         defaultMessage: () =>
-          `${propertyName} must start with a real calendar date (YYYY-MM-DD)`,
+          `${propertyName} must be a real calendar date in YYYY-MM-DD form (no time)`,
       },
     });
   };

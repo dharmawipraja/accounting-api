@@ -78,14 +78,15 @@ export async function bootstrapTestApp(
     .overrideProvider(PrismaService)
     .useValue(prisma)
     .compile();
-  const app = mod.createNestApplication<NestExpressApplication>();
+  const app = mod.createNestApplication<NestExpressApplication>({
+    bodyParser: false, // as main.ts: JSON only
+  });
   // Same as main.ts: Cache-Control: no-store on /v* registered BEFORE the body
   // parsers (so their 400 / 413 carries it) and no ETags.
   app.use(noStoreApiResponses);
   app.set('etag', false);
-  // Same body caps as main.ts (the Nest default is 100 KB).
+  // Same body cap as main.ts (the Nest default is 100 KB).
   app.useBodyParser('json', { limit: '1mb' });
-  app.useBodyParser('urlencoded', { limit: '1mb', extended: true });
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   if (opts.pipe !== false) {
     app.useGlobalPipes(globalValidationPipe());

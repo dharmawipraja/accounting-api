@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed (breaking)
+
+- **Business dates must be `YYYY-MM-DD`** — a timestamp sent for a journal,
+  document, due, payment, void/reverse date or a report `asOf`/`from`/`to` is now
+  `400` (previously its first 10 characters were used, so `toISOString()` from a
+  WIB client after midnight posted to the previous day). Audit-log `from`/`to`
+  filters still accept timestamps.
+
+### Removed
+
+- `GET /v1/auth/admin-only` (Phase-1 RBAC smoke route) and the
+  `application/x-www-form-urlencoded` body parser — the API is JSON-only.
+
+### Security
+
+- `js-yaml` (via `@nestjs/swagger`) pinned to `^5.4.1` (GHSA-r3ph-w7gj-g6xm) and
+  `@grpc/grpc-js` bumped; `npm audit` is back to 0.
+
 ### Fixed
 
 - **Tax codes no longer stack** — a document line may carry at most one PPN code

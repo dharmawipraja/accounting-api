@@ -19,8 +19,6 @@ import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 import { AllowWithPendingPassword } from './decorators/allow-with-pending-password.decorator';
 import { AuthenticatedUser } from './strategies/jwt.strategy';
-import { Roles } from './decorators/roles.decorator';
-import { Role } from './role.enum';
 import {
   AuthenticatedUserDto,
   ErrorEnvelopeDto,
@@ -98,14 +96,6 @@ export class AuthController {
       dto.currentPassword,
       dto.newPassword,
     );
-    return { ok: true };
-  }
-
-  // Phase 1 RBAC smoke surface — replace with a real admin endpoint later.
-  @Roles(Role.ADMIN)
-  @Get('admin-only')
-  @ApiOkResponse({ type: OkFlagDto })
-  adminOnly(): { ok: boolean } {
     return { ok: true };
   }
 }

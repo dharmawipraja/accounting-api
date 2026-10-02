@@ -36,14 +36,14 @@ describe('RBAC (e2e)', () => {
 
   it('allows an ADMIN to access an admin-only route', () => {
     return request(app.getHttpServer() as App)
-      .get('/v1/auth/admin-only')
+      .get('/v1/users')
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
   });
 
   it('forbids a VIEWER from an admin-only route (403)', () => {
     return request(app.getHttpServer() as App)
-      .get('/v1/auth/admin-only')
+      .get('/v1/users')
       .set('Authorization', `Bearer ${viewerToken}`)
       .expect(403)
       .expect((r) => {
@@ -57,7 +57,7 @@ describe('RBAC (e2e)', () => {
 
   it('returns 401 (not 403) when no token is sent to an admin-only route', () => {
     return request(app.getHttpServer() as App)
-      .get('/v1/auth/admin-only')
+      .get('/v1/users')
       .expect(401);
   });
 });

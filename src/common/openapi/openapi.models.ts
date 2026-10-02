@@ -39,7 +39,7 @@ export class AuthenticatedUserDto {
   @ApiProperty() mustChangePassword!: boolean;
 }
 
-/** GET /auth/admin-only — RBAC smoke surface. */
+/** `{ ok: true }` acknowledgement (e.g. POST /auth/change-password). */
 export class OkFlagDto {
   @ApiProperty({ example: true }) ok!: boolean;
 }

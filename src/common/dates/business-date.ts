@@ -1,16 +1,16 @@
 import { ValidationFailedError } from '../errors/domain-errors';
 
 const LEADING_DATE = /^(\d{4})-(\d{2})-(\d{2})/;
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The shared business-date transformer. A business date (journal/document/
  *  payment date, due date, report asOf/from/to) is a calendar day, not an
- *  instant: take the `YYYY-MM-DD` from the first 10 chars of the (already
- *  @IsDateString-validated) string and return that day at UTC midnight — the
- *  shape every `@db.Date` column and period bound uses. Any time-of-day or
- *  offset is ignored, so `2026-07-01T00:30+07:00` is July 1, never shifted to
- *  June 30 by a UTC conversion. 422 if the leading date is not a real day. */
+ *  instant, so it must be exactly `YYYY-MM-DD`: a timestamp is ambiguous
+ *  (`new Date().toISOString()` at 00:30 WIB on July 1 reads `2026-06-30T17:30Z`
+ *  and would post to June 30). Returns that day at UTC midnight — the shape
+ *  every `@db.Date` column and period bound uses. 422 if not a real day. */
 export function businessDate(value: string): Date {
-  const date = leadingCalendarDay(value);
+  const date = DATE_ONLY.test(value) ? leadingCalendarDay(value) : null;
   if (date) return date;
   throw new ValidationFailedError(
     'Invalid calendar date; expected YYYY-MM-DD',
@@ -20,10 +20,20 @@ export function businessDate(value: string): Date {
   );
 }
 
-/** Pure DTO-boundary check (IsBusinessDate): does the string start with a real
- *  calendar day? `2026-02-30` is ISO-shaped but not a day → false (400). */
+/** Pure DTO-boundary check (IsBusinessDate): exactly `YYYY-MM-DD` and a real
+ *  calendar day (`2026-02-30` is ISO-shaped but not a day → false, 400). */
 export function isBusinessDateString(value: unknown): boolean {
-  return typeof value === 'string' && leadingCalendarDay(value) !== null;
+  return (
+    typeof value === 'string' &&
+    DATE_ONLY.test(value) &&
+    leadingCalendarDay(value) !== null
+  );
+}
+
+/** Does the string START with a real calendar day? For timestamp inputs
+ *  (audit-log `from`/`to`) whose day part must still be a real day. */
+export function hasRealLeadingDay(value: string): boolean {
+  return leadingCalendarDay(value) !== null;
 }
 
 function leadingCalendarDay(value: string): Date | null {

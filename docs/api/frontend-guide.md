@@ -421,12 +421,11 @@ than **2 characters** (after trimming) is ignored (the normal list is returned).
 
 ### Dates
 
-- Accounting dates are **date-only**, `YYYY-MM-DD` (no time component). Send them as
-  `YYYY-MM-DD` strings. If a full ISO timestamp is sent for a business date (journal,
-  document, due, payment, void/reverse date, report `asOf`/`from`/`to`), the server takes
-  the **calendar day from its first 10 characters** and ignores the time and offset —
-  `2026-07-01T00:30+07:00` is **July 1** (never shifted to June 30 by UTC conversion).
-  An impossible day (e.g. `2026-02-30`) → `400`, like any malformed date. (Audit-log
+- Accounting dates are **date-only**, `YYYY-MM-DD` (no time component), and must be
+  sent exactly so. A timestamp for a business date (journal, document, due, payment,
+  void/reverse date, report `asOf`/`from`/`to`) → **`400`** — never send
+  `new Date().toISOString()`: at 00:30 WIB on July 1 it reads `2026-06-30T17:30Z`. Format
+  the user's local calendar day instead. An impossible day (e.g. `2026-02-30`) → `400`. (Audit-log
   `from`/`to` filters are timestamps and keep their time; they must be a strict ISO
   `YYYY-MM-DD` or `YYYY-MM-DDTHH:MM[:SS[.fff]][Z|±HH:MM]` on a real calendar day with a
   year in 1970–9999 — anything else, e.g. `0000-01-01`, `2026-02-30`, `2026-W01`,
@@ -540,7 +539,6 @@ body is `{ code: "FORBIDDEN", message: "Insufficient role", traceId }` — it do
 | Update **company settings** (`PATCH /company/settings`)                                                          |        |            |          |   ✓   |
 | Manage **users** — all of `/users` (`GET`/`POST`/`PATCH`/`DELETE`, incl. `:id/reset-password`)                   |        |            |          |   ✓   |
 | Read **audit log** (`GET /audit`)                                                                                |        |            |          |   ✓   |
-| `GET /auth/admin-only` (RBAC smoke)                                                                              |        |            |          |   ✓   |
 
 > **Note on `POST /ledger/journal-entries?post=true`:** ACCOUNTANT may create drafts
 > but **cannot create-and-post in one call** — passing `?post=true` as an ACCOUNTANT
@@ -992,7 +990,6 @@ no auth.
 - `POST   /auth/logout` · public (throttled) · revoke the current device's refresh token family `{ "refreshToken": "..." }`
 - `POST   /auth/logout-all` · any (authenticated) · revoke all sessions for the current user
 - `GET    /auth/me` · any · current user `{ id, email, role, mustChangePassword }`
-- `GET    /auth/admin-only` · ADMIN · RBAC smoke endpoint
 - `POST   /auth/change-password` · any (authenticated) · self-service `{currentPassword, newPassword}`; revokes **all** the caller's refresh sessions (see [Forced password change](#forced-password-change)). If an admin resets the same account's password while the change is in flight, the reset wins and the change answers `401` "Current password is incorrect" (sessions are revoked by the reset anyway) — send the user to login
 
 ### Users (ADMIN)
@@ -1177,7 +1174,7 @@ schema directly in an array.
 
 | Domain           | Response schema(s)                                                                                                                                                                             |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Auth             | `TokenPairDto` (login/refresh) · `AuthenticatedUserDto` (`/auth/me`, now incl. `mustChangePassword`) · `OkFlagDto` (`/auth/admin-only`, `/auth/change-password`)                                |
+| Auth             | `TokenPairDto` (login/refresh) · `AuthenticatedUserDto` (`/auth/me`, now incl. `mustChangePassword`) · `OkFlagDto` (`/auth/change-password`)                                  |
 | Users            | single → `UserResponseDto` · list → `PaginatedUsersResponseDto` (envelope) · create / reset-password → `CreateUserResponseDto` (`{ user, tempPassword }`)                                      |
 | Health / ops     | `HealthStatusDto` · `ReadinessStatusDto` · `/metrics` → `text/plain` (not JSON)                                                                                                                |
 | Accounts         | list → `AccountListResponseDto` (envelope) · single → `AccountResponseDto` · balance → `AccountBalanceDto` · trial balance → `TrialBalanceDto`                                                 |

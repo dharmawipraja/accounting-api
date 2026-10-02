@@ -46,6 +46,9 @@ async function bootstrap(): Promise<void> {
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
+    // Only the JSON parser below: a JSON-only API has no use for Nest's default
+    // urlencoded (extended qs) parser, which would only widen the input surface.
+    bodyParser: false,
   });
   app.useLogger(app.get(Logger));
   // Trust exactly the reverse-proxy hops in front of the app (prod: Caddy -> api
@@ -82,7 +85,6 @@ async function bootstrap(): Promise<void> {
   server.requestTimeout = 40_000;
   // Cap request bodies (financial payloads are small); matches Caddy's edge cap.
   app.useBodyParser('json', { limit: '1mb' });
-  app.useBodyParser('urlencoded', { limit: '1mb', extended: true });
 
   // Serve OpenAPI docs everywhere except production, where exposing the full
   // route/DTO surface is opt-in. Set ENABLE_SWAGGER=true to force it on.
