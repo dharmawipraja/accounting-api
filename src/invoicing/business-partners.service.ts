@@ -109,21 +109,8 @@ export class BusinessPartnersService {
           limit,
           offset,
         }),
-      hydrate: (ids) =>
-        this.prisma.client.businessPartner.findMany({
-          where: { id: { in: ids } },
-        }),
-      page: async ({ limit: take, offset: skip }) => {
-        const [rows, total] = await Promise.all([
-          this.prisma.client.businessPartner.findMany({
-            orderBy: { code: 'asc' },
-            take,
-            skip,
-          }),
-          this.prisma.client.businessPartner.count(),
-        ]);
-        return { rows, total };
-      },
+      model: this.prisma.client.businessPartner,
+      orderBy: { code: 'asc' },
     });
   }
 

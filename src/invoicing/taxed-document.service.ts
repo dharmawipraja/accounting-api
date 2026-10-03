@@ -252,8 +252,9 @@ export class TaxedDocumentService {
           limit,
           offset,
         }),
-      hydrate: (ids) => spec.hydrate(ids),
-      page: ({ limit, offset }) => spec.page({ where, limit, offset }),
+      model: spec.model,
+      where,
+      orderBy: { createdAt: 'desc' },
     });
   }
 

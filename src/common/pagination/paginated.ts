@@ -29,6 +29,24 @@ export interface ListPaginatedParams<TRow extends { id: string }, TOut> {
   }) => Promise<{ rows: TRow[]; total: number }>;
 }
 
+/** A Prisma delegate's plain (no relations) list reads. */
+export interface ListModel<TRow> {
+  findMany(args: {
+    where?: object;
+    orderBy?: object;
+    take?: number;
+    skip?: number;
+  }): PromiseLike<TRow[]>;
+  count(args: { where?: object }): PromiseLike<number>;
+}
+
+/** The common case: `page` / `hydrate` read straight off one delegate —
+ *  `where` + `orderBy` for the page, the ranked ids for the search hydrate. */
+type ModelListParams<TRow extends { id: string }, TOut> = Omit<
+  ListPaginatedParams<TRow, TOut>,
+  'page' | 'hydrate'
+> & { model: ListModel<TRow>; where?: object; orderBy: object };
+
 /**
  * Shared offset-pagination + optional fuzzy-search list seam. Owns the
  * limit/offset defaulting, the MIN_QUERY_LENGTH branch, the relevance-rank
@@ -36,8 +54,9 @@ export interface ListPaginatedParams<TRow extends { id: string }, TOut> {
  * Callers supply Prisma-typed `search`/`hydrate`/`page` closures + a presenter.
  */
 export async function listPaginated<TRow extends { id: string }, TOut>(
-  params: ListPaginatedParams<TRow, TOut>,
+  p: ListPaginatedParams<TRow, TOut> | ModelListParams<TRow, TOut>,
 ): Promise<Paginated<TOut>> {
+  const params = 'model' in p ? fromModel(p) : p;
   const limit = params.limit ?? DEFAULT_PAGE_SIZE;
   const offset = params.offset ?? 0;
   const term = params.q?.trim() ?? '';
@@ -53,4 +72,23 @@ export async function listPaginated<TRow extends { id: string }, TOut>(
   }
   const { rows, total } = await params.page({ limit, offset });
   return { data: rows.map(params.present), total, limit, offset };
+}
+
+function fromModel<TRow extends { id: string }, TOut>({
+  model,
+  where,
+  orderBy,
+  ...rest
+}: ModelListParams<TRow, TOut>): ListPaginatedParams<TRow, TOut> {
+  return {
+    ...rest,
+    hydrate: async (ids) => model.findMany({ where: { id: { in: ids } } }),
+    page: async ({ limit, offset }) => {
+      const [rows, total] = await Promise.all([
+        model.findMany({ where, orderBy, take: limit, skip: offset }),
+        model.count({ where }),
+      ]);
+      return { rows, total };
+    },
+  };
 }

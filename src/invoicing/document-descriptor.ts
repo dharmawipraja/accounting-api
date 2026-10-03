@@ -8,6 +8,7 @@ import type { LedgerTx } from '../common/prisma/prisma.service';
 import type { PostedDocContext } from './document-posting.service';
 import type { CalculatedLine, TaxBreakdownRow } from '../tax/tax.service';
 import { SoftDeletableModel } from '../ledger/document-lifecycle.service';
+import type { ListModel } from '../common/pagination/paginated';
 
 /** A document line as read back from the DB (Decimal money columns). */
 export interface DocumentLineRow {
@@ -174,15 +175,9 @@ export interface DocumentDescriptor<
   allowInactiveRefs?: boolean;
   /** Own searched columns for fuzzy ?q= search — a non-empty tuple (trigramSearch requires ≥1). */
   trigramColumns: [string, ...string[]];
-  model: SoftDeletableModel;
+  model: SoftDeletableModel & ListModel<TRow>;
   /** Read the row with its lines; `db` = a transaction to read under its locks. */
   findById(id: string, db?: LedgerTx): Promise<TRow | null>;
-  page(a: {
-    where: DocumentListWhere;
-    limit: number;
-    offset: number;
-  }): Promise<{ rows: TRow[]; total: number }>;
-  hydrate(ids: string[]): Promise<TRow[]>;
   /** Runs inside PrismaService.transaction so an idempotent create marks its
    *  key committed atomically with the insert. */
   createRow(

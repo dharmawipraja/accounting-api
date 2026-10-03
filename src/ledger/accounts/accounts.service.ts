@@ -140,17 +140,8 @@ export class AccountsService implements OnModuleInit {
       limit: q.limit,
       offset: q.offset,
       present: (r: Account) => r,
-      page: async ({ limit, offset }) => {
-        const [rows, total] = await Promise.all([
-          this.prisma.client.account.findMany({
-            orderBy: { code: 'asc' },
-            take: limit,
-            skip: offset,
-          }),
-          this.prisma.client.account.count(),
-        ]);
-        return { rows, total };
-      },
+      model: this.prisma.client.account,
+      orderBy: { code: 'asc' },
     });
   }
 

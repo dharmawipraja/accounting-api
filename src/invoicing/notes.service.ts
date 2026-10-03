@@ -197,7 +197,10 @@ export class NotesService {
     private readonly payments: PaymentsService,
     private readonly docPosting: DocumentPostingService,
   ) {
-    this.kinds = { SALES: this.salesKind(), PURCHASE: this.purchaseKind() };
+    this.kinds = {
+      SALES: this.noteKind(NOTE_KINDS.SALES),
+      PURCHASE: this.noteKind(NOTE_KINDS.PURCHASE),
+    };
   }
 
   // ---- reads ---------------------------------------------------------------
@@ -727,65 +730,54 @@ export class NotesService {
     };
   }
 
-  private salesKind(): NoteKind {
+  /** One note kind's descriptor + credit source, from its constants. Both
+   *  kinds' tables have the same columns, so one (sales) delegate type serves
+   *  both (the per-kind Prisma model is picked by name). */
+  private noteKind(cfg: NoteKindConfig): NoteKind {
     const db = this.prisma.client;
+    const notes = (c: LedgerTx) => c[cfg.model] as unknown as NoteDelegate;
+    const noteLines = (c: LedgerTx) =>
+      c[cfg.lineModel] as unknown as LedgerTx['salesCreditNoteLine'];
+    const { model: originalModel, ...original } = cfg.original;
     const kind: NoteKind = {
-      table: 'sales_credit_notes',
-      lineTable: 'sales_credit_note_lines',
+      table: cfg.table,
+      lineTable: cfg.lineTable,
       original: {
-        table: 'sales_invoices',
-        lineTable: 'sales_invoice_lines',
-        lineFk: 'sales_invoice_id',
-        noun: 'invoice',
-        label: 'Sales invoice',
+        ...original,
         find: (id) =>
-          db.salesInvoice.findFirst({
+          (db[originalModel] as unknown as LedgerTx['salesInvoice']).findFirst({
             where: { id },
             include: { lines: true },
           }),
       },
-      target: PAYMENT_TARGETS.RECEIPT,
+      target: cfg.target,
       credit: {
-        noun: 'credit note',
-        table: 'sales_credit_notes',
-        holderField: 'salesCreditNoteId',
+        noun: cfg.noun,
+        table: cfg.table,
+        holderField: cfg.holderField,
         dateKey: 'noteDate',
-        sourceType: 'SALES_CREDIT_NOTE',
-        target: PAYMENT_TARGETS.RECEIPT,
+        sourceType: cfg.sourceType,
+        target: cfg.target,
       },
       spec: {
-        noun: 'credit note',
-        label: 'Sales credit note',
+        noun: cfg.noun,
+        label: cfg.label,
         article: 'a',
-        partnerFlag: 'isCustomer',
+        partnerFlag: cfg.partnerFlag,
         allowInactiveRefs: true,
-        nature: 'SALE',
-        controlRole: 'AR_CONTROL',
-        sourceType: 'SALES_CREDIT_NOTE',
-        documentType: 'CN',
-        table: 'sales_credit_notes',
+        nature: cfg.nature,
+        controlRole: cfg.controlRole,
+        sourceType: cfg.sourceType,
+        documentType: cfg.documentType,
+        table: cfg.table,
         trigramColumns: ['ref', 'description'],
-        model: db.salesCreditNote,
+        model: notes(db),
         present: presentNote,
         findById: (id, tx = db) =>
-          tx.salesCreditNote.findFirst({
+          notes(tx).findFirst({
             where: { id },
             include: { lines: LINES, applications: APPLICATIONS },
           }),
-        page: async ({ where, limit, offset }) => {
-          const [rows, total] = await Promise.all([
-            db.salesCreditNote.findMany({
-              where,
-              orderBy: { createdAt: 'desc' },
-              take: limit,
-              skip: offset,
-            }),
-            db.salesCreditNote.count({ where }),
-          ]);
-          return { rows, total };
-        },
-        hydrate: (ids) =>
-          db.salesCreditNote.findMany({ where: { id: { in: ids } } }),
         createRow: async (tx, common, input) => {
           const { lines, ...priced } = await this.priceUnderLock(
             tx,
@@ -794,7 +786,7 @@ export class NotesService {
             null,
             input.lines,
           );
-          return tx.salesCreditNote.create({
+          return notes(tx).create({
             data: {
               ...noteScalars(common),
               ...priced,
@@ -812,8 +804,8 @@ export class NotesService {
             id,
             input.lines ?? (existing.lines ?? []).map(storedNoteLine),
           );
-          await tx.salesCreditNoteLine.deleteMany({ where: { noteId: id } });
-          await tx.salesCreditNote.update({
+          await noteLines(tx).deleteMany({ where: { noteId: id } });
+          await notes(tx).update({
             where: { id },
             data: {
               ...noteScalars(common),
@@ -823,7 +815,7 @@ export class NotesService {
           });
         },
         finalizePosted: async (tx, id, ctx, postedBy) => {
-          await tx.salesCreditNote.update({
+          await notes(tx).update({
             where: { id },
             data: {
               status: 'POSTED',
@@ -838,129 +830,7 @@ export class NotesService {
           });
         },
         markVoid: async (tx, id, voidedOn) => {
-          await tx.salesCreditNote.update({
-            where: { id },
-            data: { status: 'VOID', voidedOn, unappliedAmount: 0 },
-          });
-        },
-        postHooks: (row) => this.postHooks(kind, row),
-      },
-    };
-    return kind;
-  }
-
-  private purchaseKind(): NoteKind {
-    const db = this.prisma.client;
-    const kind: NoteKind = {
-      table: 'purchase_debit_notes',
-      lineTable: 'purchase_debit_note_lines',
-      original: {
-        table: 'purchase_bills',
-        lineTable: 'purchase_bill_lines',
-        lineFk: 'purchase_bill_id',
-        noun: 'bill',
-        label: 'Purchase bill',
-        find: (id) =>
-          db.purchaseBill.findFirst({
-            where: { id },
-            include: { lines: true },
-          }),
-      },
-      target: PAYMENT_TARGETS.DISBURSEMENT,
-      credit: {
-        noun: 'debit note',
-        table: 'purchase_debit_notes',
-        holderField: 'purchaseDebitNoteId',
-        dateKey: 'noteDate',
-        sourceType: 'PURCHASE_DEBIT_NOTE',
-        target: PAYMENT_TARGETS.DISBURSEMENT,
-      },
-      spec: {
-        noun: 'debit note',
-        label: 'Purchase debit note',
-        article: 'a',
-        partnerFlag: 'isVendor',
-        allowInactiveRefs: true,
-        nature: 'PURCHASE',
-        controlRole: 'AP_CONTROL',
-        sourceType: 'PURCHASE_DEBIT_NOTE',
-        documentType: 'DN',
-        table: 'purchase_debit_notes',
-        trigramColumns: ['ref', 'description'],
-        model: db.purchaseDebitNote,
-        present: presentNote,
-        findById: (id, tx = db) =>
-          tx.purchaseDebitNote.findFirst({
-            where: { id },
-            include: { lines: LINES, applications: APPLICATIONS },
-          }),
-        page: async ({ where, limit, offset }) => {
-          const [rows, total] = await Promise.all([
-            db.purchaseDebitNote.findMany({
-              where,
-              orderBy: { createdAt: 'desc' },
-              take: limit,
-              skip: offset,
-            }),
-            db.purchaseDebitNote.count({ where }),
-          ]);
-          return { rows, total };
-        },
-        hydrate: (ids) =>
-          db.purchaseDebitNote.findMany({ where: { id: { in: ids } } }),
-        createRow: async (tx, common, input) => {
-          const { lines, ...priced } = await this.priceUnderLock(
-            tx,
-            kind,
-            input.originalId,
-            null,
-            input.lines,
-          );
-          return tx.purchaseDebitNote.create({
-            data: {
-              ...noteScalars(common),
-              ...priced,
-              originalId: input.originalId,
-              lines: { create: lines },
-            },
-            include: { lines: LINES, applications: APPLICATIONS },
-          });
-        },
-        updateRow: async (tx, id, common, input, existing) => {
-          const { lines, ...priced } = await this.priceUnderLock(
-            tx,
-            kind,
-            existing.originalId,
-            id,
-            input.lines ?? (existing.lines ?? []).map(storedNoteLine),
-          );
-          await tx.purchaseDebitNoteLine.deleteMany({ where: { noteId: id } });
-          await tx.purchaseDebitNote.update({
-            where: { id },
-            data: {
-              ...noteScalars(common),
-              ...priced,
-              lines: { create: lines },
-            },
-          });
-        },
-        finalizePosted: async (tx, id, ctx, postedBy) => {
-          await tx.purchaseDebitNote.update({
-            where: { id },
-            data: {
-              status: 'POSTED',
-              number: ctx.number,
-              ref: ctx.ref,
-              fiscalYear: ctx.fiscalYear,
-              journalEntryId: ctx.entry.id,
-              postedBy,
-              postedAt: new Date(),
-              ...ctx.totals,
-            },
-          });
-        },
-        markVoid: async (tx, id, voidedOn) => {
-          await tx.purchaseDebitNote.update({
+          await notes(tx).update({
             where: { id },
             data: { status: 'VOID', voidedOn, unappliedAmount: 0 },
           });
@@ -971,6 +841,79 @@ export class NotesService {
     return kind;
   }
 }
+
+type NoteDelegate = LedgerTx['salesCreditNote'];
+
+/** What differs between the two note kinds — constant literals only (the
+ *  table names go into Prisma.raw). */
+interface NoteKindConfig {
+  noun: 'credit note' | 'debit note';
+  label: string;
+  partnerFlag: 'isCustomer' | 'isVendor';
+  nature: 'SALE' | 'PURCHASE';
+  controlRole: 'AR_CONTROL' | 'AP_CONTROL';
+  sourceType: 'SALES_CREDIT_NOTE' | 'PURCHASE_DEBIT_NOTE';
+  documentType: 'CN' | 'DN';
+  table: NoteKind['table'];
+  lineTable: NoteKind['lineTable'];
+  holderField: 'salesCreditNoteId' | 'purchaseDebitNoteId';
+  /** Prisma delegate names (same columns in both kinds). */
+  model: 'salesCreditNote' | 'purchaseDebitNote';
+  lineModel: 'salesCreditNoteLine' | 'purchaseDebitNoteLine';
+  original: Omit<OriginalSide, 'find'> & {
+    model: 'salesInvoice' | 'purchaseBill';
+  };
+  target: PaymentTarget;
+}
+
+const NOTE_KINDS: Record<NoteKindKey, NoteKindConfig> = {
+  SALES: {
+    noun: 'credit note',
+    label: 'Sales credit note',
+    partnerFlag: 'isCustomer',
+    nature: 'SALE',
+    controlRole: 'AR_CONTROL',
+    sourceType: 'SALES_CREDIT_NOTE',
+    documentType: 'CN',
+    table: 'sales_credit_notes',
+    lineTable: 'sales_credit_note_lines',
+    holderField: 'salesCreditNoteId',
+    model: 'salesCreditNote',
+    lineModel: 'salesCreditNoteLine',
+    original: {
+      model: 'salesInvoice',
+      table: 'sales_invoices',
+      lineTable: 'sales_invoice_lines',
+      lineFk: 'sales_invoice_id',
+      noun: 'invoice',
+      label: 'Sales invoice',
+    },
+    target: PAYMENT_TARGETS.RECEIPT,
+  },
+  PURCHASE: {
+    noun: 'debit note',
+    label: 'Purchase debit note',
+    partnerFlag: 'isVendor',
+    nature: 'PURCHASE',
+    controlRole: 'AP_CONTROL',
+    sourceType: 'PURCHASE_DEBIT_NOTE',
+    documentType: 'DN',
+    table: 'purchase_debit_notes',
+    lineTable: 'purchase_debit_note_lines',
+    holderField: 'purchaseDebitNoteId',
+    model: 'purchaseDebitNote',
+    lineModel: 'purchaseDebitNoteLine',
+    original: {
+      model: 'purchaseBill',
+      table: 'purchase_bills',
+      lineTable: 'purchase_bill_lines',
+      lineFk: 'purchase_bill_id',
+      noun: 'bill',
+      label: 'Purchase bill',
+    },
+    target: PAYMENT_TARGETS.DISBURSEMENT,
+  },
+};
 
 /** Price the requested lines from the original's (422 for a line of another
  *  document, a repeated line or a non-positive quantity). The returnable

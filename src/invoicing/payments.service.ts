@@ -321,20 +321,9 @@ export class PaymentsService {
           limit,
           offset,
         }),
-      hydrate: (ids) =>
-        this.prisma.client.payment.findMany({ where: { id: { in: ids } } }),
-      page: async ({ limit, offset }) => {
-        const [rows, total] = await Promise.all([
-          this.prisma.client.payment.findMany({
-            where,
-            orderBy: { createdAt: 'desc' },
-            take: limit,
-            skip: offset,
-          }),
-          this.prisma.client.payment.count({ where }),
-        ]);
-        return { rows, total };
-      },
+      model: this.prisma.client.payment,
+      where,
+      orderBy: { createdAt: 'desc' },
     });
   }
 

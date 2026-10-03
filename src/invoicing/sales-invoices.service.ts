@@ -79,22 +79,6 @@ export class SalesInvoicesService {
           where: { id },
           include: { lines: { orderBy: { lineNo: 'asc' } } },
         }),
-      page: async ({ where, limit, offset }) => {
-        const [rows, total] = await Promise.all([
-          this.prisma.client.salesInvoice.findMany({
-            where,
-            orderBy: { createdAt: 'desc' },
-            take: limit,
-            skip: offset,
-          }),
-          this.prisma.client.salesInvoice.count({ where }),
-        ]);
-        return { rows, total };
-      },
-      hydrate: (ids) =>
-        this.prisma.client.salesInvoice.findMany({
-          where: { id: { in: ids } },
-        }),
       createRow: (tx, { lines, ...scalars }, input) =>
         tx.salesInvoice.create({
           data: {

@@ -141,17 +141,8 @@ export class TaxCodesService implements OnModuleInit {
       limit: q.limit,
       offset: q.offset,
       present: (r: TaxCode) => r,
-      page: async ({ limit, offset }) => {
-        const [rows, total] = await Promise.all([
-          this.prisma.client.taxCode.findMany({
-            orderBy: { code: 'asc' },
-            take: limit,
-            skip: offset,
-          }),
-          this.prisma.client.taxCode.count(),
-        ]);
-        return { rows, total };
-      },
+      model: this.prisma.client.taxCode,
+      orderBy: { code: 'asc' },
     });
   }
 

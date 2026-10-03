@@ -58,24 +58,15 @@ export class UserAdminService {
       ...(q.role ? { role: q.role } : {}),
       ...(q.isActive !== undefined ? { isActive: q.isActive === 'true' } : {}),
     };
-    // No `search`/`hydrate` (no ?q= on users — small bounded set): the seam
-    // takes the non-search `page` branch, exactly like accounts/tax-codes.
+    // No `search` (no ?q= on users — small bounded set): the seam takes the
+    // non-search page branch, exactly like accounts/tax-codes.
     return listPaginated({
       limit: q.limit,
       offset: q.offset,
       present: toUserResponse,
-      page: async ({ limit, offset }) => {
-        const [rows, total] = await Promise.all([
-          this.prisma.client.user.findMany({
-            where,
-            orderBy: { email: 'asc' },
-            take: limit,
-            skip: offset,
-          }),
-          this.prisma.client.user.count({ where }),
-        ]);
-        return { rows, total };
-      },
+      model: this.prisma.client.user,
+      where,
+      orderBy: { email: 'asc' },
     });
   }
 
