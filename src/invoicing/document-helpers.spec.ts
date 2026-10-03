@@ -8,6 +8,8 @@ import {
   samePostableContent,
   sameTaxCalculation,
   taxableLines,
+  lineAmounts,
+  discountTotal,
 } from './document-helpers';
 import { ValidationFailedError } from '../common/errors/domain-errors';
 import type { TaxCalculation } from '../tax/tax.service';
@@ -26,6 +28,137 @@ describe('taxableLines', () => {
     expect(out).toEqual([
       { accountId: 'acc-1', amount: '3001.5000', taxCodeIds: ['t1'] },
     ]);
+  });
+});
+
+describe('lineAmounts (per-line discount before tax)', () => {
+  const D = (v: string) => new Prisma.Decimal(v);
+
+  it('no discount: amount = qty × unitPrice (4dp), discount 0, percent null', () => {
+    expect(lineAmounts({ quantity: '3', unitPrice: '1000.5' })).toEqual({
+      discountPercent: null,
+      discountAmount: '0.0000',
+      amount: '3001.5000',
+    });
+    // null fields (a stored zero-discount row) behave the same.
+    expect(
+      lineAmounts({
+        quantity: D('3'),
+        unitPrice: D('1000.5'),
+        discountPercent: null,
+        discountAmount: D('0'),
+      }).amount,
+    ).toBe('3001.5000');
+  });
+
+  it('percent: gross × p / 100, rounded once to 4dp half-up', () => {
+    expect(
+      lineAmounts({ quantity: '2', unitPrice: '50000', discountPercent: '10' }),
+    ).toEqual({
+      discountPercent: '10',
+      discountAmount: '10000.0000',
+      amount: '90000.0000',
+    });
+    // 333.3333 × 12.5% = 41.6666625 → 41.6667 (half-up); net 291.6666.
+    expect(
+      lineAmounts({
+        quantity: '1',
+        unitPrice: '333.3333',
+        discountPercent: '12.5',
+      }),
+    ).toMatchObject({ discountAmount: '41.6667', amount: '291.6666' });
+    // exact half at the 5th dp rounds up: 0.0005 × 10% → 0.00005 → 0.0001.
+    expect(
+      lineAmounts({
+        quantity: '1',
+        unitPrice: '0.0005',
+        discountPercent: '10',
+      }),
+    ).toMatchObject({ discountAmount: '0.0001', amount: '0.0004' });
+    // 100% → zero net line.
+    expect(
+      lineAmounts({ quantity: '4', unitPrice: '25', discountPercent: '100' }),
+    ).toMatchObject({ discountAmount: '100.0000', amount: '0.0000' });
+  });
+
+  it('percent wins over a stored resolved amount (a read-back row)', () => {
+    expect(
+      lineAmounts({
+        quantity: D('2'),
+        unitPrice: D('50000'),
+        discountPercent: D('10'),
+        discountAmount: D('10000'),
+      }).amount,
+    ).toBe('90000.0000');
+  });
+
+  it('fixed amount: amount = gross − discount; equal to gross is allowed', () => {
+    expect(
+      lineAmounts({
+        quantity: '2',
+        unitPrice: '50000',
+        discountAmount: '2500.5',
+      }),
+    ).toEqual({
+      discountPercent: null,
+      discountAmount: '2500.5000',
+      amount: '97499.5000',
+    });
+    expect(
+      lineAmounts({ quantity: '1', unitPrice: '10', discountAmount: '10' })
+        .amount,
+    ).toBe('0.0000');
+  });
+
+  it('422 when a fixed discount exceeds the gross, with lineNo/gross/discount', () => {
+    try {
+      lineAmounts(
+        { quantity: '1', unitPrice: '10', discountAmount: '10.0001' },
+        2,
+      );
+      throw new Error('expected throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(ValidationFailedError);
+      expect((e as ValidationFailedError).details).toEqual({
+        lineNo: 2,
+        gross: '10.0000',
+        discountAmount: '10.0001',
+      });
+    }
+    expect(() =>
+      lineAmounts({
+        quantity: '1',
+        unitPrice: '10',
+        discountPercent: '100.01',
+      }),
+    ).toThrow(ValidationFailedError);
+  });
+
+  it('taxableLines and discountTotal use the net amounts', () => {
+    const lines = [
+      {
+        accountId: 'a',
+        quantity: '2',
+        unitPrice: '50000',
+        discountPercent: '10',
+        taxCodeIds: [],
+      },
+      {
+        accountId: 'b',
+        quantity: '1',
+        unitPrice: '1000',
+        discountAmount: '250',
+        taxCodeIds: [],
+      },
+      { accountId: 'c', quantity: '1', unitPrice: '1000', taxCodeIds: [] },
+    ];
+    expect(taxableLines(lines).map((l) => l.amount)).toEqual([
+      '90000.0000',
+      '750.0000',
+      '1000.0000',
+    ]);
+    expect(discountTotal(lines)).toBe('10250.0000');
+    expect(discountTotal([lines[2]])).toBe('0.0000');
   });
 });
 
@@ -64,6 +197,8 @@ describe('samePostableContent', () => {
         accountId: 'a1',
         quantity: new Prisma.Decimal('1'),
         unitPrice: new Prisma.Decimal('1000'),
+        discountPercent: null as Prisma.Decimal | null,
+        discountAmount: new Prisma.Decimal('0') as Prisma.Decimal | undefined,
         taxCodeIds: ['t1', 't2'],
       },
     ],
@@ -72,6 +207,9 @@ describe('samePostableContent', () => {
   it('treats equal content (Decimal vs string, trailing zeros) as the same', () => {
     const b = base();
     b.lines[0].unitPrice = new Prisma.Decimal('1000.0000');
+    expect(samePostableContent(base(), b)).toBe(true);
+    // An omitted discount equals a stored zero discount.
+    b.lines[0].discountAmount = undefined;
     expect(samePostableContent(base(), b)).toBe(true);
     expect(
       samePostableContent(
@@ -95,6 +233,16 @@ describe('samePostableContent', () => {
       'unit price',
       (b: ReturnType<typeof base>) =>
         (b.lines[0].unitPrice = new Prisma.Decimal('1000.0001')),
+    ],
+    [
+      'discount percent',
+      (b: ReturnType<typeof base>) =>
+        (b.lines[0].discountPercent = new Prisma.Decimal('5')),
+    ],
+    [
+      'discount amount',
+      (b: ReturnType<typeof base>) =>
+        (b.lines[0].discountAmount = new Prisma.Decimal('0.0001')),
     ],
     [
       'tax code order',

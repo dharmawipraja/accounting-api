@@ -304,6 +304,19 @@ and credits revenue + output VAT (see tax). Outstanding = `total − amountPaid`
 - `SalesInvoice` / `SalesInvoiceLine` models; posting via `DocumentPostingService.post`
   with `nature: 'SALE'`.
 
+### Line discount (potongan / diskon per baris)
+An optional per-line discount on a sales invoice or purchase bill, applied **before
+tax**: a percent (`discountPercent`, 0–100) **or** a fixed amount (`discountAmount`).
+The line stores what was entered plus the resolved `discountAmount`; its `amount` is the
+**net DPP** = `round4(quantity × unitPrice) − discountAmount` (a percent resolves to
+`gross × percent / 100`, rounded once to 4 dp half-up — `lineAmounts` in
+`src/invoicing/document-helpers.ts`). PPN/PPh are computed on the net amount, and
+revenue/expense posts net — v1 has **no separate contra "Potongan Penjualan/Pembelian"
+account** (those contra accounts stay rejected on document lines). The document's
+`discountTotal` is the sum of line discounts; `subtotal` is net of it. DB CHECKs
+`*_lines_valid_discount` keep `0 ≤ discount_amount ≤ round(quantity × unit_price, 4)`,
+`amount ≥ 0` and `discount_percent ∈ [0, 100]`.
+
 ### Purchase bill / Accounts payable (tagihan pembelian / utang usaha — AP)
 What you owe vendors — the mirror of a sales invoice. A `PurchaseBill` posts a debit to
 expense + input VAT and a credit to AP (control).

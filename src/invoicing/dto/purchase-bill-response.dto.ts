@@ -2,7 +2,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ApiMoney } from '../../common/openapi/api-money.decorator';
 import { PaginatedDto } from '../../common/openapi/paginated-dto';
-import { TransactionalDocumentResponseDto } from './transactional-document-response.dto';
+import {
+  DISCOUNT_AMOUNT_DOC,
+  DISCOUNT_PERCENT_DOC,
+  LINE_AMOUNT_DOC,
+  TransactionalDocumentResponseDto,
+} from './transactional-document-response.dto';
 
 export class PurchaseBillLineResponseDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
@@ -12,7 +17,9 @@ export class PurchaseBillLineResponseDto {
   @ApiProperty({ format: 'uuid' }) accountId!: string;
   @ApiMoney({ description: 'Quantity, 4 dp string' }) quantity!: string;
   @ApiMoney() unitPrice!: string;
-  @ApiMoney() amount!: string;
+  @ApiMoney(DISCOUNT_PERCENT_DOC) discountPercent!: string | null;
+  @ApiMoney(DISCOUNT_AMOUNT_DOC) discountAmount!: string;
+  @ApiMoney(LINE_AMOUNT_DOC) amount!: string;
   @ApiProperty({ type: [String], format: 'uuid' }) taxCodeIds!: string[];
 }
 

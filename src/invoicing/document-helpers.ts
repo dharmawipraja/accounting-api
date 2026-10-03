@@ -6,20 +6,69 @@ import type { TaxCalculation } from '../tax/tax.service';
 import { nextSequenceNumber, SqlTx } from '../common/db/sequence';
 import { buildDocRef } from '../common/db/doc-ref';
 
-type TaxableLineInput = {
+type DecimalLike = Prisma.Decimal | string;
+
+/** A line's discount as entered: a percent OR a fixed amount (the DTO makes
+ *  them mutually exclusive). A stored row carries both — the entered percent
+ *  and its resolved amount — so a non-null percent wins. */
+export type DiscountedLineInput = {
+  quantity: DecimalLike;
+  unitPrice: DecimalLike;
+  discountPercent?: DecimalLike | null;
+  discountAmount?: DecimalLike | null;
+};
+
+type TaxableLineInput = DiscountedLineInput & {
   accountId: string;
-  quantity: Prisma.Decimal | string;
-  unitPrice: Prisma.Decimal | string;
   taxCodeIds: string[];
 };
 
-/** Maps document lines to the tax engine's taxable-line shape (amount = qty*unitPrice, 4dp). */
+/** Pure: resolve one line's discount and NET amount (the DPP).
+ *  gross = qty × unitPrice (4dp half-up, as before discounts);
+ *  percent discount = gross × percent / 100, computed exactly then rounded
+ *  ONCE to 4dp half-up; amount = gross − discount. 422 when the discount
+ *  exceeds the gross (a negative line). `lineNo` (1-based) is for the error. */
+export function lineAmounts(
+  l: DiscountedLineInput,
+  lineNo?: number,
+): { discountPercent: string | null; discountAmount: string; amount: string } {
+  const gross = Money.of(l.unitPrice.toString()).multiply(
+    l.quantity.toString(),
+  );
+  const pct = l.discountPercent == null ? null : l.discountPercent.toString();
+  const discount =
+    pct !== null
+      ? gross.multiply(new Prisma.Decimal(pct).div(100))
+      : Money.of(l.discountAmount?.toString() ?? '0');
+  if (discount.isNegative() || discount.greaterThan(gross))
+    throw new ValidationFailedError(
+      'Line discount cannot exceed quantity × unit price',
+      {
+        ...(lineNo === undefined ? {} : { lineNo }),
+        gross: gross.toPersistence(),
+        discountAmount: discount.toPersistence(),
+      },
+    );
+  return {
+    discountPercent: pct,
+    discountAmount: discount.toPersistence(),
+    amount: gross.subtract(discount).toPersistence(),
+  };
+}
+
+/** Sum of the lines' resolved discounts (the document's discountTotal). */
+export function discountTotal(lines: DiscountedLineInput[]): string {
+  return Money.sum(
+    lines.map((l, i) => Money.of(lineAmounts(l, i + 1).discountAmount)),
+  ).toPersistence();
+}
+
+/** Maps document lines to the tax engine's taxable-line shape: amount = the
+ *  NET line amount (qty × unitPrice − discount, 4dp), so tax is on the DPP. */
 export function taxableLines(lines: TaxableLineInput[]) {
-  return lines.map((l) => ({
+  return lines.map((l, i) => ({
     accountId: l.accountId,
-    amount: Money.of(l.unitPrice.toString())
-      .multiply(l.quantity.toString())
-      .toPersistence(),
+    amount: lineAmounts(l, i + 1).amount,
     taxCodeIds: l.taxCodeIds,
   }));
 }
@@ -74,12 +123,7 @@ export function assertDueDateNotBefore(
   }
 }
 
-type PostableLine = {
-  accountId: string;
-  quantity: Prisma.Decimal | string;
-  unitPrice: Prisma.Decimal | string;
-  taxCodeIds: string[];
-};
+type PostableLine = TaxableLineInput;
 
 /** The document content a journal entry is derived from. */
 export interface PostableDraftContent {
@@ -89,7 +133,8 @@ export interface PostableDraftContent {
 }
 
 /** True when two reads of a draft carry the same postable content (date,
- *  description, and lines in order: account, quantity, unit price, tax codes).
+ *  description, and lines in order: account, quantity, unit price, discount
+ *  percent/amount, tax codes).
  *  Posting uses it under the document row lock to prove the entry it prepared
  *  from a pre-lock read matches the locked row. */
 export function samePostableContent(
@@ -101,14 +146,26 @@ export function samePostableContent(
   const la = a.lines ?? [];
   const lb = b.lines ?? [];
   if (la.length !== lb.length) return false;
-  const eq = (x: Prisma.Decimal | string, y: Prisma.Decimal | string) =>
+  const eq = (x: DecimalLike, y: DecimalLike) =>
     new Prisma.Decimal(x.toString()).equals(y.toString());
+  // Absent and null mean "none": no percent, a zero amount.
+  const eqOpt = (
+    x: DecimalLike | null | undefined,
+    y: DecimalLike | null | undefined,
+    none: DecimalLike | null,
+  ) => {
+    const a = x ?? none;
+    const b = y ?? none;
+    return a === null || b === null ? a === b : eq(a, b);
+  };
   return la.every((x, i) => {
     const y = lb[i];
     return (
       x.accountId === y.accountId &&
       eq(x.quantity, y.quantity) &&
       eq(x.unitPrice, y.unitPrice) &&
+      eqOpt(x.discountPercent, y.discountPercent, null) &&
+      eqOpt(x.discountAmount, y.discountAmount, '0') &&
       x.taxCodeIds.length === y.taxCodeIds.length &&
       x.taxCodeIds.every((t, j) => t === y.taxCodeIds[j])
     );

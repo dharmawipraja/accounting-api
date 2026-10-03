@@ -10,6 +10,8 @@ export interface DocumentLineRow {
   accountId: string;
   quantity: Prisma.Decimal;
   unitPrice: Prisma.Decimal;
+  discountPercent: Prisma.Decimal | null;
+  discountAmount: Prisma.Decimal;
   amount: Prisma.Decimal;
   taxCodeIds: string[];
 }
@@ -29,6 +31,7 @@ export interface DocumentRow {
   withholdingTotal: Prisma.Decimal;
   total: Prisma.Decimal;
   amountPaid: Prisma.Decimal;
+  discountTotal: Prisma.Decimal;
   lines?: DocumentLineRow[];
 }
 
@@ -38,6 +41,9 @@ export interface DocumentLineInput {
   accountId: string;
   quantity: string;
   unitPrice: string;
+  /** Percent OR fixed amount (mutually exclusive in the DTO); omitted = none. */
+  discountPercent?: string | null;
+  discountAmount?: string | null;
   taxCodeIds: string[];
 }
 
@@ -48,6 +54,8 @@ export interface DocumentLineCreateData {
   accountId: string;
   quantity: string;
   unitPrice: string;
+  discountPercent: string | null;
+  discountAmount: string;
   amount: string;
   taxCodeIds: string[];
 }
@@ -85,6 +93,7 @@ export interface DocumentCreateCommon extends DocumentTotals {
   dueDate?: Date;
   description?: string;
   createdBy: string;
+  discountTotal: string;
   lines: { create: DocumentLineCreateData[] };
 }
 
@@ -92,6 +101,7 @@ export interface DocumentUpdateCommon extends DocumentTotals {
   date: Date;
   dueDate: Date | null;
   description: string | null;
+  discountTotal: string;
   lines: { create: DocumentLineCreateData[] };
 }
 

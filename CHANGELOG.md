@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **Per-line discounts on sales invoices and purchase bills, applied before tax** —
+  each line accepts an optional `discountPercent` (0–100, up to 4 dp) **or**
+  `discountAmount` (both → `400`; an amount above `quantity × unitPrice` → `422`). The
+  line `amount` (the DPP) is now net of the discount, so PPN/PPh are computed on the
+  discounted amount and revenue/expense posts net (no separate contra "Potongan"
+  account in v1). Responses add line `discountPercent` / `discountAmount` and document
+  `discountTotal`; `subtotal` remains the sum of (net) line amounts. Migration
+  `20261008000000_document_line_discounts` adds the columns (defaults keep existing
+  documents unchanged) plus CHECK constraints.
+
 ### Changed (breaking)
 
 - **Business dates must be `YYYY-MM-DD`** — a timestamp sent for a journal,

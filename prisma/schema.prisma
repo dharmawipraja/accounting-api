@@ -406,6 +406,8 @@ model SalesInvoice {
   withholdingTotal Decimal             @default(0) @map("withholding_total") @db.Decimal(20, 4)
   total            Decimal             @default(0) @db.Decimal(20, 4)
   amountPaid       Decimal             @default(0) @map("amount_paid") @db.Decimal(20, 4)
+  /// Sum of the lines' discountAmount (subtotal is already net of it).
+  discountTotal    Decimal             @default(0) @map("discount_total") @db.Decimal(20, 4)
   journalEntryId   String?             @map("journal_entry_id")
   createdBy        String              @map("created_by")
   postedBy         String?             @map("posted_by")
@@ -420,6 +422,7 @@ model SalesInvoice {
   allocations      PaymentAllocation[]
 
   // + hand-authored CHECK sales_invoices_amount_paid_range (0 <= amount_paid <= total)
+  // + hand-authored CHECK sales_invoices_discount_total_nonnegative (discount_total >= 0)
   // + hand-authored CHECK sales_invoices_journal_entry_iff_not_draft ((status = 'DRAFT') = (journal_entry_id IS NULL))
   @@unique([fiscalYear, invoiceNumber], name: "sales_invoices_fy_number_unique")
   @@index([deletedAt])
@@ -432,20 +435,25 @@ model SalesInvoice {
 }
 
 model SalesInvoiceLine {
-  id             String       @id @default(uuid())
-  salesInvoiceId String       @map("sales_invoice_id")
-  invoice        SalesInvoice @relation(fields: [salesInvoiceId], references: [id], onDelete: Cascade)
-  lineNo         Int          @map("line_no")
-  description    String
-  accountId      String       @map("account_id")
-  account        Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  quantity       Decimal      @db.Decimal(20, 4)
-  unitPrice      Decimal      @map("unit_price") @db.Decimal(20, 4)
-  amount         Decimal      @db.Decimal(20, 4)
+  id              String       @id @default(uuid())
+  salesInvoiceId  String       @map("sales_invoice_id")
+  invoice         SalesInvoice @relation(fields: [salesInvoiceId], references: [id], onDelete: Cascade)
+  lineNo          Int          @map("line_no")
+  description     String
+  accountId       String       @map("account_id")
+  account         Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  quantity        Decimal      @db.Decimal(20, 4)
+  unitPrice       Decimal      @map("unit_price") @db.Decimal(20, 4)
+  // Discount applied before tax: what the user entered (percent; null for a
+  // fixed or no discount) and the resolved amount. `amount` is NET (the DPP).
+  discountPercent Decimal?     @map("discount_percent") @db.Decimal(7, 4)
+  discountAmount  Decimal      @default(0) @map("discount_amount") @db.Decimal(20, 4)
+  amount          Decimal      @db.Decimal(20, 4)
   // No FK: an array of tax code ids (validated by the app).
-  taxCodeIds     String[]     @map("tax_code_ids")
+  taxCodeIds      String[]     @map("tax_code_ids")
 
   // + hand-authored CHECK sales_invoice_lines_nonnegative (quantity, unit_price >= 0)
+  // + hand-authored CHECK sales_invoice_lines_valid_discount (0 <= discount_amount <= round(quantity*unit_price, 4), amount >= 0, percent in [0, 100])
   @@unique([salesInvoiceId, lineNo])
   @@index([accountId])
   @@map("sales_invoice_lines")
@@ -468,6 +476,8 @@ model PurchaseBill {
   withholdingTotal Decimal             @default(0) @map("withholding_total") @db.Decimal(20, 4)
   total            Decimal             @default(0) @db.Decimal(20, 4)
   amountPaid       Decimal             @default(0) @map("amount_paid") @db.Decimal(20, 4)
+  /// Sum of the lines' discountAmount (subtotal is already net of it).
+  discountTotal    Decimal             @default(0) @map("discount_total") @db.Decimal(20, 4)
   journalEntryId   String?             @map("journal_entry_id")
   createdBy        String              @map("created_by")
   postedBy         String?             @map("posted_by")
@@ -482,6 +492,7 @@ model PurchaseBill {
   allocations      PaymentAllocation[]
 
   // + hand-authored CHECK purchase_bills_amount_paid_range (0 <= amount_paid <= total)
+  // + hand-authored CHECK purchase_bills_discount_total_nonnegative (discount_total >= 0)
   // + hand-authored CHECK purchase_bills_journal_entry_iff_not_draft ((status = 'DRAFT') = (journal_entry_id IS NULL))
   @@unique([fiscalYear, billNumber], name: "purchase_bills_fy_number_unique")
   // + hand-authored partial UNIQUE INDEX purchase_bills_partner_vendor_invoice_norm_live_key
@@ -500,20 +511,25 @@ model PurchaseBill {
 }
 
 model PurchaseBillLine {
-  id             String       @id @default(uuid())
-  purchaseBillId String       @map("purchase_bill_id")
-  bill           PurchaseBill @relation(fields: [purchaseBillId], references: [id], onDelete: Cascade)
-  lineNo         Int          @map("line_no")
-  description    String
-  accountId      String       @map("account_id")
-  account        Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  quantity       Decimal      @db.Decimal(20, 4)
-  unitPrice      Decimal      @map("unit_price") @db.Decimal(20, 4)
-  amount         Decimal      @db.Decimal(20, 4)
+  id              String       @id @default(uuid())
+  purchaseBillId  String       @map("purchase_bill_id")
+  bill            PurchaseBill @relation(fields: [purchaseBillId], references: [id], onDelete: Cascade)
+  lineNo          Int          @map("line_no")
+  description     String
+  accountId       String       @map("account_id")
+  account         Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  quantity        Decimal      @db.Decimal(20, 4)
+  unitPrice       Decimal      @map("unit_price") @db.Decimal(20, 4)
+  // Discount applied before tax: what the user entered (percent; null for a
+  // fixed or no discount) and the resolved amount. `amount` is NET (the DPP).
+  discountPercent Decimal?     @map("discount_percent") @db.Decimal(7, 4)
+  discountAmount  Decimal      @default(0) @map("discount_amount") @db.Decimal(20, 4)
+  amount          Decimal      @db.Decimal(20, 4)
   // No FK: an array of tax code ids (validated by the app).
-  taxCodeIds     String[]     @map("tax_code_ids")
+  taxCodeIds      String[]     @map("tax_code_ids")
 
   // + hand-authored CHECK purchase_bill_lines_nonnegative (quantity, unit_price >= 0)
+  // + hand-authored CHECK purchase_bill_lines_valid_discount (0 <= discount_amount <= round(quantity*unit_price, 4), amount >= 0, percent in [0, 100])
   @@unique([purchaseBillId, lineNo])
   @@index([accountId])
   @@map("purchase_bill_lines")

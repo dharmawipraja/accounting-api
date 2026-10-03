@@ -288,7 +288,8 @@ types. The conventions the schemas encode (rely on these):
   `TrialBalanceDto`, `BalanceSheetDto`, `TaxCalculationDto`). A per-domain index is in
   §6 ([Response schema quick-map](#response-schema-quick-map)).
 - **Money stays a string in responses too** (same 4dp rule as above) — including nested
-  line `quantity`, `unitPrice`, and `amount`. Never `Number()` them.
+  line `quantity`, `unitPrice`, `discountPercent`, `discountAmount` and `amount`.
+  Never `Number()` them.
 - **Soft-delete bookkeeping is omitted.** `deletedAt` / `deletedBy` are intentionally
   absent from every response schema (a row you can read is, by definition, live).
 - **Computed fields** appear on documents beyond their stored columns: sales invoices
@@ -698,6 +699,21 @@ Line-rule violations:
   whose base is only free lines). A document whose **total is 0** (every line free) is
   rejected: `422 VALIDATION_FAILED` "Document total must be greater than zero" (create,
   `PATCH`, `/post`, tax/journal preview).
+- **Line discounts (before tax).** A line may carry an optional discount: **either**
+  `discountPercent` (decimal string `0`–`100`, up to 4 dp, e.g. `"10"` or `"12.5"`)
+  **or** `discountAmount` (money string). Sending both, a percent over `100` or a
+  malformed value → `400`; a `discountAmount` above `quantity × unitPrice` → `422
+  VALIDATION_FAILED` `{ lineNo, gross, discountAmount }`. The line's `amount` is the
+  **net** DPP: `quantity × unitPrice` (4 dp, half-up) `− discountAmount`, where a
+  percent resolves to `gross × percent / 100` rounded **once** to 4 dp (half-up). PPN /
+  PPh are computed on that net amount, and revenue / expense posts at the net amount —
+  there is no separate "Potongan" contra account. Responses echo each line's
+  `discountPercent` (as entered, 4 dp, `null` for a fixed or no discount) and the
+  resolved `discountAmount` (`"0.0000"` when none); the document carries `discountTotal`
+  (sum of line discounts). `subtotal` stays the sum of the (net) line `amount`s, so gross
+  = `subtotal + discountTotal`. A 100% line is a free line (below). On `PATCH` without
+  `lines`, the stored discounts are kept; with `lines`, send each line's discount again.
+  Documents without discounts are unchanged.
 - **Due date.** `dueDate` must be on/after `date` → else `422 VALIDATION_FAILED`
   `{ date, dueDate }`. On `PATCH` the effective (merged) values are checked, so moving
   only `date` past the stored `dueDate` is rejected too.
@@ -840,7 +856,9 @@ POST /tax/calculate     pure preview of PPN/PPh on supplied lines (any authentic
 ```
 
 This computes tax but **posts nothing** — use it to show live tax figures while a
-user is editing an invoice/bill.
+user is editing an invoice/bill. Its line `amount` (like the journal-entry preview's)
+is the **net** line amount: for a discounted line send `quantity × unitPrice −
+discountAmount` (see *Line discounts* above), exactly what the document stores.
 
 ### Journal-entry preview
 

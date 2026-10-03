@@ -1,5 +1,6 @@
 import { Money } from '../common/money/money';
 import { serializeMoney } from '../common/money/serialize-money';
+import { lineAmounts } from './document-helpers';
 import {
   DocumentRow,
   DocumentLineInput,
@@ -37,7 +38,8 @@ export function documentMessages(l: DocumentLabels) {
   };
 }
 
-/** Map caller line inputs to Prisma nested-create rows (amount = qty*unitPrice, 4dp). */
+/** Map caller line inputs to Prisma nested-create rows (amount = NET of the
+ *  line discount, 4dp — see lineAmounts). */
 export function buildLineCreateData(
   lines: DocumentLineInput[],
 ): DocumentLineCreateData[] {
@@ -47,7 +49,7 @@ export function buildLineCreateData(
     accountId: l.accountId,
     quantity: l.quantity,
     unitPrice: l.unitPrice,
-    amount: Money.of(l.unitPrice).multiply(l.quantity).toPersistence(),
+    ...lineAmounts(l, i + 1),
     taxCodeIds: l.taxCodeIds,
   }));
 }
@@ -76,11 +78,18 @@ export function presentDocument<T extends DocumentRow>(
       'withholdingTotal',
       'total',
       'amountPaid',
+      'discountTotal',
     ]),
     ...(lines
       ? {
           lines: lines.map((l) =>
-            serializeMoney(l, ['quantity', 'unitPrice', 'amount']),
+            serializeMoney(l, [
+              'quantity',
+              'unitPrice',
+              'discountPercent',
+              'discountAmount',
+              'amount',
+            ]),
           ),
         }
       : {}),

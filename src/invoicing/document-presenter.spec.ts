@@ -28,6 +28,7 @@ function row(
     withholdingTotal: D('0'),
     total: D(total),
     amountPaid: D(amountPaid),
+    discountTotal: D('0'),
     lines,
   };
 }
@@ -81,11 +82,14 @@ describe('presentDocument', () => {
           accountId: 'a1',
           quantity: D('2'),
           unitPrice: D('500'),
-          amount: D('1000'),
+          discountPercent: D('10'),
+          discountAmount: D('100'),
+          amount: D('900'),
           taxCodeIds: [],
         },
       ]),
     );
+    expect(out.discountTotal).toBe('0.0000');
     expect(out.lines).toEqual([
       {
         lineNo: 1,
@@ -93,7 +97,9 @@ describe('presentDocument', () => {
         accountId: 'a1',
         quantity: '2.0000',
         unitPrice: '500.0000',
-        amount: '1000.0000',
+        discountPercent: '10.0000',
+        discountAmount: '100.0000',
+        amount: '900.0000',
         taxCodeIds: [],
       },
     ]);
@@ -119,10 +125,44 @@ describe('buildLineCreateData', () => {
         accountId: 'a1',
         quantity: '3',
         unitPrice: '1000.5',
+        discountPercent: null,
+        discountAmount: '0.0000',
         amount: '3001.5000',
         taxCodeIds: ['t1'],
       },
     ]);
+  });
+
+  it('stores the entered percent, the resolved discount and the NET amount', () => {
+    const [pct, fixed] = buildLineCreateData([
+      {
+        description: 'p',
+        accountId: 'a',
+        quantity: '2',
+        unitPrice: '50000',
+        discountPercent: '10',
+        taxCodeIds: [],
+      },
+      {
+        description: 'f',
+        accountId: 'a',
+        quantity: '1',
+        unitPrice: '1000',
+        discountAmount: '250',
+        taxCodeIds: [],
+      },
+    ]);
+    expect(pct).toMatchObject({
+      discountPercent: '10',
+      discountAmount: '10000.0000',
+      amount: '90000.0000',
+    });
+    expect(fixed).toMatchObject({
+      lineNo: 2,
+      discountPercent: null,
+      discountAmount: '250.0000',
+      amount: '750.0000',
+    });
   });
 });
 

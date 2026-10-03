@@ -28,6 +28,7 @@ import {
   assertVoidDateNotBefore,
   assertDueDateNotBefore,
   samePostableContent,
+  discountTotal,
 } from './document-helpers';
 import {
   DocumentDescriptor,
@@ -118,6 +119,7 @@ export class TaxedDocumentService {
       description: input.description,
       ...totals,
       createdBy: input.createdBy,
+      discountTotal: discountTotal(input.lines),
       lines: { create: buildLineCreateData(input.lines) },
     };
     // A single insert, but still a transaction: under an Idempotency-Key the
@@ -165,6 +167,10 @@ export class TaxedDocumentService {
             accountId: l.accountId,
             quantity: l.quantity.toString(),
             unitPrice: l.unitPrice.toString(),
+            // A stored percent wins over its resolved amount (lineAmounts),
+            // so a kept line re-derives the same discount.
+            discountPercent: l.discountPercent?.toString() ?? null,
+            discountAmount: l.discountAmount.toString(),
             taxCodeIds: l.taxCodeIds,
           }));
         await assertDocumentLineAccountsPostable(
@@ -188,6 +194,7 @@ export class TaxedDocumentService {
               ? row.description
               : input.description,
           ...totals,
+          discountTotal: discountTotal(nextLines),
           lines: { create: buildLineCreateData(nextLines) },
         };
         // Judged on the merged (effective) values: moving only the date past
