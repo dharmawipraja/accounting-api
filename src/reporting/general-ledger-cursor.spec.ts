@@ -1,4 +1,9 @@
-import { decodeGlCursor, encodeGlCursor } from './general-ledger.service';
+import {
+  decodeGlBookCursor,
+  decodeGlCursor,
+  encodeGlBookCursor,
+  encodeGlCursor,
+} from './general-ledger.service';
 
 const b64 = (s: string) => Buffer.from(s).toString('base64url');
 
@@ -20,5 +25,18 @@ describe('general-ledger cursor', () => {
     expect(() => decodeGlCursor(token)).toThrow(
       expect.objectContaining({ status: 422 }) as Error,
     );
+  });
+
+  it('book cursor round-trips and is not interchangeable with a line cursor', () => {
+    const book = { accountId: 'a-1', line: c };
+    expect(decodeGlBookCursor(encodeGlBookCursor(book))).toEqual(book);
+    for (const [decode, token] of [
+      [decodeGlBookCursor, encodeGlCursor(c)],
+      [decodeGlCursor, encodeGlBookCursor(book)],
+      [decodeGlBookCursor, b64('["",' + '"2026-01-01",1,"e",1]')],
+    ] as const)
+      expect(() => decode(token)).toThrow(
+        expect.objectContaining({ status: 422 }) as Error,
+      );
   });
 });

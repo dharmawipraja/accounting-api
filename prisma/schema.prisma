@@ -299,8 +299,9 @@ model JournalEntry {
   //   trigger journal_entries_immutable (posted rows: the only UPDATE allowed is
   //   POSTED->REVERSED + reversed_by_id NULL->id (+ updated_at); no DELETE /
   //   soft delete); trigger journal_entries_stamp_posted_xid;
-  //   no TRUNCATE; partial index journal_entries_posted_live_date_idx
-  //   ON (date) WHERE posted_at IS NOT NULL AND deleted_at IS NULL.
+  //   no TRUNCATE; partial index journal_entries_posted_live_order_idx
+  //   ON (date, entry_number, id) WHERE posted_at IS NOT NULL AND
+  //   deleted_at IS NULL (20261013000000_reporting_indexes — GL keyset order).
   @@unique([fiscalYear, entryNumber], name: "journal_entries_fy_number_unique")
   // At most one reversal per original (Postgres allows many NULLs, so non-reversal
   // rows are unaffected). Blocks concurrent/duplicate reversals at the DB layer.
@@ -333,7 +334,9 @@ model JournalLine {
   //   posted entry cannot be updated/deleted, and may be inserted only by the
   //   tx that created the posted entry; deferred balance check; no TRUNCATE.
   @@unique([journalEntryId, lineNo])
-  @@index([accountId, journalEntryId])
+  // debit/credit trail the key so GL / balance aggregates are index-only
+  // (20261013000000_reporting_indexes).
+  @@index([accountId, journalEntryId, debit, credit])
   @@index([journalEntryId])
   @@map("journal_lines")
 }

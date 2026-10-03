@@ -90,6 +90,37 @@ describe('Reporting snapshot consistency (e2e)', () => {
     return () => fired;
   }
 
+  /** Commit right after the FIRST query a report runs inside its snapshot
+   *  transaction (for reports that query the tx directly, like the GL). */
+  function commitAfterFirstSnapshotQuery(commit: () => Promise<unknown>) {
+    const original = balances.snapshot.bind(balances);
+    let fired = false;
+    jest.spyOn(balances, 'snapshot').mockImplementation(((
+      fn: (tx: unknown) => Promise<unknown>,
+    ) =>
+      original((tx) =>
+        fn(
+          new Proxy(tx, {
+            get(target, key) {
+              if (key !== '$queryRaw')
+                return Reflect.get(target, key) as unknown;
+              return async (...a: unknown[]) => {
+                const result: unknown = await (
+                  target.$queryRaw as (...b: unknown[]) => Promise<unknown>
+                )(...a);
+                if (!fired) {
+                  fired = true;
+                  await commit();
+                }
+                return result;
+              };
+            },
+          }),
+        ),
+      )) as never);
+    return () => fired;
+  }
+
   const get = (url: string) =>
     request(app.getHttpServer() as App)
       .get(url)
@@ -123,9 +154,9 @@ describe('Reporting snapshot consistency (e2e)', () => {
     await postCashSale('2026-03-10', '50000');
     const before = await get(url);
 
-    // Dated BEFORE `from`: moves closing but not opening/lines unless the
-    // report reads one snapshot.
-    const fired = commitAfterFirstCall('accountBalance', () =>
+    // Dated BEFORE `from`, committed between the balance sums and the line
+    // read: the next page / closing would drift unless both read one snapshot.
+    const fired = commitAfterFirstSnapshotQuery(() =>
       postCashSale('2026-02-20', '123000'),
     );
     const during = await get(url);

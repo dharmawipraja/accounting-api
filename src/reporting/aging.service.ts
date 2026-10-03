@@ -48,6 +48,7 @@ export class AgingService {
     asOf: Date,
     afterPartnerId?: string,
     maxDocs = AGING_MAX_DOCS,
+    prefilter = true,
   ) {
     const day = truncateToUtcDay(asOf);
     let after = Prisma.sql`true`;
@@ -81,6 +82,25 @@ export class AgingService {
     //   documents up to and including the row's whole partner (RANGE frame:
     //   peers = same partner), so a partner is either fully in or fully out;
     // - `afterPartnerId` only narrows `ranked` (the listed page), never totals.
+    // Pre-filter (an optimisation only — `prefilter = false` must give the
+    // identical report; e2e proves it): a POSTED document's stored
+    // amount_paid + credited_total is the sum of its currently-live
+    // settlements. When none of its settlements has an event (date or
+    // voided_on) after `day`, its as-of state equals that stored state, so a
+    // fully settled one is provably not open as of `day` and is skipped
+    // before the per-document settlement subquery. Anything else — VOID
+    // documents (voided after `day`), stored outstanding > 0, or a settlement
+    // event after `day` (backdated reads, voids/reversals later) — still goes
+    // through the exact as-of computation. At the default asOf (today) the
+    // late set is ~empty, so only currently-open documents are evaluated.
+    const settlements = settlementsSql(
+      kind === 'AR' ? 'sales_invoices' : 'purchase_bills',
+    );
+    const candidate = prefilter
+      ? Prisma.sql`(d.status <> 'POSTED' OR d.total > d.amount_paid + d.credited_total
+            OR d.id IN (SELECT late.document_id FROM (${settlements}) late
+                        WHERE late.date > ${day} OR late.voided_on > ${day}))`
+      : Prisma.sql`true`;
     const rows = await this.prisma.$queryRaw<AgingRow[]>(Prisma.sql`
       WITH open_docs AS (
         SELECT doc.*, doc.total - doc.paid_as_of AS outstanding,
@@ -95,7 +115,7 @@ export class AgingService {
           SELECT d.id, ${refCol} AS ref,
                  d.partner_id, bp.name AS partner_name, d.date, d.due_date, d.total,
                  COALESCE((
-                   SELECT SUM(st.amount) FROM (${settlementsSql(kind === 'AR' ? 'sales_invoices' : 'purchase_bills')}) st
+                   SELECT SUM(st.amount) FROM (${settlements}) st
                    WHERE st.document_id = d.id AND st.date <= ${day}
                      AND (st.status = 'POSTED' OR st.voided_on > ${day})
                  ), 0) AS paid_as_of
@@ -103,6 +123,7 @@ export class AgingService {
           JOIN business_partners bp ON bp.id = d.partner_id
           WHERE d.deleted_at IS NULL AND d.date <= ${day}
             AND (d.status = 'POSTED' OR (d.status = 'VOID' AND d.voided_on > ${day}))
+            AND ${candidate}
         ) doc
         WHERE doc.total > doc.paid_as_of
       ),

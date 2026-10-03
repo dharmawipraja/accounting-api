@@ -26,6 +26,7 @@ import {
 } from '../src/common/errors/domain-errors';
 import { Money } from '../src/common/money/money';
 import { bootstrapTestApp } from './e2e-helpers';
+import { expectAgingPrefilterEquivalent } from './aging-prefilter-equivalence';
 
 /**
  * Refunds of unapplied credit (payment advances, credit/debit note excess)
@@ -952,4 +953,7 @@ describe('Credit refunds + opening credit (e2e)', () => {
         UPDATE payment_applications SET cash_account_id = NULL WHERE id = ${r.id}`,
     ).rejects.toThrow(/payment_applications_one_target/);
   });
+  it('aging pre-filter is equivalent to the exact as-of computation over this history', async () => {
+    await expectAgingPrefilterEquivalent(app);
+  }, 120_000);
 });

@@ -12,6 +12,7 @@ import { NoteKindKey, NotesService } from '../src/invoicing/notes.service';
 import { ValidationFailedError } from '../src/common/errors/domain-errors';
 import { Money } from '../src/common/money/money';
 import { bootstrapTestApp } from './e2e-helpers';
+import { expectAgingPrefilterEquivalent } from './aging-prefilter-equivalence';
 
 /**
  * Credit/debit-note remainders: whole returns of an original reproduce it
@@ -356,4 +357,7 @@ describe('Credit / debit note remainders (e2e)', () => {
       'Original line has zero quantity; nothing to return',
     );
   });
+  it('aging pre-filter is equivalent to the exact as-of computation over this history', async () => {
+    await expectAgingPrefilterEquivalent(app);
+  }, 120_000);
 });

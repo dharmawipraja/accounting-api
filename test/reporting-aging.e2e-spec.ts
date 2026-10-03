@@ -15,6 +15,7 @@ import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
 import { randomUUID } from 'crypto';
 import { bootstrapTestApp } from './e2e-helpers';
+import { expectAgingPrefilterEquivalent } from './aging-prefilter-equivalence';
 
 describe('Reporting AR/AP aging (e2e)', () => {
   let app: INestApplication;
@@ -631,4 +632,7 @@ describe('Reporting AR/AP aging (e2e)', () => {
       });
     }
   });
+  it('aging pre-filter is equivalent to the exact as-of computation over this history', async () => {
+    await expectAgingPrefilterEquivalent(app);
+  }, 120_000);
 });

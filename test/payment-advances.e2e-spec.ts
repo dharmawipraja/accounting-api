@@ -23,6 +23,7 @@ import {
 } from '../src/common/errors/domain-errors';
 import { Money } from '../src/common/money/money';
 import { bootstrapTestApp } from './e2e-helpers';
+import { expectAgingPrefilterEquivalent } from './aging-prefilter-equivalence';
 
 /**
  * Customer/vendor advances: a payment's unallocated part posts to Uang Muka
@@ -742,4 +743,7 @@ describe('Payment advances (e2e)', () => {
       ).toMatch(/^2026-08-03/);
     });
   });
+  it('aging pre-filter is equivalent to the exact as-of computation over this history', async () => {
+    await expectAgingPrefilterEquivalent(app);
+  }, 120_000);
 });

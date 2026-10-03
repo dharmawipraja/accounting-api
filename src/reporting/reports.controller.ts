@@ -4,6 +4,7 @@ import {
   AgingReportDto,
   BalanceSheetDto,
   CashFlowDto,
+  GeneralLedgerBookResponseDto,
   GeneralLedgerDto,
   IncomeStatementDto,
 } from './dto/report-response.dto';
@@ -11,6 +12,7 @@ import {
   AgingQueryDto,
   RangeQueryDto,
   LedgerQueryDto,
+  LedgerBookQueryDto,
 } from './dto/report-query.dto';
 import { BalanceSheetService } from './balance-sheet.service';
 import { IncomeStatementService } from './income-statement.service';
@@ -72,6 +74,26 @@ export class ReportsController {
     const { from, to } = dateRange(q.from, q.to, GL_MAX_RANGE_DAYS);
     return this.generalLedgerSvc.generate(
       q.accountId,
+      from,
+      to,
+      GL_MAX_LINES,
+      q.cursor,
+    );
+  }
+
+  @ApiOkResponse({ type: GeneralLedgerBookResponseDto })
+  @Get('general-ledger/book')
+  generalLedgerBook(@Query() q: LedgerBookQueryDto) {
+    const { from, to } = dateRange(q.from, q.to, GL_MAX_RANGE_DAYS);
+    if (q.accountIds && (q.fromCode !== undefined || q.toCode !== undefined))
+      throw new ValidationFailedError(
+        'Pass either accountIds or fromCode/toCode, not both',
+        {},
+      );
+    return this.generalLedgerSvc.generateBook(
+      q.accountIds
+        ? { accountIds: q.accountIds }
+        : { fromCode: q.fromCode, toCode: q.toCode },
       from,
       to,
       GL_MAX_LINES,

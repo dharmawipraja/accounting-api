@@ -25,6 +25,13 @@ All notable changes to this project are documented here. The format is based on
   and `?compareAsOf=` (balance sheet) add `comparative` (the same report for the
   comparison period, same snapshot) and `variance` (current − comparative per total and
   per account line). Responses without the params are unchanged.
+- **Multi-account general ledger (Buku Besar book)** —
+  `GET /v1/reports/general-ledger/book` selects `accountIds` (comma list, ≤ 200) or a
+  `fromCode`/`toCode` range of postable accounts (≤ 200) and returns one section per
+  account in code order (`account`, `openingBalance`, `lines` with running balance,
+  `closingBalance`), each identical to the single-account report. Same 366-day span;
+  the 10,000-line cap and keyset `cursor` span the whole book (an account may continue
+  on the next page). `GET /v1/reports/general-ledger` and its cursors are unchanged.
 - **Refunds of unapplied credit** — `POST /v1/payments/:id/refunds`,
   `/v1/sales-credit-notes/:id/refunds`, `/v1/purchase-debit-notes/:id/refunds`
   `{ date, amount, cashAccountId, description? }` pay a payment advance or a note's
@@ -66,6 +73,18 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 
+- **General ledger performance** — each page now reads every account's opening,
+  closing and through-cursor balance in ONE grouped aggregate (was up to three
+  full-history scans per page). Migration `20261013000000_reporting_indexes`:
+  `journal_lines (account_id, journal_entry_id, debit, credit)` replaces the
+  2-column index (index-only balance aggregates), and the partial posted-live
+  `journal_entries` index widens to the GL order `(date, entry_number, id)`.
+- **Aging performance** — a provably safe pre-filter skips POSTED documents whose
+  stored settled amount equals their total and that have no settlement event
+  (payment/application/note date or void/reversal) after `asOf`; everything else
+  still runs the exact as-of computation. Results are identical (e2e equivalence
+  over mixed histories); at the default `asOf` only currently-open documents are
+  evaluated.
 - `REFRESH_REUSE_GRACE_MS` default `10000` → `5000`, max `60000` → `30000`.
 - **Credit/debit-note rounding drift** — partial notes recomputed per-code rupiah tax
   on their own base, so returning a whole invoice in pieces could credit Rp1 more (a

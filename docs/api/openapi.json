@@ -4767,6 +4767,90 @@
         ]
       }
     },
+    "/v1/reports/general-ledger/book": {
+      "get": {
+        "operationId": "ReportsController_generalLedgerBook_v1",
+        "parameters": [
+          {
+            "name": "accountIds",
+            "required": false,
+            "in": "query",
+            "description": "Comma-separated account ids (at most 200). Mutually exclusive with fromCode/toCode.",
+            "schema": {
+              "minItems": 1,
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "fromCode",
+            "required": false,
+            "in": "query",
+            "description": "Lowest account code (inclusive) of a range of postable accounts. With neither accountIds nor a code bound, every postable account is selected. A range may select at most 200 accounts.",
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "toCode",
+            "required": false,
+            "in": "query",
+            "description": "Highest account code (inclusive) of the range.",
+            "schema": {
+              "maxLength": 64,
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "Continuation token from a truncated response's nextCursor (same selection/from/to). Omit for the first page.",
+            "schema": {
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeneralLedgerBookResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Reporting"
+        ]
+      }
+    },
     "/v1/reports/ar-aging": {
       "get": {
         "operationId": "ReportsController_arAging_v1",
@@ -9703,6 +9787,72 @@
           "truncated",
           "nextCursor",
           "closingBalance"
+        ]
+      },
+      "GeneralLedgerBookSectionDto": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/GeneralLedgerAccountDto"
+          },
+          "openingBalance": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Balance before this section's first line: the balance as of the day before `from`, or — for the first section of a cursor page continuing the previous page's last account — that page's last runningBalance."
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeneralLedgerLineDto"
+            }
+          },
+          "closingBalance": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "True as-of balance at `to`, even when the section is cut by the line cap."
+          }
+        },
+        "required": [
+          "account",
+          "openingBalance",
+          "lines",
+          "closingBalance"
+        ]
+      },
+      "GeneralLedgerBookResponseDto": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "accounts": {
+            "description": "One section per selected account, ordered by code. A page holds the accounts from the cursor position through its last line (all remaining ones on the final page), including accounts with no lines in range.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeneralLedgerBookSectionDto"
+            }
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when lines were cut off at the server-side cap (10,000 lines per page across all sections); repeat the request with cursor=nextCursor."
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true,
+            "description": "Opaque continuation token when truncated, else null. Pass it back as `cursor` (same selection/from/to). When the next page continues the same account, its first section's openingBalance equals this page's last runningBalance."
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "accounts",
+          "truncated",
+          "nextCursor"
         ]
       },
       "AgingDocumentDto": {

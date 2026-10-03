@@ -173,6 +173,25 @@ k6 + the app sustain high concurrency without the rate limiter in the way:
 > 500ms). See the rate-limiter caveat above; baseline the hot paths distributed or
 > under the per-IP ceiling.
 
+### Report query plans at volume (EXPLAIN, 2026-10)
+
+k6 above runs on an empty DB, so the general-ledger / aging queries were also
+checked with `EXPLAIN (ANALYZE, BUFFERS)` on a throwaway `postgres:16` seeded
+directly (300k posted entries / 600k lines over 60 accounts and ~7 years; 200k
+sales invoices, 199k fully paid). Warm cache, laptop:
+
+| Query | Before | After |
+| --- | --- | --- |
+| GL balances, one 10k-line account (opening+closing+cursor) | 3 full-history aggregates/page; lines side = bitmap heap scan, 5,993 heap blocks | 1 grouped aggregate; index-only scan on `journal_lines (account_id, journal_entry_id, debit, credit)`, 161 buffers, ~15 ms |
+| GL book balances, all 60 accounts (whole ledger) | — | 1 grouped aggregate, ~230 ms |
+| GL book line page (60 accounts, 1 year, LIMIT 10,001) | — | index-only scan on `journal_entries_posted_live_order_idx` + hash join, ~70 ms |
+| AR aging, asOf ≥ last settlement (1,000 open of 200k) | ~1,490 ms (as-of subquery for all 200k documents) | ~530 ms (subquery for the 1,000 candidates; rest is a stored-column filter) |
+| AR aging, asOf 2023-01-01 | ~980 ms | ~500 ms |
+
+Migration `20261013000000_reporting_indexes` carries the two indexes; the aging
+pre-filter needs none (an equivalence e2e runs it against the exact computation at
+every event date of six settlement-heavy suites).
+
 ## Not a default CI gate
 
 This baseline is **not** wired into `npm run verify` or the default CI — it needs

@@ -201,6 +201,45 @@ export class GeneralLedgerDto {
   @ApiMoney() closingBalance!: string;
 }
 
+export class GeneralLedgerBookSectionDto {
+  @ApiProperty({ type: GeneralLedgerAccountDto })
+  account!: GeneralLedgerAccountDto;
+  @ApiMoney({
+    description:
+      "Balance before this section's first line: the balance as of the day before `from`, or — for the first section of a cursor page continuing the previous page's last account — that page's last runningBalance.",
+  })
+  openingBalance!: string;
+  @ApiProperty({ type: [GeneralLedgerLineDto] }) lines!: GeneralLedgerLineDto[];
+  @ApiMoney({
+    description:
+      'True as-of balance at `to`, even when the section is cut by the line cap.',
+  })
+  closingBalance!: string;
+}
+
+export class GeneralLedgerBookResponseDto {
+  @ApiProperty({ type: String, format: 'date' }) from!: string;
+  @ApiProperty({ type: String, format: 'date' }) to!: string;
+  @ApiProperty({
+    type: [GeneralLedgerBookSectionDto],
+    description:
+      'One section per selected account, ordered by code. A page holds the accounts from the cursor position through its last line (all remaining ones on the final page), including accounts with no lines in range.',
+  })
+  accounts!: GeneralLedgerBookSectionDto[];
+  @ApiProperty({
+    description:
+      'True when lines were cut off at the server-side cap (10,000 lines per page across all sections); repeat the request with cursor=nextCursor.',
+  })
+  truncated!: boolean;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      "Opaque continuation token when truncated, else null. Pass it back as `cursor` (same selection/from/to). When the next page continues the same account, its first section's openingBalance equals this page's last runningBalance.",
+  })
+  nextCursor!: string | null;
+}
+
 export class AgingDocumentDto {
   @ApiProperty({ nullable: true }) ref!: string | null;
   @ApiProperty({ type: String, format: 'date' }) date!: string;

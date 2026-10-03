@@ -11,6 +11,7 @@ import { BusinessPartnersService } from '../src/invoicing/business-partners.serv
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
 import { bootstrapTestApp, tomorrowWib, wibDayPlus } from './e2e-helpers';
+import { expectAgingPrefilterEquivalent } from './aging-prefilter-equivalence';
 
 describe('Payments (e2e)', () => {
   let app: INestApplication;
@@ -1577,4 +1578,7 @@ describe('Payments (e2e)', () => {
       await postedPayment(customerId, invoiceId, '2026-02-15', '1110000');
     });
   });
+  it('aging pre-filter is equivalent to the exact as-of computation over this history', async () => {
+    await expectAgingPrefilterEquivalent(app);
+  }, 120_000);
 });

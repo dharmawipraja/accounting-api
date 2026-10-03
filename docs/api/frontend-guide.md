@@ -1264,6 +1264,23 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing on the last page).
   Each page is its own snapshot: a back-dated post landing between page requests
   shows up in the next page's `openingBalance` (still correct as of that read).
   A malformed cursor, or one outside `from`/`to`, is `422`
+- `GET    /v1/reports/general-ledger/book?accountIds=|fromCode=&toCode=&from=&to=`
+  · any · Buku Besar over several accounts (a printed ledger book) — select
+  either `accountIds` (comma-separated, at most **200**; `400` beyond, unknown id
+  `404`) **or** a code range `fromCode`/`toCode` (inclusive, either bound
+  optional; **postable** accounts only; `422` if it selects more than 200);
+  both at once is `422`; neither selects every postable account (same 200 cap).
+  Response `{ from, to, accounts: [{ account, openingBalance, lines,
+  closingBalance }], truncated, nextCursor }` — one section per account ordered
+  by code, each exactly what the single-account endpoint returns for it
+  (accounts with no lines in range still get a section). Same 366-day span. The
+  10,000-line cap is shared by the whole page: a page holds the accounts from
+  the cursor position through its last line, so one account can be split across
+  pages — the next page's first section is then that account again, with
+  `openingBalance` = the previous page's last `runningBalance` (merge sections
+  with the same `account.id` across consecutive pages). Pass `&cursor=<nextCursor>`
+  with the same selection/`from`/`to`; a cursor from the single-account endpoint,
+  or for an account outside the selection, is `422`
 - `GET    /v1/reports/ar-aging?asOf=` · any · AR aging — 10,000 open-document
   cap, cut at **partner boundaries** (every returned partner is complete;
   partners ordered by name). `truncated: true` means later partners were left
@@ -1545,7 +1562,7 @@ schema directly in an array.
 | Sales invoices   | `SalesInvoiceResponseDto` (single; incl. optional `SalesInvoiceLineResponseDto[]`) · list → `SalesInvoiceListResponseDto` (envelope)                                                           |
 | Purchase bills   | `PurchaseBillResponseDto` (single; incl. optional `PurchaseBillLineResponseDto[]`) · list → `PurchaseBillListResponseDto` (envelope)                                                           |
 | Payments         | `PaymentResponseDto` (single; incl. optional `PaymentAllocationResponseDto[]`) · list → `PaymentListResponseDto` (envelope)                                                                    |
-| Reports          | `BalanceSheetDto` · `IncomeStatementDto` · `GeneralLedgerDto` · `AgingReportDto` (AR & AP) · `CashFlowDto`                                                                                     |
+| Reports          | `BalanceSheetDto` · `IncomeStatementDto` · `GeneralLedgerDto` · `GeneralLedgerBookResponseDto` · `AgingReportDto` (AR & AP) · `CashFlowDto`                                                               |
 | Close            | `YearEndClosingResponseDto`                                                                                                                                                                    |
 | Company          | `CompanySettingsDto`                                                                                                                                                                           |
 | Audit            | `AuditEntryDto` (bare array)                                                                                                                                                                   |
