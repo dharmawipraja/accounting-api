@@ -15,6 +15,16 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Pre-closing trial balance** — `GET /v1/ledger/trial-balance?preClosing=true` leaves
+  out the year-end closing entry dated on `asOf` (and its reopen reversal), so at a
+  closed fiscal year-end P&L accounts show their balances, matching the Neraca's
+  pre-closing view. Default (post-closing) unchanged.
+- **Laba Rugi per-account lines for other income / other expense / tax** —
+  `otherIncomeLines`, `otherExpenseLines`, `taxExpenseLines` alongside the existing totals.
+- **Comparative Laba Rugi and Neraca** — `?compareFrom=&compareTo=` (income statement)
+  and `?compareAsOf=` (balance sheet) add `comparative` (the same report for the
+  comparison period, same snapshot) and `variance` (current − comparative per total and
+  per account line). Responses without the params are unchanged.
 - **Refunds of unapplied credit** — `POST /v1/payments/:id/refunds`,
   `/v1/sales-credit-notes/:id/refunds`, `/v1/purchase-debit-notes/:id/refunds`
   `{ date, amount, cashAccountId, description? }` pay a payment advance or a note's

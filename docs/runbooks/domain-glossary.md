@@ -627,12 +627,26 @@ non-deleted journal lines. Several reports emit a boolean self-check.
 `balancesAsOf`/`movementsBetween` take `BalanceQueryOpts` (`excludeClosing`,
 `excludeClosingFrom`, `excludeOpening`, `tx`); the P&L-view reports use them, while trial
 balance, general ledger and account balance deliberately **include** closing entries
-(post-closing view). Predicates live in `src/ledger/balances/posted-entry.sql.ts`.
+(post-closing view) — except the trial balance's opt-in `?preClosing=true`. Predicates live in `src/ledger/balances/posted-entry.sql.ts`.
 
 ### Trial balance (neraca saldo)
 Every account's total debits and credits as of a date; the grand `totalDebit` must equal
-`totalCredit` (the double-entry proof for the whole ledger).
+`totalCredit` (the double-entry proof for the whole ledger). Default = post-closing:
+at a closed fiscal year-end the `CLOSING` entry is counted, so P&L accounts net to 0.
+`?preClosing=true` applies the Neraca's `excludeClosingFrom: asOf` (the closing entry
+dated **on** asOf and its reopen reversal are left out), so P&L accounts show their
+year-end balances; it equals the TB taken before the close and still balances (closing
+entries are themselves balanced).
 - `BalancesService.trialBalance` in `src/ledger/balances/balances.service.ts`.
+
+### Comparative reports
+Laba Rugi `?compareFrom=&compareTo=` and Neraca `?compareAsOf=` add `comparative` (the
+same report for the comparison period/date — identical to requesting it on its own) and
+`variance` (current − comparative: every money total, plus per-line
+`{code, name, current, comparative, variance}` over the **union** of both sides' lines,
+keyed by code (Neraca: subtype + code, lines carry `subtype`); a line missing on one side
+counts 0). Both periods are read on **one** report snapshot. Pure shaping:
+`varianceLines` / `moneyVariance` in `src/reporting/report-line.ts`.
 
 ### Report snapshot consistency
 Every multi-query report (Neraca, Arus Kas, Buku Besar) runs its reads through
@@ -642,7 +656,8 @@ Every multi-query report (Neraca, Arus Kas, Buku Besar) runs its reads through
 mid-request is therefore either wholly in or wholly out of the report. Read-only RR
 takes only ACCESS SHARE locks (never blocks posting), can't hit serialization
 failures, and never marks an idempotency key. Single-query reports (trial balance,
-Laba Rugi, aging) are already consistent on their own.
+Laba Rugi, aging) are already consistent on their own; a Laba Rugi with comparatives
+reads both periods through the snapshot.
 
 ### Balance sheet / Neraca
 Assets, liabilities, and equity as of a date, grouped by subtype. Equity adds the
@@ -665,7 +680,9 @@ The `balanced` flag asserts **Assets = Liabilities + Equity**.
 ### Income statement / Laba rugi
 Revenue and expense **movement** over a date range, sectioned into revenue, COGS (→ gross
 profit), operating expense (→ operating profit), other income/expense (→ profit before
-tax), then the `TAX_EXPENSE`-role line, yielding net income. `CLOSING` entries and
+tax), then the `TAX_EXPENSE`-role line, yielding net income. Every section lists its
+accounts (`revenueLines` … `otherIncomeLines`, `otherExpenseLines`, `taxExpenseLines`)
+summing to its total. `CLOSING` entries and
 their reopen reversals are excluded (`excludeClosing`), so the figures are identical
 before close, after close, after reopen and after re-close.
 - `IncomeStatementService.generate` (`src/reporting/income-statement.service.ts`).

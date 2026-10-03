@@ -92,4 +92,95 @@ describe('IncomeStatementService.generate', () => {
     expect(r.taxExpense).toBe('0.0000');
     expect(r.netIncome).toBe('300.0000'); // 500 − 200, no tax
   });
+
+  it('lists other income / other expense / tax per account, summing to the totals', async () => {
+    const svc = make([
+      row({
+        code: '7-1000',
+        type: 'REVENUE',
+        subtype: 'OTHER_INCOME',
+        credit: '30',
+      }),
+      row({
+        code: '7-2000',
+        type: 'REVENUE',
+        subtype: 'OTHER_INCOME',
+        credit: '12.5',
+      }),
+      row({ code: '8-1000', subtype: 'OTHER_EXPENSE', debit: '7' }),
+      row({
+        code: '5-9000',
+        subtype: 'OTHER_EXPENSE',
+        role: 'TAX_EXPENSE',
+        debit: '9',
+      }),
+    ]);
+    const r = await svc.generate(
+      new Date('2026-01-01'),
+      new Date('2026-12-31'),
+    );
+    expect(r.otherIncomeLines.map((l) => [l.code, l.amount])).toEqual([
+      ['7-1000', '30.0000'],
+      ['7-2000', '12.5000'],
+    ]);
+    expect(r.otherIncome).toBe('42.5000');
+    expect(r.otherExpenseLines.map((l) => l.code)).toEqual(['8-1000']);
+    expect(r.taxExpenseLines).toEqual([
+      { code: '5-9000', name: 'n', amount: '9.0000' },
+    ]);
+    expect(r.comparative).toBeUndefined();
+  });
+
+  it('with a comparison period: reads both periods on ONE snapshot and adds comparative + variance', async () => {
+    const tx = { snapshot: 'tx' };
+    const movementsBetween = jest
+      .fn()
+      .mockResolvedValueOnce([
+        row({
+          code: '4-1000',
+          type: 'REVENUE',
+          subtype: 'REVENUE',
+          credit: '1000',
+        }),
+      ])
+      .mockResolvedValueOnce([
+        row({
+          code: '4-1000',
+          type: 'REVENUE',
+          subtype: 'REVENUE',
+          credit: '600',
+        }),
+        row({ code: '5-1000', debit: '100' }),
+      ]);
+    const svc = new IncomeStatementService({
+      snapshot: jest.fn((fn: (t: unknown) => Promise<unknown>) => fn(tx)),
+      movementsBetween,
+    } as unknown as BalancesService);
+
+    const r = await svc.generate(
+      new Date('2026-01-01'),
+      new Date('2026-12-31'),
+      {
+        from: new Date('2025-01-01'),
+        to: new Date('2025-12-31'),
+      },
+    );
+
+    for (const call of movementsBetween.mock.calls as unknown[][])
+      expect(call[2]).toEqual({ excludeClosing: true, tx });
+    expect(r.comparative?.from).toBe('2025-01-01');
+    expect(r.comparative?.netIncome).toBe('500.0000');
+    expect(r.netIncome).toBe('1000.0000');
+    expect(r.variance?.netIncome).toBe('500.0000');
+    expect(r.variance?.revenueLines[0].variance).toBe('400.0000');
+    expect(r.variance?.operatingExpenseLines).toEqual([
+      {
+        code: '5-1000',
+        name: 'n',
+        current: '0.0000',
+        comparative: '100.0000',
+        variance: '-100.0000',
+      },
+    ]);
+  });
 });

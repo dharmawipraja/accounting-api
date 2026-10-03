@@ -27,6 +27,38 @@ export class RangeQueryDto {
   @IsDateString() @IsBusinessDate() to!: string;
 }
 
+export class IncomeStatementQueryDto extends RangeQueryDto {
+  @ApiPropertyOptional({
+    format: 'date',
+    description:
+      'Comparison period start (requires compareTo; same rules as from/to). Adds `comparative` + `variance` to the response.',
+  })
+  @IsOptional()
+  @IsDateString()
+  @IsBusinessDate()
+  compareFrom?: string;
+  @ApiPropertyOptional({
+    format: 'date',
+    description: 'Comparison period end (requires compareFrom).',
+  })
+  @IsOptional()
+  @IsDateString()
+  @IsBusinessDate()
+  compareTo?: string;
+}
+
+export class BalanceSheetQueryDto extends AsOfQueryDto {
+  @ApiPropertyOptional({
+    format: 'date',
+    description:
+      'Comparison date. Adds `comparative` (the Neraca as of this date) + `variance` to the response.',
+  })
+  @IsOptional()
+  @IsDateString()
+  @IsBusinessDate()
+  compareAsOf?: string;
+}
+
 export class LedgerQueryDto {
   @IsUUID() accountId!: string;
   @IsDateString() @IsBusinessDate() from!: string;

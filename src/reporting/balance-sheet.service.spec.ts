@@ -171,4 +171,38 @@ describe('BalanceSheetService.generate', () => {
       tx: SNAPSHOT_TX,
     });
   });
+
+  it('with compareAsOf: builds the comparative on the SAME snapshot and adds variance', async () => {
+    const balances = {
+      snapshot: jest.fn((fn: (tx: unknown) => Promise<unknown>) =>
+        fn(SNAPSHOT_TX),
+      ),
+      balancesAsOf: jest
+        .fn()
+        .mockResolvedValueOnce([row({ code: 'KAS', debit: '300' })])
+        .mockResolvedValueOnce([row({ code: 'BANK', debit: '100' })]),
+      movementsBetween: jest.fn().mockResolvedValue([]),
+    };
+    const r = await new BalanceSheetService(
+      balances as unknown as BalancesService,
+      {
+        fiscalYearFor: jest.fn().mockResolvedValue(2026),
+        fiscalYearBounds: jest.fn().mockResolvedValue({
+          start: new Date('2026-01-01'),
+          end: new Date('2026-12-31'),
+        }),
+      } as unknown as CompanyService,
+    ).generate(AS_OF, new Date('2025-12-31'));
+    expect(balances.snapshot).toHaveBeenCalledTimes(1);
+    const asOfCalls = balances.balancesAsOf.mock.calls as unknown[][];
+    expect(asOfCalls[1][0]).toEqual(new Date('2025-12-31'));
+    expect(asOfCalls[1][1]).toMatchObject({ tx: SNAPSHOT_TX });
+    expect(r.comparative?.asOf).toBe('2025-12-31');
+    expect(r.variance?.totalAssets).toBe('200.0000');
+    expect(r.variance?.assets.map((l) => [l.code, l.variance])).toEqual([
+      ['KAS', '300.0000'],
+      ['BANK', '-100.0000'],
+    ]);
+    expect(r.variance?.assets[0].subtype).toBe('CURRENT_ASSET');
+  });
 });

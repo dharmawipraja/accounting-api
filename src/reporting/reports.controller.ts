@@ -9,7 +9,6 @@ import {
 } from './dto/report-response.dto';
 import {
   AgingQueryDto,
-  AsOfQueryDto,
   RangeQueryDto,
   LedgerQueryDto,
 } from './dto/report-query.dto';
@@ -23,6 +22,12 @@ import {
 import { AgingService } from './aging.service';
 import { CashFlowService } from './cash-flow.service';
 import { asOfOrToday, dateRange } from '../common/dates/query-dates';
+import { businessDate } from '../common/dates/business-date';
+import { ValidationFailedError } from '../common/errors/domain-errors';
+import {
+  BalanceSheetQueryDto,
+  IncomeStatementQueryDto,
+} from './dto/report-query.dto';
 
 @ApiTags('Reporting')
 @ApiBearerAuth()
@@ -38,15 +43,27 @@ export class ReportsController {
 
   @ApiOkResponse({ type: BalanceSheetDto })
   @Get('balance-sheet')
-  balanceSheet(@Query() q: AsOfQueryDto) {
-    return this.balanceSheetSvc.generate(asOfOrToday(q.asOf));
+  balanceSheet(@Query() q: BalanceSheetQueryDto) {
+    return this.balanceSheetSvc.generate(
+      asOfOrToday(q.asOf),
+      q.compareAsOf === undefined ? undefined : businessDate(q.compareAsOf),
+    );
   }
 
   @ApiOkResponse({ type: IncomeStatementDto })
   @Get('income-statement')
-  incomeStatement(@Query() q: RangeQueryDto) {
+  incomeStatement(@Query() q: IncomeStatementQueryDto) {
     const { from, to } = dateRange(q.from, q.to);
-    return this.incomeStatementSvc.generate(from, to);
+    if ((q.compareFrom === undefined) !== (q.compareTo === undefined))
+      throw new ValidationFailedError(
+        '`compareFrom` and `compareTo` must be given together',
+        { compareFrom: q.compareFrom, compareTo: q.compareTo },
+      );
+    const compare =
+      q.compareFrom === undefined
+        ? undefined
+        : dateRange(q.compareFrom, q.compareTo!);
+    return this.incomeStatementSvc.generate(from, to, compare);
   }
 
   @ApiOkResponse({ type: GeneralLedgerDto })

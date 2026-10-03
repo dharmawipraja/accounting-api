@@ -6,12 +6,72 @@ import {
 } from '../ledger/balances/balances.service';
 import { naturalSide } from '../ledger/balances/signing';
 import { CompanyService } from '../company/company.service';
-import { ReportLine } from './report-line';
+import type { LedgerTx } from '../common/prisma/prisma.service';
+import {
+  ReportLine,
+  VarianceLine,
+  moneyVariance,
+  varianceLines,
+} from './report-line';
 
 export interface ReportGroup {
   subtype: string;
   lines: ReportLine[];
   subtotal: string;
+}
+
+export interface ReportSection {
+  groups: ReportGroup[];
+  total: string;
+}
+
+export interface BalanceSheet {
+  asOf: string;
+  assets: ReportSection;
+  liabilities: ReportSection;
+  equity: ReportSection;
+  totalAssets: string;
+  totalLiabilities: string;
+  totalEquity: string;
+  currentYearEarnings: string;
+  unclosedPriorYearsEarnings: string;
+  balanced: boolean;
+}
+
+const TOTAL_KEYS = [
+  'totalAssets',
+  'totalLiabilities',
+  'totalEquity',
+  'currentYearEarnings',
+  'unclosedPriorYearsEarnings',
+] as const;
+
+export type BalanceSheetVariance = Record<
+  (typeof TOTAL_KEYS)[number],
+  string
+> & {
+  assets: VarianceLine[];
+  liabilities: VarianceLine[];
+  equity: VarianceLine[];
+};
+
+/** Every line of a section, tagged with its subtype group. */
+const flatLines = (s: ReportSection) =>
+  s.groups.flatMap((g) => g.lines.map((l) => ({ ...l, subtype: g.subtype })));
+
+/** current − comparative for every total, and per (subtype, account) line. */
+export function balanceSheetVariance(
+  cur: BalanceSheet,
+  cmp: BalanceSheet,
+): BalanceSheetVariance {
+  const section = (k: 'assets' | 'liabilities' | 'equity') =>
+    varianceLines(flatLines(cur[k]), flatLines(cmp[k]));
+  return {
+    ...moneyVariance(cur, cmp, TOTAL_KEYS),
+    assets: section('assets'),
+    liabilities: section('liabilities'),
+    equity: section('equity'),
+  };
 }
 
 @Injectable()
@@ -46,25 +106,55 @@ export class BalanceSheetService {
     return { groups, total };
   }
 
-  async generate(asOf: Date) {
-    const fy = await this.company.fiscalYearFor(asOf);
-    const { start: fyStart } = await this.company.fiscalYearBounds(fy);
+  /** The Neraca as of a date. With `compareAsOf`, both dates are read on ONE
+   *  snapshot and the response gains `comparative` (the same report as of
+   *  compareAsOf) and `variance` (current − comparative). */
+  async generate(
+    asOf: Date,
+    compareAsOf?: Date,
+  ): Promise<
+    BalanceSheet & {
+      comparative?: BalanceSheet;
+      variance?: BalanceSheetVariance;
+    }
+  > {
+    const fyStart = await this.fiscalYearStart(asOf);
+    const cmpFyStart = compareAsOf && (await this.fiscalYearStart(compareAsOf));
+    return this.balances.snapshot(async (tx) => {
+      const current = await this.build(asOf, fyStart, tx);
+      if (!compareAsOf || !cmpFyStart) return current;
+      const comparative = await this.build(compareAsOf, cmpFyStart, tx);
+      return {
+        ...current,
+        comparative,
+        variance: balanceSheetVariance(current, comparative),
+      };
+    });
+  }
 
+  private async fiscalYearStart(asOf: Date): Promise<Date> {
+    const fy = await this.company.fiscalYearFor(asOf);
+    return (await this.company.fiscalYearBounds(fy)).start;
+  }
+
+  private async build(
+    asOf: Date,
+    fyStart: Date,
+    tx: LedgerTx,
+  ): Promise<BalanceSheet> {
     // Pre-closing view: a closing entry dated ON the report date (the fiscal
     // year-end) is left out, so Laba (Rugi) Berjalan shows the year's profit
     // and Laba Ditahan excludes it; earlier years' closings still count.
     // Both aggregates read one snapshot (see BalancesService.snapshot), so the
     // current-year earnings sub-figure always matches the balances.
-    const { rows, fyRows } = await this.balances.snapshot(async (tx) => ({
-      rows: await this.balances.balancesAsOf(asOf, {
-        excludeClosingFrom: asOf,
-        tx,
-      }),
-      fyRows: await this.balances.movementsBetween(fyStart, asOf, {
-        excludeClosing: true,
-        tx,
-      }),
-    }));
+    const rows = await this.balances.balancesAsOf(asOf, {
+      excludeClosingFrom: asOf,
+      tx,
+    });
+    const fyRows = await this.balances.movementsBetween(fyStart, asOf, {
+      excludeClosing: true,
+      tx,
+    });
     const assets = this.group(rows.filter((r) => r.type === 'ASSET'));
     const liabilities = this.group(rows.filter((r) => r.type === 'LIABILITY'));
     const equityRows = rows.filter((r) => r.type === 'EQUITY');

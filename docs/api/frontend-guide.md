@@ -1209,7 +1209,12 @@ no auth.
 - `POST   /v1/ledger/periods/generate` · APPROVER/ADMIN · generate a year's periods
 - `POST   /v1/ledger/periods/:id/close` · APPROVER/ADMIN · close a period
 - `POST   /v1/ledger/periods/:id/reopen` · ADMIN · reopen a period
-- `GET    /v1/ledger/trial-balance?asOf=` · any · trial balance
+- `GET    /v1/ledger/trial-balance?asOf=&preClosing=` · any · trial balance.
+  Default is post-closing: at a closed fiscal year-end the closing entry is counted
+  and P&L accounts show 0. `preClosing=true` (only `true`/`false` accepted, else
+  `400`) leaves out the closing entry dated **on** `asOf` (and its reopen reversal),
+  so P&L accounts show their year-end balances — the TB as it was before the close,
+  consistent with the Neraca. Balances (`totalDebit = totalCredit`) either way
 
 ### Reports (all read, any auth)
 
@@ -1231,7 +1236,24 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing on the last page).
   prior year is closed)
 - `GET    /v1/reports/income-statement?from=&to=` · any · Laba Rugi — year-end
   closing entries (and their reopen reversals) are excluded, so figures are the
-  same before and after a year is closed
+  same before and after a year is closed. Every section has per-account lines
+  summing to its total: `revenueLines`, `cogsLines`, `operatingExpenseLines`,
+  `otherIncomeLines`, `otherExpenseLines`, `taxExpenseLines` (`{code, name, amount}`)
+- **Comparatives** (both reports, optional): `income-statement?…&compareFrom=&compareTo=`
+  (both or neither — one alone is `422`; same date rules as `from`/`to`) and
+  `balance-sheet?…&compareAsOf=`. The response then also has:
+  - `comparative` — the full report for the comparison period/date, exactly what
+    requesting it on its own returns (no nested `comparative`/`variance`);
+  - `variance` — current − comparative: every money total (Laba Rugi: `revenue` …
+    `netIncome`; Neraca: `totalAssets`, `totalLiabilities`, `totalEquity`,
+    `currentYearEarnings`, `unclosedPriorYearsEarnings`) plus line arrays
+    (Laba Rugi: the six `*Lines` keys; Neraca: `assets`, `liabilities`, `equity`, each
+    flattened across subtype groups) of `{code, name, current, comparative, variance}`
+    (Neraca lines also carry `subtype`). Lines are the union of both sides — an account
+    present on only one side shows `0.0000` on the other — in current-report order,
+    then comparison-only lines.
+  Both periods are read on one snapshot. Without the params the response is unchanged
+  (no `comparative`/`variance` keys).
 - `GET    /v1/reports/general-ledger?accountId=&from=&to=` · any · Buku Besar —
   span capped at **366 days** (`422` beyond); at most 10,000 lines per page.
   When the cap cuts the list the response has `truncated: true` and a

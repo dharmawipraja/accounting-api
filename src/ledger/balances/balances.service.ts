@@ -173,9 +173,19 @@ export class BalancesService {
     return rows.map((r) => this.toRow(r));
   }
 
-  async trialBalance(asOf: Date): Promise<TrialBalance> {
+  /** `preClosing`: leave out a CLOSING entry (and its reopen reversal) dated
+   *  ON asOf — the fiscal year-end — so P&L accounts show their pre-close
+   *  balances, matching the Neraca's pre-closing view. Earlier years' closings
+   *  still count. Default: every posted entry (post-closing ledger view). */
+  async trialBalance(
+    asOf: Date,
+    opts: { preClosing?: boolean } = {},
+  ): Promise<TrialBalance> {
     const day = truncateToUtcDay(asOf);
-    const rows = await this.groupedBalances(Prisma.sql`je.date <= ${day}`);
+    const rows = await this.groupedBalances(
+      Prisma.sql`je.date <= ${day}`,
+      opts.preClosing ? { excludeClosingFrom: asOf } : {},
+    );
     // Sum via Money (40-digit precision): Prisma.Decimal's default 20
     // significant digits would round a trial-balance total past 16 integer
     // digits + 4dp.

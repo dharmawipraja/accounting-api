@@ -1,11 +1,61 @@
 import { Injectable } from '@nestjs/common';
 import { Money } from '../common/money/money';
+import type { LedgerTx } from '../common/prisma/prisma.service';
 import {
   BalancesService,
   AccountBalanceRow,
 } from '../ledger/balances/balances.service';
 import { naturalSide } from '../ledger/balances/signing';
-import { ReportLine } from './report-line';
+import {
+  ReportLine,
+  VarianceLine,
+  moneyVariance,
+  varianceLines,
+} from './report-line';
+
+const TOTAL_KEYS = [
+  'revenue',
+  'cogs',
+  'grossProfit',
+  'operatingExpense',
+  'operatingProfit',
+  'otherIncome',
+  'otherExpense',
+  'profitBeforeTax',
+  'taxExpense',
+  'netIncome',
+] as const;
+const LINE_KEYS = [
+  'revenueLines',
+  'cogsLines',
+  'operatingExpenseLines',
+  'otherIncomeLines',
+  'otherExpenseLines',
+  'taxExpenseLines',
+] as const;
+
+export type IncomeStatement = { from: string; to: string } & Record<
+  (typeof TOTAL_KEYS)[number],
+  string
+> &
+  Record<(typeof LINE_KEYS)[number], ReportLine[]>;
+
+export type IncomeStatementVariance = Record<
+  (typeof TOTAL_KEYS)[number],
+  string
+> &
+  Record<(typeof LINE_KEYS)[number], VarianceLine[]>;
+
+/** current − comparative for every total, and per account for every section. */
+export function incomeStatementVariance(
+  cur: IncomeStatement,
+  cmp: IncomeStatement,
+): IncomeStatementVariance {
+  const lines = Object.fromEntries(
+    LINE_KEYS.map((k) => [k, varianceLines(cur[k], cmp[k])]),
+  ) as Record<(typeof LINE_KEYS)[number], VarianceLine[]>;
+  return { ...moneyVariance(cur, cmp, TOTAL_KEYS), ...lines };
+}
 
 @Injectable()
 export class IncomeStatementService {
@@ -25,11 +75,43 @@ export class IncomeStatementService {
     return { lines, total };
   }
 
-  async generate(from: Date, to: Date) {
+  /** The Laba Rugi over [from, to]. With `compare`, both periods are read on
+   *  ONE snapshot and the response gains `comparative` (the same report for
+   *  the comparison period) and `variance` (current − comparative). */
+  async generate(
+    from: Date,
+    to: Date,
+    compare?: { from: Date; to: Date },
+  ): Promise<
+    IncomeStatement & {
+      comparative?: IncomeStatement;
+      variance?: IncomeStatementVariance;
+    }
+  > {
+    if (!compare) return this.build(from, to);
+    return this.balances.snapshot(async (tx) => {
+      const current = await this.build(from, to, tx);
+      const comparative = await this.build(compare.from, compare.to, tx);
+      return {
+        ...current,
+        comparative,
+        variance: incomeStatementVariance(current, comparative),
+      };
+    });
+  }
+
+  private async build(
+    from: Date,
+    to: Date,
+    tx?: LedgerTx,
+  ): Promise<IncomeStatement> {
     // Year-end CLOSING entries (and their reopen reversals) zero P&L; they are
     // not business activity, so they never appear on the Laba Rugi.
     const all = (
-      await this.balances.movementsBetween(from, to, { excludeClosing: true })
+      await this.balances.movementsBetween(from, to, {
+        excludeClosing: true,
+        tx,
+      })
     ).filter((r) => r.type === 'REVENUE' || r.type === 'EXPENSE');
     // Pull the income-tax-expense account out FIRST (whatever subtype it carries),
     // so it appears only on its own line and never double-counts in a subtype section.
@@ -63,9 +145,12 @@ export class IncomeStatementService {
       operatingExpenseLines: opex.lines,
       operatingProfit: operatingProfit.toPersistence(),
       otherIncome: otherIncome.total.toPersistence(),
+      otherIncomeLines: otherIncome.lines,
       otherExpense: otherExpense.total.toPersistence(),
+      otherExpenseLines: otherExpense.lines,
       profitBeforeTax: profitBeforeTax.toPersistence(),
       taxExpense: tax.total.toPersistence(),
+      taxExpenseLines: tax.lines,
       netIncome: netIncome.toPersistence(),
     };
   }

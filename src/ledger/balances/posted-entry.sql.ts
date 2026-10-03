@@ -28,8 +28,9 @@ function isSourceOrItsReversal(sourceType: 'CLOSING' | 'OPENING'): Prisma.Sql {
 /**
  * Excludes year-end CLOSING entries and their reopen REVERSALs — the P&L-view
  * predicate (Laba Rugi, Arus Kas, Neraca current-year earnings). With `from`,
- * only those dated on/after `from` are excluded (pre-closing Neraca view).
- * Trial balance / general ledger / account balance deliberately do NOT use it.
+ * only those dated on/after `from` are excluded (pre-closing Neraca view, and
+ * the trial balance under `?preClosing=true`). The default trial balance /
+ * general ledger / account balance deliberately do NOT use it.
  */
 export function excludeClosingJe(from?: Date): Prisma.Sql {
   const closing = isSourceOrItsReversal('CLOSING');

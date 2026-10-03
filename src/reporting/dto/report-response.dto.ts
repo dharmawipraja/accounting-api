@@ -1,5 +1,5 @@
 // src/reporting/dto/report-response.dto.ts
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { ApiMoney } from '../../common/openapi/api-money.decorator';
 
 export class ReportLineDto {
@@ -17,6 +17,66 @@ export class ReportGroupDto {
 export class ReportSectionDto {
   @ApiProperty({ type: [ReportGroupDto] }) groups!: ReportGroupDto[];
   @ApiMoney() total!: string;
+}
+
+/** One account (or synthetic line) in both periods. */
+export class VarianceLineDto {
+  @ApiProperty({ example: '4-1000' }) code!: string;
+  @ApiProperty({ example: 'Pendapatan' }) name!: string;
+  @ApiMoney({ description: 'Amount in the main period' }) current!: string;
+  @ApiMoney({ description: 'Amount in the comparison period' })
+  comparative!: string;
+  @ApiMoney({ description: 'current − comparative' }) variance!: string;
+}
+
+export class BalanceSheetVarianceLineDto extends VarianceLineDto {
+  @ApiProperty({ example: 'CURRENT_ASSET' }) subtype!: string;
+}
+
+export class BalanceSheetVarianceDto {
+  @ApiMoney() totalAssets!: string;
+  @ApiMoney() totalLiabilities!: string;
+  @ApiMoney() totalEquity!: string;
+  @ApiMoney() currentYearEarnings!: string;
+  @ApiMoney() unclosedPriorYearsEarnings!: string;
+  @ApiProperty({
+    type: [BalanceSheetVarianceLineDto],
+    description:
+      "Union of both dates' lines keyed by (subtype, code); a line missing on one side counts 0 there. Main-report order, then comparative-only lines.",
+  })
+  assets!: BalanceSheetVarianceLineDto[];
+  @ApiProperty({ type: [BalanceSheetVarianceLineDto] })
+  liabilities!: BalanceSheetVarianceLineDto[];
+  @ApiProperty({ type: [BalanceSheetVarianceLineDto] })
+  equity!: BalanceSheetVarianceLineDto[];
+}
+
+export class IncomeStatementVarianceDto {
+  @ApiMoney() revenue!: string;
+  @ApiMoney() cogs!: string;
+  @ApiMoney() grossProfit!: string;
+  @ApiMoney() operatingExpense!: string;
+  @ApiMoney() operatingProfit!: string;
+  @ApiMoney() otherIncome!: string;
+  @ApiMoney() otherExpense!: string;
+  @ApiMoney() profitBeforeTax!: string;
+  @ApiMoney() taxExpense!: string;
+  @ApiMoney() netIncome!: string;
+  @ApiProperty({
+    type: [VarianceLineDto],
+    description:
+      "Union of both periods' accounts keyed by code; an account missing in one period counts 0 there. Main-period order, then comparative-only accounts. Same for every *Lines field.",
+  })
+  revenueLines!: VarianceLineDto[];
+  @ApiProperty({ type: [VarianceLineDto] }) cogsLines!: VarianceLineDto[];
+  @ApiProperty({ type: [VarianceLineDto] })
+  operatingExpenseLines!: VarianceLineDto[];
+  @ApiProperty({ type: [VarianceLineDto] })
+  otherIncomeLines!: VarianceLineDto[];
+  @ApiProperty({ type: [VarianceLineDto] })
+  otherExpenseLines!: VarianceLineDto[];
+  @ApiProperty({ type: [VarianceLineDto] })
+  taxExpenseLines!: VarianceLineDto[];
 }
 
 export class BalanceSheetDto {
@@ -39,7 +99,23 @@ export class BalanceSheetDto {
   })
   unclosedPriorYearsEarnings!: string;
   @ApiProperty({ example: true }) balanced!: boolean;
+  @ApiPropertyOptional({
+    type: () => BalanceSheetComparativeDto,
+    description:
+      'Only with ?compareAsOf: the same Neraca computed as of compareAsOf (same snapshot as the main report).',
+  })
+  comparative?: Omit<BalanceSheetDto, 'comparative' | 'variance'>;
+  @ApiPropertyOptional({
+    type: () => BalanceSheetVarianceDto,
+    description: 'Only with ?compareAsOf: current − comparative.',
+  })
+  variance?: BalanceSheetVarianceDto;
 }
+
+export class BalanceSheetComparativeDto extends OmitType(BalanceSheetDto, [
+  'comparative',
+  'variance',
+] as const) {}
 
 export class IncomeStatementDto {
   @ApiProperty({ type: String, format: 'date' }) from!: string;
@@ -54,11 +130,34 @@ export class IncomeStatementDto {
   operatingExpenseLines!: ReportLineDto[];
   @ApiMoney() operatingProfit!: string;
   @ApiMoney() otherIncome!: string;
+  @ApiProperty({ type: [ReportLineDto] }) otherIncomeLines!: ReportLineDto[];
   @ApiMoney() otherExpense!: string;
+  @ApiProperty({ type: [ReportLineDto] }) otherExpenseLines!: ReportLineDto[];
   @ApiMoney() profitBeforeTax!: string;
   @ApiMoney() taxExpense!: string;
+  @ApiProperty({
+    type: [ReportLineDto],
+    description: 'The TAX_EXPENSE-role account(s) (Beban Pajak Penghasilan).',
+  })
+  taxExpenseLines!: ReportLineDto[];
   @ApiMoney() netIncome!: string;
+  @ApiPropertyOptional({
+    type: () => IncomeStatementComparativeDto,
+    description:
+      'Only with ?compareFrom&compareTo: the same Laba Rugi computed over the comparison period (same snapshot as the main report).',
+  })
+  comparative?: Omit<IncomeStatementDto, 'comparative' | 'variance'>;
+  @ApiPropertyOptional({
+    type: () => IncomeStatementVarianceDto,
+    description: 'Only with ?compareFrom&compareTo: current − comparative.',
+  })
+  variance?: IncomeStatementVarianceDto;
 }
+
+export class IncomeStatementComparativeDto extends OmitType(
+  IncomeStatementDto,
+  ['comparative', 'variance'] as const,
+) {}
 
 export class GeneralLedgerAccountDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
