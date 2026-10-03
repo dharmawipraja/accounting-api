@@ -1,6 +1,8 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
-import { BalancesService, TrialBalance } from './balances.service';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { BalancesService } from './balances.service';
+import { ApiReportResponse, exportOr } from '../../reporting/export/render';
+import { trialBalanceTable } from '../../reporting/export/tables';
 import { TrialBalanceQueryDto } from './dto/trial-balance-query.dto';
 import { TrialBalanceDto } from './dto/balance-response.dto';
 import { asOfOrToday } from '../../common/dates/query-dates';
@@ -12,10 +14,16 @@ export class BalancesController {
   constructor(private readonly balances: BalancesService) {}
 
   @Get()
-  @ApiOkResponse({ type: TrialBalanceDto })
-  trialBalance(@Query() q: TrialBalanceQueryDto): Promise<TrialBalance> {
-    return this.balances.trialBalance(asOfOrToday(q.asOf), {
+  @ApiReportResponse(TrialBalanceDto)
+  async trialBalance(@Query() q: TrialBalanceQueryDto) {
+    const r = await this.balances.trialBalance(asOfOrToday(q.asOf), {
       preClosing: q.preClosing,
     });
+    return exportOr(
+      q.format,
+      r,
+      (t) => trialBalanceTable(t, q.preClosing),
+      `trial-balance-${r.asOf}`,
+    );
   }
 }

@@ -2,6 +2,10 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsOptional } from 'class-validator';
 import { AsOfQueryDto } from '../../../common/dto/as-of-query.dto';
+import {
+  ExportFormatField,
+  type ExportFormat,
+} from '../../../reporting/export/render';
 
 export class TrialBalanceQueryDto extends AsOfQueryDto {
   @ApiPropertyOptional({
@@ -17,4 +21,5 @@ export class TrialBalanceQueryDto extends AsOfQueryDto {
   )
   @IsBoolean()
   preClosing?: boolean;
+  @ExportFormatField() format?: ExportFormat;
 }

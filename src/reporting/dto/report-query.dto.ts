@@ -14,6 +14,7 @@ import {
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 import { AsOfQueryDto } from '../../common/dto/as-of-query.dto';
+import { ExportFormatField, type ExportFormat } from '../export/render';
 export { AsOfQueryDto };
 
 export class AgingQueryDto extends AsOfQueryDto {
@@ -25,11 +26,13 @@ export class AgingQueryDto extends AsOfQueryDto {
   @IsOptional()
   @IsUUID()
   afterPartnerId?: string;
+  @ExportFormatField() format?: ExportFormat;
 }
 
 export class RangeQueryDto {
   @IsDateString() @IsBusinessDate() from!: string;
   @IsDateString() @IsBusinessDate() to!: string;
+  @ExportFormatField() format?: ExportFormat;
 }
 
 export class IncomeStatementQueryDto extends RangeQueryDto {
@@ -62,6 +65,7 @@ export class BalanceSheetQueryDto extends AsOfQueryDto {
   @IsDateString()
   @IsBusinessDate()
   compareAsOf?: string;
+  @ExportFormatField() format?: ExportFormat;
 }
 
 export class LedgerQueryDto {
@@ -76,6 +80,7 @@ export class LedgerQueryDto {
   @IsString()
   @MaxLength(512)
   cursor?: string;
+  @ExportFormatField() format?: ExportFormat;
 }
 
 export class LedgerBookQueryDto {
@@ -116,4 +121,5 @@ export class LedgerBookQueryDto {
   @IsString()
   @MaxLength(512)
   cursor?: string;
+  @ExportFormatField() format?: ExportFormat;
 }

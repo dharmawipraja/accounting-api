@@ -1298,6 +1298,31 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing on the last page).
   same as the Kas balance on `from − 1` — don't cross-check it against the
   trial balance of the previous day in that case. `reconciles` still ties.
 
+- **File export (CSV / XLSX)** — every report above (balance sheet incl.
+  comparative, income statement incl. comparative, trial balance incl.
+  `preClosing`, general ledger, general-ledger book, AR/AP aging, cash flow)
+  takes `&format=csv` or `&format=xlsx` with the same query params and roles;
+  absent = JSON (unchanged); any other value → `400`. The response is a download:
+  `Content-Type: text/csv; charset=utf-8` (UTF-8 **BOM**, CRLF, RFC 4180 quoting)
+  or `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, with
+  `Content-Disposition: attachment; filename="<report>-<asOf>.<ext>"` (or
+  `<report>-<from>_<to>.<ext>`; names: `balance-sheet`, `income-statement`,
+  `trial-balance`, `general-ledger`, `general-ledger-book`, `ar-aging`,
+  `ap-aging`, `cash-flow`). `Content-Disposition` is CORS-exposed. Layout: title
+  rows, a blank row, one header row (frozen in XLSX), then lines with bold
+  subtotal/total rows (Indonesian labels: `Total ASET`, `Laba Bersih`,
+  `Saldo Akhir`, `Total Sisa`, …); comparative exports have current /
+  comparison / `Selisih` (variance) columns. Money cells are the exact JSON
+  decimal strings in CSV; in XLSX they are numbers formatted
+  `#,##0.00;(#,##0.00)` — except a value with more than 15 significant digits
+  (beyond what a double / Excel holds exactly), which is written as the exact
+  decimal **text**. Text cells starting with `= + - @`, tab or CR are prefixed
+  with `'` in CSV (formula-injection guard); XLSX writes them as plain strings.
+  Caps are kept: a truncated general ledger / aging exports the requested page
+  and ends with a `TERPOTONG` note row naming the `cursor` / `afterPartnerId`
+  for the next page. From a browser, fetch with the bearer token and save the
+  blob (a plain link can't carry the `Authorization` header).
+
 ### Sales invoices
 
 - `GET    /v1/sales-invoices` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `q, partnerId, status, taxInvoiceStatus, limit, offset`)

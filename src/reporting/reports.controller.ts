@@ -1,5 +1,14 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiReportResponse, exportOr } from './export/render';
+import {
+  agingTable,
+  balanceSheetTable,
+  cashFlowTable,
+  generalLedgerBookTable,
+  generalLedgerTable,
+  incomeStatementTable,
+} from './export/tables';
 import {
   AgingReportDto,
   BalanceSheetDto,
@@ -43,18 +52,19 @@ export class ReportsController {
     private readonly cashFlowSvc: CashFlowService,
   ) {}
 
-  @ApiOkResponse({ type: BalanceSheetDto })
+  @ApiReportResponse(BalanceSheetDto)
   @Get('balance-sheet')
-  balanceSheet(@Query() q: BalanceSheetQueryDto) {
-    return this.balanceSheetSvc.generate(
+  async balanceSheet(@Query() q: BalanceSheetQueryDto) {
+    const r = await this.balanceSheetSvc.generate(
       asOfOrToday(q.asOf),
       q.compareAsOf === undefined ? undefined : businessDate(q.compareAsOf),
     );
+    return exportOr(q.format, r, balanceSheetTable, `balance-sheet-${r.asOf}`);
   }
 
-  @ApiOkResponse({ type: IncomeStatementDto })
+  @ApiReportResponse(IncomeStatementDto)
   @Get('income-statement')
-  incomeStatement(@Query() q: IncomeStatementQueryDto) {
+  async incomeStatement(@Query() q: IncomeStatementQueryDto) {
     const { from, to } = dateRange(q.from, q.to);
     if ((q.compareFrom === undefined) !== (q.compareTo === undefined))
       throw new ValidationFailedError(
@@ -65,32 +75,44 @@ export class ReportsController {
       q.compareFrom === undefined
         ? undefined
         : dateRange(q.compareFrom, q.compareTo!);
-    return this.incomeStatementSvc.generate(from, to, compare);
+    const r = await this.incomeStatementSvc.generate(from, to, compare);
+    return exportOr(
+      q.format,
+      r,
+      incomeStatementTable,
+      `income-statement-${r.from}_${r.to}`,
+    );
   }
 
-  @ApiOkResponse({ type: GeneralLedgerDto })
+  @ApiReportResponse(GeneralLedgerDto)
   @Get('general-ledger')
-  generalLedger(@Query() q: LedgerQueryDto) {
+  async generalLedger(@Query() q: LedgerQueryDto) {
     const { from, to } = dateRange(q.from, q.to, GL_MAX_RANGE_DAYS);
-    return this.generalLedgerSvc.generate(
+    const r = await this.generalLedgerSvc.generate(
       q.accountId,
       from,
       to,
       GL_MAX_LINES,
       q.cursor,
     );
+    return exportOr(
+      q.format,
+      r,
+      generalLedgerTable,
+      `general-ledger-${r.from}_${r.to}`,
+    );
   }
 
-  @ApiOkResponse({ type: GeneralLedgerBookResponseDto })
+  @ApiReportResponse(GeneralLedgerBookResponseDto)
   @Get('general-ledger/book')
-  generalLedgerBook(@Query() q: LedgerBookQueryDto) {
+  async generalLedgerBook(@Query() q: LedgerBookQueryDto) {
     const { from, to } = dateRange(q.from, q.to, GL_MAX_RANGE_DAYS);
     if (q.accountIds && (q.fromCode !== undefined || q.toCode !== undefined))
       throw new ValidationFailedError(
         'Pass either accountIds or fromCode/toCode, not both',
         {},
       );
-    return this.generalLedgerSvc.generateBook(
+    const r = await this.generalLedgerSvc.generateBook(
       q.accountIds
         ? { accountIds: q.accountIds }
         : { fromCode: q.fromCode, toCode: q.toCode },
@@ -99,24 +121,41 @@ export class ReportsController {
       GL_MAX_LINES,
       q.cursor,
     );
+    return exportOr(
+      q.format,
+      r,
+      generalLedgerBookTable,
+      `general-ledger-book-${r.from}_${r.to}`,
+    );
   }
 
-  @ApiOkResponse({ type: AgingReportDto })
+  @ApiReportResponse(AgingReportDto)
   @Get('ar-aging')
-  arAging(@Query() q: AgingQueryDto) {
-    return this.agingSvc.aging('AR', asOfOrToday(q.asOf), q.afterPartnerId);
+  async arAging(@Query() q: AgingQueryDto) {
+    const r = await this.agingSvc.aging(
+      'AR',
+      asOfOrToday(q.asOf),
+      q.afterPartnerId,
+    );
+    return exportOr(q.format, r, agingTable, `ar-aging-${r.asOf}`);
   }
 
-  @ApiOkResponse({ type: AgingReportDto })
+  @ApiReportResponse(AgingReportDto)
   @Get('ap-aging')
-  apAging(@Query() q: AgingQueryDto) {
-    return this.agingSvc.aging('AP', asOfOrToday(q.asOf), q.afterPartnerId);
+  async apAging(@Query() q: AgingQueryDto) {
+    const r = await this.agingSvc.aging(
+      'AP',
+      asOfOrToday(q.asOf),
+      q.afterPartnerId,
+    );
+    return exportOr(q.format, r, agingTable, `ap-aging-${r.asOf}`);
   }
 
-  @ApiOkResponse({ type: CashFlowDto })
+  @ApiReportResponse(CashFlowDto)
   @Get('cash-flow')
-  cashFlowReport(@Query() q: RangeQueryDto) {
+  async cashFlowReport(@Query() q: RangeQueryDto) {
     const { from, to } = dateRange(q.from, q.to);
-    return this.cashFlowSvc.generate(from, to);
+    const r = await this.cashFlowSvc.generate(from, to);
+    return exportOr(q.format, r, cashFlowTable, `cash-flow-${r.from}_${r.to}`);
   }
 }

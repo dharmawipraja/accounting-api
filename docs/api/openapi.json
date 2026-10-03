@@ -1421,6 +1421,19 @@
             }
           },
           {
+            "name": "format",
+            "required": false,
+            "in": "query",
+            "description": "Download the report as a file instead of JSON: csv (UTF-8 with BOM) or xlsx. Omit for JSON.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "csv",
+                "xlsx"
+              ]
+            }
+          },
+          {
             "name": "asOf",
             "required": false,
             "in": "query",
@@ -1431,11 +1444,22 @@
         ],
         "responses": {
           "200": {
-            "description": "",
+            "description": "The report as JSON, or with ?format=csv|xlsx an attachment (Content-Disposition filename).",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TrialBalanceDto"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
                 }
               }
             }
@@ -4612,6 +4636,19 @@
             }
           },
           {
+            "name": "format",
+            "required": false,
+            "in": "query",
+            "description": "Download the report as a file instead of JSON: csv (UTF-8 with BOM) or xlsx. Omit for JSON.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "csv",
+                "xlsx"
+              ]
+            }
+          },
+          {
             "name": "asOf",
             "required": false,
             "in": "query",
@@ -4622,11 +4659,22 @@
         ],
         "responses": {
           "200": {
-            "description": "",
+            "description": "The report as JSON, or with ?format=csv|xlsx an attachment (Content-Disposition filename).",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/BalanceSheetDto"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
                 }
               }
             }
@@ -4646,6 +4694,19 @@
       "get": {
         "operationId": "ReportsController_incomeStatement_v1",
         "parameters": [
+          {
+            "name": "format",
+            "required": false,
+            "in": "query",
+            "description": "Download the report as a file instead of JSON: csv (UTF-8 with BOM) or xlsx. Omit for JSON.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "csv",
+                "xlsx"
+              ]
+            }
+          },
           {
             "name": "compareFrom",
             "required": false,
@@ -4685,11 +4746,22 @@
         ],
         "responses": {
           "200": {
-            "description": "",
+            "description": "The report as JSON, or with ?format=csv|xlsx an attachment (Content-Disposition filename).",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/IncomeStatementDto"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
                 }
               }
             }
@@ -4720,6 +4792,19 @@
             }
           },
           {
+            "name": "format",
+            "required": false,
+            "in": "query",
+            "description": "Download the report as a file instead of JSON: csv (UTF-8 with BOM) or xlsx. Omit for JSON.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "csv",
+                "xlsx"
+              ]
+            }
+          },
+          {
             "name": "accountId",
             "required": true,
             "in": "query",
@@ -4747,11 +4832,22 @@
         ],
         "responses": {
           "200": {
-            "description": "",
+            "description": "The report as JSON, or with ?format=csv|xlsx an attachment (Content-Disposition filename).",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GeneralLedgerDto"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
                 }
               }
             }
@@ -4813,6 +4909,19 @@
             }
           },
           {
+            "name": "format",
+            "required": false,
+            "in": "query",
+            "description": "Download the report as a file instead of JSON: csv (UTF-8 with BOM) or xlsx. Omit for JSON.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "csv",
+                "xlsx"
+              ]
+            }
+          },
+          {
             "name": "from",
             "required": true,
             "in": "query",
@@ -4831,11 +4940,22 @@
         ],
         "responses": {
           "200": {
-            "description": "",
+            "description": "The report as JSON, or with ?format=csv|xlsx an attachment (Content-Disposition filename).",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GeneralLedgerBookResponseDto"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
                 }
               }
             }
@@ -4866,6 +4986,19 @@
             }
           },
           {
+            "name": "format",
+            "required": false,
+            "in": "query",
+            "description": "Download the report as a file instead of JSON: csv (UTF-8 with BOM) or xlsx. Omit for JSON.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "csv",
+                "xlsx"
+              ]
+            }
+          },
+          {
             "name": "asOf",
             "required": false,
             "in": "query",
@@ -4876,11 +5009,22 @@
         ],
         "responses": {
           "200": {
-            "description": "",
+            "description": "The report as JSON, or with ?format=csv|xlsx an attachment (Content-Disposition filename).",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgingReportDto"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
                 }
               }
             }
@@ -4911,6 +5055,19 @@
             }
           },
           {
+            "name": "format",
+            "required": false,
+            "in": "query",
+            "description": "Download the report as a file instead of JSON: csv (UTF-8 with BOM) or xlsx. Omit for JSON.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "csv",
+                "xlsx"
+              ]
+            }
+          },
+          {
             "name": "asOf",
             "required": false,
             "in": "query",
@@ -4921,11 +5078,22 @@
         ],
         "responses": {
           "200": {
-            "description": "",
+            "description": "The report as JSON, or with ?format=csv|xlsx an attachment (Content-Disposition filename).",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AgingReportDto"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
                 }
               }
             }
@@ -4946,6 +5114,19 @@
         "operationId": "ReportsController_cashFlowReport_v1",
         "parameters": [
           {
+            "name": "format",
+            "required": false,
+            "in": "query",
+            "description": "Download the report as a file instead of JSON: csv (UTF-8 with BOM) or xlsx. Omit for JSON.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "csv",
+                "xlsx"
+              ]
+            }
+          },
+          {
             "name": "from",
             "required": true,
             "in": "query",
@@ -4964,11 +5145,22 @@
         ],
         "responses": {
           "200": {
-            "description": "",
+            "description": "The report as JSON, or with ?format=csv|xlsx an attachment (Content-Disposition filename).",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CashFlowDto"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
                 }
               }
             }
