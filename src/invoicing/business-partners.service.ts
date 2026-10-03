@@ -245,7 +245,7 @@ export class BusinessPartnersService {
       0
     )
       throw new ValidationFailedError(
-        `Cannot remove the ${role === 'CUSTOMER' ? 'customer' : 'vendor'} role while it has open items (draft documents or payments, posted documents with an outstanding balance, or posted payments with an unapplied balance); settle, void or delete them first`,
+        `Cannot remove the ${role === 'CUSTOMER' ? 'customer' : 'vendor'} role while it has open items (draft documents or payments, posted documents with an outstanding balance, or posted payments or credit/debit notes with unapplied credit); settle, void or delete them first`,
         {
           id,
           reason: 'OPEN_ITEMS',
@@ -286,7 +286,7 @@ export class BusinessPartnersService {
         0
       )
         throw new ValidationFailedError(
-          'Cannot delete a partner with open items (draft documents or payments, posted documents with an outstanding balance, or posted payments with an unapplied balance); settle, void or delete them first, or deactivate the partner',
+          'Cannot delete a partner with open items (draft documents or payments, posted documents with an outstanding balance, or posted payments or credit/debit notes with unapplied credit); settle, void or delete them first, or deactivate the partner',
           {
             id,
             reason: 'OPEN_ITEMS',
