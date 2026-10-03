@@ -145,11 +145,12 @@ caught), and a second run is a no-op (nothing differs). Run the same two lines
 yourself after a **manual** `git checkout` / `git pull` on the VM (e.g. a rollback)
 — they are safe to run any time (verified with a local prod-like Caddy: the
 Caddyfile replaced by `mv` → recreated, `/ready` 404; the next run printed no
-recreate). CD never touches the monitoring overlay, whose config files
-(`monitoring/prometheus.yml`, `alerts.yml`, `alertmanager*.yml`, `loki.yml`,
-`alloy.alloy`) are single-file mounts too: after a change to one, recreate that
-overlay service the same way (`$COMPOSE -f docker-compose.monitoring.yml up -d
---no-build --no-deps --force-recreate <service>`).
+recreate). When the monitoring overlay is running (a `prometheus` container
+exists), CD does the same for **Prometheus** (`monitoring/prometheus.yml`,
+`alerts.yml`) and **Alertmanager** (`alertmanager*.yml`), so new alert rules take
+effect on deploy. `loki.yml` / `alloy.alloy` are still manual: after a change,
+recreate that overlay service the same way (`$COMPOSE -f
+docker-compose.monitoring.yml up -d --no-build --no-deps --force-recreate <service>`).
 
 ### Operator commands on a CD-managed VM
 CD exports `API_IMAGE` / `MIGRATE_IMAGE` **only inside its own SSH session**. In your

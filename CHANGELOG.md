@@ -25,6 +25,9 @@ All notable changes to this project are documented here. The format is based on
   one ordered `classifyException()` shared by the exception filter and audit
   status, and a single-key-space audit rejection limiter.
 
+- **CD reloads monitoring config** — when the monitoring overlay runs, a deploy
+  recreates Prometheus / Alertmanager whose mounted config differs from the
+  checked-out files (alert-rule changes no longer wait for a manual restart).
 - **Year-end close waits for the day after year-end** — closing on 31 Dec itself
   is now 422 (that day's documents could still arrive).
 - **Fiscal-year bounds unified** to 2000–2100 on every endpoint, including path

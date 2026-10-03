@@ -34,14 +34,36 @@ $COMPOSE up -d --no-build
 # live content, not on git history: a re-run after a failed deploy
 # still converges, and a second run is a no-op. Any failure to read
 # (service not running, file missing) also recreates.
-refresh_bind_mount() { # <service> <path in container> <checked-out file>
-  if $COMPOSE exec -T "$1" cat "$2" 2>/dev/null | cmp -s - "$3"; then
-    echo "$3: running $1 already has this content"
-  else
-    echo "$3 differs from (or is unreadable in) the running $1: recreating $1"
-    $COMPOSE up -d --no-build --no-deps --force-recreate "$1"
-  fi
+# <compose command> <service> then (<path in container> <checked-out file>)...:
+# recreate the service once if ANY of its files differ.
+refresh_bind_mounts() {
+  c=$1 svc=$2
+  shift 2
+  while [ $# -ge 2 ]; do
+    # shellcheck disable=SC2086 # $c is a multi-word compose command
+    if ! $c exec -T "$svc" cat "$1" 2>/dev/null | cmp -s - "$2"; then
+      echo "$2 differs from (or is unreadable in) the running $svc: recreating $svc"
+      # shellcheck disable=SC2086
+      $c up -d --no-build --no-deps --force-recreate "$svc"
+      return
+    fi
+    shift 2
+  done
+  echo "$svc: running container already has the checked-out config"
 }
-refresh_bind_mount caddy /etc/caddy/Caddyfile Caddyfile
-refresh_bind_mount backup /backup.sh scripts/backup.sh
+refresh_bind_mounts "$COMPOSE" caddy /etc/caddy/Caddyfile Caddyfile
+refresh_bind_mounts "$COMPOSE" backup /backup.sh scripts/backup.sh
+# The monitoring overlay (when the operator runs it) has the same problem for
+# Prometheus rules/config and Alertmanager config: without this, a release that
+# changes monitoring/alerts.yml keeps the OLD rules running until a restart.
+MON="$COMPOSE -f docker-compose.monitoring.yml"
+if [ -n "$($MON ps -q prometheus 2>/dev/null)" ]; then
+  refresh_bind_mounts "$MON" prometheus \
+    /etc/prometheus/prometheus.yml monitoring/prometheus.yml \
+    /etc/prometheus/alerts.yml monitoring/alerts.yml
+  refresh_bind_mounts "$MON" alertmanager \
+    /etc/alertmanager/alertmanager.yml monitoring/alertmanager.yml \
+    /etc/alertmanager/alertmanager-slack.yml monitoring/alertmanager-slack.yml \
+    /etc/alertmanager/alertmanager-webhook.yml monitoring/alertmanager-webhook.yml
+fi
 
