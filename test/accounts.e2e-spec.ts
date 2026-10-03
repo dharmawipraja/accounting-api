@@ -424,6 +424,50 @@ describe('Accounts (e2e)', () => {
       await del(header.id).expect(204);
     });
 
+    it('refuses to reactivate a child under an inactive header (422 reason PARENT_INACTIVE) until the header is reactivated', async () => {
+      const header = (
+        await post({
+          code: 'TREE-R',
+          name: 'Retired',
+          isPostable: false,
+        }).expect(201)
+      ).body as { id: string };
+      const child = (
+        await post({
+          code: 'TREE-R-1',
+          name: 'Leaf',
+          parentCode: 'TREE-R',
+        }).expect(201)
+      ).body as { id: string };
+      await deactivate(child.id).expect(200);
+      await deactivate(header.id).expect(200);
+      const patch = (id: string) =>
+        request(app.getHttpServer() as App)
+          .patch(`/v1/ledger/accounts/${id}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ isActive: true });
+
+      const res = await patch(child.id).expect(422);
+      expect(res.body).toMatchObject({
+        code: 'VALIDATION_FAILED',
+        details: {
+          id: child.id,
+          reason: 'PARENT_INACTIVE',
+          parentId: header.id,
+        },
+      });
+      expect(
+        (await prisma.client.account.findFirst({ where: { id: child.id } }))!
+          .isActive,
+      ).toBe(false);
+
+      await patch(header.id).expect(200);
+      expect(
+        ((await patch(child.id).expect(200)).body as { isActive: boolean })
+          .isActive,
+      ).toBe(true);
+    });
+
     it('parentCode must name an active, live header (422 otherwise)', async () => {
       const header = (
         await post({ code: 'TREE-I', name: 'Idle', isPostable: false }).expect(

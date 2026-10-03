@@ -579,7 +579,14 @@ DELETE /ledger/journal-entries/:id      delete a DRAFT          (ACCOUNTANT+)
   `422 VALIDATION_FAILED` with message
   `"AR/AP control accounts can only be posted through sales invoices, purchase bills and payments"`
   and `details: { accountId, role }`. Hide those accounts from the manual-entry account
-  picker. Opening balances (`POST /ledger/opening-balances`) are still allowed on them.
+  picker. Opening balances (`POST /ledger/opening-balances`) are still allowed on them,
+  but only until the first sales invoice, purchase bill or payment exists (any status):
+  after that an AR/AP control line in opening balances → `422 VALIDATION_FAILED`
+  `details: { accountId, role, reason: 'DOCUMENTS_EXIST' }`.
+- **Only one live opening-balance entry.** Posting opening balances while an earlier
+  opening entry is still posted (not reversed) → `409 CONFLICT`
+  `details: { existingEntryId, entryRef }`. To correct opening balances, reverse that
+  entry (`POST /v1/ledger/journal-entries/:existingEntryId/reverse`) and post again.
 - **Draft create validates accounts exactly like post.** An unknown, soft-deleted,
   header (non-postable) or inactive `accountId` on `POST /ledger/journal-entries` (draft)
   → `422 INVALID_ACCOUNT` `{ accountId }` — the same error `/:id/post` gives (previously
@@ -1014,7 +1021,7 @@ no auth.
 - `GET    /v1/ledger/accounts/:id` · any · get one account
 - `GET    /v1/ledger/accounts/:id/balance` · any · account balance (`?asOf=`)
 - `POST   /v1/ledger/accounts` · ACCOUNTANT+ · create account. With `role: 'CASH'` the same rule as PATCH applies: the account must be a postable (`isPostable` not `false`), debit-normal `ASSET` → otherwise `422 VALIDATION_FAILED`. A singleton role (AR/AP control, retained earnings, opening-balance equity, tax expense) already held by another account → `409 CONFLICT` "That account role is already assigned" `{ role }` (also when two requests race for it). `parentCode` must name a live, **active**, non-postable header → otherwise `422 VALIDATION_FAILED` ("Parent account not found" / "… must be a non-postable header" / "Parent account must be active", `details.parentCode`)
-- `PATCH  /v1/ledger/accounts/:id` · ACCOUNTANT+ · update account `{name?, cashFlowCategory?, isActive?, role?}` (`isActive: false` follows the deactivate rules). `role` accepts **only `'CASH'`**: it marks an existing postable, debit-normal `ASSET` account with no role as a cash/bank account so payments can use it; any other role value — including `null` (a role cannot be cleared) — → `400`, a credit-normal/non-ASSET/header account or one that already holds a singleton role → `422 VALIDATION_FAILED`; an account used by any tax code (including a deleted one) → `422 VALIDATION_FAILED` `{ id, reason: "TAX_ACCOUNT" }`. Singleton roles (AR/AP control, retained earnings, opening-balance equity, tax expense) are create-only.
+- `PATCH  /v1/ledger/accounts/:id` · ACCOUNTANT+ · update account `{name?, cashFlowCategory?, isActive?, role?}` (`isActive: false` follows the deactivate rules; `isActive: true` under an inactive parent header → `422 VALIDATION_FAILED` `{ id, reason: "PARENT_INACTIVE", parentId }` — reactivate the header first). `role` accepts **only `'CASH'`**: it marks an existing postable, debit-normal `ASSET` account with no role as a cash/bank account so payments can use it; any other role value — including `null` (a role cannot be cleared) — → `400`, a credit-normal/non-ASSET/header account or one that already holds a singleton role → `422 VALIDATION_FAILED`; an account used by any tax code (including a deleted one) → `422 VALIDATION_FAILED` `{ id, reason: "TAX_ACCOUNT" }`. Singleton roles (AR/AP control, retained earnings, opening-balance equity, tax expense) are create-only.
 - `POST   /v1/ledger/accounts/:id/deactivate` · ADMIN · soft-deactivate account. Singleton system accounts (non-null `role` other than `CASH`) → `422`. A `CASH` account → `422` unless its balance is zero (`details.balance`) **and** another active, postable `CASH` account remains (`details.otherActiveCashAccounts: 0`). A reversal or document void may still post to an already-deactivated `CASH` account (it only undoes an earlier movement), which can leave it with a non-zero balance; move that balance with a manual entry after reactivating it (`PATCH { isActive: true }`)
 - `DELETE /v1/ledger/accounts/:id` · ADMIN · soft-delete account (same system-account / `CASH` rules as deactivate; accounts with posted lines → `422`). A header with any live (not deleted) child account → `422 VALIDATION_FAILED` `{ id, reason: "HAS_CHILDREN", children }` — delete the children first (or deactivate the header instead). Deactivating (`POST …/deactivate` or `PATCH { isActive: false }`) a header with **active** children → the same `422` (`reason: "HAS_CHILDREN"`) — deactivate the children first
 
@@ -1026,7 +1033,7 @@ no auth.
 - `POST   /v1/ledger/journal-entries/:id/post` · APPROVER/ADMIN · post draft · **requires `Idempotency-Key`**
 - `POST   /v1/ledger/journal-entries/:id/reverse` · APPROVER/ADMIN · reverse a posted MANUAL/OPENING entry (optional body `{ date }`: original date ≤ date ≤ max(today WIB, original date) — `422 { date, today[, originalDate] }`; document-owned entries → `422`) · **requires `Idempotency-Key`**
 - `DELETE /v1/ledger/journal-entries/:id` · ACCOUNTANT+ · delete draft
-- `POST   /v1/ledger/opening-balances` · ADMIN · post opening balances · **requires `Idempotency-Key`**
+- `POST   /v1/ledger/opening-balances` · ADMIN · post opening balances · **requires `Idempotency-Key`** · one live opening entry at a time (`409 CONFLICT { existingEntryId, entryRef }`); AR/AP control lines only before the first document (`422 { accountId, role, reason: "DOCUMENTS_EXIST" }`)
 
 ### Ledger — periods & trial balance
 

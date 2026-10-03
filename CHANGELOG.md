@@ -47,6 +47,15 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- **Opening balances have guard rails** — `POST /v1/ledger/opening-balances` is now
+  `409 CONFLICT { existingEntryId, entryRef }` while another opening entry is posted
+  (reverse it to re-enter), and an AR/AP control line is `422 { accountId, role,
+  reason: "DOCUMENTS_EXIST" }` once any sales invoice, purchase bill or payment
+  exists, so a post-go-live opening can no longer drift the AR/AP subledger from its
+  control account. Serialized in the post transaction by advisory lock `71_004_001`.
+  Reactivating an account (`PATCH { isActive: true }`) under an inactive parent
+  header is now `422 { id, reason: "PARENT_INACTIVE", parentId }` (taken under the
+  same row locks as deactivation).
 - **Tax codes no longer stack** — a document line may carry at most one PPN code
   and one PPh code (e.g. `PPH23-PAY` + `PPH42-PAY` on one line → 422).
 - **Final PPh 4(2) is an expense** — the seeded `PPH42-PRE` now posts to the new

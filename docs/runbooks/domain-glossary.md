@@ -49,7 +49,10 @@ The master list of all accounts you can post to. Each account has a `code`, `nam
 lines (header accounts are for grouping). A child's `parentCode` must name a live,
 active header (read `FOR SHARE` in the create tx); a header with live children cannot
 be deleted, nor deactivated while any child is active (`422` `details.reason
-'HAS_CHILDREN'`, `AccountsService.lockForRetire`).
+'HAS_CHILDREN'`, `AccountsService.lockForRetire`). The mirror rule: a child cannot be
+reactivated (`PATCH { isActive: true }`) under an inactive header (`422` `details.reason
+'PARENT_INACTIVE'`, `{ id, parentId }`; child `FOR UPDATE` then header `FOR SHARE`,
+`AccountsService.lockForReactivate`).
 - `Account` model in `prisma/schema.prisma`; postable/active checks in
   `PostingService.assertPostableAccounts` (`src/ledger/posting/posting.service.ts`).
 
@@ -130,6 +133,12 @@ rule keys off `posted_at`, not `status`.
   not just `JournalService.postOpeningBalances` — reject `REVENUE`/`EXPENSE` accounts
   (`422 { accountId, reason: 'PNL_IN_OPENING' }`); mid-year YTD P&L is entered as a
   `MANUAL` journal.
+- **One live opening entry.** A new `OPENING` post while another `OPENING` entry is
+  `POSTED` (not reversed) → `409 CONFLICT { existingEntryId, entryRef }`. To correct the
+  opening balances, reverse the existing entry (`POST /ledger/journal-entries/:id/reverse`)
+  and post the corrected set. Checked in the post tx by
+  `PostingService.assertOpeningAllowedInTx` under advisory lock `71_004_001`
+  (`OPENING_LOCK_KEY`), so two concurrent opening posts can't both pass.
 - The in-tx period re-check throws the same `ClosedPeriodError` (`409 CLOSED_PERIOD`) as
   the pre-tx check. Direct post / postDraft / reversal transactions run with
   `POSTING_TX_OPTIONS` (`maxWait 5s`, `timeout 20s`); a breach is Prisma `P2028` → `409
@@ -239,6 +248,7 @@ keep new keys out of these ranges):
 | `71_001_001` (`USER_ADMIN_LOCK_KEY`) | exclusive | `UserAdminService` update/remove | admin-pool mutations (last-admin rail) |
 | `71_002_001` (`PERIOD_GENERATION_LOCK_KEY`) | exclusive | `generatePeriods`, `CompanyService.update` (start-month change) | period generation vs start-month change |
 | `71_003_001` (`CASH_RETIRE_LOCK_KEY`) | exclusive | `AccountsService` deactivate/delete of a `CASH` account | CASH retirements vs each other (last-CASH rail) |
+| `71_004_001` (`OPENING_LOCK_KEY`) | exclusive | `PostingService.assertOpeningAllowedInTx` (every `OPENING` post; taken first, before the fiscal-year lock) | opening posts vs each other (one-live-opening + AR/AP-before-documents rails) |
 
 ### Closed-year guard
 A closed fiscal year rejects new posts, draft-posts, reversals, and document voids until
@@ -281,6 +291,11 @@ the same total from the subledger and must reconcile to the control balance.
   lump opening AR/AP balance has no subledger documents behind it, so aging will **not**
   tie to the control balance by that amount. To keep aging == control, enter open
   customer/vendor balances at go-live as dated (backdated) invoices/bills instead.
+  The lump-sum route is only open **before the first document**: once any sales
+  invoice, purchase bill or payment exists (any status; a soft-deleted draft doesn't
+  count), an `OPENING` line on `AR_CONTROL` / `AP_CONTROL` → `422 { accountId, role,
+  reason: 'DOCUMENTS_EXIST' }` — after go-live a control-account move with no document
+  behind it would drift the subledger↔control reconciliation.
 
 ### Sales invoice / Accounts receivable (faktur penjualan / piutang usaha — AR)
 What customers owe you. A `SalesInvoice` has lines, computed `subtotal` / `taxTotal` /

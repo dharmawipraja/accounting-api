@@ -9,6 +9,8 @@ import { CompanyService } from '../src/company/company.service';
 import { AuthService } from '../src/auth/auth.service';
 import { UsersService } from '../src/users/users.service';
 import { PostingService } from '../src/ledger/posting/posting.service';
+import { BusinessPartnersService } from '../src/invoicing/business-partners.service';
+import { SalesInvoicesService } from '../src/invoicing/sales-invoices.service';
 import { bootstrapTestApp, tomorrowWib, wibDayPlus } from './e2e-helpers';
 
 describe('JournalEntries (e2e)', () => {
@@ -68,6 +70,15 @@ describe('JournalEntries (e2e)', () => {
   }, 120_000);
 
   afterAll(() => cleanup());
+
+  /** One live OPENING entry at a time: reverse the current one (if any) so
+   *  a test can post a fresh opening. */
+  const reverseLiveOpening = async () => {
+    const live = await prisma.client.journalEntry.findFirst({
+      where: { sourceType: 'OPENING', status: 'POSTED' },
+    });
+    if (live) await app.get(PostingService).reverse(live.id, 'admin');
+  };
 
   const balancedBody = (date = '2026-02-10') => ({
     date,
@@ -410,6 +421,7 @@ describe('JournalEntries (e2e)', () => {
   });
 
   it('balanced opening balances produce no equity plug line (200)', async () => {
+    await reverseLiveOpening();
     // L-14: JournalService.postOpeningBalances — plug is zero, no OBE line emitted
     const res = await request(app.getHttpServer() as App)
       .post('/v1/ledger/opening-balances')
@@ -563,6 +575,7 @@ describe('JournalEntries (e2e)', () => {
     });
 
     it('reverses an OPENING entry via the journal endpoint (200)', async () => {
+      await reverseLiveOpening();
       const ob = await request(app.getHttpServer() as App)
         .post('/v1/ledger/opening-balances')
         .set('Authorization', `Bearer ${adminToken}`)
@@ -660,6 +673,7 @@ describe('JournalEntries (e2e)', () => {
     });
 
     it('still allows OPENING balances on AR/AP control (200)', async () => {
+      await reverseLiveOpening();
       const res = await request(app.getHttpServer() as App)
         .post('/v1/ledger/opening-balances')
         .set('Authorization', `Bearer ${adminToken}`)
@@ -766,6 +780,110 @@ describe('JournalEntries (e2e)', () => {
         { accountId: modalId, credit: '90' },
       ]).expect(201);
       expect((res.body as { status: string }).status).toBe('DRAFT');
+    });
+  });
+
+  describe('opening balances guard rails (one live entry; AR/AP only before documents)', () => {
+    const postOpening = (
+      balances: Record<string, string>[],
+      date = '2026-01-01',
+    ) =>
+      request(app.getHttpServer() as App)
+        .post('/v1/ledger/opening-balances')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({ date, balances });
+    const kasOnly = () => [{ accountId: kasId, debit: '1000' }];
+
+    it('refuses a second opening entry while one is live (409, details.existingEntryId); reversing it re-opens the slot', async () => {
+      await reverseLiveOpening();
+      const first = (await postOpening(kasOnly()).expect(200)).body as {
+        id: string;
+        entryRef: string;
+      };
+      const before = await prisma.client.journalEntry.count({
+        where: { sourceType: 'OPENING' },
+      });
+      const res = await postOpening(kasOnly()).expect(409);
+      expect(res.body).toMatchObject({
+        code: 'CONFLICT',
+        details: { existingEntryId: first.id, entryRef: first.entryRef },
+      });
+      expect(
+        await prisma.client.journalEntry.count({
+          where: { sourceType: 'OPENING' },
+        }),
+      ).toBe(before);
+
+      await request(app.getHttpServer() as App)
+        .post(`/v1/ledger/journal-entries/${first.id}/reverse`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('Idempotency-Key', randomUUID())
+        .expect(200);
+      await postOpening(kasOnly()).expect(200);
+    });
+
+    it('two concurrent opening posts: exactly one wins, the other is 409', async () => {
+      await reverseLiveOpening();
+      const codes = (
+        await Promise.all([postOpening(kasOnly()), postOpening(kasOnly())])
+      ).map((r) => r.status);
+      expect(codes.sort()).toEqual([200, 409]);
+      expect(
+        await prisma.client.journalEntry.count({
+          where: { sourceType: 'OPENING', status: 'POSTED' },
+        }),
+      ).toBe(1);
+    });
+
+    // Last in the spec: it creates a sales invoice, which permanently closes
+    // the AR/AP opening window for this database.
+    it('refuses AR/AP control lines once any document exists (422 DOCUMENTS_EXIST); other accounts still open', async () => {
+      const arId = (await prisma.client.account.findFirst({
+        where: { role: 'AR_CONTROL' },
+      }))!.id;
+      const customer = await app.get(BusinessPartnersService).create({
+        code: 'CUST-OPENING-1',
+        name: 'Pelanggan Opening',
+        isCustomer: true,
+      });
+      const acct = (await prisma.client.user.findFirst({
+        where: { email: 'accountant@journal.test' },
+      }))!;
+      const revenueId = (await prisma.client.account.findFirst({
+        where: { code: '4-1000' },
+      }))!.id;
+      // A DRAFT is enough: "any status".
+      await app.get(SalesInvoicesService).createDraft({
+        partnerId: customer.id,
+        date: new Date('2026-02-01'),
+        dueDate: new Date('2026-03-01'),
+        description: 'First document',
+        lines: [
+          {
+            description: 'Jasa',
+            accountId: revenueId,
+            quantity: '1',
+            unitPrice: '1000',
+            taxCodeIds: [],
+          },
+        ],
+        createdBy: acct.id,
+      });
+
+      await reverseLiveOpening();
+      const res = await postOpening([{ accountId: arId, debit: '900' }]).expect(
+        422,
+      );
+      expect(res.body).toMatchObject({
+        code: 'VALIDATION_FAILED',
+        details: {
+          accountId: arId,
+          role: 'AR_CONTROL',
+          reason: 'DOCUMENTS_EXIST',
+        },
+      });
+      await postOpening(kasOnly()).expect(200);
     });
   });
 });

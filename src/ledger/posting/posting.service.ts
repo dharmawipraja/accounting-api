@@ -7,6 +7,7 @@ import { Money } from '../../common/money/money';
 import {
   ClosedPeriodError,
   ClosedYearError,
+  ConflictDomainError,
   InvalidAccountError,
   NotFoundDomainError,
   SegregationOfDutiesError,
@@ -36,6 +37,12 @@ export type { LedgerTx };
  *  (lock waits behind a year close / period close / concurrent post). A breach
  *  surfaces as Prisma P2028 → 409 CONFLICT { retryable: true } (rolled back). */
 export const POSTING_TX_OPTIONS = { maxWait: 5000, timeout: 20000 } as const;
+
+/** Transaction-scoped advisory lock serializing OPENING posts, so two
+ *  concurrent opening posts can't both pass the one-live-opening-entry check.
+ *  Distinct from the other 71_00x_001 keys and the fiscal-year keys (see the
+ *  domain-glossary.md lock table). */
+export const OPENING_LOCK_KEY = 71_004_001;
 
 /** Module-private mint key — external code cannot import it, so it cannot
  *  satisfy the token constructors' first parameter. */
@@ -174,6 +181,8 @@ export class PostingService {
     prepared: PreparedPosting,
   ): Promise<JournalEntry> {
     const { input, postedBy, periodId, fiscalYear } = prepared;
+    if (input.sourceType === 'OPENING')
+      await this.assertOpeningAllowedInTx(tx, input.lines);
     const { entryNumber, entryRef } = await this.stampPostedInTx(
       tx,
       periodId,
@@ -213,6 +222,56 @@ export class PostingService {
         },
       },
     });
+  }
+
+  /** Opening-balance guard rails, checked under OPENING_LOCK_KEY — taken
+   *  first, ahead of stampPostedInTx's year advisory → period → accounts →
+   *  sequence chain (like a document's row lock); nothing else takes it, so
+   *  it cannot deadlock against close/reopen or other posts.
+   *  1. At most ONE live opening entry: another POSTED OPENING entry → 409
+   *     `{ existingEntryId, entryRef }`; reversing it re-opens the slot.
+   *  2. AR/AP control lines only before the first sales invoice, purchase bill
+   *     or payment (any status; soft-deleted drafts don't count): after that a
+   *     lump-sum control balance would have no subledger document behind it →
+   *     422 `{ accountId, role, reason: 'DOCUMENTS_EXIST' }`.
+   *  ponytail: (2) does not lock the document tables — a document created
+   *  concurrently with the go-live opening post can still interleave; the
+   *  window is the go-live moment only. */
+  private async assertOpeningAllowedInTx(
+    tx: LedgerTx,
+    lines: PostLineInput[],
+  ): Promise<void> {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${OPENING_LOCK_KEY})`;
+    const [live] = await tx.$queryRaw<
+      { id: string; entry_ref: string | null }[]
+    >`
+      SELECT id, entry_ref FROM journal_entries
+      WHERE source_type = 'OPENING' AND status = 'POSTED' AND deleted_at IS NULL
+      ORDER BY posted_at LIMIT 1`;
+    if (live)
+      throw new ConflictDomainError(
+        'Opening balances are already posted; reverse the existing opening entry before entering new ones',
+        { existingEntryId: live.id, entryRef: live.entry_ref },
+      );
+    const ids = [...new Set(lines.map((l) => l.accountId))];
+    const [control] = await tx.$queryRaw<{ id: string; role: string }[]>`
+      SELECT id, role::text AS role FROM accounts
+      WHERE id = ANY(${ids}::text[]) AND role IN ('AR_CONTROL', 'AP_CONTROL')
+      ORDER BY id LIMIT 1`;
+    if (!control) return;
+    const [{ exists }] = await tx.$queryRaw<{ exists: boolean }[]>`
+      SELECT EXISTS (SELECT 1 FROM sales_invoices WHERE deleted_at IS NULL)
+          OR EXISTS (SELECT 1 FROM purchase_bills WHERE deleted_at IS NULL)
+          OR EXISTS (SELECT 1 FROM payments WHERE deleted_at IS NULL) AS exists`;
+    if (exists)
+      throw new ValidationFailedError(
+        'AR/AP control accounts can only take opening balances before the first sales invoice, purchase bill or payment; enter open items as documents instead',
+        {
+          accountId: control.id,
+          role: control.role,
+          reason: 'DOCUMENTS_EXIST',
+        },
+      );
   }
 
   /** The in-transaction posted-entry choke point: re-assert the period/year is still

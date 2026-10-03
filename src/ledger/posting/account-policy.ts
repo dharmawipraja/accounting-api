@@ -30,7 +30,9 @@ export const UNRESTRICTED_POLICY: AccountPolicy = { forbiddenRoles: [] };
 
 /** Opening balances are balance-sheet positions only: a REVENUE/EXPENSE
  *  account is a 422 `PNL_IN_OPENING` (mid-year YTD P&L goes in as a MANUAL
- *  journal). Role-unrestricted — go-live may seed AR/AP control. Enforced by
+ *  journal). Role-unrestricted — go-live may seed AR/AP control, but only
+ *  before the first document and only as the one live opening entry (both
+ *  checked in-tx by PostingService.assertOpeningAllowedInTx). Enforced by
  *  PostingService for every OPENING post, not only the endpoint. Account type
  *  is immutable, so the pre-tx check cannot go stale. */
 export const OPENING_POLICY: AccountPolicy = {

@@ -310,11 +310,12 @@ export class AccountsService implements OnModuleInit {
         ? raw
         : { ...raw, name: normalizeDisplayName(raw.name) };
     const { role, ...data } = input;
-    if (data.isActive === false || role !== undefined) {
+    if (data.isActive !== undefined || role !== undefined) {
       return this.prisma.transaction(async (tx) => {
         // A deactivation — same lock + role rule as POST :id/deactivate.
         if (data.isActive === false)
           await this.lockForRetire(tx, id, 'deactivate');
+        if (data.isActive === true) await this.lockForReactivate(tx, id);
         if (role !== undefined) await this.lockCashCandidate(tx, id);
         return tx.account.update({
           where: { id },
@@ -324,6 +325,28 @@ export class AccountsService implements OnModuleInit {
     }
     await this.findById(id);
     return this.prisma.client.account.update({ where: { id }, data });
+  }
+
+  /** The mirror of HAS_CHILDREN on deactivate: FOR UPDATE the live account
+   *  (404 if missing/deleted), then its parent header FOR SHARE — a concurrent
+   *  deactivation of that header (FOR UPDATE in lockForRetire, which counts
+   *  ACTIVE children) serializes with this: either it sees this child active
+   *  (422 HAS_CHILDREN) or this sees the header inactive (422 PARENT_INACTIVE). */
+  private async lockForReactivate(tx: LedgerTx, id: string): Promise<void> {
+    const rows = await tx.$queryRaw<{ parent_id: string | null }[]>`
+      SELECT parent_id FROM accounts
+      WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
+    if (rows.length === 0)
+      throw new NotFoundDomainError('Account not found', { id });
+    const parentId = rows[0].parent_id;
+    if (!parentId) return;
+    const [parent] = await tx.$queryRaw<{ is_active: boolean }[]>`
+      SELECT is_active FROM accounts WHERE id = ${parentId} FOR SHARE`;
+    if (parent && !parent.is_active)
+      throw new ValidationFailedError(
+        'Cannot reactivate an account under an inactive parent header; reactivate the header first',
+        { id, reason: 'PARENT_INACTIVE', parentId },
+      );
   }
 
   /** CASH may be added to an existing account (e.g. a bank account created
