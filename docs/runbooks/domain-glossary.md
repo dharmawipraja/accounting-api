@@ -349,7 +349,7 @@ AR/AP (`buildPaymentLines`, `src/invoicing/payment-targets.ts`).
   application is live on `[date, reversed_on)`; reversing it
   (`POST /payments/:id/applications/:applicationId/reverse`) reverses its journal and
   gives the amount back to the document and the payment.
-- **Refund** (`POST /payments/:id/refunds`, `PaymentsService.refundCredit`; also
+- **Refund** (`POST /payments/:id/refunds`, `CreditApplicationService.refundCredit`; also
   `/sales-credit-notes/:id/refunds`, `/purchase-debit-notes/:id/refunds`) pays unapplied
   credit back in cash: a `PaymentApplication` row whose target is `cash_account_id` (a
   CASH-role account) instead of a document — CHECK `payment_applications_one_target`
@@ -453,7 +453,7 @@ shared `TaxedDocumentService` through one `DocumentDescriptor` per kind plus
   credit, `unappliedAmount` on the note. The split is planned pre-lock and must be
   unchanged under the original's lock, else the post restarts (bounded → 409).
 - **Partner credit** is applied exactly like a payment advance
-  (`PaymentsService.applyCredit` / `reverseCreditApplication`, `CreditSource`):
+  (`CreditApplicationService.applyCredit` / `reverseCreditApplication`, `CreditSource`):
   `POST /sales-credit-notes/:id/apply` (or `/purchase-debit-notes/…`) writes a
   `PaymentApplication` row with `sales_credit_note_id` / `purchase_debit_note_id`
   (`payment_id` NULL; CHECK exactly one source, a credit note only onto invoices, a debit

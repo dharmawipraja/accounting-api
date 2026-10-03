@@ -160,8 +160,6 @@ export interface DocumentDescriptor<
   sourceType: TaxedSourceType;
   documentType: string; // 'INV' | 'BILL' | 'CN' | 'DN'
   table: TaxedTable;
-  /** This document type's FK column on payment_allocations (invoices/bills). */
-  allocationColumn?: 'sales_invoice_id' | 'purchase_bill_id';
   /** Invoices/bills: the notes that return part of them (void guard). */
   notes?: {
     table: 'sales_credit_notes' | 'purchase_debit_notes';

@@ -2,6 +2,9 @@ import { applyDecorators } from '@nestjs/common';
 import { Transform } from 'class-transformer';
 import { Matches } from 'class-validator';
 
+/** A stored NPWP: exactly 16 digits. */
+export const NPWP_FORMAT = /^\d{16}$/;
+
 /**
  * NPWP as stored: its 16 digits (the Coretax TIN). Input may carry the usual
  * punctuation ('01.234.567.8-901.000') — '.', '-' and white space are
@@ -23,7 +26,7 @@ export function Npwp(): PropertyDecorator {
         ? normalizeNpwp(value)
         : value,
     ),
-    Matches(/^\d{16}$/, {
+    Matches(NPWP_FORMAT, {
       message:
         'npwp must be a 16-digit NPWP (a legacy 15-digit NPWP is accepted and stored as 0 + 15 digits)',
     }),

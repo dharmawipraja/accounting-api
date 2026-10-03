@@ -393,7 +393,8 @@ missing). Singleton roles (e.g. `AR_CONTROL`, `AP_CONTROL`, `RETAINED_EARNINGS`,
 ### Other shared seams
 - **`listPaginated`** (`src/common/pagination/paginated.ts`) — the offset-pagination
   + optional fuzzy-`?q=` list seam returning `{ data, total, limit, offset }`.
-  Callers supply `page` / `search` / `hydrate` / `present` closures.
+  Callers supply `search` / `present` and either a Prisma `model` + `where` /
+  `orderBy` (plain rows) or their own `page` / `hydrate` closures.
 - **`serializeMoney(obj, fields)`** (`src/common/money/serialize-money.ts`) — the
   single home for the Decimal→fixed-4dp-string cast in presenters.
 - **`DocumentPostingService`** (`src/invoicing/document-posting.service.ts`) — see §4.

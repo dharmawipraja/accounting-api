@@ -59,8 +59,9 @@ interface ListQuery {
 
 /**
  * The single writer/reader of a "taxed trade document" (sales invoice /
- * purchase bill): documents that run through the tax engine and post to an
- * AR/AP control account. Stateless — every method takes a typed
+ * purchase bill / sales credit note / purchase debit note): documents that
+ * run through the tax engine and post to an AR/AP control account (void() is
+ * invoices / bills only — notes void through NotesService). Stateless — every method takes a typed
  * DocumentDescriptor. Owns validation ordering, messages, line Money-math,
  * the draft lock, and orchestration; the descriptor supplies the typed
  * per-model Prisma calls.

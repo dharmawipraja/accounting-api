@@ -1,5 +1,6 @@
 import { Decimal } from 'decimal.js';
 import { renderXmlDocument, XmlNode } from './xml';
+import { NPWP_FORMAT } from '../common/validators/npwp';
 
 /**
  * Pure core of the Coretax "Faktur Pajak Keluaran" XML import file
@@ -255,8 +256,6 @@ export interface CoretaxProblem {
   field: string;
   message: string;
 }
-
-export const NPWP_FORMAT = /^\d{16}$/;
 
 /** Seller master data every file needs. */
 export function sellerProblems(s: CoretaxSeller): CoretaxProblem[] {

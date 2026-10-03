@@ -58,7 +58,6 @@ export class PurchaseBillsService {
       sourceType: 'PURCHASE_BILL',
       documentType: 'BILL',
       table: 'purchase_bills',
-      allocationColumn: 'purchase_bill_id',
       notes: { table: 'purchase_debit_notes', noun: 'debit note' },
       trigramColumns: ['bill_ref', 'vendor_invoice_no', 'description'],
       model: this.prisma.client.purchaseBill,

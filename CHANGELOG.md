@@ -106,6 +106,9 @@ All notable changes to this project are documented here. The format is based on
 - Runbooks: the migration-folder naming rule no longer hard-codes the newest
   folder; new recovery section for the Coretax NPWP migration abort (preview query
   + steps) in database-and-migrations.md, linked from deploy.md.
+- Internal: de-duplication refactor, no API change — one note-kind factory, model-based
+  `listPaginated`, `lockLiveRow`, `resolveVoidDate`, shared line/application
+  presenters, and the credit engine in its own `CreditApplicationService`.
 
 ## [1.2.0] - 2026-10-03
 

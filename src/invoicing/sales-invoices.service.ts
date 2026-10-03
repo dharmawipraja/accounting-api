@@ -69,7 +69,6 @@ export class SalesInvoicesService {
       sourceType: 'SALES_INVOICE',
       documentType: 'INV',
       table: 'sales_invoices',
-      allocationColumn: 'sales_invoice_id',
       notes: { table: 'sales_credit_notes', noun: 'credit note' },
       trigramColumns: ['invoice_ref', 'description'],
       model: this.prisma.client.salesInvoice,
