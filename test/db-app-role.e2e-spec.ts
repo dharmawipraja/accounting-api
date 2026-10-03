@@ -317,6 +317,7 @@ describe('DB app role — accounting_app is least-privilege and runs the app (e2
     'purchase_bills',
     'payments',
     'payment_allocations',
+    'payment_applications',
     'document_sequences',
     'year_end_closings',
     'audit_log',

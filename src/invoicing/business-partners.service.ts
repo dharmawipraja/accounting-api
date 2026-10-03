@@ -28,6 +28,9 @@ interface OpenItemCounts {
   outstanding: number;
   /** Live DRAFT RECEIPT (customer) / DISBURSEMENT (vendor) payments. */
   draftPayments: number;
+  /** POSTED RECEIPT / DISBURSEMENT payments with an unapplied (advance)
+   *  balance — the partner's open credit. */
+  unappliedPayments: number;
 }
 
 @Injectable()
@@ -203,7 +206,13 @@ export class BusinessPartnersService {
            WHERE partner_id = ${id} AND deleted_at IS NULL AND status = 'DRAFT'
              AND ((${customer} AND direction = 'RECEIPT')
                OR (${vendor} AND direction = 'DISBURSEMENT')))
-          AS "draftPayments"`;
+          AS "draftPayments",
+        (SELECT count(*)::int FROM payments
+           WHERE partner_id = ${id} AND deleted_at IS NULL AND status = 'POSTED'
+             AND unapplied_amount > 0
+             AND ((${customer} AND direction = 'RECEIPT')
+               OR (${vendor} AND direction = 'DISBURSEMENT')))
+          AS "unappliedPayments"`;
     return open;
   }
 
@@ -215,9 +224,15 @@ export class BusinessPartnersService {
     role: PartnerRole,
   ): Promise<void> {
     const open = await this.openItems(tx, id, [role]);
-    if (open.drafts + open.outstanding + open.draftPayments > 0)
+    if (
+      open.drafts +
+        open.outstanding +
+        open.draftPayments +
+        open.unappliedPayments >
+      0
+    )
       throw new ValidationFailedError(
-        `Cannot remove the ${role === 'CUSTOMER' ? 'customer' : 'vendor'} role while it has open items (draft documents or payments, or posted documents with an outstanding balance); settle, void or delete them first`,
+        `Cannot remove the ${role === 'CUSTOMER' ? 'customer' : 'vendor'} role while it has open items (draft documents or payments, posted documents with an outstanding balance, or posted payments with an unapplied balance); settle, void or delete them first`,
         {
           id,
           reason: 'OPEN_ITEMS',
@@ -225,6 +240,7 @@ export class BusinessPartnersService {
           draftDocuments: open.drafts,
           outstandingDocuments: open.outstanding,
           draftPayments: open.draftPayments,
+          unappliedPayments: open.unappliedPayments,
         },
       );
   }
@@ -249,15 +265,22 @@ export class BusinessPartnersService {
       if (rows.length === 0)
         throw new NotFoundDomainError('Partner not found', { id });
       const open = await this.openItems(tx, id, ['CUSTOMER', 'VENDOR']);
-      if (open.drafts + open.outstanding + open.draftPayments > 0)
+      if (
+        open.drafts +
+          open.outstanding +
+          open.draftPayments +
+          open.unappliedPayments >
+        0
+      )
         throw new ValidationFailedError(
-          'Cannot delete a partner with open items (draft documents or payments, or posted documents with an outstanding balance); settle, void or delete them first, or deactivate the partner',
+          'Cannot delete a partner with open items (draft documents or payments, posted documents with an outstanding balance, or posted payments with an unapplied balance); settle, void or delete them first, or deactivate the partner',
           {
             id,
             reason: 'OPEN_ITEMS',
             draftDocuments: open.drafts,
             outstandingDocuments: open.outstanding,
             draftPayments: open.draftPayments,
+            unappliedPayments: open.unappliedPayments,
           },
         );
       await tx.businessPartner.update({

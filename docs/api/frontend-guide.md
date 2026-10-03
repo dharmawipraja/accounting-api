@@ -769,8 +769,11 @@ already closed: the reversal entry is posted on that date. Rules:
 
 ```
 POST /payments            create DRAFT, direction = RECEIPT | DISBURSEMENT,
-                          with full allocation across invoices/bills   (ACCOUNTANT+)
+                          optional amount + allocations to invoices/bills (ACCOUNTANT+)
 POST /payments/:id/post   post the payment                            (APPROVER/ADMIN)
+POST /payments/:id/apply  apply unapplied (advance) amount to documents (APPROVER/ADMIN)
+POST /payments/:id/applications/:applicationId/reverse
+                          reverse one application                     (APPROVER/ADMIN)
 POST /payments/:id/void   void a posted payment                       (APPROVER/ADMIN)
 DELETE /payments/:id      delete a DRAFT                               (ACCOUNTANT+)
 ```
@@ -778,8 +781,53 @@ DELETE /payments/:id      delete a DRAFT                               (ACCOUNTA
 Payment void takes the same optional `{ "date" }` body and rules as invoice/bill void
 (above); allocations are unwound and `voidedOn` is returned.
 
-A payment must allocate its full amount against open documents. RECEIPT = money in
-(against AR), DISBURSEMENT = money out (against AP).
+RECEIPT = money in (against AR), DISBURSEMENT = money out (against AP).
+
+**Advances / unapplied payments (new).** `amount` is optional: omitted, it is the sum of
+the allocations (a fully allocated payment, exactly as before). When `amount` is larger
+than the allocations — including **no allocations at all** (`allocations` may be `[]` or
+omitted) — the rest is an **advance**: it posts to *Uang Muka Pelanggan* (2-1300,
+liability, receipts) or *Uang Muka Pembelian* (1-1600, asset, disbursements) instead of
+AR/AP, and the payment's `unappliedAmount` shows it. Overpaying an invoice = allocate its
+outstanding, the rest stays unapplied (an allocation still may not exceed a document's
+outstanding). Errors on create: allocations > `amount` → `422 { amount, allocated }`;
+neither a positive `amount` nor an allocation → `422`.
+
+| Flow | Journal |
+| --- | --- |
+| RECEIPT, partly allocated | Dr Kas `amount` / Cr Piutang allocated, Cr Uang Muka Pelanggan unapplied |
+| DISBURSEMENT, partly allocated | Dr Utang allocated, Dr Uang Muka Pembelian unapplied / Cr Kas `amount` |
+| apply (receipt) | Dr Uang Muka Pelanggan / Cr Piutang — one entry per allocation |
+| apply (disbursement) | Dr Utang / Cr Uang Muka Pembelian — one entry per allocation |
+
+`POST /payments/:id/apply` `{ "date": "YYYY-MM-DD", "allocations": [{ "salesInvoiceId" |
+"purchaseBillId", "amount" }] }` (requires `Idempotency-Key`; 1–100 allocations) moves
+unapplied amount onto POSTED invoices (receipt) / bills (disbursement) of the same
+partner. `date` must be on/after the payment date (`422 { id, date, paymentDate }`) and
+each document date, in an open period/year (`409` otherwise). Allocation rules are those
+of create (same partner, POSTED, within outstanding, backdated-void rule). More than
+`unappliedAmount` → `422 { id, unappliedAmount, requested }` (also when a concurrent apply
+won). SoD: the entry's creator is the payment's creator, so with segregation of duties on,
+whoever created the payment cannot apply it (`403`). Each application is listed in the
+payment's `applications` (`{ id, salesInvoiceId, purchaseBillId, amount, date,
+journalEntryId, createdBy, reversedOn, reversedBy }`).
+
+`POST /payments/:id/applications/:applicationId/reverse` (optional `{ "date" }`, default
+the application date; not before it, not after today WIB) reverses that application's
+journal entry and returns the amount to the document's outstanding and to
+`unappliedAmount`. Twice → `422`.
+
+**Void with applications:** a payment with a live (unreversed) application cannot be
+voided → `422 { id, reason: "HAS_APPLICATIONS", applications }`; reverse them first. The
+void date must also be on/after the latest application reversal date → `422 { id, date,
+applicationReversedOn }`. A voided payment shows `unappliedAmount: "0.0000"`.
+
+**Open credit per partner:** `GET /payments?partnerId=…&unapplied=true` lists the POSTED
+payments with an unapplied balance (`unapplied=false` the rest). Advances are **not**
+AR/AP, so they never appear in aging; a partner with an unapplied advance cannot be
+deleted (`OPEN_ITEMS` with `unappliedPayments`). **PPN on advances (faktur uang muka) is
+out of scope:** no tax is computed on an advance; tax is on the invoice it is applied to.
+The journal preview (`nature: "PAYMENT"`) covers fully allocated payments only.
 
 `cashAccountId` must first be an existing, postable (not a header) and **active**
 account — otherwise, on create, on `/post` and in the journal preview,
@@ -1137,11 +1185,13 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing on the last page).
 
 ### Payments
 
-- `GET    /v1/payments` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `q, partnerId, direction, status, limit, offset`)
+- `GET    /v1/payments` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `q, partnerId, direction, status, unapplied, limit, offset`; `unapplied=true` → POSTED payments with `unappliedAmount > 0`)
 - `GET    /v1/payments/:id` · any · get one
-- `POST   /v1/payments` · ACCOUNTANT+ · create draft (RECEIPT/DISBURSEMENT + allocations) · **requires `Idempotency-Key`**
+- `POST   /v1/payments` · ACCOUNTANT+ · create draft (RECEIPT/DISBURSEMENT, optional `amount` + allocations; excess = advance) · **requires `Idempotency-Key`**
 - `POST   /v1/payments/:id/post` · APPROVER/ADMIN · post · **requires `Idempotency-Key`**
-- `POST   /v1/payments/:id/void` · APPROVER/ADMIN · void (optional body `{ date }`: document date ≤ date ≤ max(today WIB, document date) — `422 { date, today[, originalDate] }`) · **requires `Idempotency-Key`** · a payment whose partner has been deleted → `422 VALIDATION_FAILED` `{ id, partnerId, reason: 'PARTNER_DELETED' }` (voiding would reopen a balance on a deleted partner)
+- `POST   /v1/payments/:id/apply` · APPROVER/ADMIN · apply unapplied amount `{ date, allocations }` · **requires `Idempotency-Key`**
+- `POST   /v1/payments/:id/applications/:applicationId/reverse` · APPROVER/ADMIN · reverse one application (optional `{ date }`) · **requires `Idempotency-Key`**
+- `POST   /v1/payments/:id/void` · APPROVER/ADMIN · void (optional body `{ date }`: document date ≤ date ≤ max(today WIB, document date) — `422 { date, today[, originalDate] }`) · **requires `Idempotency-Key`** · a payment whose partner has been deleted → `422 VALIDATION_FAILED` `{ id, partnerId, reason: 'PARTNER_DELETED' }` (voiding would reopen a balance on a deleted partner) · live applications → `422 { id, reason: 'HAS_APPLICATIONS', applications }`
 - `DELETE /v1/payments/:id` · ACCOUNTANT+ · delete draft
 
 ### Business partners
@@ -1156,7 +1206,8 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing on the last page).
   `isCustomer: false` while the partner has a draft invoice, a `POSTED` invoice with an
   outstanding balance, or a draft RECEIPT — or `isVendor: false` with the same for
   bills / DISBURSEMENTs — → `422 VALIDATION_FAILED` `details: { id, reason: "OPEN_ITEMS",
-  role: "CUSTOMER" | "VENDOR", draftDocuments, outstandingDocuments, draftPayments }`
+  role: "CUSTOMER" | "VENDOR", draftDocuments, outstandingDocuments, draftPayments,
+  unappliedPayments }` (`unappliedPayments`: POSTED payments with an unapplied advance)
   (the `DELETE` shape plus `role`). Items of the other role never block; re-sending the
   current value (`true`) never checks. **Caveat (documented, not blocked):** once the role
   is removed (no open items at that moment), **voiding** an already-posted RECEIPT

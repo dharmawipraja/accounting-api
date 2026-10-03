@@ -20,10 +20,17 @@ export interface AccountPolicy {
 
 /** AR/AP control balances must only move through documents (invoice, bill,
  *  payment) so the subledger stays equal to the control account. A MANUAL entry
- *  on a control account would drift the two apart. OPENING (go-live), CLOSING,
+ *  on a control account would drift the two apart. Likewise the advance
+ *  accounts (Uang Muka Pelanggan / Pembelian) must equal the posted payments'
+ *  unapplied amounts, so only payments and their applications move them. OPENING (go-live), CLOSING,
  *  REVERSAL and the document source types are deliberately role-unrestricted. */
 export const MANUAL_ENTRY_POLICY: AccountPolicy = {
-  forbiddenRoles: ['AR_CONTROL', 'AP_CONTROL'],
+  forbiddenRoles: [
+    'AR_CONTROL',
+    'AP_CONTROL',
+    'CUSTOMER_ADVANCE',
+    'VENDOR_ADVANCE',
+  ],
 };
 
 export const UNRESTRICTED_POLICY: AccountPolicy = { forbiddenRoles: [] };
@@ -87,4 +94,4 @@ export function findForbiddenType(
 }
 
 export const FORBIDDEN_ROLE_MESSAGE =
-  'AR/AP control accounts can only be posted through sales invoices, purchase bills and payments';
+  'AR/AP control and payment advance accounts can only be posted through sales invoices, purchase bills and payments';

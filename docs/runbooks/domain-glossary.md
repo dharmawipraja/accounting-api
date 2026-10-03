@@ -77,8 +77,9 @@ balance-sheet account so the (indirect) cash-flow statement can bucket its movem
 ### Account role (system account)
 `AccountRole` enum identifies the handful of accounts the engine must locate
 programmatically, instead of hard-coding account codes: `CASH`, `AR_CONTROL`,
-`AP_CONTROL`, `RETAINED_EARNINGS`, `OPENING_BALANCE_EQUITY`, `TAX_EXPENSE`. `CASH` may
-be a set (multiple bank/cash accounts); the other five are singletons. New code should
+`AP_CONTROL`, `RETAINED_EARNINGS`, `OPENING_BALANCE_EQUITY`, `TAX_EXPENSE`,
+`CUSTOMER_ADVANCE` (2-1300 Uang Muka Pelanggan), `VENDOR_ADVANCE` (1-1600 Uang Muka
+Pembelian). `CASH` may be a set (multiple bank/cash accounts); the others are singletons. New code should
 identify system accounts via `account.role`, never by code string.
 - Singleton roles are create-only. `CASH` may also be assigned later with
   `PATCH /ledger/accounts/:id {role: 'CASH'}` — only to a postable, debit-normal `ASSET`
@@ -330,6 +331,43 @@ allocations increment each target document's `amountPaid`.
 - `Payment` / `PaymentAllocation` models; `PaymentDirection` enum; logic in
   `src/invoicing/payments.service.ts` (control account chosen by `AR_CONTROL`/`AP_CONTROL`).
 
+### Advance / unapplied payment (uang muka)
+A payment may move more cash than it allocates (optional `amount` ≥ allocation sum,
+allocations may be empty). The unallocated rest — `payments.unapplied_amount` — posts to
+the `CUSTOMER_ADVANCE` liability (receipt: Dr cash / Cr AR allocated, Cr advance) or the
+`VENDOR_ADVANCE` asset (disbursement: Dr AP allocated, Dr advance / Cr cash) instead of
+AR/AP (`buildPaymentLines`, `src/invoicing/payment-targets.ts`).
+- **Application** (`POST /payments/:id/apply`, `PaymentsService.apply`) later moves
+  unapplied amount onto POSTED documents of the same partner: one `PaymentApplication`
+  row + one posted `PAYMENT` journal per allocation (Dr advance / Cr AR, or Dr AP / Cr
+  advance; `createdBy` = payment creator, `postedBy` = applier, so SoD bars the creator),
+  dated on/after the payment and each document. It increments `amountPaid` via the same
+  `settleInTx` as a payment post and decrements `unapplied_amount` under the payment
+  `FOR UPDATE` lock (over-apply → 422, also for the loser of a concurrent apply). An
+  application is live on `[date, reversed_on)`; reversing it
+  (`POST /payments/:id/applications/:applicationId/reverse`) reverses its journal and
+  gives the amount back to the document and the payment.
+- **Void rule:** a payment with a live application is not voidable (`422
+  HAS_APPLICATIONS`) — reverse its applications first (each reversal is an ordinary,
+  dated, reversible step; a cascading void would have to reverse several journals with
+  possibly earlier dates in one go). The void date must be on/after the latest
+  application reversal date. Void zeroes `unapplied_amount`.
+- **Lock order** for apply / reverse-application / void: payment row `FOR UPDATE` →
+  partner `FOR SHARE` → target documents `FOR UPDATE` (id order) → the ledger chain
+  (year advisory lock → period → accounts → journal sequence). No new advisory key.
+- **Subledgers:** AR/AP aging counts applications like allocations (`settlementsSql`
+  — the one definition of a document's as-of settlements, also used by the
+  backdated-void rule and the document-void date rule), so aging still ties to AR/AP
+  control. Advances are **not** AR/AP and never appear in aging; the advance account
+  ties to the sum of POSTED payments' `unapplied_amount`. Both advance accounts are
+  document-only (MANUAL journals and invoice/bill lines may not use them; OPENING only
+  before the first document). Open credit per partner: `GET
+  /payments?partnerId=…&unapplied=true`; a partner with an unapplied advance cannot be
+  deleted (`OPEN_ITEMS.unappliedPayments`).
+- **Out of scope (v1):** PPN on advances (*faktur pajak uang muka*) — no tax is computed
+  on an advance; the invoice it is applied to carries the tax. The journal preview covers
+  fully allocated payments only.
+
 ### Allocation & over-allocation guard
 A `PaymentAllocation` ties part of a payment to a specific invoice/bill. You cannot
 allocate more than a document's outstanding amount. At post time, each target row is
@@ -487,8 +525,9 @@ lands in operating as the non-cash add-back.
 ### AR / AP aging (umur piutang / umur utang)
 Outstanding posted invoices/bills as of a date, bucketed by days past due
 (`Current`, `1-30`, `31-60`, `61-90`, `>90`) and grouped by partner. `paid_as_of` is the
-posted allocations on or before the as-of date, so the total reconciles to the AR/AP
-control balance at that date. Buckets and totals are computed in one SQL statement:
+posted allocations and payment applications live on the as-of date (`settlementsSql`),
+so the total reconciles to the AR/AP control balance at that date. Unapplied advances
+are not AR/AP and are not in aging (see *Advance / unapplied payment*). Buckets and totals are computed in one SQL statement:
 totals aggregate **all** open documents, while the `AGING_MAX_DOCS` (10,000) cap cuts
 only at partner boundaries (`truncated: true`; `documentCount` = all open documents).
 - `AgingService.aging('AR' | 'AP', asOf)` (`src/reporting/aging.service.ts`).

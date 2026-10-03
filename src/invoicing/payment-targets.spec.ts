@@ -41,6 +41,46 @@ describe('buildPaymentLines', () => {
       { accountId: 'cash', credit: '500.0000' },
     ]);
   });
+  it('RECEIPT with an unallocated part credits the advance account', () => {
+    expect(
+      buildPaymentLines(PAYMENT_TARGETS.RECEIPT, 'cash', 'ar', '500.0000', {
+        accountId: 'adv',
+        amount: '120.0000',
+      }),
+    ).toEqual([
+      { accountId: 'cash', debit: '500.0000' },
+      { accountId: 'ar', credit: '380.0000' },
+      { accountId: 'adv', credit: '120.0000' },
+    ]);
+  });
+  it('DISBURSEMENT with zero allocations is advance/cash only', () => {
+    expect(
+      buildPaymentLines(
+        PAYMENT_TARGETS.DISBURSEMENT,
+        'cash',
+        'ap',
+        '500.0000',
+        {
+          accountId: 'adv',
+          amount: '500.0000',
+        },
+      ),
+    ).toEqual([
+      { accountId: 'adv', debit: '500.0000' },
+      { accountId: 'cash', credit: '500.0000' },
+    ]);
+  });
+  it('a zero advance leaves the 2-line entry unchanged', () => {
+    expect(
+      buildPaymentLines(PAYMENT_TARGETS.RECEIPT, 'cash', 'ar', '500.0000', {
+        accountId: 'adv',
+        amount: '0.0000',
+      }),
+    ).toEqual([
+      { accountId: 'cash', debit: '500.0000' },
+      { accountId: 'ar', credit: '500.0000' },
+    ]);
+  });
 });
 
 describe('inLockOrder', () => {

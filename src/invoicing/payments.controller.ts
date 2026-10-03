@@ -22,7 +22,7 @@ import {
   PaymentResponseDto,
 } from './dto/payment-response.dto';
 import { PaymentsService } from './payments.service';
-import { CreatePaymentDto } from './dto/create-payment.dto';
+import { ApplyPaymentDto, CreatePaymentDto } from './dto/create-payment.dto';
 import { PaymentListQueryDto } from './dto/list-payments.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../auth/role.enum';
@@ -67,7 +67,8 @@ export class PaymentsController {
       date: businessDate(dto.date),
       cashAccountId: dto.cashAccountId,
       description: dto.description,
-      allocations: dto.allocations,
+      amount: dto.amount,
+      allocations: dto.allocations ?? [],
       createdBy: user.id,
     });
     return this.payments.present(payment);
@@ -98,6 +99,52 @@ export class PaymentsController {
   ) {
     return this.payments.present(
       await this.payments.void(id, user.id, optionalBusinessDate(dto?.date)),
+    );
+  }
+
+  /** Apply part of a POSTED payment's unapplied (advance) amount to
+   *  invoices (receipt) / bills (disbursement) of the same partner. */
+  @Roles(Role.APPROVER, Role.ADMIN)
+  @ApiOkResponse({ type: PaymentResponseDto })
+  @IdempotentWrite()
+  @Post(':id/apply')
+  @HttpCode(200)
+  async apply(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ApplyPaymentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.payments.present(
+      await this.payments.apply(
+        id,
+        businessDate(dto.date),
+        dto.allocations,
+        user.id,
+      ),
+    );
+  }
+
+  /** Reverse one application (its journal entry); the amount returns to the
+   *  document's outstanding and the payment's unapplied balance. */
+  @Roles(Role.APPROVER, Role.ADMIN)
+  @ApiOkResponse({ type: PaymentResponseDto })
+  @IdempotentWrite()
+  @ApiBody({ type: VoidDocumentDto, required: false })
+  @Post(':id/applications/:applicationId/reverse')
+  @HttpCode(200)
+  async reverseApplication(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('applicationId', ParseUUIDPipe) applicationId: string,
+    @Body() dto: VoidDocumentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.payments.present(
+      await this.payments.reverseApplication(
+        id,
+        applicationId,
+        user.id,
+        optionalBusinessDate(dto?.date),
+      ),
     );
   }
 

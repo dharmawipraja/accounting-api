@@ -228,7 +228,7 @@ export class PostingService {
    *  it cannot deadlock against close/reopen or other posts.
    *  1. At most ONE live opening entry: another POSTED OPENING entry → 409
    *     `{ existingEntryId, entryRef }`; reversing it re-opens the slot.
-   *  2. AR/AP control lines only before the first sales invoice, purchase bill
+   *  2. AR/AP control (and payment advance) lines only before the first sales invoice, purchase bill
    *     or payment (any status; soft-deleted drafts don't count): after that a
    *     lump-sum control balance would have no subledger document behind it →
    *     422 `{ accountId, role, reason: 'DOCUMENTS_EXIST' }`.
@@ -254,7 +254,8 @@ export class PostingService {
     const ids = [...new Set(lines.map((l) => l.accountId))];
     const [control] = await tx.$queryRaw<{ id: string; role: string }[]>`
       SELECT id, role::text AS role FROM accounts
-      WHERE id = ANY(${ids}::text[]) AND role IN ('AR_CONTROL', 'AP_CONTROL')
+      WHERE id = ANY(${ids}::text[])
+        AND role IN ('AR_CONTROL', 'AP_CONTROL', 'CUSTOMER_ADVANCE', 'VENDOR_ADVANCE')
       ORDER BY id LIMIT 1`;
     if (!control) return;
     const [{ exists }] = await tx.$queryRaw<{ exists: boolean }[]>`

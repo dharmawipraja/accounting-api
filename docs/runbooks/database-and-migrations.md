@@ -107,9 +107,11 @@ the Prisma schema cannot express:
     reversal instead.
   - **No TRUNCATE** on `journal_entries`, `journal_lines`, `sales_invoices`,
     `sales_invoice_lines`, `purchase_bills`, `purchase_bill_lines`, `payments`,
-    `payment_allocations` (statement-level `BEFORE TRUNCATE` → `ledger_no_truncate()`).
+    `payment_allocations`, `payment_applications` (statement-level `BEFORE TRUNCATE` → `ledger_no_truncate()`).
   - **CHECKs** — `payments_amount_positive` (`amount > 0`),
+    `payments_unapplied_amount_range` (`0 ≤ unapplied_amount ≤ amount`),
     `payment_allocations_one_target` (exactly one of invoice/bill),
+    `payment_applications_{amount_positive,one_target,reversal_shape}`,
     `{sales_invoices,purchase_bills}_amount_paid_range` (`0 ≤ amount_paid ≤ total`),
     `{sales_invoice,purchase_bill}_lines_nonnegative` (quantity, unit_price ≥ 0;
     zero-price lines stay legal), `accounting_periods_dates_ordered`, and

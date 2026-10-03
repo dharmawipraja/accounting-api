@@ -17,6 +17,23 @@ All notable changes to this project are documented here. The format is based on
   `discountTotal`; `subtotal` remains the sum of (net) line amounts. Migration
   `20261008000000_document_line_discounts` adds the columns (defaults keep existing
   documents unchanged) plus CHECK constraints.
+- **Customer & vendor advances (unapplied payments)** — `POST /v1/payments` takes an
+  optional `amount`; allocations may sum to less (or be empty), and the rest posts to
+  the new seeded advance accounts *Uang Muka Pelanggan* (2-1300, role
+  `CUSTOMER_ADVANCE`) / *Uang Muka Pembelian* (1-1600, role `VENDOR_ADVANCE`) instead
+  of AR/AP; payments expose `unappliedAmount` and `applications`. New
+  `POST /v1/payments/:id/apply` `{ date, allocations }` applies it to invoices/bills
+  later (Dr advance / Cr AR, or Dr AP / Cr advance, one entry per allocation) and
+  `POST /v1/payments/:id/applications/:applicationId/reverse` undoes one. A payment
+  with live applications cannot be voided (`422 HAS_APPLICATIONS`). `GET
+  /v1/payments?unapplied=true` lists open credit; aging counts applications and still
+  ties to AR/AP control (advances are not in aging). Partner delete / role removal
+  counts unapplied payments as open items (`unappliedPayments`). Existing installs get
+  the two accounts from migration `20261008100001_payment_advance_accounts` (skipped
+  with a NOTICE when the code is taken — create a role-carrying account instead).
+  Out of scope: PPN on advances (faktur uang muka). Fully allocated payments are
+  unchanged. The advance accounts are document-only (no MANUAL journal or
+  invoice/bill line may use them).
 
 ### Changed (breaking)
 

@@ -689,6 +689,7 @@ describe('Invoicing rules (e2e)', () => {
           draftDocuments: 0,
           outstandingDocuments: 1,
           draftPayments: 0,
+          unappliedPayments: 0,
         });
       });
 

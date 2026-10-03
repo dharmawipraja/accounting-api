@@ -37,6 +37,8 @@ export class AccountResponseDto {
       'RETAINED_EARNINGS',
       'OPENING_BALANCE_EQUITY',
       'TAX_EXPENSE',
+      'CUSTOMER_ADVANCE',
+      'VENDOR_ADVANCE',
     ],
     nullable: true,
   })

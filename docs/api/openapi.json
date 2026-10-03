@@ -2638,6 +2638,19 @@
                 "VOID"
               ]
             }
+          },
+          {
+            "name": "unapplied",
+            "required": false,
+            "in": "query",
+            "description": "`true`: only POSTED payments with an unapplied (advance) balance — the\n partner's open credit (combine with `partnerId` / `direction`).\n `false`: only payments without one.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
           }
         ],
         "responses": {
@@ -2860,6 +2873,124 @@
             "bearer": []
           }
         ],
+        "tags": [
+          "Payments"
+        ]
+      }
+    },
+    "/v1/payments/{id}/apply": {
+      "post": {
+        "operationId": "PaymentsController_apply_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable. On ANY retry — including after a 408 timeout or a network failure — reuse the SAME key: the original request may still have succeeded server-side, and a fresh key would duplicate the write. Replays return the original response; a still-running original returns 409.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyPaymentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Apply part of a POSTED payment's unapplied (advance) amount to\n invoices (receipt) / bills (disbursement) of the same partner.",
+        "tags": [
+          "Payments"
+        ]
+      }
+    },
+    "/v1/payments/{id}/applications/{applicationId}/reverse": {
+      "post": {
+        "operationId": "PaymentsController_reverseApplication_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "applicationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable. On ANY retry — including after a 408 timeout or a network failure — reuse the SAME key: the original request may still have succeeded server-side, and a fresh key would duplicate the write. Replays return the original response; a still-running original returns 409.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidDocumentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Reverse one application (its journal entry); the amount returns to the\n document's outstanding and the payment's unapplied balance.",
         "tags": [
           "Payments"
         ]
@@ -3893,7 +4024,9 @@
               "AP_CONTROL",
               "RETAINED_EARNINGS",
               "OPENING_BALANCE_EQUITY",
-              "TAX_EXPENSE"
+              "TAX_EXPENSE",
+              "CUSTOMER_ADVANCE",
+              "VENDOR_ADVANCE"
             ]
           },
           "isPostable": {
@@ -4059,7 +4192,9 @@
               "AP_CONTROL",
               "RETAINED_EARNINGS",
               "OPENING_BALANCE_EQUITY",
-              "TAX_EXPENSE"
+              "TAX_EXPENSE",
+              "CUSTOMER_ADVANCE",
+              "VENDOR_ADVANCE"
             ]
           },
           "isPostable": {
@@ -5819,6 +5954,75 @@
           "amount"
         ]
       },
+      "PaymentApplicationResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "paymentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "salesInvoiceId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "purchaseBillId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "amount": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-03-01"
+          },
+          "journalEntryId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdBy": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reversedOn": {
+            "type": "string",
+            "nullable": true,
+            "format": "date",
+            "description": "Reversal date; set iff the application was reversed."
+          },
+          "reversedBy": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id",
+          "paymentId",
+          "salesInvoiceId",
+          "purchaseBillId",
+          "amount",
+          "date",
+          "journalEntryId",
+          "createdBy",
+          "createdAt",
+          "reversedOn",
+          "reversedBy"
+        ]
+      },
       "PaymentResponseDto": {
         "type": "object",
         "properties": {
@@ -5862,6 +6066,11 @@
             "type": "string",
             "example": "1000.0000",
             "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "unappliedAmount": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Part of `amount` not (yet) settling a document — held on the customer/vendor advance account until applied. amount − allocations − live applications; 0 once VOID."
           },
           "description": {
             "type": "string",
@@ -5913,6 +6122,12 @@
             "items": {
               "$ref": "#/components/schemas/PaymentAllocationResponseDto"
             }
+          },
+          "applications": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentApplicationResponseDto"
+            }
           }
         },
         "required": [
@@ -5925,6 +6140,7 @@
           "date",
           "cashAccountId",
           "amount",
+          "unappliedAmount",
           "description",
           "status",
           "journalEntryId",
@@ -6009,8 +6225,12 @@
             "type": "string",
             "maxLength": 255
           },
+          "amount": {
+            "type": "string",
+            "description": "Total amount. Defaults to the allocation sum; any excess over the\n allocations is posted to the customer/vendor advance account\n (`unappliedAmount`) and can be applied later via POST /payments/:id/apply."
+          },
           "allocations": {
-            "minItems": 1,
+            "description": "Documents this payment settles now. May be empty/omitted when `amount`\n is given (a pure advance).",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AllocationDto"
@@ -6021,7 +6241,26 @@
           "direction",
           "partnerId",
           "date",
-          "cashAccountId",
+          "cashAccountId"
+        ]
+      },
+      "ApplyPaymentDto": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Application date: on/after the payment date and every document date,\n in an open period of an open fiscal year."
+          },
+          "allocations": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AllocationDto"
+            }
+          }
+        },
+        "required": [
+          "date",
           "allocations"
         ]
       },

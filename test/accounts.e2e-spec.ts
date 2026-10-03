@@ -59,7 +59,7 @@ describe('Accounts (e2e)', () => {
   it('seedIfEmpty is idempotent', async () => {
     await app.get(AccountsService).seedIfEmpty();
     const count = await prisma.client.account.count();
-    expect(count).toBe(29);
+    expect(count).toBe(31);
   });
 
   it('seedIfEmpty assigns system-account roles', async () => {
@@ -72,6 +72,8 @@ describe('Accounts (e2e)', () => {
     expect((await byCode('3-2000'))?.role).toBe('RETAINED_EARNINGS');
     expect((await byCode('3-9000'))?.role).toBe('OPENING_BALANCE_EQUITY');
     expect((await byCode('5-9000'))?.role).toBe('TAX_EXPENSE');
+    expect((await byCode('2-1300'))?.role).toBe('CUSTOMER_ADVANCE');
+    expect((await byCode('1-1600'))?.role).toBe('VENDOR_ADVANCE');
     // a non-system account has no role
     expect((await byCode('1-1300'))?.role).toBeNull();
   });
@@ -81,7 +83,7 @@ describe('Accounts (e2e)', () => {
       .post('/v1/ledger/accounts')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({
-        code: '1-1600',
+        code: '1-1650',
         name: 'Kas Kecil',
         type: 'ASSET',
         subtype: 'CURRENT_ASSET',

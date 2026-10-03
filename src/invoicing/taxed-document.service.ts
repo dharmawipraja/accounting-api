@@ -14,6 +14,7 @@ import {
   DraftChangedError,
 } from './document-posting.service';
 import { lockLivePartnerForShare } from './partner-lock';
+import { settlementsSql } from './payment-targets';
 import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
 import {
   POSTING_TX_OPTIONS,
@@ -384,12 +385,11 @@ export class TaxedDocumentService {
   ): Promise<void> {
     const rows = await tx.$queryRaw<{ ref: string | null; voided_on: Date }[]>(
       Prisma.sql`
-        SELECT p.ref, p.voided_on FROM payment_allocations pa
-        JOIN payments p ON p.id = pa.payment_id
-        WHERE pa.${Prisma.raw(spec.allocationColumn)} = ${id}
-          AND p.status = 'VOID' AND p.deleted_at IS NULL
-          AND p.voided_on > p.date AND p.voided_on > ${voidedOn}
-        ORDER BY p.voided_on DESC
+        SELECT st.ref, st.voided_on
+        FROM (${settlementsSql(spec.table)}) st
+        WHERE st.document_id = ${id} AND st.status = 'VOID'
+          AND st.voided_on > st.date AND st.voided_on > ${voidedOn}
+        ORDER BY st.voided_on DESC
         LIMIT 1`,
     );
     if (rows.length > 0)

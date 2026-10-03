@@ -42,6 +42,8 @@ const LINE_FORBIDDEN_ROLES: readonly AccountRole[] = [
   'AR_CONTROL',
   'AP_CONTROL',
   'CASH',
+  'CUSTOMER_ADVANCE',
+  'VENDOR_ADVANCE',
 ];
 
 /** Pure rule for an invoice/bill line account. Order: forbidden role, then tax
@@ -65,7 +67,9 @@ export function documentLineAccountViolation(
       message:
         account.role === 'CASH'
           ? 'Document lines cannot post to a cash account; record cash movements as payments'
-          : 'Document lines cannot post to an AR/AP control account; the document settles it',
+          : account.role === 'AR_CONTROL' || account.role === 'AP_CONTROL'
+            ? 'Document lines cannot post to an AR/AP control account; the document settles it'
+            : 'Document lines cannot post to a payment advance account; apply the payment to the document instead',
       details: { accountId: account.id, role: account.role },
     };
   }

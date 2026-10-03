@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { Money } from '../common/money/money';
 import { truncateToUtcDay } from '../common/dates/utc-day';
+import { settlementsSql } from '../invoicing/payment-targets';
 
 /** One row per included open document, LEFT JOINed onto the one-row totals
  *  aggregate: when no document is included (none open, or the cap cut before
@@ -44,17 +45,16 @@ export class AgingService {
       kind === 'AR'
         ? Prisma.raw('sales_invoices')
         : Prisma.raw('purchase_bills');
-    const allocCol =
-      kind === 'AR'
-        ? Prisma.raw('sales_invoice_id')
-        : Prisma.raw('purchase_bill_id');
     const refCol =
       kind === 'AR' ? Prisma.raw('d.invoice_ref') : Prisma.raw('d.bill_ref');
 
     // As-of semantics: a document/payment is live on `day` if it was posted
     // dated on/before it and not voided on/before it (voided_on is the void's
-    // reversal date, which may be later than the document date). This keeps the
-    // subledger tied to the control account for every as-of date.
+    // reversal date, which may be later than the document date); a later
+    // application of a payment's advance likewise on [date, reversed_on) — see
+    // settlementsSql. This keeps the subledger tied to the control account for
+    // every as-of date. Unapplied advances are NOT AR/AP (they sit on the
+    // advance accounts), so they never appear here.
     // Fully-paid documents are filtered in SQL (not JS) so only genuinely open
     // items are materialized. ONE statement (so one consistent snapshot):
     // - totals are aggregated over EVERY open document, whatever the cap;
@@ -75,10 +75,9 @@ export class AgingService {
           SELECT d.id, ${refCol} AS ref,
                  d.partner_id, bp.name AS partner_name, d.date, d.due_date, d.total,
                  COALESCE((
-                   SELECT SUM(pa.amount) FROM payment_allocations pa
-                   JOIN payments p ON p.id = pa.payment_id
-                   WHERE pa.${allocCol} = d.id AND p.deleted_at IS NULL AND p.date <= ${day}
-                     AND (p.status = 'POSTED' OR (p.status = 'VOID' AND p.voided_on > ${day}))
+                   SELECT SUM(st.amount) FROM (${settlementsSql(kind === 'AR' ? 'sales_invoices' : 'purchase_bills')}) st
+                   WHERE st.document_id = d.id AND st.date <= ${day}
+                     AND (st.status = 'POSTED' OR st.voided_on > ${day})
                  ), 0) AS paid_as_of
           FROM ${docTable} d
           JOIN business_partners bp ON bp.id = d.partner_id

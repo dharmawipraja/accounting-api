@@ -87,6 +87,17 @@ export const CHART_OF_ACCOUNTS: SeedAccount[] = [
     parentCode: '1-0000',
   },
   {
+    // Advances paid to vendors ahead of their bills (unallocated disbursements).
+    code: '1-1600',
+    name: 'Uang Muka Pembelian',
+    type: 'ASSET',
+    subtype: 'CURRENT_ASSET',
+    normalBalance: 'DEBIT',
+    cashFlowCategory: 'OPERATING',
+    role: 'VENDOR_ADVANCE',
+    parentCode: '1-0000',
+  },
+  {
     code: '1-1800',
     name: 'Perlengkapan',
     type: 'ASSET',
@@ -149,6 +160,17 @@ export const CHART_OF_ACCOUNTS: SeedAccount[] = [
     subtype: 'TAX_PAYABLE',
     normalBalance: 'CREDIT',
     cashFlowCategory: 'OPERATING',
+    parentCode: '2-0000',
+  },
+  {
+    // Advances received from customers ahead of their invoices (unallocated receipts).
+    code: '2-1300',
+    name: 'Uang Muka Pelanggan',
+    type: 'LIABILITY',
+    subtype: 'CURRENT_LIABILITY',
+    normalBalance: 'CREDIT',
+    cashFlowCategory: 'OPERATING',
+    role: 'CUSTOMER_ADVANCE',
     parentCode: '2-0000',
   },
   {

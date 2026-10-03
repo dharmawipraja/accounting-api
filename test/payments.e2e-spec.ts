@@ -482,9 +482,9 @@ describe('Payments (e2e)', () => {
 
   // ── Guard-branch coverage (I-13 through I-25, I-28, I-29, I-31, I-32) ──────
 
-  it('I-13: create payment with no allocations → 400 (DTO @ArrayMinSize(1) shadows service guard at :57)', async () => {
-    // allocations.length === 0: the DTO enforces @ArrayMinSize(1) before the service
-    // guard at :57 can fire, so the server returns 400 from the ValidationPipe.
+  it('I-13: create payment with no allocations and no amount → 422 (nothing to record)', async () => {
+    // An empty allocation list is valid only with an `amount` (a pure advance,
+    // test/payment-advances.e2e-spec.ts); without one the payment is empty.
     const customerId = await newCustomer('CUST-NO-ALLOC');
     await request(server())
       .post('/v1/payments')
@@ -497,7 +497,7 @@ describe('Payments (e2e)', () => {
         cashAccountId: acc['1-1000'],
         allocations: [],
       })
-      .expect(400); // DTO-level; service guard at :57 is shadowed by @ArrayMinSize(1)
+      .expect(422);
   });
 
   it('I-14: create payment for an inactive partner → 422 (!partner.isActive)', async () => {

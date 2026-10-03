@@ -43,6 +43,10 @@ export interface PaymentTarget {
   partnerFlag: 'isCustomer' | 'isVendor';
   partnerRequiredMessage: string;
   controlRole: AccountRole;
+  /** Where an unallocated (advance) part of the payment sits: Uang Muka
+   *  Pelanggan (liability) for receipts, Uang Muka Pembelian (asset) for
+   *  disbursements. It is on the SAME journal side as the cash account. */
+  advanceRole: AccountRole;
   numberPrefix: 'PAY-RCV' | 'PAY-DSB';
   /** Constant union literal — never user input; safe for Prisma.raw. */
   table: 'sales_invoices' | 'purchase_bills';
@@ -66,6 +70,7 @@ export const PAYMENT_TARGETS: Record<PaymentDirection, PaymentTarget> = {
     partnerFlag: 'isCustomer',
     partnerRequiredMessage: 'Receipt requires a customer',
     controlRole: 'AR_CONTROL',
+    advanceRole: 'CUSTOMER_ADVANCE',
     numberPrefix: 'PAY-RCV',
     table: 'sales_invoices',
     noun: 'invoice',
@@ -101,6 +106,7 @@ export const PAYMENT_TARGETS: Record<PaymentDirection, PaymentTarget> = {
     partnerFlag: 'isVendor',
     partnerRequiredMessage: 'Disbursement requires a vendor',
     controlRole: 'AP_CONTROL',
+    advanceRole: 'VENDOR_ADVANCE',
     numberPrefix: 'PAY-DSB',
     table: 'purchase_bills',
     noun: 'bill',
@@ -231,18 +237,13 @@ export async function allocationHistoryAfter(
   paymentDate: Date,
 ): Promise<{ peakLivePaid: Prisma.Decimal; latestVoidedOn: Date | null }> {
   const day = paymentDate.toISOString().slice(0, 10);
-  const col = Prisma.raw(
-    target.table === 'sales_invoices' ? 'sales_invoice_id' : 'purchase_bill_id',
-  );
   const rows = await db.$queryRaw<
     { peak_live_paid: string; latest_voided_on: Date | null }[]
   >(Prisma.sql`
     WITH allocs AS (
-      SELECT q.date, q.status::text AS status, q.voided_on, pa.amount
-      FROM payment_allocations pa
-      JOIN payments q ON q.id = pa.payment_id
-      WHERE pa.${col} = ${documentId} AND q.deleted_at IS NULL
-        AND q.status IN ('POSTED', 'VOID')
+      SELECT s.date, s.status, s.voided_on, s.amount
+      FROM (${settlementsSql(target.table)}) s
+      WHERE s.document_id = ${documentId}
     ), days AS (
       SELECT ${day}::date AS day
       UNION SELECT date FROM allocs WHERE date > ${day}::date
@@ -292,20 +293,69 @@ export async function assertNoBackdatedOverAllocation(
     );
 }
 
-/** The 2-line cash/control journal for a payment. */
+/** Every settlement of a document of `table`'s type as an as-of item, one row
+ *  each `{ document_id, amount, date, status, voided_on, ref }`, live on
+ *  `[date, voided_on)` (status 'POSTED' = still live, 'VOID' = ended on
+ *  voided_on):
+ *  - a POSTED/VOID payment's allocations (date / voided_on of the payment);
+ *  - a payment's later applications (own date; reversed_on ends them).
+ *  The ONE definition of "what has paid this document as of a day" — aging,
+ *  the backdated-void rule and the document-void date rule all read it, so
+ *  the subledger they see always matches what the control account carries.
+ *  `table` is a constant union literal, never user input. */
+export function settlementsSql(
+  table: 'sales_invoices' | 'purchase_bills',
+): Prisma.Sql {
+  const col = Prisma.raw(
+    table === 'sales_invoices' ? 'sales_invoice_id' : 'purchase_bill_id',
+  );
+  return Prisma.sql`
+    SELECT pa.${col} AS document_id, pa.amount, q.date,
+           q.status::text AS status, q.voided_on, q.ref
+    FROM payment_allocations pa
+    JOIN payments q ON q.id = pa.payment_id
+    WHERE pa.${col} IS NOT NULL AND q.deleted_at IS NULL
+      AND q.status IN ('POSTED', 'VOID')
+    UNION ALL
+    SELECT ap.${col}, ap.amount, ap.date,
+           CASE WHEN ap.reversed_on IS NULL THEN 'POSTED' ELSE 'VOID' END,
+           ap.reversed_on, q.ref
+    FROM payment_applications ap
+    JOIN payments q ON q.id = ap.payment_id
+    WHERE ap.${col} IS NOT NULL`;
+}
+
+/** A payment's journal. `amount` is the full cash movement; the part in
+ *  `advance` (unallocated) goes to the advance account, the rest to the AR/AP
+ *  control account. Zero-amount lines are left out, so a fully allocated
+ *  payment is the original 2-line cash/control entry and a zero-allocation one
+ *  is cash/advance:
+ *    RECEIPT       Dr cash amount         / Cr AR allocated, Cr advance unapplied
+ *    DISBURSEMENT  Dr AP allocated, Dr advance unapplied / Cr cash amount
+ *  An application reuses it with the advance account in the cash slot (same
+ *  journal side): Dr advance / Cr AR, or Dr AP / Cr advance. */
 export function buildPaymentLines(
   target: PaymentTarget,
   cashAccountId: string,
   controlId: string,
   amount: string,
+  advance?: { accountId: string; amount: string },
 ): PaymentJournalLine[] {
+  const unapplied = Money.of(advance?.amount ?? '0');
+  const allocated = Money.of(amount).subtract(unapplied);
+  const counter = [
+    { accountId: controlId, amount: allocated },
+    { accountId: advance?.accountId ?? '', amount: unapplied },
+  ]
+    .filter((l) => !l.amount.isZero())
+    .map((l) => ({ accountId: l.accountId, amount: l.amount.toPersistence() }));
   return target.cashIsDebit
     ? [
         { accountId: cashAccountId, debit: amount },
-        { accountId: controlId, credit: amount },
+        ...counter.map((l) => ({ accountId: l.accountId, credit: l.amount })),
       ]
     : [
-        { accountId: controlId, debit: amount },
+        ...counter.map((l) => ({ accountId: l.accountId, debit: l.amount })),
         { accountId: cashAccountId, credit: amount },
       ];
 }
