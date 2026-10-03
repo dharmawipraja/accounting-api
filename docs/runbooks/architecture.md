@@ -105,7 +105,21 @@ service inventory.
 Guards run in registration order:
 
 1. **`JwtAuthGuard`** (`src/auth/guards/jwt-auth.guard.ts`) — validates the bearer
-   token; honors `@Public()` (skips auth) via the reflector.
+   token; honors `@Public()` (skips auth) via the reflector. `JwtStrategy.validate`
+   reads, in parallel, the user (active, not deleted, live role) **and** the access
+   token's session: every access token carries `sid` = its refresh-token family id,
+   and is rejected unless that family still has an `ACTIVE` refresh row (indexed
+   `family_id` lookup). Logout (one family), logout-all, self-service password
+   change, admin reset / role change / deactivation / delete (all families) thus
+   kill outstanding access tokens on their next request. A token without `sid`
+   (minted before 2026-10) is `401`.
+   Refresh rotation (`RefreshTokenService.rotate`, under the per-user session
+   advisory lock): `ACTIVE` → consumed + successor; a `CONSUMED` token replayed
+   within `REFRESH_REUSE_GRACE_MS` (default 10s, 0 = off) of its rotation is a
+   concurrent refresh (two tabs) → a **sibling** successor in the same family,
+   nothing consumed or revoked (rotating the family head instead would consume the
+   other tab's fresh token and trip reuse detection on its next refresh); outside
+   the window it is reuse → the whole family is revoked.
 2. **`UserThrottlerGuard`** (`src/common/guards/user-throttler.guard.ts`) — rate
    limits keyed by *verified* user id (`user:<id>`); anonymous requests are keyed
    `ip:<ip>` — except the **login handler only** (marked `@LoginIpThrottle()`),

@@ -1,3 +1,4 @@
+import './refresh-grace-off-env'; // must stay first: REFRESH_REUSE_GRACE_MS=0
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { type App } from 'supertest/types';

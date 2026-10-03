@@ -36,6 +36,8 @@
   to 1 for Caddy → api, the base `docker-compose.yml` alone — api published directly,
   no Caddy — to 0),
   `THROTTLE_REFRESH_LIMIT` (per-IP refresh attempts/min, default 30),
+  `REFRESH_REUSE_GRACE_MS` (a replay of a just-rotated refresh token within this
+  window is a concurrent refresh, not theft; default 10000, 0–60000, 0 = off),
   `THROTTLE_CHANGE_PASSWORD_LIMIT` (per-user change-password attempts/min, default 10),
   `JWT_ACCESS_TTL` / `JWT_REFRESH_TTL` (default `900s` / `7d`),
   `REQUEST_TIMEOUT_MS` (per-request cap → `408`, default 35000; keep

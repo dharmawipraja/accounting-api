@@ -82,7 +82,7 @@ describe('AuthService.login (success log)', () => {
       { signAsync: jest.fn().mockResolvedValue('t') } as unknown as JwtService,
       { getOrThrow: () => 'x' } as unknown as ConfigService,
       {
-        issue: jest.fn().mockResolvedValue({ jti: 'j1' }),
+        issue: jest.fn().mockResolvedValue({ jti: 'j1', familyId: 'f1' }),
       } as unknown as RefreshTokenService,
       limiter(),
     );

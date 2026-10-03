@@ -477,6 +477,10 @@ describe('Audit log (e2e)', () => {
     });
     expect(row.statusCode).toBe(201);
     expect(row.body).toEqual({});
+    // logout-all revoked every viewer session (viewerToken included).
+    viewerToken = (
+      await app.get(AuthService).login('view@audit.test', 'secret123')
+    ).accessToken;
   });
 
   it('iter4: an any-role 400 (/tax/calculate junk) stores <= 8 KiB', async () => {

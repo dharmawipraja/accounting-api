@@ -46,10 +46,10 @@ export class AuthService {
       throw new UnauthorizedDomainError('Invalid credentials');
     }
     await this.loginFailures.recordSuccess(email, ip);
-    const { jti } = await this.refreshTokens.issue(user.id);
+    const session = await this.refreshTokens.issue(user.id);
     const tokens = await this.issueTokens(
       { id: user.id, email: user.email, role: user.role },
-      jti,
+      session,
     );
     this.logger.log({ event: 'login', userId: user.id, ip: ip ?? null });
     return tokens;
@@ -66,10 +66,10 @@ export class AuthService {
     if (!user || !user.isActive) {
       throw new UnauthorizedDomainError('Invalid refresh token');
     }
-    const { jti } = await this.refreshTokens.rotate(payload.jti, user.id);
+    const session = await this.refreshTokens.rotate(payload.jti, user.id);
     return this.issueTokens(
       { id: user.id, email: user.email, role: user.role },
-      jti,
+      session,
     );
   }
 
@@ -88,9 +88,9 @@ export class AuthService {
     return { ok: true };
   }
 
-  /** Change own password, then revoke ALL refresh families: other devices die
-   *  now; the current access token stays valid ≤15m, after which the user
-   *  logs in with the new password. */
+  /** Change own password, then revoke ALL refresh families: every session —
+   *  including the caller's current access token — dies now; the client logs
+   *  in again with the new password. */
   async changePassword(
     userId: string,
     currentPassword: string,
@@ -115,7 +115,7 @@ export class AuthService {
 
   private async issueTokens(
     user: Pick<AuthenticatedUser, 'id' | 'email' | 'role'>,
-    jti: string,
+    session: { jti: string; familyId: string },
   ): Promise<TokenPair> {
     const accessToken = await this.jwt.signAsync(
       {
@@ -123,6 +123,7 @@ export class AuthService {
         email: user.email,
         role: user.role,
         typ: 'access',
+        sid: session.familyId,
       } satisfies JwtPayload,
       {
         secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET'),
@@ -133,7 +134,11 @@ export class AuthService {
       },
     );
     const refreshToken = await this.jwt.signAsync(
-      { sub: user.id, jti, typ: 'refresh' } satisfies RefreshJwtPayload,
+      {
+        sub: user.id,
+        jti: session.jti,
+        typ: 'refresh',
+      } satisfies RefreshJwtPayload,
       {
         secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
         algorithm: JWT_ALGORITHM,

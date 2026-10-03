@@ -152,6 +152,22 @@ describe('env validation', () => {
     expect(() => validate({ ...validEnv, TRUST_PROXY_HOPS: 'yes' })).toThrow();
   });
 
+  it('bounds REFRESH_REUSE_GRACE_MS to 0..60000 ms', () => {
+    expect(
+      validate({ ...validEnv, REFRESH_REUSE_GRACE_MS: '0' })
+        .REFRESH_REUSE_GRACE_MS,
+    ).toBe(0);
+    expect(() =>
+      validate({ ...validEnv, REFRESH_REUSE_GRACE_MS: '60000' }),
+    ).not.toThrow();
+    expect(() =>
+      validate({ ...validEnv, REFRESH_REUSE_GRACE_MS: '60001' }),
+    ).toThrow();
+    expect(() =>
+      validate({ ...validEnv, REFRESH_REUSE_GRACE_MS: '-1' }),
+    ).toThrow();
+  });
+
   // docker-compose.yml (+ docker-compose.prod.yml for DB_* and the Caddy hop
   // TRUST_PROXY_HOPS=1) passes optional vars as `${VAR:-<default>}`. With the
   // operator's .env silent, these are exactly the values the prod api receives.
@@ -162,6 +178,7 @@ describe('env validation', () => {
     THROTTLE_LOGIN_LIMIT: '10',
     THROTTLE_LOGIN_IP_LIMIT: '30',
     THROTTLE_REFRESH_LIMIT: '30',
+    REFRESH_REUSE_GRACE_MS: '10000',
     THROTTLE_CHANGE_PASSWORD_LIMIT: '10',
     ARGON2_MAX_CONCURRENCY: '8',
     TRUST_PROXY_HOPS: '1',

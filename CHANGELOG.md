@@ -16,6 +16,13 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 
+- **Access tokens are revoked with their session** — access tokens now carry a
+  `sid` (refresh-family id) checked on every request, so logout, logout-all,
+  self-service password change, and admin reset / role change / deactivation /
+  delete reject outstanding access tokens immediately (previously they lived up
+  to `JWT_ACCESS_TTL`). A password change now also signs out the calling tab.
+  Access tokens issued before this release (no `sid`) are rejected with `401`:
+  users log in again once.
 - **Audit log stores less for anonymous requests** — a login row (success or
   failure) keeps only `{ email }`; refresh/logout rows store `{}` (previously
   the redacted body). Anonymous interceptor rows now also count against the
@@ -73,6 +80,10 @@ All notable changes to this project are documented here. The format is based on
   10,000-document cap truncates, a new `documentCount` gives the full count, and
   the cap now cuts only at partner boundaries (a partner is never split;
   ordering is partner name, then partner id).
+- **Two concurrent refreshes no longer log the user out** — a refresh token
+  replayed within `REFRESH_REUSE_GRACE_MS` (new, default 10000 ms, 0 disables) of
+  its rotation gets a new pair in the same session instead of tripping reuse
+  detection; a later replay still revokes the whole session.
 - **Tax codes no longer stack** — a document line may carry at most one PPN code
   and one PPh code (e.g. `PPH23-PAY` + `PPH42-PAY` on one line → 422).
 - **Final PPh 4(2) is an expense** — the seeded `PPH42-PRE` now posts to the new

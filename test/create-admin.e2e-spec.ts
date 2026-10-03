@@ -100,9 +100,21 @@ describe('create-admin bootstrap (e2e)', () => {
         newPassword: 'chosen-by-admin-1',
       })
       .expect(200);
+    // The change revoked every session (this access token too): log in again.
     await request(server())
       .get('/v1/users')
       .set('Authorization', `Bearer ${token}`)
+      .expect(401);
+    const relogin = await request(server())
+      .post('/v1/auth/login')
+      .send({ email: 'first@admin.test', password: 'chosen-by-admin-1' })
+      .expect(200);
+    await request(server())
+      .get('/v1/users')
+      .set(
+        'Authorization',
+        `Bearer ${(relogin.body as { accessToken: string }).accessToken}`,
+      )
       .expect(200);
   });
 
@@ -208,9 +220,21 @@ describe('create-admin bootstrap (e2e)', () => {
         newPassword: 'recovered-pw-99',
       })
       .expect(200);
+    // The change revoked every session (this access token too): log in again.
     await request(server())
       .get('/v1/users')
       .set('Authorization', `Bearer ${token}`)
+      .expect(401);
+    const relogin = await request(server())
+      .post('/v1/auth/login')
+      .send({ email: 'locked@admin.test', password: 'recovered-pw-99' })
+      .expect(200);
+    await request(server())
+      .get('/v1/users')
+      .set(
+        'Authorization',
+        `Bearer ${(relogin.body as { accessToken: string }).accessToken}`,
+      )
       .expect(200);
   });
 

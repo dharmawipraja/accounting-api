@@ -98,7 +98,7 @@ function IsProductionSafeCors(opts?: ValidationOptions) {
   );
 }
 
-/** Access tokens: ≤ 1h (they are stateless — revocation relies on expiry). */
+/** Access tokens: ≤ 1h (revocation is also checked per request via `sid`). */
 export const MAX_ACCESS_TTL_MS = 3_600_000;
 /** Refresh tokens: ≤ 30 days. */
 export const MAX_REFRESH_TTL_MS = 30 * 86_400_000;
@@ -202,6 +202,14 @@ export class EnvVars {
   @IsInt()
   @Min(1)
   THROTTLE_REFRESH_LIMIT?: number;
+
+  /** Window (ms) after a refresh token's rotation in which a replay of it is
+   *  treated as a concurrent refresh (sibling issued), not reuse. 0 = off. */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(60_000)
+  REFRESH_REUSE_GRACE_MS?: number;
 
   /** Max concurrent argon2 hash/verify operations per process (64 MiB each). */
   @IsOptional()

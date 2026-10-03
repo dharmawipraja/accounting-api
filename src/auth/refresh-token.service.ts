@@ -25,6 +25,23 @@ export { REFRESH_SESSION_LOCK_NS };
  * row (issue/rotate INSERT a refresh token, whose FK check takes FOR KEY SHARE on
  * the user row), so the row lock must never be held while waiting for this one.
  */
+/**
+ * Concurrent-refresh grace: a CONSUMED token replayed less than `graceMs` after
+ * its rotation is two tabs refreshing at once, not theft. Pure for unit tests.
+ * graceMs = 0 disables the grace (every replay is reuse).
+ */
+export function withinReuseGrace(
+  consumedAt: Date | null,
+  nowMs: number,
+  graceMs: number,
+): boolean {
+  // A negative elapsed is only cross-instance clock skew (the replay is
+  // serialized after the rotation by the per-user lock), so it counts as 0.
+  return (
+    graceMs > 0 && consumedAt !== null && nowMs - consumedAt.getTime() < graceMs
+  );
+}
+
 async function lockUserSessions(tx: LedgerTx, userId: string): Promise<void> {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(${REFRESH_SESSION_LOCK_NS}::int4, hashtext(${userId}))`;
 }
@@ -41,6 +58,24 @@ export class RefreshTokenService {
       'JWT_REFRESH_TTL',
     ) as StringValue;
     return new Date(Date.now() + ms(ttl));
+  }
+
+  private reuseGraceMs(): number {
+    return this.config.get<number>('REFRESH_REUSE_GRACE_MS') ?? 10_000;
+  }
+
+  /**
+   * True while the session family still has a live (ACTIVE) refresh token.
+   * JwtStrategy checks this on every request (`sid` claim), so logout, logout-all,
+   * password change/reset, role change, deactivation and delete — which all
+   * revoke families — kill outstanding access tokens immediately.
+   */
+  async isFamilyActive(familyId: string, userId: string): Promise<boolean> {
+    const row = await this.prisma.client.refreshToken.findFirst({
+      where: { familyId, userId, status: 'ACTIVE' },
+      select: { id: true },
+    });
+    return row !== null;
   }
 
   /** Start a new session family and issue its first refresh-token row. */
@@ -60,7 +95,13 @@ export class RefreshTokenService {
 
   /**
    * Rotate an ACTIVE refresh token: consume it and issue a successor in the same
-   * family. Replaying a CONSUMED token (theft signal) revokes the whole family.
+   * family. Replaying a CONSUMED token (theft signal) revokes the whole family —
+   * unless the replay lands within REFRESH_REUSE_GRACE_MS of its rotation (two
+   * tabs refreshing at once): then a SIBLING successor is issued in the same
+   * family and nothing is consumed or revoked. Sibling, not "rotate the family's
+   * current head": consuming the head would orphan the other tab's fresh token
+   * and its next refresh would trip reuse detection. The window is anchored on
+   * consumedAt, so replays cannot extend it; logout/revoke still kill siblings.
    * The consume + create (and the family revoke) are atomic.
    *
    * We use a discriminated result rather than throwing inside $transaction so that
@@ -83,11 +124,27 @@ export class RefreshTokenService {
             user_id: string;
             family_id: string;
             status: RefreshTokenStatus;
+            consumed_at: Date | null;
           }[]
-        >`SELECT id, user_id, family_id, status FROM refresh_tokens WHERE id = ${jti} FOR UPDATE`;
+        >`SELECT id, user_id, family_id, status, consumed_at FROM refresh_tokens WHERE id = ${jti} FOR UPDATE`;
         const row = rows[0];
         if (!row || row.user_id !== userId || row.status === 'REVOKED') {
           return { ok: false, reason: 'invalid' };
+        }
+        if (
+          row.status === 'CONSUMED' &&
+          withinReuseGrace(row.consumed_at, Date.now(), this.reuseGraceMs())
+        ) {
+          const siblingJti = randomUUID();
+          await tx.refreshToken.create({
+            data: {
+              id: siblingJti,
+              userId,
+              familyId: row.family_id,
+              expiresAt: this.expiresAt(),
+            },
+          });
+          return { ok: true, jti: siblingJti, familyId: row.family_id };
         }
         if (row.status === 'CONSUMED') {
           await tx.refreshToken.updateMany({

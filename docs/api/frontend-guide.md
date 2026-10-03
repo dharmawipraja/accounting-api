@@ -75,6 +75,15 @@ POST /auth/login      { "email": "...", "password": "..." }
   it like any expired session: send the user back to login once.
 - **Access tokens are short-lived** (~15 minutes; exact TTL is the server's
   `JWT_ACCESS_TTL`). **Refresh tokens last ~7 days** (`JWT_REFRESH_TTL`).
+- **An access token dies with its session**, not only at expiry: after a logout of
+  that session, logout-all, a password change (yours or an admin reset), a role
+  change, deactivation or deletion, the next request with it is `401` — and so is
+  the refresh. **Deploy note (2026-10):** access tokens issued before this change
+  (no `sid` claim) are rejected with `401`; refresh once or log in again.
+- **Concurrent refreshes are safe**: two tabs sending the same refresh token at
+  once (within ~10s, server `REFRESH_REUSE_GRACE_MS`) both get a valid new pair.
+  Still keep the newest pair per tab. A refresh token replayed later than that is
+  treated as stolen: the whole session is revoked (`401`, back to login).
 - On a **401** (expired/invalid access token), call:
 
   ```
@@ -485,10 +494,9 @@ field) and let it go. That user is created/reset with `mustChangePassword: true`
   { "currentPassword": "<the temp password>", "newPassword": "..." }`
   (`newPassword` 8–128 chars, `currentPassword` ≤ 128). A wrong `currentPassword`
   is `401`; a `newPassword` equal to `currentPassword` is **`422 VALIDATION_FAILED`**.
-- Success revokes **all** of the user's refresh sessions — other devices are signed
-  out immediately; the tab that just changed the password keeps working until its
-  current access token expires (≤15 min), since the access token itself isn't a
-  refresh family.
+- Success revokes **all** of the user's sessions — every device, **including the
+  tab that just changed the password**, is signed out immediately (its access token
+  is `401` on the next request). Send the user to login with the new password.
 - `GET /auth/me` includes `mustChangePassword` — check it on app load so you can
   route straight to the change-password screen instead of waiting for the first 403.
 
@@ -998,7 +1006,7 @@ no auth.
 - `POST   /auth/logout` · public (throttled) · revoke the current device's refresh token family `{ "refreshToken": "..." }`
 - `POST   /auth/logout-all` · any (authenticated) · revoke all sessions for the current user
 - `GET    /auth/me` · any · current user `{ id, email, role, mustChangePassword }`
-- `POST   /auth/change-password` · any (authenticated) · self-service `{currentPassword, newPassword}`; revokes **all** the caller's refresh sessions (see [Forced password change](#forced-password-change)). If an admin resets the same account's password while the change is in flight, the reset wins and the change answers `401` "Current password is incorrect" (sessions are revoked by the reset anyway) — send the user to login
+- `POST   /auth/change-password` · any (authenticated) · self-service `{currentPassword, newPassword}`; revokes **all** the caller's sessions, the calling access token included — log in again (see [Forced password change](#forced-password-change)). If an admin resets the same account's password while the change is in flight, the reset wins and the change answers `401` "Current password is incorrect" (sessions are revoked by the reset anyway) — send the user to login
 
 ### Users (ADMIN)
 

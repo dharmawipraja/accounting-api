@@ -158,11 +158,11 @@ describe('User management (e2e)', () => {
           newPassword: 'brand-new-pw-9',
         })
         .expect(200);
-      // Unblocked on the next request (flag cleared, fresh read per request).
+      // The change revoked every session, including this access token.
       await request(server())
-        .get('/v1/ledger/accounts')
+        .get('/v1/auth/me')
         .set('Authorization', `Bearer ${token}`)
-        .expect(200);
+        .expect(401);
       // Old refresh token is revoked.
       await request(server())
         .post('/v1/auth/refresh')
@@ -174,6 +174,11 @@ describe('User management (e2e)', () => {
         .send({ email: 'temp@um.test', password: 'temp-pass-123' })
         .expect(401);
       token = await login('temp@um.test', 'brand-new-pw-9');
+      // Unblocked after re-login (flag cleared).
+      await request(server())
+        .get('/v1/ledger/accounts')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
     });
   });
 
@@ -492,8 +497,6 @@ describe('User management (e2e)', () => {
         name: 'Race B',
         role: 'ADMIN',
       });
-      const tokenA = await login('race-a@um.test', 'secret123');
-      const tokenB = await login('race-b@um.test', 'secret123');
       const demote = (token: string, id: string) =>
         request(server())
           .patch(`/v1/users/${id}`)
@@ -510,15 +513,19 @@ describe('User management (e2e)', () => {
             where: { id: { in: [a.id, b.id] } },
             data: { role: 'ADMIN', isActive: true },
           });
+          // Fresh sessions each round: a demotion revokes the target's tokens.
+          const tokenA = await login('race-a@um.test', 'secret123');
+          const tokenB = await login('race-b@um.test', 'secret123');
           const [ra, rb] = await Promise.all([
             demote(tokenA, b.id),
             demote(tokenB, a.id),
           ]);
           const statuses = [ra.status, rb.status];
           // Winner 200; loser 422 (last-admin guard, under the admin-pool
-          // lock) or 403 (already demoted when its request authenticated).
+          // lock), 403 (already demoted when its request authenticated) or
+          // 401 (its session already revoked by the winner's demotion).
           expect(statuses.filter((s) => s === 200)).toHaveLength(1);
-          for (const s of statuses) expect([200, 403, 422]).toContain(s);
+          for (const s of statuses) expect([200, 401, 403, 422]).toContain(s);
           expect(
             await prisma.client.user.count({
               where: {
