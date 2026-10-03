@@ -18,6 +18,7 @@ import { assertBalanced } from './assert-balanced';
 import { MetricsService } from '../../metrics/metrics.service';
 import { nextSequenceNumber, SqlTx } from '../../common/db/sequence';
 import { buildDocRef } from '../../common/db/doc-ref';
+import { lockLiveRow } from '../../common/db/lock-live-row';
 import {
   AccountPolicy,
   FORBIDDEN_ROLE_MESSAGE,
@@ -567,10 +568,13 @@ export class PostingService {
       // Lock the draft row and re-check status BEFORE consuming a number, so a
       // concurrent/retried postDraft of the same draft can't burn a gapless
       // number (and can't resurrect a soft-deleted draft).
-      const locked = await tx.$queryRaw<{ status: string }[]>`
-        SELECT status FROM journal_entries
-        WHERE id = ${draftId} AND deleted_at IS NULL FOR UPDATE`;
-      if (locked.length === 0 || locked[0].status !== 'DRAFT') {
+      const locked = await lockLiveRow<{ status: string }>(
+        tx,
+        'journal_entries',
+        draftId,
+        'status',
+      );
+      if (!locked || locked.status !== 'DRAFT') {
         throw new ValidationFailedError('Entry is no longer a draft', {
           id: draftId,
         });

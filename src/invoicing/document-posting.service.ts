@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { JournalEntry, Prisma } from '@prisma/client';
+import { JournalEntry } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import {
   PostingService,
@@ -20,6 +20,7 @@ export type NoteTaxOptions = Pick<
   'allowInactiveCodes' | 'overrideAmounts'
 >;
 import { ValidationFailedError } from '../common/errors/domain-errors';
+import { lockLiveRow } from '../common/db/lock-live-row';
 import { Money } from '../common/money/money';
 import {
   assertDocumentLineAccountsPostable,
@@ -209,18 +210,15 @@ export class DocumentPostingService {
   }
 
   /** FOR UPDATE the source row and re-check it is still DRAFT, before a number is
-   *  consumed. `table` is a constant union literal supplied by the adapter (never
-   *  user input), so Prisma.raw(table) is injection-safe; `id` is a bound param. */
+   *  consumed. `table` is a constant union literal supplied by the adapter. */
   private async lockDraftInTx(
     tx: LedgerTx,
     table: TaxedTable,
     id: string,
     notDraftMessage: string,
   ): Promise<void> {
-    const rows = await tx.$queryRaw<{ status: string }[]>(
-      Prisma.sql`SELECT status FROM ${Prisma.raw(table)} WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`,
-    );
-    if (rows.length === 0 || rows[0].status !== 'DRAFT')
+    const row = await lockLiveRow<{ status: string }>(tx, table, id, 'status');
+    if (!row || row.status !== 'DRAFT')
       throw new ValidationFailedError(notDraftMessage, { id });
   }
 }

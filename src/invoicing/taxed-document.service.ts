@@ -23,6 +23,7 @@ import {
 import type { LedgerTx } from '../common/prisma/prisma.service';
 import { trigramSearch } from '../common/search/trigram-search';
 import { listPaginated } from '../common/pagination/paginated';
+import { lockLiveRow } from '../common/db/lock-live-row';
 import {
   taxableLines,
   findControlAccountId,
@@ -451,15 +452,12 @@ export class TaxedDocumentService {
   }
 
   /** FOR UPDATE lock for void: returns status + amount_paid for the in-tx re-check. */
-  private async lockForVoid(
+  private lockForVoid(
     tx: LedgerTx,
     spec: DocumentDescriptor<DocumentRow>,
     id: string,
   ): Promise<{ status: string; amount_paid: string } | undefined> {
-    const rows = await tx.$queryRaw<{ status: string; amount_paid: string }[]>(
-      Prisma.sql`SELECT status, amount_paid FROM ${Prisma.raw(spec.table)} WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`,
-    );
-    return rows[0];
+    return lockLiveRow(tx, spec.table, id, 'status, amount_paid');
   }
 
   /** FOR UPDATE the document row and re-check it is still a live DRAFT; the
@@ -471,14 +469,17 @@ export class TaxedDocumentService {
     id: string,
     message: string,
   ): Promise<void> {
-    const rows = await tx.$queryRaw<{ status: string }[]>(
-      Prisma.sql`SELECT status FROM ${Prisma.raw(spec.table)} WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`,
+    const row = await lockLiveRow<{ status: string }>(
+      tx,
+      spec.table,
+      id,
+      'status',
     );
     // Row gone (deleted since the pre-read) → the same 404 getById gives.
-    if (rows.length === 0)
+    if (!row)
       throw new NotFoundDomainError(documentMessages(spec).notFound, { id });
-    if (rows[0].status !== 'DRAFT')
-      throw new ValidationFailedError(message, { id, status: rows[0].status });
+    if (row.status !== 'DRAFT')
+      throw new ValidationFailedError(message, { id, status: row.status });
   }
 }
 

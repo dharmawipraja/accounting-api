@@ -5,6 +5,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { Money } from '../common/money/money';
+import { lockLiveRow } from '../common/db/lock-live-row';
 import type { LedgerTx } from '../common/prisma/prisma.service';
 import { ExtendedPrismaClient } from '../common/prisma/soft-delete.extension';
 import {
@@ -432,31 +433,32 @@ export async function settleInTx(
   settledBefore: Money = Money.zero(),
 ): Promise<void> {
   const id = target.allocId(alloc)!;
-  const rows = await tx.$queryRaw<
-    {
-      status: string;
-      total: string;
-      settled: string;
-      partner_id: string;
-      date: Date;
-    }[]
-  >(
-    Prisma.sql`SELECT status, total, amount_paid + credited_total AS settled, partner_id, date FROM ${Prisma.raw(target.table)} WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`,
+  const row = await lockLiveRow<{
+    status: string;
+    total: string;
+    settled: string;
+    partner_id: string;
+    date: Date;
+  }>(
+    tx,
+    target.table,
+    id,
+    'status, total, amount_paid + credited_total AS settled, partner_id, date',
   );
-  if (rows.length === 0 || rows[0].status !== 'POSTED')
+  if (!row || row.status !== 'POSTED')
     throw new ValidationFailedError(`Allocated ${target.noun} is not posted`, {
       id,
     });
-  if (rows[0].partner_id !== partnerId)
+  if (row.partner_id !== partnerId)
     throw new ValidationFailedError(
       `Allocated ${target.noun} belongs to another partner`,
       { id },
     );
-  assertPaymentDateNotBefore(paymentDate, { id, date: rows[0].date });
+  assertPaymentDateNotBefore(paymentDate, { id, date: row.date });
   if (
     exceedsOutstanding(
-      new Prisma.Decimal(rows[0].total),
-      new Prisma.Decimal(rows[0].settled),
+      new Prisma.Decimal(row.total),
+      new Prisma.Decimal(row.settled),
       alloc.amount,
     )
   )
@@ -464,7 +466,7 @@ export async function settleInTx(
   await assertNoBackdatedOverAllocation(
     tx,
     target,
-    { id, total: new Prisma.Decimal(rows[0].total) },
+    { id, total: new Prisma.Decimal(row.total) },
     paymentDate,
     settledBefore.add(Money.of(alloc.amount)).toPersistence(),
   );
@@ -478,12 +480,15 @@ export async function unwindInTx(
   alloc: AllocationInput,
 ): Promise<void> {
   const id = target.allocId(alloc)!;
-  const rows = await tx.$queryRaw<{ amount_paid: string }[]>(
-    Prisma.sql`SELECT amount_paid FROM ${Prisma.raw(target.table)} WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`,
+  const row = await lockLiveRow<{ amount_paid: string }>(
+    tx,
+    target.table,
+    id,
+    'amount_paid',
   );
   if (
-    rows.length === 0 ||
-    Money.of(rows[0].amount_paid).subtract(Money.of(alloc.amount)).isNegative()
+    !row ||
+    Money.of(row.amount_paid).subtract(Money.of(alloc.amount)).isNegative()
   )
     throw new ConflictDomainError('Void would drive amountPaid negative', {
       id,

@@ -5,6 +5,7 @@ import {
   ValidationFailedError,
 } from '../common/errors/domain-errors';
 import { listPaginated } from '../common/pagination/paginated';
+import { lockLiveRow } from '../common/db/lock-live-row';
 import { RefreshTokenService } from '../auth/refresh-token.service';
 import { tombstoneData } from '../common/prisma/tombstone';
 import { UsersService, SafeUser } from './users.service';
@@ -147,9 +148,7 @@ export class UserAdminService {
     const updated = await this.prisma.transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(${USER_ADMIN_LOCK_KEY})`;
       // Soft-delete extension does NOT apply inside $transaction → filter explicitly.
-      const rows = await tx.$queryRaw<{ id: string }[]>`
-        SELECT id FROM users WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
-      if (rows.length === 0)
+      if (!(await lockLiveRow(tx, 'users', id, 'id')))
         throw new NotFoundDomainError('User not found', { id });
       return tx.user.update({
         where: { id },

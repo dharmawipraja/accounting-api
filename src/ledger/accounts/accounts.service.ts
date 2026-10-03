@@ -3,6 +3,7 @@ import { Account, AccountSubtype, AccountType, Prisma } from '@prisma/client';
 import { LedgerTx, PrismaService } from '../../common/prisma/prisma.service';
 import { tombstoneData } from '../../common/prisma/tombstone';
 import { listPaginated, Paginated } from '../../common/pagination/paginated';
+import { lockLiveRow } from '../../common/db/lock-live-row';
 import {
   ConflictDomainError,
   NotFoundDomainError,
@@ -327,12 +328,14 @@ export class AccountsService implements OnModuleInit {
    *  ACTIVE children) serializes with this: either it sees this child active
    *  (422 HAS_CHILDREN) or this sees the header inactive (422 PARENT_INACTIVE). */
   private async lockForReactivate(tx: LedgerTx, id: string): Promise<void> {
-    const rows = await tx.$queryRaw<{ parent_id: string | null }[]>`
-      SELECT parent_id FROM accounts
-      WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
-    if (rows.length === 0)
-      throw new NotFoundDomainError('Account not found', { id });
-    const parentId = rows[0].parent_id;
+    const row = await lockLiveRow<{ parent_id: string | null }>(
+      tx,
+      'accounts',
+      id,
+      'parent_id',
+    );
+    if (!row) throw new NotFoundDomainError('Account not found', { id });
+    const parentId = row.parent_id;
     if (!parentId) return;
     const [parent] = await tx.$queryRaw<{ is_active: boolean }[]>`
       SELECT is_active FROM accounts WHERE id = ${parentId} FOR SHARE`;
@@ -347,20 +350,18 @@ export class AccountsService implements OnModuleInit {
    *  before roles existed) so payments can use it. Locks the row FOR UPDATE and
    *  applies the shared shape rule (`assertCashAssignable`, also used by create). */
   private async lockCashCandidate(tx: LedgerTx, id: string): Promise<void> {
-    const rows = await tx.$queryRaw<
-      {
-        type: string;
-        normal_balance: string;
-        role: string | null;
-        is_postable: boolean;
-      }[]
-    >`
-      SELECT type::text AS type, normal_balance::text AS normal_balance,
-             role::text AS role, is_postable
-      FROM accounts WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
-    if (rows.length === 0)
-      throw new NotFoundDomainError('Account not found', { id });
-    const a = rows[0];
+    const a = await lockLiveRow<{
+      type: string;
+      normal_balance: string;
+      role: string | null;
+      is_postable: boolean;
+    }>(
+      tx,
+      'accounts',
+      id,
+      'type::text AS type, normal_balance::text AS normal_balance, role::text AS role, is_postable',
+    );
+    if (!a) throw new NotFoundDomainError('Account not found', { id });
     // Raw on purpose: soft-deleted tax codes count too (their posted history
     // still sits on the account). Serializes with tax-code create, which
     // reads the account FOR SHARE before inserting.
@@ -423,11 +424,13 @@ export class AccountsService implements OnModuleInit {
     id: string,
     action: 'deactivate' | 'delete',
   ): Promise<{ code: string }> {
-    const rows = await tx.$queryRaw<{ code: string; role: string | null }[]>`
-      SELECT code, role::text AS role FROM accounts
-      WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
-    if (rows.length === 0)
-      throw new NotFoundDomainError('Account not found', { id });
+    const row = await lockLiveRow<{ code: string; role: string | null }>(
+      tx,
+      'accounts',
+      id,
+      'code, role::text AS role',
+    );
+    if (!row) throw new NotFoundDomainError('Account not found', { id });
     // A header must not be retired over live children: deleting it would
     // orphan them (parent_id → a tombstone), deactivating it over ACTIVE
     // children would leave active accounts under an inactive header.
@@ -446,15 +449,15 @@ export class AccountsService implements OnModuleInit {
           : 'Cannot deactivate an account that still has active child accounts; deactivate them first',
         { id, reason: 'HAS_CHILDREN', children },
       );
-    if (rows[0].role === 'CASH') {
+    if (row.role === 'CASH') {
       await this.assertCashRetirable(tx, id, action);
-    } else if (rows[0].role !== null) {
+    } else if (row.role !== null) {
       throw new ValidationFailedError(
-        `Cannot ${action} a system account (role ${rows[0].role})`,
-        { id, role: rows[0].role },
+        `Cannot ${action} a system account (role ${row.role})`,
+        { id, role: row.role },
       );
     }
-    return rows[0];
+    return row;
   }
 
   /** A CASH account may be retired only when (a) its posted balance is zero —

@@ -10,6 +10,7 @@ import { assertNotAfterToday } from '../common/dates/not-after-today';
 import { PrismaService } from '../common/prisma/prisma.service';
 import type { LedgerTx } from '../common/prisma/prisma.service';
 import { Money } from '../common/money/money';
+import { lockLiveRow } from '../common/db/lock-live-row';
 import { serializeMoney } from '../common/money/serialize-money';
 import {
   NotFoundDomainError,
@@ -298,15 +299,13 @@ export class NotesService {
       reversalDate: voidedOn,
       alreadyReversedMessage: m.alreadyReversed,
       notPostedMessage: m.notPosted,
-      lock: async (tx) => {
-        const rows = await tx.$queryRaw<
-          { status: string; credited_amount: string }[]
-        >(Prisma.sql`
-          SELECT status, credited_amount::text AS credited_amount
-          FROM ${Prisma.raw(kind.table)}
-          WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`);
-        return rows[0];
-      },
+      lock: (tx) =>
+        lockLiveRow<{ status: string; credited_amount: string }>(
+          tx,
+          kind.table,
+          id,
+          'status, credited_amount::text AS credited_amount',
+        ),
       applyInTx: async (tx, locked) => {
         await assertNoLiveApplicationsInTx(tx, kind.credit, id, voidedOn);
         // Voiding reopens the original's balance: like a payment void, not
@@ -453,11 +452,12 @@ export class NotesService {
     kind: NoteKind,
     originalId: string,
   ): Promise<LockedOriginal> {
-    const [row] = await tx.$queryRaw<LockedOriginal[]>(Prisma.sql`
-      SELECT status::text AS status, total::text AS total,
-             (total - amount_paid - credited_total)::text AS outstanding
-      FROM ${Prisma.raw(kind.original.table)}
-      WHERE id = ${originalId} AND deleted_at IS NULL FOR UPDATE`);
+    const row = await lockLiveRow<LockedOriginal>(
+      tx,
+      kind.original.table,
+      originalId,
+      'status::text AS status, total::text AS total, (total - amount_paid - credited_total)::text AS outstanding',
+    );
     if (!row || row.status !== 'POSTED')
       throw new ValidationFailedError(
         `A ${kind.spec.noun} can only return a POSTED ${kind.original.noun}`,

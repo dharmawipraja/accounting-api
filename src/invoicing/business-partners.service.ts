@@ -13,6 +13,7 @@ import {
 } from '../common/text/identifier';
 import { trigramSearch } from '../common/search/trigram-search';
 import { listPaginated, Paginated } from '../common/pagination/paginated';
+import { lockLiveRow } from '../common/db/lock-live-row';
 import { tombstoneData } from '../common/prisma/tombstone';
 import type { LedgerTx } from '../common/prisma/prisma.service';
 import type { CreateBusinessPartnerDto } from './dto/create-business-partner.dto';
@@ -276,11 +277,13 @@ export class BusinessPartnersService {
    *  writes and a delete serialize. 422 `{ id, reason: 'OPEN_ITEMS' }`. */
   async softDelete(id: string, deletedBy: string): Promise<void> {
     await this.prisma.transaction(async (tx) => {
-      const rows = await tx.$queryRaw<{ code: string }[]>`
-        SELECT code FROM business_partners
-        WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
-      if (rows.length === 0)
-        throw new NotFoundDomainError('Partner not found', { id });
+      const row = await lockLiveRow<{ code: string }>(
+        tx,
+        'business_partners',
+        id,
+        'code',
+      );
+      if (!row) throw new NotFoundDomainError('Partner not found', { id });
       const open = await this.openItems(tx, id, ['CUSTOMER', 'VENDOR']);
       if (
         open.drafts +
@@ -302,7 +305,7 @@ export class BusinessPartnersService {
         );
       await tx.businessPartner.update({
         where: { id },
-        data: tombstoneData('code', rows[0].code, id, deletedBy),
+        data: tombstoneData('code', row.code, id, deletedBy),
       });
     });
   }

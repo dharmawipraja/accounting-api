@@ -9,6 +9,7 @@ import { assertNotAfterToday } from '../common/dates/not-after-today';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { trigramSearch } from '../common/search/trigram-search';
 import { Money } from '../common/money/money';
+import { lockLiveRow } from '../common/db/lock-live-row';
 import {
   POSTING_TX_OPTIONS,
   PostingService,
@@ -381,9 +382,13 @@ export class PaymentsService {
 
     await this.prisma.transaction(async (tx) => {
       // Lock + re-check the payment is still a draft.
-      const lockedP = await tx.$queryRaw<{ status: string }[]>`
-        SELECT status FROM payments WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
-      if (lockedP.length === 0 || lockedP[0].status !== 'DRAFT')
+      const lockedP = await lockLiveRow<{ status: string }>(
+        tx,
+        'payments',
+        id,
+        'status',
+      );
+      if (!lockedP || lockedP.status !== 'DRAFT')
         throw new ValidationFailedError('Payment is no longer a draft', {
           id,
         });
@@ -488,11 +493,8 @@ export class PaymentsService {
       reversalDate: voidedOn,
       alreadyReversedMessage: 'Payment journal entry was already reversed',
       notPostedMessage: 'Payment is not posted',
-      lock: async (tx) => {
-        const locked = await tx.$queryRaw<{ status: string }[]>`
-          SELECT status FROM payments WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
-        return locked[0];
-      },
+      lock: (tx) =>
+        lockLiveRow<{ status: string }>(tx, 'payments', id, 'status'),
       applyInTx: async (tx) => {
         // Voiding reopens the allocated documents' balances; refuse when the
         // partner was soft-deleted (a fully settled partner may be deleted),
@@ -831,12 +833,8 @@ export class PaymentsService {
       reversalDate: reversedOn,
       alreadyReversedMessage: `${what} was already reversed`,
       notPostedMessage: `${cap(source.noun)} is not posted`,
-      lock: async (tx) => {
-        const locked = await tx.$queryRaw<{ status: string }[]>(Prisma.sql`
-          SELECT status FROM ${Prisma.raw(source.table)}
-          WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`);
-        return locked[0];
-      },
+      lock: (tx) =>
+        lockLiveRow<{ status: string }>(tx, source.table, id, 'status'),
       applyInTx: async (tx) => {
         const [row] = await tx.$queryRaw<{ reversed_on: Date | null }[]>`
           SELECT reversed_on FROM payment_applications WHERE id = ${applicationId}`;
@@ -999,12 +997,15 @@ async function lockHolderWithinUnapplied(
   total: Money,
   use: CreditUse,
 ): Promise<void> {
-  const [locked] = await tx.$queryRaw<
-    { status: string; unapplied_amount: string }[]
-  >(Prisma.sql`
-    SELECT status, unapplied_amount::text AS unapplied_amount
-    FROM ${Prisma.raw(source.table)}
-    WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`);
+  const locked = await lockLiveRow<{
+    status: string;
+    unapplied_amount: string;
+  }>(
+    tx,
+    source.table,
+    id,
+    'status, unapplied_amount::text AS unapplied_amount',
+  );
   if (!locked || locked.status !== 'POSTED')
     throw new ValidationFailedError(`${cap(source.noun)} is no longer posted`, {
       id,
