@@ -44,6 +44,30 @@ jobs:
           path: coverage-e2e/
           if-no-files-found: ignore
 
+  schema-drift:
+    # Hand-authored migrations + schema.prisma must agree: apply every migration
+    # to a fresh Postgres and require an empty diff against the datamodel.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16@sha256:fe03a7605299a34ddf5e4f285dff78c3d7190a576b3c6b46f2fcff69f4bffd54
+        env:
+          POSTGRES_PASSWORD: drift
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-retries 30
+    env:
+      DATABASE_URL: postgresql://postgres:drift@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx prisma migrate deploy
+      - run: npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+
   audit:
     runs-on: ubuntu-latest
     steps:

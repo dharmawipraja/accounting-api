@@ -137,7 +137,7 @@ import {
 })
 export class AppModule implements NestModule {
   /** Runs after body parsing, before guards/interceptors/pipes: an over-deep
-   *  JSON body is a 400 before anything recurses over it (AUDIT3-17) —
+   *  JSON body is a 400 before anything recurses over it —
    *  including the InputHygieneGuard's body walk. (`Cache-Control: no-store`
    *  for `/v*` is an app-level `app.use(noStoreApiResponses)` registered
    *  before the body parsers — main.ts / the e2e bootstrap — so body-parser

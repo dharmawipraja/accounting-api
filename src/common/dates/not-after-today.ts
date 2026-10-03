@@ -9,7 +9,7 @@ const isoDay = (d: Date) => d.toISOString().slice(0, 10);
  *  asOfOrToday), consistent with the year-end close rule — EXCEPT that a
  *  future-dated original (document / entry dated after today) may always be
  *  voided / reversed on its own date: the ceiling is
- *  `max(today, originalDate)` (the iteration-6 ruling, matching the no-body
+ *  `max(today, originalDate)` (matching the no-body
  *  void, which defaults to the original date). The floor
  *  (`date >= originalDate`) is checked separately (assertVoidDateNotBefore /
  *  the posting reversal). Returns the 422 details `{ date, today }` (plus

@@ -113,7 +113,7 @@ export class UsersService {
    *  Reusing the current password is refused (422) — checked before any argon2
    *  work, and it discloses nothing (the caller supplied both values).
    *
-   *  Serialized with an admin reset-password (AUDIT3-17): the argon2 work runs
+   *  Serialized with an admin reset-password: the argon2 work runs
    *  OUTSIDE any lock, then the write re-reads the row `FOR UPDATE` and only
    *  proceeds if the hash is still the one the current password was verified
    *  against. A reset (or another change) that committed in between wins — this

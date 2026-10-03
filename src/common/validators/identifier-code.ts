@@ -11,7 +11,7 @@ import {
 
 /** A string short enough to normalize / scan. A longer one is left untouched
  *  and unchecked here: the field's `@MaxLength` (≤ 160) rejects it, so an
- *  oversized body costs no normalization work (iter9 ReDoS guard). */
+ *  oversized body costs no normalization work (ReDoS guard). */
 const inBudget = (v: unknown): v is string =>
   typeof v === 'string' && v.length <= MAX_NORMALIZED_INPUT_LENGTH;
 

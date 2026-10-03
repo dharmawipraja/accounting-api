@@ -25,8 +25,15 @@ All notable changes to this project are documented here. The format is based on
   one ordered `classifyException()` shared by the exception filter and audit
   status, and a single-key-space audit rejection limiter.
 
+- **Year-end close waits for the day after year-end** — closing on 31 Dec itself
+  is now 422 (that day's documents could still arrive).
+- **Fiscal-year bounds unified** to 2000–2100 on every endpoint, including path
+  params (`/close/year-end/:fiscalYear`, `?fiscalYear=`), which were unbounded.
+
 ### Removed
 
+- Unused dev dependencies `ts-loader`, `@eslint/eslintrc`,
+  `source-map-support`, `tsconfig-paths`.
 - `GET /v1/auth/admin-only` (Phase-1 RBAC smoke route) and the
   `application/x-www-form-urlencoded` body parser — the API is JSON-only.
 
@@ -41,9 +48,9 @@ All notable changes to this project are documented here. The format is based on
   and one PPh code (e.g. `PPH23-PAY` + `PPH42-PAY` on one line → 422).
 - **Final PPh 4(2) is an expense** — the seeded `PPH42-PRE` now posts to the new
   `5-9100 Beban PPh Final`, not `1-1500 Uang Muka PPh`; `PPH_PREPAID` codes may
-  target a debit-normal expense account. *Existing installs* (seeding only runs
-  on an empty DB): create `5-9100` (EXPENSE / OTHER_EXPENSE / DEBIT), create a new
-  `PPH_PREPAID` code on it, and deactivate the old `PPH42-PRE`.
+  target a debit-normal expense account. Existing installs are migrated by
+  `20261006000000_pph42_final_expense_account` (creates `5-9100`, repoints a
+  `PPH42-PRE` still on `1-1500`; audited as `method=MIGRATION`).
 - **Login throttle can no longer lock the owner out** — the per-minute login
   bucket is keyed by (email, client IP) instead of email alone. Guessing one
   account from many IPs is capped by a new per-account failed-login ceiling

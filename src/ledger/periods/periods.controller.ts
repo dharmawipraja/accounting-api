@@ -1,10 +1,10 @@
+import { ParseFiscalYearPipe } from '../../common/validators/parse-fiscal-year.pipe';
 import {
   Body,
   Controller,
   Get,
   HttpCode,
   Param,
-  ParseIntPipe,
   ParseUUIDPipe,
   Post,
   Query,
@@ -33,7 +33,7 @@ export class PeriodsController {
   @Get()
   @ApiOkResponse({ type: FiscalPeriodResponseDto, isArray: true })
   list(
-    @Query('fiscalYear', ParseIntPipe) fiscalYear: number,
+    @Query('fiscalYear', new ParseFiscalYearPipe()) fiscalYear: number,
   ): Promise<AccountingPeriod[]> {
     return this.periods.list(fiscalYear);
   }

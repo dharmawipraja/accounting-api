@@ -804,8 +804,9 @@ GET  /close/year-end/:fy          close status for a fiscal year (any auth; 404 
   `POST /ledger/periods/generate`). A date in an existing but closed period is never
   regenerated.
 - Year-end close zeroes the cumulative P&L into Laba Ditahan (retained earnings).
-- **Only a fiscal year that has ended can be closed**: its last day must be on/before
-  today (company calendar day, WIB) — closing on the year's last day itself is allowed.
+- **Only a fiscal year that has ended can be closed**: its last day must be strictly before
+  today (company calendar day, WIB) — not on the year's last day itself (that day's
+  documents can still arrive); close from the next day on.
   A year still running (or a future one) → `422 VALIDATION_FAILED`
   `details: { fiscalYear, yearEnd }` (`yearEnd` = `YYYY-MM-DD`). Reopen is unaffected.
 - **Year-end close (and reopen) need the fiscal year's LAST period OPEN**: the closing

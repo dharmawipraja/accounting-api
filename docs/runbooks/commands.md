@@ -142,7 +142,7 @@ npm run db:reset       # nuke + rebuild dev DB (destructive)
 | `test` | `jest` | Unit tests (`src/**/*.spec.ts`). Fast, no DB. |
 | `test:watch` | `jest --watch` | Unit tests in watch mode. |
 | `test:cov` | `jest --coverage` | Unit tests with a coverage report (`coverage/`). |
-| `test:debug` | `node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand` | Runs Jest serially under the debugger; breaks on start so you can attach to `:9229`. |
+| `test:debug` | `node --inspect-brk -r ts-node/register node_modules/.bin/jest --runInBand` | Runs Jest serially under the debugger; breaks on start so you can attach to `:9229`. |
 | `test:e2e` | `jest --config ./test/jest-e2e.json` | End-to-end tests against a real Postgres. |
 | `test:e2e:cov` | `jest --config ./test/jest-e2e.json --coverage` | e2e tests with coverage. Part of `verify`. |
 

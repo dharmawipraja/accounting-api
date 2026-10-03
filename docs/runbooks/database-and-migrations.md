@@ -243,6 +243,14 @@ rename the DB index — Prisma still emits the default index name (e.g.
    Testcontainer and runs `npx prisma migrate deploy` against it
    (`test/testcontainers.ts`), so **every e2e run replays the full migration
    history from scratch**. A broken or non-idempotent migration fails the suite.
+5. **Drift check** (CI job `schema-drift`): every migration applied to a fresh
+   Postgres must leave **no difference** against `schema.prisma`:
+   `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code`
+   (exit 2 = drift). Run it locally against a migrated database before pushing.
+6. **Name the folder later than every existing one.** Prisma applies migrations in
+   folder-name order, and some existing folders are dated ahead of their commit
+   (latest `20261006000000_*`). A new folder must sort after the newest one, or a
+   fresh database applies it in a different order than an existing one.
 
 > ⚠️ **Do not let `prisma migrate dev` clobber a hand-authored migration.** If you
 > edit the schema after hand-writing a migration's SQL, `migrate dev` may try to

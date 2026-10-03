@@ -203,7 +203,7 @@ later year before an earlier one does not double-count; close years **in order**
   before closing its last month (or reopen that month first).
 - Deactivated P&L accounts are included (the `CLOSING` policy skips the `isActive`
   check); close → reopen → re-close all work.
-- **Only an ended year.** The fiscal year-end must be on/before today (WIB, via
+- **Only an ended year.** The fiscal year-end must be strictly before today (WIB, via
   `asOfOrToday`) → else `422 { fiscalYear, yearEnd }` (`yearNotEndedViolation` in
   `src/close/close-date-rule.ts`). E2E fixtures therefore close past years (e.g. 2006+),
   never the current/next one.

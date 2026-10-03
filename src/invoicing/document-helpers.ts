@@ -161,7 +161,6 @@ export function sameTaxCalculation(
       const m = b.journalLines[i];
       return (
         l.accountId === m.accountId &&
-        (l.description ?? null) === (m.description ?? null) &&
         amt(l.debit, m.debit) &&
         amt(l.credit, m.credit)
       );

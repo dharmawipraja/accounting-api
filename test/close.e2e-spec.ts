@@ -392,7 +392,7 @@ describe('Year-end close (e2e)', () => {
 
   it('POST reopen without an Idempotency-Key header returns 422 before reaching the service', async () => {
     const res = await request(app.getHttpServer() as App)
-      .post('/v1/close/year-end/9999/reopen')
+      .post('/v1/close/year-end/2099/reopen')
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(422);
     expect((res.body as { message: string }).message).toContain(
@@ -400,10 +400,17 @@ describe('Year-end close (e2e)', () => {
     );
   });
 
-  it('C-8: GET /v1/close/year-end/9999 for a never-closed year returns 404 NOT_FOUND', async () => {
+  it('rejects an out-of-range fiscal year in the path (400) — it would also be an advisory-lock key', async () => {
+    await request(app.getHttpServer() as App)
+      .get('/v1/close/year-end/71001001')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(400);
+  });
+
+  it('C-8: GET /v1/close/year-end/2099 for a never-closed year returns 404 NOT_FOUND', async () => {
     // C-8: ClosingController.status — no record for this year → 404
     const res = await request(app.getHttpServer() as App)
-      .get('/v1/close/year-end/9999')
+      .get('/v1/close/year-end/2099')
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(404);
     expect((res.body as { code: string }).code).toBe('NOT_FOUND');

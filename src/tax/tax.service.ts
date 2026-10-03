@@ -32,7 +32,6 @@ export interface CalculatedLine {
   accountId: string;
   debit?: string;
   credit?: string;
-  description?: string;
 }
 
 export interface TaxCalculation {

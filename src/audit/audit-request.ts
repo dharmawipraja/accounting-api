@@ -71,7 +71,7 @@ function capParams(params: Record<string, unknown> | undefined): unknown {
 export const AUDIT_BODY_MAX_BYTES = 512 * 1024;
 /** Byte cap for every OTHER authenticated row: a rejected body (a 400, a
  *  guard 403 / 429 — it never passed validation) or a read-only POST. Junk
- *  input stays small (disk-fill DoS, AUDIT3-17 / iteration-4 / iteration-5). */
+ *  input stays small (disk-fill DoS). */
 export const AUDIT_SMALL_BODY_MAX_BYTES = 8192;
 /** Preview length (code points of the JSON text) kept when a body is capped. */
 export const AUDIT_BODY_PREVIEW_CODE_POINTS = 1024;
@@ -162,7 +162,7 @@ function bodyAccepted(status: number): boolean {
  *  - a handler that binds no body (`bindsBody: false`) → `{}`;
  *  - an ANONYMOUS request → `{}`, except a login attempt (`LOGIN_ATTEMPT`),
  *    which keeps only `{ email }` (`loginAttemptBody`): unauthenticated input
- *    is never copied into the append-only log (disk-fill DoS, AUDIT3-17);
+ *    is never copied into the append-only log (disk-fill DoS);
  *  - an authenticated request → the sanitized body, size-capped (`capBody`)
  *    at `AUDIT_BODY_MAX_BYTES` when the pipe accepted it (`bodyAccepted`) on
  *    a state-changing handler, else `AUDIT_SMALL_BODY_MAX_BYTES` (incl. every

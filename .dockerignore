@@ -12,6 +12,8 @@ docs
 .superpowers
 .claude
 coverage
+coverage-e2e
+coverage-merged
 .nyc_output
 # Intentionally redundant with `docs` above: keeps plans/session notes out of the
 # build context even if `docs` is ever re-included (e.g. for bundled API docs).

@@ -17,7 +17,7 @@
  * also strips U+FEFF (ZERO WIDTH NO-BREAK SPACE), which we want REJECTED as
  * a format character rather than silently removed at the ends only.
  *
- * LINEAR TIME (iter9 P1): the trim scans code units from both ends — never
+ * LINEAR TIME: the trim scans code units from both ends — never
  * an alternation regex like `/^\s+|\s+$/g`, which is O(N²) on 'a' + N
  * spaces + 'a' (a ~1 MB body blocked the event loop for minutes). Every
  * regex here matches a bounded window per position (no nested / overlapping

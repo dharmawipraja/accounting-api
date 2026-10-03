@@ -1,12 +1,5 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  Param,
-  ParseIntPipe,
-  Post,
-} from '@nestjs/common';
+import { ParseFiscalYearPipe } from '../common/validators/parse-fiscal-year.pipe';
+import { Body, Controller, Get, HttpCode, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { YearEndClosingResponseDto } from './dto/closing-response.dto';
 import { YearEndClosing } from '@prisma/client';
@@ -43,7 +36,7 @@ export class ClosingController {
   @Post(':fiscalYear/reopen')
   @HttpCode(200)
   reopen(
-    @Param('fiscalYear', ParseIntPipe) fiscalYear: number,
+    @Param('fiscalYear', new ParseFiscalYearPipe()) fiscalYear: number,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<YearEndClosing> {
     return this.close.reopen(fiscalYear, user.id);
@@ -52,7 +45,7 @@ export class ClosingController {
   @ApiOkResponse({ type: YearEndClosingResponseDto })
   @Get(':fiscalYear')
   async status(
-    @Param('fiscalYear', ParseIntPipe) fiscalYear: number,
+    @Param('fiscalYear', new ParseFiscalYearPipe()) fiscalYear: number,
   ): Promise<YearEndClosing> {
     const rec = await this.close.getStatus(fiscalYear);
     if (!rec)

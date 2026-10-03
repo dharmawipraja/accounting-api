@@ -146,7 +146,7 @@ export class UserAdminService {
   }
 
   /** New one-time password; all sessions die; user must change on next login.
-   *  Lock order (AUDIT3-17): admin-pool advisory lock → the user row FOR UPDATE
+   *  Lock order: admin-pool advisory lock → the user row FOR UPDATE
    *  — the same row lock UsersService.changePassword takes before its write, so
    *  a reset and a self-service change serialize (a change that verified the
    *  pre-reset hash is refused once the reset commits). */

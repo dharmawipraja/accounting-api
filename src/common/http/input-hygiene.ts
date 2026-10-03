@@ -57,7 +57,7 @@ export function invalidCharactersLocation(
  *  UserThrottlerGuard → InputHygieneGuard → RolesGuard → PasswordChangeGuard):
  *  a lone surrogate or U+0000 in a body key/value, a query key/value or a
  *  route param is a 400 INVALID_CHARACTERS `{ location }` before validation,
- *  the role check and any handler write (Audit7 P1: such input used to write
+ *  the role check and any handler write (such input used to write
  *  the domain row while its jsonb audit row failed). Running AFTER
  *  authentication and the throttle means the exception filter's rejection
  *  row follows the normal rules: an authenticated caller's row carries its
