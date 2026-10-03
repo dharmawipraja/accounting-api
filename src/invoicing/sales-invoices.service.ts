@@ -3,41 +3,17 @@ import { DocumentStatus, SalesInvoice, SalesInvoiceLine } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { TaxedDocumentService } from './taxed-document.service';
 import { presentDocument } from './document-presenter';
-import { DocumentDescriptor } from './document-descriptor';
+import {
+  CreateDocumentInput,
+  DocumentDescriptor,
+  UpdateDocumentInput,
+} from './document-descriptor';
 
 export type SalesInvoiceRow = SalesInvoice & { lines?: SalesInvoiceLine[] };
 
-export interface InvoiceLineInput {
-  description: string;
-  accountId: string;
-  quantity: string;
-  unitPrice: string;
-  taxCodeIds: string[];
-}
-export interface CreateInvoiceInput {
-  partnerId: string;
-  date: Date;
-  dueDate?: Date;
-  description?: string;
-  lines: InvoiceLineInput[];
-  createdBy: string;
-}
-export interface UpdateInvoiceInput {
-  date?: Date;
-  /** `null` clears the stored due date; `undefined` keeps it. */
-  dueDate?: Date | null;
-  /** `null` clears the stored description; `undefined` keeps it. */
-  description?: string | null;
-  lines?: InvoiceLineInput[];
-}
-
 @Injectable()
 export class SalesInvoicesService {
-  private readonly spec: DocumentDescriptor<
-    SalesInvoiceRow,
-    CreateInvoiceInput,
-    UpdateInvoiceInput
-  >;
+  private readonly spec: DocumentDescriptor<SalesInvoiceRow>;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -100,10 +76,7 @@ export class SalesInvoicesService {
             journalEntryId: ctx.entry.id,
             postedBy,
             postedAt: new Date(),
-            subtotal: ctx.totals.subtotal,
-            taxTotal: ctx.totals.taxTotal,
-            withholdingTotal: ctx.totals.withholdingTotal,
-            total: ctx.totals.total,
+            ...ctx.totals,
           },
         });
       },
@@ -116,10 +89,10 @@ export class SalesInvoicesService {
     };
   }
 
-  createDraft(input: CreateInvoiceInput): Promise<SalesInvoiceRow> {
+  createDraft(input: CreateDocumentInput): Promise<SalesInvoiceRow> {
     return this.docs.createDraft(this.spec, input);
   }
-  update(id: string, input: UpdateInvoiceInput): Promise<SalesInvoiceRow> {
+  update(id: string, input: UpdateDocumentInput): Promise<SalesInvoiceRow> {
     return this.docs.update(this.spec, id, input);
   }
   getById(id: string): Promise<SalesInvoiceRow> {

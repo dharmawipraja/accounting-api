@@ -41,18 +41,12 @@ import {
   buildLineCreateData,
   documentMessages,
 } from './document-presenter';
-import { assertDocumentLineAccountsPostable } from './document-account-checks';
+import { assertDocumentLineAccountsPostable } from './document-account-rules';
 
 /** Posting restarts from a fresh read at most this many times when the draft
  *  is edited (or a tax code/setting its tax derives from changes) between its
  *  pre-read and the row lock, then answers 409. */
 const MAX_POST_ATTEMPTS = 3;
-
-type Spec<
-  R extends DocumentRow,
-  C extends CreateDocumentInput,
-  U extends UpdateDocumentInput,
-> = DocumentDescriptor<R, C, U>;
 
 interface ListQuery {
   q?: string;
@@ -80,22 +74,20 @@ export class TaxedDocumentService {
     private readonly posting: PostingService,
   ) {}
 
-  async getById<
-    R extends DocumentRow,
-    C extends CreateDocumentInput,
-    U extends UpdateDocumentInput,
-  >(spec: Spec<R, C, U>, id: string): Promise<R> {
+  async getById<R extends DocumentRow>(
+    spec: DocumentDescriptor<R>,
+    id: string,
+  ): Promise<R> {
     const row = await spec.findById(id);
     if (!row)
       throw new NotFoundDomainError(documentMessages(spec).notFound, { id });
     return row;
   }
 
-  async createDraft<
-    R extends DocumentRow,
-    C extends CreateDocumentInput,
-    U extends UpdateDocumentInput,
-  >(spec: Spec<R, C, U>, input: C): Promise<R> {
+  async createDraft<R extends DocumentRow, C extends CreateDocumentInput>(
+    spec: DocumentDescriptor<R, C>,
+    input: C,
+  ): Promise<R> {
     const m = documentMessages(spec);
     assertDueDateNotBefore(input.date, input.dueDate);
     const partner = await this.partners.findById(input.partnerId);
@@ -124,10 +116,7 @@ export class TaxedDocumentService {
       date: input.date,
       dueDate: input.dueDate,
       description: input.description,
-      subtotal: totals.subtotal,
-      taxTotal: totals.taxTotal,
-      withholdingTotal: totals.withholdingTotal,
-      total: totals.total,
+      ...totals,
       createdBy: input.createdBy,
       lines: { create: buildLineCreateData(input.lines) },
     };
@@ -152,11 +141,11 @@ export class TaxedDocumentService {
    *  post that wins leaves the edit a 422 onlyDraftEdit, and an edit that wins
    *  is what the post then sees. Lines/totals are derived from the row read
    *  under that lock (tax-code/account reads go through the same tx). */
-  async update<
-    R extends DocumentRow,
-    C extends CreateDocumentInput,
-    U extends UpdateDocumentInput,
-  >(spec: Spec<R, C, U>, id: string, input: U): Promise<R> {
+  async update<R extends DocumentRow, U extends UpdateDocumentInput>(
+    spec: DocumentDescriptor<R, CreateDocumentInput, U>,
+    id: string,
+    input: U,
+  ): Promise<R> {
     const m = documentMessages(spec);
     await this.getById(spec, id); // 404 for an unknown / deleted id
     const settlementId = await findControlAccountId(
@@ -198,10 +187,7 @@ export class TaxedDocumentService {
             input.description === undefined
               ? row.description
               : input.description,
-          subtotal: totals.subtotal,
-          taxTotal: totals.taxTotal,
-          withholdingTotal: totals.withholdingTotal,
-          total: totals.total,
+          ...totals,
           lines: { create: buildLineCreateData(nextLines) },
         };
         // Judged on the merged (effective) values: moving only the date past
@@ -216,11 +202,7 @@ export class TaxedDocumentService {
     return this.getById(spec, id);
   }
 
-  listPage<
-    R extends DocumentRow,
-    C extends CreateDocumentInput,
-    U extends UpdateDocumentInput,
-  >(spec: Spec<R, C, U>, q: ListQuery) {
+  listPage<R extends DocumentRow>(spec: DocumentDescriptor<R>, q: ListQuery) {
     const filters: Prisma.Sql[] = [];
     if (q.partnerId) filters.push(Prisma.sql`t.partner_id = ${q.partnerId}`);
     if (q.status) filters.push(Prisma.sql`t.status::text = ${q.status}`);
@@ -254,19 +236,19 @@ export class TaxedDocumentService {
     });
   }
 
-  deleteDraft<
-    R extends DocumentRow,
-    C extends CreateDocumentInput,
-    U extends UpdateDocumentInput,
-  >(spec: Spec<R, C, U>, id: string, deletedBy: string): Promise<void> {
+  deleteDraft<R extends DocumentRow>(
+    spec: DocumentDescriptor<R>,
+    id: string,
+    deletedBy: string,
+  ): Promise<void> {
     return this.lifecycle.softDeleteDraft(spec.model, id, deletedBy, spec.noun);
   }
 
-  async post<
-    R extends DocumentRow,
-    C extends CreateDocumentInput,
-    U extends UpdateDocumentInput,
-  >(spec: Spec<R, C, U>, id: string, postedBy: string): Promise<R> {
+  async post<R extends DocumentRow>(
+    spec: DocumentDescriptor<R>,
+    id: string,
+    postedBy: string,
+  ): Promise<R> {
     const m = documentMessages(spec);
     // The entry is prepared (tax, period, SoD, accounts) from a pre-lock read to
     // keep those reads out of the write tx; under the row lock the stored draft
@@ -285,12 +267,8 @@ export class TaxedDocumentService {
     }
   }
 
-  private async postOnce<
-    R extends DocumentRow,
-    C extends CreateDocumentInput,
-    U extends UpdateDocumentInput,
-  >(
-    spec: Spec<R, C, U>,
+  private async postOnce<R extends DocumentRow>(
+    spec: DocumentDescriptor<R>,
     id: string,
     postedBy: string,
     m: ReturnType<typeof documentMessages>,
@@ -340,12 +318,8 @@ export class TaxedDocumentService {
     );
   }
 
-  async void<
-    R extends DocumentRow,
-    C extends CreateDocumentInput,
-    U extends UpdateDocumentInput,
-  >(
-    spec: Spec<R, C, U>,
+  async void<R extends DocumentRow>(
+    spec: DocumentDescriptor<R>,
     id: string,
     voidedBy: string,
     date?: Date,
@@ -395,13 +369,9 @@ export class TaxedDocumentService {
    *  between). Require the document void date to be on/after such a payment's
    *  void date. Runs under the document FOR UPDATE lock, which the payment void
    *  (unwindInTx) also takes, so the read sees every committed payment void. */
-  private async assertNoLaterVoidedPayment<
-    R extends DocumentRow,
-    C extends CreateDocumentInput,
-    U extends UpdateDocumentInput,
-  >(
+  private async assertNoLaterVoidedPayment(
     tx: LedgerTx,
-    spec: Spec<R, C, U>,
+    spec: DocumentDescriptor<DocumentRow>,
     id: string,
     voidedOn: Date,
   ): Promise<void> {
@@ -428,13 +398,9 @@ export class TaxedDocumentService {
   }
 
   /** FOR UPDATE lock for void: returns status + amount_paid for the in-tx re-check. */
-  private async lockForVoid<
-    R extends DocumentRow,
-    C extends CreateDocumentInput,
-    U extends UpdateDocumentInput,
-  >(
+  private async lockForVoid(
     tx: LedgerTx,
-    spec: Spec<R, C, U>,
+    spec: DocumentDescriptor<DocumentRow>,
     id: string,
   ): Promise<{ status: string; amount_paid: string } | undefined> {
     const rows = await tx.$queryRaw<{ status: string; amount_paid: string }[]>(
@@ -446,13 +412,9 @@ export class TaxedDocumentService {
   /** FOR UPDATE the document row and re-check it is still a live DRAFT; the
    *  first statement of every draft mutation (same first lock as posting).
    *  404 if the row is gone, 422 `message` if it is no longer a DRAFT. */
-  private async lockDraftRow<
-    R extends DocumentRow,
-    C extends CreateDocumentInput,
-    U extends UpdateDocumentInput,
-  >(
+  private async lockDraftRow(
     tx: LedgerTx,
-    spec: Spec<R, C, U>,
+    spec: DocumentDescriptor<DocumentRow>,
     id: string,
     message: string,
   ): Promise<void> {

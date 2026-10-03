@@ -19,25 +19,13 @@ import {
 } from '../common/errors/domain-errors';
 import { mapUniqueViolation } from '../common/errors/map-unique-violation';
 import { TAX_CODE_SEED } from './tax-codes.seed';
+import type { CreateTaxCodeDto } from './dto/create-tax-code.dto';
+import type { UpdateTaxCodeDto } from './dto/update-tax-code.dto';
 import { tombstoneData } from '../common/prisma/tombstone';
 import {
   normalizeDisplayName,
   normalizeIdentifierCode,
 } from '../common/text/identifier';
-
-export interface CreateTaxCodeInput {
-  code: string;
-  name: string;
-  kind: TaxKind;
-  rate: string;
-  taxAccountId: string;
-}
-
-export interface UpdateTaxCodeInput {
-  name?: string;
-  rate?: string;
-  isActive?: boolean;
-}
 
 @Injectable()
 export class TaxCodesService implements OnModuleInit {
@@ -103,7 +91,7 @@ export class TaxCodesService implements OnModuleInit {
     if (v) throw new ValidationFailedError(v.message, v.details);
   }
 
-  async create(raw: CreateTaxCodeInput): Promise<TaxCode> {
+  async create(raw: CreateTaxCodeDto): Promise<TaxCode> {
     // code / name are stored normalized (NFKC + trim / trim) — the DTO already
     // normalized them; re-applied so a caller bypassing the DTO gets the same
     // rule (idempotent).
@@ -172,7 +160,7 @@ export class TaxCodesService implements OnModuleInit {
     return code;
   }
 
-  async update(id: string, raw: UpdateTaxCodeInput): Promise<TaxCode> {
+  async update(id: string, raw: UpdateTaxCodeDto): Promise<TaxCode> {
     const input =
       raw.name === undefined
         ? raw
@@ -213,12 +201,9 @@ export class TaxCodesService implements OnModuleInit {
       );
   }
 
-  async deactivate(id: string): Promise<TaxCode> {
-    await this.findById(id);
-    return this.prisma.client.taxCode.update({
-      where: { id },
-      data: { isActive: false },
-    });
+  /** POST /:id/deactivate — the same code path as PATCH { isActive: false }. */
+  deactivate(id: string): Promise<TaxCode> {
+    return this.update(id, { isActive: false });
   }
 
   async softDelete(id: string, deletedBy: string): Promise<void> {

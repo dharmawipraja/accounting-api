@@ -20,7 +20,7 @@ import { PreviewJournalEntryDto } from './dto/preview-journal-entry.dto';
 import {
   assertDocumentLineAccountsPostable,
   assertPaymentCashAccountPostable,
-} from './document-account-checks';
+} from './document-account-rules';
 
 @Injectable()
 export class JournalPreviewService {

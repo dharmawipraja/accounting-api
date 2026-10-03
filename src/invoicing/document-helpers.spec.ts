@@ -3,6 +3,7 @@ import { Money } from '../common/money/money';
 import {
   assertDueDateNotBefore,
   assertVoidDateNotBefore,
+  nextDocumentNumber,
   normalizeVendorInvoiceNo,
   samePostableContent,
   sameTaxCalculation,
@@ -10,6 +11,7 @@ import {
 } from './document-helpers';
 import { ValidationFailedError } from '../common/errors/domain-errors';
 import type { TaxCalculation } from '../tax/tax.service';
+import type { SqlTx } from '../common/db/sequence';
 
 describe('taxableLines', () => {
   it('maps quantity*unitPrice to a 4dp amount and carries accountId + taxCodeIds', () => {
@@ -195,5 +197,38 @@ describe('sameTaxCalculation', () => {
     const c = calc();
     c.taxes[0] = { ...c.taxes[0], accountId: 'x' };
     expect(sameTaxCalculation(calc(), c)).toBe(false);
+  });
+});
+
+describe('nextDocumentNumber', () => {
+  it('locks-and-increments document_sequences keyed (document_type, fiscal_year) and builds a zero-padded ref', async () => {
+    const executed: Prisma.Sql[] = [];
+    const queried: Prisma.Sql[] = [];
+    const tx: SqlTx = {
+      $executeRaw: (q: Prisma.Sql) => {
+        executed.push(q);
+        return Promise.resolve(1);
+      },
+      $queryRaw: ((q: Prisma.Sql) => {
+        queried.push(q);
+        return Promise.resolve([{ next_number: 42 }]);
+      }) as SqlTx['$queryRaw'],
+    };
+
+    await expect(nextDocumentNumber(tx, 'INV', 2026)).resolves.toEqual({
+      number: 42,
+      ref: 'INV/2026/000042',
+    });
+    // INSERT seeds the row if absent
+    expect(executed[0].sql).toContain('document_sequences');
+    expect(executed[0].sql).toContain('document_type');
+    expect(executed[0].sql).toContain('ON CONFLICT');
+    expect(executed[0].values).toEqual(['INV', 2026]);
+    // SELECT FOR UPDATE locks the row
+    expect(queried[0].sql).toContain('FOR UPDATE');
+    expect(queried[0].values).toEqual(['INV', 2026]);
+    // UPDATE increments to current+1
+    expect(executed[1].sql).toContain('UPDATE');
+    expect(executed[1].values).toEqual([43, 'INV', 2026]);
   });
 });

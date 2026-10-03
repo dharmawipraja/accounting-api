@@ -36,7 +36,7 @@ service inventory.
 | --- | --- | --- |
 | `ledger` | Chart of accounts, journal entries, **posting engine**, balances, accounting periods, opening balances | `accounts`, `journal`, `posting/posting.service.ts`, `balances`, `periods`, `document-lifecycle.service.ts` |
 | `tax` | Tax codes (CRUD/seed) + the **tax engine** (PPN/PPh calculation → journal lines) | `tax-codes.service.ts`, `tax.service.ts` |
-| `invoicing` | Sales invoices, purchase bills, payments, business partners, **AR/AP subledgers**, document numbering, the shared `DocumentPostingService` | `sales-invoices`, `purchase-bills`, `payments`, `business-partners`, `document-number.service.ts`, `document-posting.service.ts`, `taxed-document.service.ts` (SALE/PURCHASE via `DocumentDescriptor`), `payment-targets.ts` (RECEIPT/DISBURSEMENT), `document-helpers.ts` |
+| `invoicing` | Sales invoices, purchase bills, payments, business partners, **AR/AP subledgers**, document numbering, the shared `DocumentPostingService` | `sales-invoices`, `purchase-bills`, `payments`, `business-partners`, `document-posting.service.ts`, `taxed-document.service.ts` (SALE/PURCHASE via `DocumentDescriptor`), `payment-targets.ts` (RECEIPT/DISBURSEMENT), `document-helpers.ts` (incl. `nextDocumentNumber`) |
 | `reporting` | Read-only financial reports: balance sheet, income statement, general ledger, AR/AP aging, cash flow (trial balance is served by `balances`) | `reports.controller.ts` → `balance-sheet`, `income-statement`, `general-ledger`, `aging`, `cash-flow` services |
 | `close` | Year-end close (zero P&L → retained earnings) + reopen | `closing.controller.ts`, `year-end-close.service.ts` |
 | `auth` / `users` | JWT auth (stateful refresh tokens w/ rotation), guards, roles; user lookup | `auth.service.ts`, `refresh-token.service.ts`, guards/strategies; `users.service.ts` |
@@ -314,8 +314,8 @@ POSTED→REVERSED link-up is allowed), so corrections are always reversals.
 `SqlTx`) is the single gapless-numbering primitive: `INSERT … ON CONFLICT DO NOTHING`
 then `SELECT … FOR UPDATE` + increment, all **inside the write transaction** — so
 numbers are gapless and serialized under concurrency. Both `PostingService.nextNumber`
-(journal entries) and `DocumentNumberService.next` (invoice/bill doc numbers,
-`src/invoicing/document-number.service.ts`) delegate to it. (The old `RawTx` type was
+(journal entries) and `nextDocumentNumber` (invoice/bill/payment doc numbers,
+`src/invoicing/document-helpers.ts`) delegate to it. (The old `RawTx` type was
 deleted when this was extracted.)
 
 ### The tx-composable `PostingService`

@@ -11,12 +11,14 @@ import {
   TaxableLineInput,
   TaxCalculation,
 } from '../tax/tax.service';
-import { DocumentNumberService } from './document-number.service';
 import { ValidationFailedError } from '../common/errors/domain-errors';
 import { Money } from '../common/money/money';
-import { assertTaxLineAccounts } from './document-account-rules';
-import { assertDocumentLineAccountsPostable } from './document-account-checks';
-import { sameTaxCalculation } from './document-helpers';
+import {
+  assertDocumentLineAccountsPostable,
+  assertTaxLineAccounts,
+} from './document-account-rules';
+import type { DocumentTotals } from './document-descriptor';
+import { nextDocumentNumber, sameTaxCalculation } from './document-helpers';
 
 /** Internal signal: the locked draft (or the tax state its entry was derived
  *  from) no longer matches the pre-lock read. The caller restarts the post
@@ -51,11 +53,17 @@ export interface PostedDocContext {
   ref: string;
   entry: JournalEntry;
   fiscalYear: number;
-  totals: {
-    subtotal: string;
-    taxTotal: string;
-    withholdingTotal: string;
-    total: string;
+  totals: DocumentTotals;
+}
+
+/** The stored document totals of a tax calculation (the PPN/PPh split —
+ *  taxTotal vs withholdingTotal — is computed once, inside TaxService). */
+function documentTotals(calc: TaxCalculation): DocumentTotals {
+  return {
+    subtotal: calc.subtotal,
+    taxTotal: calc.taxTotal,
+    withholdingTotal: calc.withholdingTotal,
+    total: calc.settlementAmount,
   };
 }
 
@@ -65,24 +73,7 @@ export class DocumentPostingService {
     private readonly prisma: PrismaService,
     private readonly posting: PostingService,
     private readonly tax: TaxService,
-    private readonly docNumber: DocumentNumberService,
   ) {}
-
-  /** Assemble the stored document totals from a tax calculation. The PPN/PPh split
-   *  (taxTotal vs withholdingTotal) is computed once, inside TaxService. */
-  private summarize(calc: TaxCalculation): {
-    subtotal: string;
-    taxTotal: string;
-    withholdingTotal: string;
-    total: string;
-  } {
-    return {
-      subtotal: calc.subtotal,
-      taxTotal: calc.taxTotal,
-      withholdingTotal: calc.withholdingTotal,
-      total: calc.settlementAmount,
-    };
-  }
 
   /** Compute the tax breakdown for a draft (no posting). */
   async computeTotals(
@@ -90,21 +81,10 @@ export class DocumentPostingService {
     settlementAccountId: string,
     lines: TaxableLineInput[],
     db?: LedgerTx,
-  ): Promise<{
-    subtotal: string;
-    taxTotal: string;
-    withholdingTotal: string;
-    total: string;
-  }> {
-    const calc = await this.tax.calculate(
-      {
-        nature,
-        settlementAccountId,
-        lines,
-      },
-      db,
+  ): Promise<DocumentTotals> {
+    return documentTotals(
+      await this.tax.calculate({ nature, settlementAccountId, lines }, db),
     );
-    return this.summarize(calc);
   }
 
   /** Post a taxed document atomically. The source row is locked (FOR UPDATE) and
@@ -184,15 +164,10 @@ export class DocumentPostingService {
         tx,
         calc.taxes.filter((t) => !Money.of(t.amount).isZero()),
       );
-      const number = await this.docNumber.next(
+      const { number, ref } = await nextDocumentNumber(
         tx,
         params.documentType,
         prepared.fiscalYear,
-      );
-      const ref = this.docNumber.buildRef(
-        params.documentType,
-        prepared.fiscalYear,
-        number,
       );
       const entry = await this.posting.createPostedEntryInTx(tx, prepared);
       await finalize({
@@ -201,7 +176,7 @@ export class DocumentPostingService {
         ref,
         entry,
         fiscalYear: prepared.fiscalYear,
-        totals: this.summarize(calc),
+        totals: documentTotals(calc),
       });
       // Same bounded wait as direct posting: a post racing a draft edit /
       // another post waits out the row lock instead of Prisma's 5s default.

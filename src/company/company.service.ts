@@ -11,19 +11,11 @@ import {
   fiscalYearEndDate,
 } from '../common/dates/fiscal-year';
 import { asOfOrToday } from '../common/dates/query-dates';
+import type { UpdateCompanySettingsDto } from './dto/update-company-settings.dto';
 import {
   insertFiscalYearPeriodsInTx,
   lockPeriodGeneration,
 } from '../ledger/periods/period-generation';
-
-export interface UpdateCompanyInput {
-  legalName?: string;
-  npwp?: string | null;
-  address?: string | null;
-  fiscalYearStartMonth?: number;
-  segregationOfDutiesEnabled?: boolean;
-  isPkp?: boolean;
-}
 
 const SOD_SOURCES = new Set([
   'MANUAL',
@@ -118,7 +110,7 @@ export class CompanyService implements OnModuleInit {
    *  could otherwise silently revert a concurrent, committed change (leaving
    *  periods sliced for the other month). Only an input without the field is
    *  written unlocked. */
-  async update(input: UpdateCompanyInput): Promise<CompanySettings> {
+  async update(input: UpdateCompanySettingsDto): Promise<CompanySettings> {
     const current = await this.get();
     const newMonth = input.fiscalYearStartMonth;
     if (newMonth === undefined) {

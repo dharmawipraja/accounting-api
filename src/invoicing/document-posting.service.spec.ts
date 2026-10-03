@@ -6,6 +6,12 @@ import {
   DraftChangedError,
 } from './document-posting.service';
 import { ValidationFailedError } from '../common/errors/domain-errors';
+import { nextDocumentNumber } from './document-helpers';
+
+jest.mock('./document-helpers', () => ({
+  ...jest.requireActual<object>('./document-helpers'),
+  nextDocumentNumber: jest.fn(),
+}));
 
 describe('DocumentPostingService (orchestration)', () => {
   function build() {
@@ -29,8 +35,10 @@ describe('DocumentPostingService (orchestration)', () => {
       resolvePostableAccounts: jest.fn().mockResolvedValue(new Map()),
     };
     const docNumber = {
-      next: jest.fn().mockResolvedValue(42),
-      buildRef: jest.fn().mockReturnValue('INV/2026/000042'),
+      next: jest
+        .mocked(nextDocumentNumber)
+        .mockReset()
+        .mockResolvedValue({ number: 42, ref: 'INV/2026/000042' }),
     };
     const prisma = {
       transaction: jest.fn((cb: (t: unknown) => unknown) => cb(tx)),
@@ -39,8 +47,6 @@ describe('DocumentPostingService (orchestration)', () => {
       prisma as unknown as PrismaService,
       posting as unknown as PostingService,
       tax as unknown as TaxService,
-      // docNumber mock satisfies DocumentNumberService structurally — no cast needed
-      docNumber,
     );
     return { svc, tx, entry, tax, posting, docNumber, prisma };
   }

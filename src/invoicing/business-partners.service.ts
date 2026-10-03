@@ -15,6 +15,8 @@ import { trigramSearch } from '../common/search/trigram-search';
 import { listPaginated, Paginated } from '../common/pagination/paginated';
 import { tombstoneData } from '../common/prisma/tombstone';
 import type { LedgerTx } from '../common/prisma/prisma.service';
+import type { CreateBusinessPartnerDto } from './dto/create-business-partner.dto';
+import type { UpdateBusinessPartnerDto } from './dto/update-business-partner.dto';
 
 /** A partner role and the open items that depend on it. */
 export type PartnerRole = 'CUSTOMER' | 'VENDOR';
@@ -28,27 +30,6 @@ interface OpenItemCounts {
   draftPayments: number;
 }
 
-export interface CreatePartnerInput {
-  code: string;
-  name: string;
-  npwp?: string;
-  email?: string;
-  phone?: string;
-  address?: string;
-  isCustomer?: boolean;
-  isVendor?: boolean;
-}
-export type UpdatePartnerInput = Partial<
-  Omit<CreatePartnerInput, 'code' | 'npwp' | 'email' | 'phone' | 'address'>
-> & {
-  // nullable columns: `null` clears the stored value
-  npwp?: string | null;
-  email?: string | null;
-  phone?: string | null;
-  address?: string | null;
-  isActive?: boolean;
-};
-
 @Injectable()
 export class BusinessPartnersService {
   constructor(private readonly prisma: PrismaService) {}
@@ -61,7 +42,7 @@ export class BusinessPartnersService {
     }
   }
 
-  async create(raw: CreatePartnerInput): Promise<BusinessPartner> {
+  async create(raw: CreateBusinessPartnerDto): Promise<BusinessPartner> {
     // code / name are stored normalized (NFKC + trim / trim — the DTO already
     // normalized them and rejects blank or zero-width ones). Code uniqueness
     // among live partners is case-insensitive: the DB unique index on
@@ -160,7 +141,10 @@ export class BusinessPartnersService {
    *  SHARE unblocked: an invoice/bill/payment insert referencing the partner
    *  never waits on a PATCH. (A PATCH never changes a key column: `code` is
    *  not updatable, and the FKs reference `id`.) `name` is stored trimmed. */
-  async update(id: string, raw: UpdatePartnerInput): Promise<BusinessPartner> {
+  async update(
+    id: string,
+    raw: UpdateBusinessPartnerDto,
+  ): Promise<BusinessPartner> {
     const input =
       raw.name === undefined
         ? raw
@@ -188,41 +172,38 @@ export class BusinessPartnersService {
     });
   }
 
-  /** Open items of the partner's `role` (see OpenItemCounts), read inside
-   *  the caller's tx after it locked the partner row. */
+  /** Open items of the partner's `roles` (see OpenItemCounts), summed over
+   *  the roles, read inside the caller's tx after it locked the partner row.
+   *  Plain counts (no row locks): the caller's partner lock is what serializes
+   *  them with draft create / payment post. */
   private async openItems(
     tx: LedgerTx,
     id: string,
-    role: PartnerRole,
+    roles: PartnerRole[],
   ): Promise<OpenItemCounts> {
-    const [open] =
-      role === 'CUSTOMER'
-        ? await tx.$queryRaw<OpenItemCounts[]>`
-            SELECT
-              (SELECT count(*)::int FROM sales_invoices
-                 WHERE partner_id = ${id} AND deleted_at IS NULL AND status = 'DRAFT')
-                AS "drafts",
-              (SELECT count(*)::int FROM sales_invoices
-                 WHERE partner_id = ${id} AND deleted_at IS NULL AND status = 'POSTED'
-                   AND total > amount_paid)
-                AS "outstanding",
-              (SELECT count(*)::int FROM payments
-                 WHERE partner_id = ${id} AND deleted_at IS NULL AND status = 'DRAFT'
-                   AND direction = 'RECEIPT')
-                AS "draftPayments"`
-        : await tx.$queryRaw<OpenItemCounts[]>`
-            SELECT
-              (SELECT count(*)::int FROM purchase_bills
-                 WHERE partner_id = ${id} AND deleted_at IS NULL AND status = 'DRAFT')
-                AS "drafts",
-              (SELECT count(*)::int FROM purchase_bills
-                 WHERE partner_id = ${id} AND deleted_at IS NULL AND status = 'POSTED'
-                   AND total > amount_paid)
-                AS "outstanding",
-              (SELECT count(*)::int FROM payments
-                 WHERE partner_id = ${id} AND deleted_at IS NULL AND status = 'DRAFT'
-                   AND direction = 'DISBURSEMENT')
-                AS "draftPayments"`;
+    const customer = roles.includes('CUSTOMER');
+    const vendor = roles.includes('VENDOR');
+    const [open] = await tx.$queryRaw<OpenItemCounts[]>`
+      SELECT
+        (SELECT count(*)::int FROM sales_invoices
+           WHERE ${customer} AND partner_id = ${id} AND deleted_at IS NULL
+             AND status = 'DRAFT')
+        + (SELECT count(*)::int FROM purchase_bills
+           WHERE ${vendor} AND partner_id = ${id} AND deleted_at IS NULL
+             AND status = 'DRAFT')
+          AS "drafts",
+        (SELECT count(*)::int FROM sales_invoices
+           WHERE ${customer} AND partner_id = ${id} AND deleted_at IS NULL
+             AND status = 'POSTED' AND total > amount_paid)
+        + (SELECT count(*)::int FROM purchase_bills
+           WHERE ${vendor} AND partner_id = ${id} AND deleted_at IS NULL
+             AND status = 'POSTED' AND total > amount_paid)
+          AS "outstanding",
+        (SELECT count(*)::int FROM payments
+           WHERE partner_id = ${id} AND deleted_at IS NULL AND status = 'DRAFT'
+             AND ((${customer} AND direction = 'RECEIPT')
+               OR (${vendor} AND direction = 'DISBURSEMENT')))
+          AS "draftPayments"`;
     return open;
   }
 
@@ -233,7 +214,7 @@ export class BusinessPartnersService {
     id: string,
     role: PartnerRole,
   ): Promise<void> {
-    const open = await this.openItems(tx, id, role);
+    const open = await this.openItems(tx, id, [role]);
     if (open.drafts + open.outstanding + open.draftPayments > 0)
       throw new ValidationFailedError(
         `Cannot remove the ${role === 'CUSTOMER' ? 'customer' : 'vendor'} role while it has open items (draft documents or payments, or posted documents with an outstanding balance); settle, void or delete them first`,
@@ -248,12 +229,9 @@ export class BusinessPartnersService {
       );
   }
 
-  async deactivate(id: string): Promise<BusinessPartner> {
-    await this.findById(id);
-    return this.prisma.client.businessPartner.update({
-      where: { id },
-      data: { isActive: false },
-    });
+  /** POST /:id/deactivate — the same code path as PATCH { isActive: false }. */
+  deactivate(id: string): Promise<BusinessPartner> {
+    return this.update(id, { isActive: false });
   }
 
   /** Soft-delete (tombstone) a partner that has no open items: no live draft
@@ -270,13 +248,7 @@ export class BusinessPartnersService {
         WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`;
       if (rows.length === 0)
         throw new NotFoundDomainError('Partner not found', { id });
-      const customer = await this.openItems(tx, id, 'CUSTOMER');
-      const vendor = await this.openItems(tx, id, 'VENDOR');
-      const open: OpenItemCounts = {
-        drafts: customer.drafts + vendor.drafts,
-        outstanding: customer.outstanding + vendor.outstanding,
-        draftPayments: customer.draftPayments + vendor.draftPayments,
-      };
+      const open = await this.openItems(tx, id, ['CUSTOMER', 'VENDOR']);
       if (open.drafts + open.outstanding + open.draftPayments > 0)
         throw new ValidationFailedError(
           'Cannot delete a partner with open items (draft documents or payments, or posted documents with an outstanding balance); settle, void or delete them first, or deactivate the partner',

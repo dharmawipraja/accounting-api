@@ -19,16 +19,18 @@ import {
   ValidationFailedError,
 } from '../common/errors/domain-errors';
 import { BusinessPartnersService } from './business-partners.service';
-import { DocumentNumberService } from './document-number.service';
 import { listPaginated } from '../common/pagination/paginated';
 import { serializeMoney } from '../common/money/serialize-money';
 import {
   assertVoidDateNotBefore,
   findControlAccountId,
+  nextDocumentNumber,
 } from './document-helpers';
 import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
-import { assertCashAccount } from './document-account-rules';
-import { assertPaymentCashAccountPostable } from './document-account-checks';
+import {
+  assertCashAccount,
+  assertPaymentCashAccountPostable,
+} from './document-account-rules';
 import { lockLivePartnerForShare } from './partner-lock';
 import {
   AllocationInput,
@@ -63,7 +65,6 @@ export class PaymentsService {
     private readonly prisma: PrismaService,
     private readonly partners: BusinessPartnersService,
     private readonly posting: PostingService,
-    private readonly docNumber: DocumentNumberService,
     private readonly lifecycle: DocumentLifecycleService,
   ) {}
 
@@ -321,15 +322,10 @@ export class PaymentsService {
         settled.set(docId, before.add(Money.of(a.amount)));
       }
 
-      const number = await this.docNumber.next(
+      const { number, ref } = await nextDocumentNumber(
         tx,
         target.numberPrefix,
         prepared.fiscalYear,
-      );
-      const ref = this.docNumber.buildRef(
-        target.numberPrefix,
-        prepared.fiscalYear,
-        number,
       );
       const entry = await this.posting.createPostedEntryInTx(tx, prepared);
       await tx.payment.update({

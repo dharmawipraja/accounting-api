@@ -111,8 +111,8 @@ export interface DocumentLabels {
 /** The typed adapter to one document type's Prisma delegate. */
 export interface DocumentDescriptor<
   TRow extends DocumentRow,
-  TCreate extends CreateDocumentInput,
-  TUpdate extends UpdateDocumentInput,
+  TCreate extends CreateDocumentInput = CreateDocumentInput,
+  TUpdate extends UpdateDocumentInput = UpdateDocumentInput,
 > extends DocumentLabels {
   nature: 'SALE' | 'PURCHASE';
   controlRole: AccountRole;

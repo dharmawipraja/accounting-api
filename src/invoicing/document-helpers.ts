@@ -3,6 +3,8 @@ import { Money } from '../common/money/money';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { ValidationFailedError } from '../common/errors/domain-errors';
 import type { TaxCalculation } from '../tax/tax.service';
+import { nextSequenceNumber, SqlTx } from '../common/db/sequence';
+import { buildDocRef } from '../common/db/doc-ref';
 
 type TaxableLineInput = {
   accountId: string;
@@ -166,4 +168,19 @@ export function sameTaxCalculation(
       );
     })
   );
+}
+
+/** Lock-and-increment the per-(type, fiscal-year) document counter inside the
+ *  caller's transaction (gapless: the increment and the document write share
+ *  the tx) and build its ref, e.g. INV/2026/000042. */
+export async function nextDocumentNumber(
+  tx: SqlTx,
+  documentType: string,
+  fiscalYear: number,
+): Promise<{ number: number; ref: string }> {
+  const number = await nextSequenceNumber(tx, 'document_sequences', {
+    document_type: documentType,
+    fiscal_year: fiscalYear,
+  });
+  return { number, ref: buildDocRef(documentType, fiscalYear, number) };
 }

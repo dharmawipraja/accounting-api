@@ -3,7 +3,11 @@ import { DocumentStatus, PurchaseBill, PurchaseBillLine } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { TaxedDocumentService } from './taxed-document.service';
 import { presentDocument } from './document-presenter';
-import { DocumentDescriptor } from './document-descriptor';
+import {
+  CreateDocumentInput,
+  DocumentDescriptor,
+  UpdateDocumentInput,
+} from './document-descriptor';
 import { mapUniqueViolation } from '../common/errors/map-unique-violation';
 import { normalizeVendorInvoiceNo } from './document-helpers';
 
@@ -24,32 +28,13 @@ function duplicateVendorInvoice(
 
 export type PurchaseBillRow = PurchaseBill & { lines?: PurchaseBillLine[] };
 
-export interface BillLineInput {
-  description: string;
-  accountId: string;
-  quantity: string;
-  unitPrice: string;
-  taxCodeIds: string[];
-}
-export interface CreateBillInput {
-  partnerId: string;
+export type CreateBillInput = CreateDocumentInput & {
   vendorInvoiceNo?: string;
-  date: Date;
-  dueDate?: Date;
-  description?: string;
-  lines: BillLineInput[];
-  createdBy: string;
-}
-export interface UpdateBillInput {
+};
+export type UpdateBillInput = UpdateDocumentInput & {
   /** `null` clears it; `undefined` keeps it. Normalized (trimmed) on write. */
   vendorInvoiceNo?: string | null;
-  date?: Date;
-  /** `null` clears the stored due date; `undefined` keeps it. */
-  dueDate?: Date | null;
-  /** `null` clears the stored description; `undefined` keeps it. */
-  description?: string | null;
-  lines?: BillLineInput[];
-}
+};
 
 @Injectable()
 export class PurchaseBillsService {
@@ -144,10 +129,7 @@ export class PurchaseBillsService {
             journalEntryId: ctx.entry.id,
             postedBy,
             postedAt: new Date(),
-            subtotal: ctx.totals.subtotal,
-            taxTotal: ctx.totals.taxTotal,
-            withholdingTotal: ctx.totals.withholdingTotal,
-            total: ctx.totals.total,
+            ...ctx.totals,
           },
         });
       },
