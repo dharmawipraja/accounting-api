@@ -227,6 +227,36 @@ describe('TaxService.calculate', () => {
     ).rejects.toBeInstanceOf(ValidationFailedError);
   });
 
+  it('accepts an inactive code with allowInactiveCodes (notes)', async () => {
+    const r = await make().calculate({
+      nature: 'SALE',
+      settlementAccountId: 'ar',
+      lines: [{ accountId: 'rev', amount: '100', taxCodeIds: ['inactive'] }],
+      allowInactiveCodes: true,
+    });
+    expect(r.taxes[0].amount).toBe('11.0000');
+  });
+
+  it('overrideAmounts replaces a code amount before journal/totals (balanced)', async () => {
+    const r = await make().calculate({
+      nature: 'SALE',
+      settlementAccountId: 'ar',
+      lines: [{ accountId: 'rev', amount: '1050', taxCodeIds: ['ppn-out'] }],
+      overrideAmounts: (raw) => {
+        expect(raw[0].amount).toBe('116.0000');
+        return { 'ppn-out': '115' };
+      },
+    });
+    expect(r.taxes[0].amount).toBe('115.0000');
+    expect(r.taxTotal).toBe('115.0000');
+    expect(r.settlementAmount).toBe('1165.0000');
+    expect(r.journalLines).toEqual([
+      { accountId: 'rev', credit: '1050.0000' },
+      { accountId: 'acc-ppn-out', credit: '115.0000' },
+      { accountId: 'ar', debit: '1165.0000' },
+    ]);
+  });
+
   it('rejects a tax kind not allowed for the nature (422)', async () => {
     await expect(
       make().calculate({

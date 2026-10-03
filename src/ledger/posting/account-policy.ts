@@ -13,8 +13,10 @@ export interface AccountPolicy {
     readonly message: string;
   };
   /** Skip the isActive check (exists / postable / not-deleted still apply).
-   *  Only CLOSING: a P&L account deactivated mid-year still carries FY movement
-   *  the year-end close must zero into Laba Ditahan. */
+   *  CLOSING: a P&L account deactivated mid-year still carries FY movement
+   *  the year-end close must zero into Laba Ditahan. Credit/debit notes: they
+   *  mirror their original's entry (lines copied from it, never chosen), so
+   *  an account deactivated since must not block the return. */
   readonly allowInactive?: boolean;
 }
 
@@ -24,8 +26,7 @@ export interface AccountPolicy {
  *  Likewise the advance accounts (Uang Muka Pelanggan / Pembelian) must equal
  *  the posted payments' + notes' unapplied amounts, so only payments,
  *  credit/debit notes (their excess) and their applications move them. The
- *  note source types fall through to the unrestricted policy like invoices
- *  and bills. OPENING (go-live), CLOSING,
+ *  note source types are role-unrestricted too (NOTE_POLICY). OPENING (go-live), CLOSING,
  *  REVERSAL and the document source types are deliberately role-unrestricted. */
 export const MANUAL_ENTRY_POLICY: AccountPolicy = {
   forbiddenRoles: [
@@ -56,8 +57,16 @@ export const OPENING_POLICY: AccountPolicy = {
 };
 
 /** Year-end close: role-unrestricted AND tolerant of inactive accounts (see
- *  AccountPolicy.allowInactive). Every other source type keeps isActive. */
+ *  AccountPolicy.allowInactive). */
 export const CLOSING_POLICY: AccountPolicy = {
+  forbiddenRoles: [],
+  allowInactive: true,
+};
+
+/** Credit/debit notes: role-unrestricted like their original, and tolerant of
+ *  inactive accounts (AccountPolicy.allowInactive). Every other source type
+ *  keeps isActive. */
+export const NOTE_POLICY: AccountPolicy = {
   forbiddenRoles: [],
   allowInactive: true,
 };
@@ -66,6 +75,11 @@ export function accountPolicyFor(sourceType: JournalSourceType): AccountPolicy {
   if (sourceType === 'MANUAL') return MANUAL_ENTRY_POLICY;
   if (sourceType === 'CLOSING') return CLOSING_POLICY;
   if (sourceType === 'OPENING') return OPENING_POLICY;
+  if (
+    sourceType === 'SALES_CREDIT_NOTE' ||
+    sourceType === 'PURCHASE_DEBIT_NOTE'
+  )
+    return NOTE_POLICY;
   return UNRESTRICTED_POLICY;
 }
 

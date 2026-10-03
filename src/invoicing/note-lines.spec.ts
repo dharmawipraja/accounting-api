@@ -1,6 +1,10 @@
 import { Prisma } from '@prisma/client';
+import { ValidationFailedError } from '../common/errors/domain-errors';
 import {
+  completedLine,
   noteJournalLines,
+  noteTaxAmounts,
+  noteTaxPlan,
   returnedLine,
   splitSettlement,
   OriginalLine,
@@ -79,6 +83,121 @@ describe('returnedLine', () => {
         '1',
       ).discountAmount,
     ).toBe('1.0000');
+  });
+
+  it('422 for a zero-quantity original line (no division)', () => {
+    expect(() => returnedLine(orig({ quantity: D('0') }), '1')).toThrow(
+      ValidationFailedError,
+    );
+  });
+});
+
+describe('completedLine', () => {
+  const line = returnedLine(orig({ discountAmount: D('100') }), '1');
+
+  it('takes the remaining amount as its discount (fixed)', () => {
+    // 2 notes of 1 took 33.3333 each → remaining amount 300000 − 100 − 2 ×
+    // 99966.6667 = 99966.6666 → discount 33.3334; the three sum to 100.
+    const done = completedLine(line, '99966.6666');
+    expect(done).toMatchObject({
+      discountPercent: null,
+      discountAmount: '33.3334',
+    });
+    expect(lineAmounts(done).amount).toBe('99966.6666');
+  });
+
+  it('turns a percent line fixed and clamps to [0, gross]', () => {
+    const pct = returnedLine(orig({ discountPercent: D('10') }), '1');
+    expect(completedLine(pct, '90000').discountAmount).toBe('10000.0000');
+    expect(completedLine(pct, '100001').discountAmount).toBe('0.0000');
+    expect(completedLine(pct, '-1').discountAmount).toBe('100000.0000');
+  });
+});
+
+describe('noteTaxPlan / noteTaxAmounts', () => {
+  const codes = new Map([
+    ['ppn', { rate: '0.11', kind: 'PPN_OUTPUT' as const }],
+    ['pph', { rate: '0.02', kind: 'PPH_PREPAID' as const }],
+  ]);
+  const raw = (amount: string, id = 'ppn') => [{ taxCodeId: id, amount }];
+  // One original line 2 × Rp1,050 PPN 11%: invoice PPN = round(231) = 231.
+  const plan = (
+    complete: boolean,
+    others: { amount: string; taxTotal: string }[] = [],
+  ) =>
+    noteTaxPlan({
+      codes,
+      original: [{ amount: '2100', taxCodeIds: ['ppn'], complete }],
+      others: others.map((o) => ({
+        lines: [{ amount: o.amount, taxCodeIds: ['ppn'] }],
+        taxTotal: o.taxTotal,
+        withholdingTotal: '0',
+      })),
+    });
+
+  it('Rp1,050: first note raw 116 (capped at 231), completing note 115', () => {
+    expect(noteTaxAmounts(raw('116'), plan(false))).toEqual({
+      ppn: '116.0000',
+    });
+    const last = plan(true, [{ amount: '1050', taxTotal: '116' }]);
+    expect(last).toEqual({ ppn: { remaining: '115.0000', complete: true } });
+    expect(noteTaxAmounts(raw('116'), last)).toEqual({ ppn: '115.0000' });
+  });
+
+  it('Rp1,040: completing note takes 229 − 114 = 115 (no Rp1 left)', () => {
+    const p = noteTaxPlan({
+      codes,
+      original: [{ amount: '2080', taxCodeIds: ['ppn'], complete: true }],
+      others: [
+        {
+          lines: [{ amount: '1040', taxCodeIds: ['ppn'] }],
+          taxTotal: '114',
+          withholdingTotal: '0',
+        },
+      ],
+    });
+    expect(noteTaxAmounts(raw('114'), p)).toEqual({ ppn: '115.0000' });
+  });
+
+  it('caps a partial note at the remainder, never below 0', () => {
+    const p = plan(false, [{ amount: '1050', taxTotal: '230' }]);
+    expect(noteTaxAmounts(raw('116'), p)).toEqual({ ppn: '1.0000' });
+    const over = plan(false, [{ amount: '1050', taxTotal: '240' }]);
+    expect(noteTaxAmounts(raw('116'), over)).toEqual({ ppn: '0.0000' });
+  });
+
+  it('a code is complete only when every line carrying it is fully returned', () => {
+    const p = noteTaxPlan({
+      codes,
+      original: [
+        { amount: '1000', taxCodeIds: ['ppn', 'pph'], complete: true },
+        { amount: '1000', taxCodeIds: ['ppn'], complete: false },
+      ],
+      others: [],
+    });
+    expect(p).toEqual({
+      ppn: { remaining: '220.0000', complete: false },
+      pph: { remaining: '20.0000', complete: true },
+    });
+  });
+
+  it('fits another note to its stored PPN / PPh totals per bucket', () => {
+    const p = noteTaxPlan({
+      codes,
+      original: [
+        { amount: '2100', taxCodeIds: ['ppn', 'pph'], complete: true },
+      ],
+      others: [
+        {
+          lines: [{ amount: '1050', taxCodeIds: ['ppn', 'pph'] }],
+          taxTotal: '115', // raw 116, it took a remainder
+          withholdingTotal: '21',
+        },
+      ],
+    });
+    // PPN 231 − 115, PPh 42 − 21
+    expect(p.ppn.remaining).toBe('116.0000');
+    expect(p.pph.remaining).toBe('21.0000');
   });
 });
 

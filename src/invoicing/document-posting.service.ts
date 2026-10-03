@@ -9,9 +9,16 @@ import type { LedgerTx } from '../common/prisma/prisma.service';
 import {
   TaxService,
   TaxableLineInput,
+  TaxableTransaction,
   TaxCalculation,
   CalculatedLine,
 } from '../tax/tax.service';
+
+/** The note-only tax-engine options (see TaxableTransaction). */
+export type NoteTaxOptions = Pick<
+  TaxableTransaction,
+  'allowInactiveCodes' | 'overrideAmounts'
+>;
 import { ValidationFailedError } from '../common/errors/domain-errors';
 import { Money } from '../common/money/money';
 import {
@@ -41,6 +48,8 @@ export interface PostTaxedDocParams {
   postedBy: string;
   documentType: string; // 'INV' | 'BILL' | 'CN' | 'DN'
   lines: TaxableLineInput[];
+  /** Credit/debit notes: inactive original codes + per-code overrides. */
+  taxOptions?: NoteTaxOptions;
   /** Table the source document lives in — a constant literal, never user input. */
   table: TaxedTable;
   /** Reshape the tax calculation's journal before posting (credit/debit
@@ -89,9 +98,13 @@ export class DocumentPostingService {
     settlementAccountId: string,
     lines: TaxableLineInput[],
     db?: LedgerTx,
+    taxOptions?: NoteTaxOptions,
   ): Promise<DocumentTotals> {
     return documentTotals(
-      await this.tax.calculate({ nature, settlementAccountId, lines }, db),
+      await this.tax.calculate(
+        { nature, settlementAccountId, lines, ...taxOptions },
+        db,
+      ),
     );
   }
 
@@ -117,6 +130,7 @@ export class DocumentPostingService {
       nature: params.nature,
       settlementAccountId: params.settlementAccountId,
       lines: params.lines,
+      ...params.taxOptions,
     });
     const journalInput = {
       date: params.date,
@@ -151,6 +165,7 @@ export class DocumentPostingService {
           nature: params.nature,
           settlementAccountId: params.settlementAccountId,
           lines: params.lines,
+          ...params.taxOptions,
         },
         tx,
       );

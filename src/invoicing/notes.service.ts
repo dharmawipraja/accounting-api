@@ -17,7 +17,10 @@ import {
 } from '../common/errors/domain-errors';
 import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
 import { TaxedDocumentService } from './taxed-document.service';
-import { DraftChangedError } from './document-posting.service';
+import {
+  DocumentPostingService,
+  DraftChangedError,
+} from './document-posting.service';
 import {
   CreateDocumentInput,
   DocumentDescriptor,
@@ -25,10 +28,12 @@ import {
   DocumentPostHooks,
   UpdateDocumentInput,
 } from './document-descriptor';
-import { documentMessages } from './document-presenter';
+import { buildLineCreateData, documentMessages } from './document-presenter';
 import {
   assertVoidDateNotBefore,
+  discountTotal,
   findControlAccountId,
+  taxableLines,
 } from './document-helpers';
 import {
   AllocationInput,
@@ -45,8 +50,12 @@ import {
 import { lockLivePartnerForShare } from './partner-lock';
 import {
   NoteLineInput,
+  NoteTaxPlan,
   OriginalLine,
+  completedLine,
   noteJournalLines,
+  noteTaxAmounts,
+  noteTaxPlan,
   returnedLine,
   splitSettlement,
 } from './note-lines';
@@ -118,6 +127,30 @@ const APPLICATIONS = {
   orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }],
 };
 
+/** A returned (originalLineId, quantity) pair. */
+interface ReturnedQuantity {
+  originalLineId: string;
+  quantity: Prisma.Decimal | string;
+}
+
+/** What readReturnState reads: per original line (quantity, amount, codes,
+ *  and what other live notes return of it), and those notes. */
+interface ReturnState {
+  lines: {
+    id: string;
+    quantity: string;
+    amount: string;
+    taxCodeIds: string[];
+    returned: string;
+    returnedAmount: string;
+  }[];
+  others: {
+    taxTotal: string;
+    withholdingTotal: string;
+    lines: { amount: string; taxCodeIds: string[] }[];
+  }[];
+}
+
 /** The original's row under its FOR UPDATE lock. */
 interface LockedOriginal {
   status: string;
@@ -136,7 +169,10 @@ interface LockedOriginal {
  *   discount);
  * - the returnable quantity (original − every live DRAFT/POSTED note's) is
  *   enforced under the ORIGINAL's FOR UPDATE lock on create, edit and post, so
- *   concurrent notes cannot over-return;
+ *   concurrent notes cannot over-return; under the same lock a note that
+ *   completes a line / tax code takes the original's remainder, and partial
+ *   tax is capped at it (priceUnderLock, noteTaxPlan) — whole returns sum to
+ *   the original exactly;
  * - the posted journal mirrors the original's for the returned part; its
  *   settlement first settles the original (creditedAmount → the original's
  *   creditedTotal), any excess goes to the advance account as partner credit
@@ -157,6 +193,7 @@ export class NotesService {
     private readonly docs: TaxedDocumentService,
     private readonly lifecycle: DocumentLifecycleService,
     private readonly payments: PaymentsService,
+    private readonly docPosting: DocumentPostingService,
   ) {
     this.kinds = { SALES: this.salesKind(), PURCHASE: this.purchaseKind() };
   }
@@ -387,51 +424,84 @@ export class NotesService {
     return row;
   }
 
+  /** Per original line: its quantity/amount/codes and what every OTHER live
+   *  (DRAFT / POSTED, not deleted) note returns of it; and those notes' lines
+   *  + stored PPN/PPh totals (the tax plan input). Plain reads — under the
+   *  original's lock when called from lockReturnable. */
+  private async readReturnState(
+    db: LedgerTx,
+    kind: NoteKind,
+    originalId: string,
+    selfId: string | null,
+  ): Promise<ReturnState> {
+    const live = Prisma.sql`n.deleted_at IS NULL AND n.status IN ('DRAFT', 'POSTED')
+      AND n.id IS DISTINCT FROM ${selfId}::text`;
+    const [lines, others] = await Promise.all([
+      db.$queryRaw<ReturnState['lines']>(Prisma.sql`
+        SELECT ol.id, ol.quantity::text AS quantity, ol.amount::text AS amount,
+               ol.tax_code_ids AS "taxCodeIds",
+               COALESCE(SUM(nl.quantity) FILTER (WHERE ${live}), 0)::text AS returned,
+               COALESCE(SUM(nl.amount) FILTER (WHERE ${live}), 0)::text AS "returnedAmount"
+        FROM ${Prisma.raw(kind.original.lineTable)} ol
+        LEFT JOIN ${Prisma.raw(kind.lineTable)} nl ON nl.original_line_id = ol.id
+        LEFT JOIN ${Prisma.raw(kind.table)} n ON n.id = nl.note_id
+        WHERE ol.${Prisma.raw(kind.original.lineFk)} = ${originalId}
+        GROUP BY ol.id, ol.quantity, ol.amount, ol.tax_code_ids`),
+      db.$queryRaw<
+        {
+          id: string;
+          taxTotal: string;
+          withholdingTotal: string;
+          amount: string;
+          taxCodeIds: string[];
+        }[]
+      >(Prisma.sql`
+        SELECT n.id, n.tax_total::text AS "taxTotal",
+               n.withholding_total::text AS "withholdingTotal",
+               nl.amount::text AS amount, nl.tax_code_ids AS "taxCodeIds"
+        FROM ${Prisma.raw(kind.table)} n
+        JOIN ${Prisma.raw(kind.lineTable)} nl ON nl.note_id = n.id
+        WHERE n.original_id = ${originalId} AND ${live}
+        ORDER BY n.id, nl.line_no`),
+    ]);
+    const byNote = new Map<string, ReturnState['others'][number]>();
+    for (const r of others) {
+      const o = byNote.get(r.id) ?? {
+        taxTotal: r.taxTotal,
+        withholdingTotal: r.withholdingTotal,
+        lines: [],
+      };
+      o.lines.push({ amount: r.amount, taxCodeIds: r.taxCodeIds });
+      byNote.set(r.id, o);
+    }
+    return { lines, others: [...byNote.values()] };
+  }
+
   /** THE over-return guard. Locks the original FOR UPDATE (serializing every
    *  note create / edit / post — and the original's void — on it), then
    *  requires, for EVERY original line, its quantity ≥ what every live
    *  (DRAFT / POSTED, not deleted) note other than `selfId` returns + what
    *  `lines` return now. 422 { originalLineId, quantity, returnable }.
-   *  At post `selfId` is null and `lines` empty: the posting note's own
-   *  committed lines (current under its row lock) are counted by the query. */
+   *  Returns the locked original and the return state read under the lock
+   *  (the remainder / cap inputs: priceUnderLock, taxPlan). */
   private async lockReturnable(
     tx: LedgerTx,
     kind: NoteKind,
     originalId: string,
     selfId: string | null,
-    lines: { originalLineId: string; quantity: Prisma.Decimal | string }[],
-  ): Promise<LockedOriginal> {
+    lines: ReturnedQuantity[],
+  ): Promise<{ locked: LockedOriginal; state: ReturnState }> {
     const locked = await this.lockOriginal(tx, kind, originalId);
-    const rows = await tx.$queryRaw<
-      { id: string; quantity: string; returned: string }[]
-    >(Prisma.sql`
-      SELECT ol.id, ol.quantity::text AS quantity,
-             COALESCE(SUM(nl.quantity) FILTER (
-               WHERE n.deleted_at IS NULL AND n.status IN ('DRAFT', 'POSTED')
-                 AND n.id IS DISTINCT FROM ${selfId}::text), 0)::text AS returned
-      FROM ${Prisma.raw(kind.original.lineTable)} ol
-      LEFT JOIN ${Prisma.raw(kind.lineTable)} nl ON nl.original_line_id = ol.id
-      LEFT JOIN ${Prisma.raw(kind.table)} n ON n.id = nl.note_id
-      WHERE ol.${Prisma.raw(kind.original.lineFk)} = ${originalId}
-      GROUP BY ol.id, ol.quantity`);
-    const byId = new Map(rows.map((r) => [r.id, r]));
-    const asked = new Map<string, Prisma.Decimal>();
-    for (const l of lines)
-      asked.set(
-        l.originalLineId,
-        (asked.get(l.originalLineId) ?? new Prisma.Decimal(0)).add(
-          l.quantity.toString(),
-        ),
-      );
+    const state = await this.readReturnState(tx, kind, originalId, selfId);
+    const byId = new Map(state.lines.map((r) => [r.id, r]));
+    const asked = askedQuantities(lines);
     for (const lineId of asked.keys())
       if (!byId.has(lineId))
         throw new ValidationFailedError(
           `Returned line does not belong to the ${kind.original.noun}`,
           { originalLineId: lineId },
         );
-    // EVERY original line, not only the asked ones: at post the note's own
-    // (locked, current) lines are counted by the query instead of `lines`.
-    for (const r of rows) {
+    for (const r of state.lines) {
       const qty = asked.get(r.id) ?? new Prisma.Decimal(0);
       const returned = new Prisma.Decimal(r.returned).add(qty);
       if (returned.greaterThan(r.quantity))
@@ -446,7 +516,84 @@ export class NotesService {
           },
         );
     }
-    return locked;
+    return { locked, state };
+  }
+
+  /** The note's per-code tax plan (noteTaxPlan) for `lines` against `state`;
+   *  rates/kinds read through `db` (inactive codes included). */
+  private async taxPlan(
+    db: LedgerTx,
+    state: ReturnState,
+    lines: ReturnedQuantity[],
+  ): Promise<NoteTaxPlan> {
+    const ids = [...new Set(state.lines.flatMap((l) => l.taxCodeIds))];
+    const codes = await db.taxCode.findMany({
+      where: { id: { in: ids }, deletedAt: null },
+      select: { id: true, rate: true, kind: true },
+    });
+    const asked = askedQuantities(lines);
+    return noteTaxPlan({
+      codes: new Map(
+        codes.map((c) => [c.id, { rate: c.rate.toString(), kind: c.kind }]),
+      ),
+      original: state.lines.map((l) => ({
+        amount: l.amount,
+        taxCodeIds: l.taxCodeIds,
+        complete: new Prisma.Decimal(l.returned)
+          .add(asked.get(l.id) ?? 0)
+          .equals(l.quantity),
+      })),
+      others: state.others,
+    });
+  }
+
+  /** Create / edit, under the original's lock: the lines and totals stored
+   *  on the draft. A line brought to its full quantity takes its remainder
+   *  (completedLine) and the tax follows the plan (remainder when complete,
+   *  else capped) — replacing the pre-lock totals TaxedDocumentService
+   *  computed, so two concurrent notes cannot both take a remainder. */
+  private async priceUnderLock(
+    tx: LedgerTx,
+    kind: NoteKind,
+    originalId: string,
+    selfId: string | null,
+    requested: NoteLineInput[],
+  ) {
+    const { state } = await this.lockReturnable(
+      tx,
+      kind,
+      originalId,
+      selfId,
+      requested,
+    );
+    const byId = new Map(state.lines.map((r) => [r.id, r]));
+    const lines = requested.map((l) => {
+      const r = byId.get(l.originalLineId)!;
+      return new Prisma.Decimal(r.returned).add(l.quantity).equals(r.quantity)
+        ? completedLine(
+            l,
+            Money.of(r.amount)
+              .subtract(Money.of(r.returnedAmount))
+              .toPersistence(),
+          )
+        : l;
+    });
+    const plan = await this.taxPlan(tx, state, lines);
+    const totals = await this.docPosting.computeTotals(
+      kind.spec.nature,
+      await findControlAccountId(this.prisma, kind.spec.controlRole),
+      taxableLines(lines),
+      tx,
+      {
+        allowInactiveCodes: true,
+        overrideAmounts: (raw) => noteTaxAmounts(raw, plan),
+      },
+    );
+    return {
+      ...totals,
+      discountTotal: discountTotal(lines),
+      lines: withOriginalLines(buildLineCreateData(lines), lines),
+    };
   }
 
   /** Post-time steps (see DocumentPostHooks), planned from the pre-lock read
@@ -470,8 +617,22 @@ export class NotesService {
         select: { id: true },
       }),
     ]);
+    // The tax plan, from this attempt's (unlocked) read; re-derived under the
+    // original's lock in verifyInTx and must be unchanged (else restart).
+    const noteLines = row.lines ?? [];
+    const plan = await this.taxPlan(
+      this.prisma.client,
+      await this.readReturnState(
+        this.prisma.client,
+        kind,
+        row.originalId,
+        row.id,
+      ),
+      noteLines,
+    );
     let split = { applied: '0', excess: '0' };
     return {
+      overrideTaxAmounts: (raw) => noteTaxAmounts(raw, plan),
       journalLines: (lines) => {
         const s = lines[lines.length - 1];
         split = splitSettlement(s.debit ?? s.credit ?? '0', outstanding);
@@ -488,13 +649,17 @@ export class NotesService {
         });
       },
       verifyInTx: async (tx) => {
-        const locked = await this.lockReturnable(
+        // The note's own lines are current here (verified under its row lock
+        // before this hook runs).
+        const { locked, state } = await this.lockReturnable(
           tx,
           kind,
           row.originalId,
-          null,
-          [],
+          row.id,
+          noteLines,
         );
+        if (!samePlan(plan, await this.taxPlan(tx, state, noteLines)))
+          throw new DraftChangedError();
         const total = Money.of(split.applied).add(Money.of(split.excess));
         const now = splitSettlement(total.toPersistence(), locked.outstanding);
         if (now.applied !== split.applied) throw new DraftChangedError();
@@ -554,6 +719,7 @@ export class NotesService {
         label: 'Sales credit note',
         article: 'a',
         partnerFlag: 'isCustomer',
+        allowInactiveRefs: true,
         nature: 'SALE',
         controlRole: 'AR_CONTROL',
         sourceType: 'SALES_CREDIT_NOTE',
@@ -582,7 +748,7 @@ export class NotesService {
         hydrate: (ids) =>
           db.salesCreditNote.findMany({ where: { id: { in: ids } } }),
         createRow: async (tx, common, input) => {
-          await this.lockReturnable(
+          const { lines, ...priced } = await this.priceUnderLock(
             tx,
             kind,
             input.originalId,
@@ -592,23 +758,28 @@ export class NotesService {
           return tx.salesCreditNote.create({
             data: {
               ...noteScalars(common),
+              ...priced,
               originalId: input.originalId,
-              lines: {
-                create: withOriginalLines(common.lines.create, input.lines),
-              },
+              lines: { create: lines },
             },
             include: { lines: LINES, applications: APPLICATIONS },
           });
         },
         updateRow: async (tx, id, common, input, existing) => {
-          const lines = input.lines ?? existing.lines ?? [];
-          await this.lockReturnable(tx, kind, existing.originalId, id, lines);
+          const { lines, ...priced } = await this.priceUnderLock(
+            tx,
+            kind,
+            existing.originalId,
+            id,
+            input.lines ?? (existing.lines ?? []).map(storedNoteLine),
+          );
           await tx.salesCreditNoteLine.deleteMany({ where: { noteId: id } });
           await tx.salesCreditNote.update({
             where: { id },
             data: {
               ...noteScalars(common),
-              lines: { create: withOriginalLines(common.lines.create, lines) },
+              ...priced,
+              lines: { create: lines },
             },
           });
         },
@@ -670,6 +841,7 @@ export class NotesService {
         label: 'Purchase debit note',
         article: 'a',
         partnerFlag: 'isVendor',
+        allowInactiveRefs: true,
         nature: 'PURCHASE',
         controlRole: 'AP_CONTROL',
         sourceType: 'PURCHASE_DEBIT_NOTE',
@@ -698,7 +870,7 @@ export class NotesService {
         hydrate: (ids) =>
           db.purchaseDebitNote.findMany({ where: { id: { in: ids } } }),
         createRow: async (tx, common, input) => {
-          await this.lockReturnable(
+          const { lines, ...priced } = await this.priceUnderLock(
             tx,
             kind,
             input.originalId,
@@ -708,23 +880,28 @@ export class NotesService {
           return tx.purchaseDebitNote.create({
             data: {
               ...noteScalars(common),
+              ...priced,
               originalId: input.originalId,
-              lines: {
-                create: withOriginalLines(common.lines.create, input.lines),
-              },
+              lines: { create: lines },
             },
             include: { lines: LINES, applications: APPLICATIONS },
           });
         },
         updateRow: async (tx, id, common, input, existing) => {
-          const lines = input.lines ?? existing.lines ?? [];
-          await this.lockReturnable(tx, kind, existing.originalId, id, lines);
+          const { lines, ...priced } = await this.priceUnderLock(
+            tx,
+            kind,
+            existing.originalId,
+            id,
+            input.lines ?? (existing.lines ?? []).map(storedNoteLine),
+          );
           await tx.purchaseDebitNoteLine.deleteMany({ where: { noteId: id } });
           await tx.purchaseDebitNote.update({
             where: { id },
             data: {
               ...noteScalars(common),
-              lines: { create: withOriginalLines(common.lines.create, lines) },
+              ...priced,
+              lines: { create: lines },
             },
           });
         },
@@ -784,6 +961,48 @@ function priceLines(
       });
     return returnedLine(orig, r.quantity);
   });
+}
+
+/** Total returned quantity per original line. */
+function askedQuantities(
+  lines: ReturnedQuantity[],
+): Map<string, Prisma.Decimal> {
+  const asked = new Map<string, Prisma.Decimal>();
+  for (const l of lines)
+    asked.set(
+      l.originalLineId,
+      (asked.get(l.originalLineId) ?? new Prisma.Decimal(0)).add(
+        l.quantity.toString(),
+      ),
+    );
+  return asked;
+}
+
+function samePlan(a: NoteTaxPlan, b: NoteTaxPlan): boolean {
+  const ka = Object.keys(a);
+  return (
+    ka.length === Object.keys(b).length &&
+    ka.every(
+      (k) =>
+        b[k] !== undefined &&
+        a[k].complete === b[k].complete &&
+        Money.of(a[k].remaining).equals(Money.of(b[k].remaining)),
+    )
+  );
+}
+
+/** A stored note line as a priced line (an edit that keeps its lines). */
+function storedNoteLine(l: SalesCreditNoteLine): NoteLineInput {
+  return {
+    originalLineId: l.originalLineId,
+    description: l.description,
+    accountId: l.accountId,
+    quantity: l.quantity.toString(),
+    unitPrice: l.unitPrice.toString(),
+    discountPercent: l.discountPercent?.toString() ?? null,
+    discountAmount: l.discountAmount.toString(),
+    taxCodeIds: l.taxCodeIds,
+  };
 }
 
 /** The note columns of the shared create/update data (notes have no due date). */

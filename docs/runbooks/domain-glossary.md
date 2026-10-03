@@ -126,7 +126,8 @@ rule keys off `posted_at`, not `status`.
 - **Inactive accounts.** Every post requires active accounts (`422 INVALID_ACCOUNT`)
   **except** a `CLOSING` entry (`CLOSING_POLICY.allowInactive` in
   `src/ledger/posting/account-policy.ts`): a P&L account deactivated mid-year still has
-  movement the year-end close must zero. Reversals (incl. document voids) skip the account
+  movement the year-end close must zero — and a credit/debit note (`NOTE_POLICY`), which
+  mirrors its original's accounts. Reversals (incl. document voids) skip the account
   re-check entirely — they only undo an already-posted movement — so a void may post to a
   deactivated `CASH` account and leave it with a non-zero balance. That is accepted and
   recoverable: reactivate it and move the balance with a manual entry.
@@ -380,10 +381,39 @@ shared `TaxedDocumentService` through one `DocumentDescriptor` per kind plus
 - **Lines** are `{ originalLineId, quantity }`; description, account, unit price and tax
   codes are copied (`returnedLine`). A percent discount keeps its percent; a fixed
   `discountAmount` is pro-rated by quantity, `discountAmount × qty / originalQty`
-  rounded once to 4 dp half-up (capped at the returned gross) — several partial returns
-  may differ from the original discount by ≤ 0.0001 each. Tax is recomputed on the
-  returned DPP with the original codes (per-code rupiah rounding), so partial notes may
-  differ from the original's tax by rounding.
+  rounded once to 4 dp half-up (capped at the returned gross). Zero-quantity original
+  line → `422` (nothing to return).
+- **Remainder rule — whole returns reproduce the original exactly.** Computed under the
+  original's `FOR UPDATE` lock (`priceUnderLock` on create/edit; re-planned at post and
+  verified under the lock, else the post restarts), so two notes can never both take a
+  remainder. "Other notes" = every other live (DRAFT/POSTED, not deleted) note.
+  - *Line:* the note line that brings an original line to its FULL quantity takes the
+    remainder (`completedLine`): its discount becomes a fixed amount such that its
+    amount = original line amount − the other notes' amounts for that line (= original
+    discount − discounts already returned, for whole quantities); clamped to [0, gross].
+    Partial lines are pro-rated as above (may be ±0.0001 each).
+  - *Tax, per code* (`noteTaxPlan` / `noteTaxAmounts`, applied through TaxService's
+    `overrideAmounts` before the journal/totals are built, so the entry stays balanced
+    and one-sided): remaining = the original's posted amount for the code (its DPP ×
+    rate, rounded once) − what the other notes take. When the note **completes** the code
+    (every original line carrying it is then fully returned) it takes exactly the
+    remaining; otherwise its own rupiah-rounded amount **capped** at the remaining; never
+    below 0. So live notes never exceed the original per code, and once the whole
+    original is returned the notes sum to it exactly (no Rp1 phantom advance, no Rp1
+    left outstanding). E.g. 2 × Rp1,050 PPN 11%: invoice 231 → notes 116 + 115; 2 ×
+    Rp1,040: invoice 229 → notes 114 + 115.
+  - Notes store no per-code breakdown: another note's per-code amounts are rebuilt from
+    its lines and fitted to its stored `taxTotal` (PPN) / `withholdingTotal` (PPh), any
+    difference on its largest code of that bucket — exact whenever a note carries one
+    PPN and one PPh code. With two codes of one bucket on one original, the bucket total
+    (hence settlement / AR / AP) stays exact; the split between those two codes may
+    differ by Rp1.
+- **Inactive references.** A note copies its original's partner, line accounts and tax
+  codes, so it accepts them even when since **deactivated** (e.g. after a rate change
+  retired the code) — never when soft-deleted; partner flag and kind/nature/line-account
+  rules still apply (`DocumentDescriptor.allowInactiveRefs`, TaxService
+  `allowInactiveCodes`, `NOTE_POLICY` for the note source types). Invoices and bills stay
+  strict.
 - **Over-return guard** (`lockReturnable`): under the ORIGINAL's `FOR UPDATE` lock, for
   every original line, the quantities of all live (DRAFT/POSTED, not deleted) notes ≤
   the original quantity — on create, edit and post, so concurrent notes queue on the
@@ -391,8 +421,8 @@ shared `TaxedDocumentService` through one `DocumentDescriptor` per kind plus
 - **Journal** = the mirror of the original's for the returned part (`noteJournalLines`):
   credit note Dr revenue, Dr PPN Keluaran / Cr PPh prepaid (or the PPh 4(2) final
   expense), Cr AR; debit note Dr AP, Dr PPh payable / Cr expense, Cr PPN Masukan. Source
-  types `SALES_CREDIT_NOTE` / `PURCHASE_DEBIT_NOTE` (role-unrestricted policy like the
-  documents; SoD applies).
+  types `SALES_CREDIT_NOTE` / `PURCHASE_DEBIT_NOTE` (`NOTE_POLICY`: role-unrestricted
+  like the documents, inactive accounts allowed; SoD applies).
 - **Settlement split** (`splitSettlement`): the note total first settles the original —
   `creditedAmount` on the note, added to the original's `credited_total` (outstanding
   everywhere = `total − amount_paid − credited_total`; DB CHECK `amount_paid +
@@ -462,7 +492,8 @@ purchases only `PPN_INPUT` / `PPH_PAYABLE`. A line carries at most **one PPN cod
 one PPh code** (two of the same bucket would tax the same DPP twice → 422).
 A code's **rate is frozen once any document line uses it** (409 `TAX_CODE_IN_USE`):
 a rate change (e.g. PPN 11% → 12%) is a new code, and the old one is deactivated, so
-every document keeps the rate it was taxed at.
+every document keeps the rate it was taxed at (credit/debit notes still return older
+documents with the inactive code).
 - `TaxCode` model (`kind`, `rate Decimal(9,6)`, `taxAccountId`); `ALLOWED_KINDS` map in
   `src/tax/tax.service.ts`.
 
@@ -672,7 +703,8 @@ appear on sales vs purchase documents; `npwp` is the Indonesian tax ID.
 - **Deactivating with open items is allowed (by design, no guard).** Posted documents
   stay open in AR/AP and aging, but receipts (disbursements) against them — create and
   post — and new documents return `422` ("Partner is inactive") until it is
-  re-activated; voiding an existing payment still works.
+  re-activated; voiding an existing payment still works, and so do credit/debit notes
+  against its posted documents.
 - **Removing a role with open items is refused** (`PATCH isCustomer/isVendor: false` →
   `422 OPEN_ITEMS` `{ …, role }` while that role has drafts, outstanding POSTED
   documents or draft payments of its direction), and so is deletion (`OPEN_ITEMS`).

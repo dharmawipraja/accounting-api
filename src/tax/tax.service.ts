@@ -17,6 +17,14 @@ export interface TaxableTransaction {
   nature: TaxNature;
   settlementAccountId: string;
   lines: TaxableLineInput[];
+  /** Credit/debit notes only: an INACTIVE (not deleted) code is accepted —
+   *  a note returns the original's codes even after a rate change retired
+   *  them. Kind/nature/PKP rules still apply. */
+  allowInactiveCodes?: boolean;
+  /** Credit/debit notes only: replaces the rupiah-rounded amount of the codes
+   *  it returns a value for (see noteTaxAmounts), BEFORE the journal and
+   *  totals are built — so the entry stays balanced. Must be ≥ 0. */
+  overrideAmounts?: (raw: readonly TaxBreakdownRow[]) => Record<string, string>;
 }
 
 export interface TaxBreakdownRow {
@@ -52,6 +60,21 @@ const ALLOWED_KINDS: Record<TaxNature, TaxKind[]> = {
 
 const taxBucket = (kind: TaxKind): 'PPN' | 'PPH' =>
   kind === 'PPN_OUTPUT' || kind === 'PPN_INPUT' ? 'PPN' : 'PPH';
+
+/** DPP per tax code: the sum of the amounts of the lines that carry it.
+ *  Each code's tax is then base × rate rounded ONCE to whole rupiah. */
+export function taxBases(
+  lines: readonly { amount: string; taxCodeIds: readonly string[] }[],
+): Map<string, Money> {
+  const baseByCode = new Map<string, Money>();
+  for (const line of lines)
+    for (const id of line.taxCodeIds)
+      baseByCode.set(
+        id,
+        (baseByCode.get(id) ?? Money.zero()).add(Money.of(line.amount)),
+      );
+  return baseByCode;
+}
 
 @Injectable()
 export class TaxService {
@@ -96,7 +119,7 @@ export class TaxService {
       if (!c) {
         throw new ValidationFailedError('Unknown tax code', { taxCodeId: id });
       }
-      if (!c.isActive) {
+      if (!c.isActive && !input.allowInactiveCodes) {
         throw new ValidationFailedError('Tax code is inactive', {
           taxCodeId: id,
         });
@@ -152,19 +175,8 @@ export class TaxService {
     // Subtotal: sum of all base line amounts (tax-exclusive).
     const subtotal = Money.sum(input.lines.map((l) => Money.of(l.amount)));
 
-    // Aggregate DPP per tax code across all lines that carry it.
-    const baseByCode = new Map<string, Money>();
-    for (const line of input.lines) {
-      for (const id of line.taxCodeIds) {
-        baseByCode.set(
-          id,
-          (baseByCode.get(id) ?? Money.zero()).add(Money.of(line.amount)),
-        );
-      }
-    }
-
     // Compute tax amounts: round each code's total ONCE to whole rupiah.
-    const taxes: TaxBreakdownRow[] = [...baseByCode.entries()]
+    const taxes: TaxBreakdownRow[] = [...taxBases(input.lines).entries()]
       .map(([id, base]) => {
         const c = byId.get(id)!;
         // Exact base × rate, rounded once (no intermediate 4dp rounding).
@@ -179,6 +191,16 @@ export class TaxService {
         };
       })
       .sort((a, b) => a.code.localeCompare(b.code));
+    if (input.overrideAmounts) {
+      const over = input.overrideAmounts(taxes);
+      for (const t of taxes) {
+        const v = over[t.taxCodeId];
+        if (v === undefined) continue;
+        if (Money.of(v).isNegative())
+          throw new Error(`Negative tax override for ${t.taxCodeId}`);
+        t.amount = Money.of(v).toPersistence();
+      }
+    }
 
     // Build journal lines.
     const journalLines: CalculatedLine[] = [];

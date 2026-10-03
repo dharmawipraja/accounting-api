@@ -1,6 +1,8 @@
 import { Decimal } from 'decimal.js';
-import { Prisma } from '@prisma/client';
+import { Prisma, TaxKind } from '@prisma/client';
 import { Money } from '../common/money/money';
+import { ValidationFailedError } from '../common/errors/domain-errors';
+import { taxBases } from '../tax/tax.service';
 import type { CalculatedLine } from '../tax/tax.service';
 import type { DocumentLineInput } from './document-descriptor';
 
@@ -29,12 +31,18 @@ export type NoteLineInput = DocumentLineInput & { originalLineId: string };
  *  - a FIXED discount is pro-rated by quantity: discountAmount × quantity /
  *    original quantity, computed exactly and rounded ONCE to 4dp half-up,
  *    capped at the returned gross (round4(quantity × unitPrice)).
- *  Several partial returns of one line may therefore sum to the original
- *  discount ± 0.0001 per note (each is rounded on its own). */
+ *  A partial return may be ± 0.0001 off; the note that brings the line to its
+ *  full quantity takes the remainder instead (completedLine).
+ *  422 for a zero-quantity original line (nothing to return). */
 export function returnedLine(
   orig: OriginalLine,
   quantity: string,
 ): NoteLineInput {
+  if (Money.of(orig.quantity.toString()).isZero())
+    throw new ValidationFailedError(
+      'Original line has zero quantity; nothing to return',
+      { originalLineId: orig.id },
+    );
   const base = {
     originalLineId: orig.id,
     description: orig.description,
@@ -63,6 +71,127 @@ export function returnedLine(
       : prorated
     ).toPersistence(),
   };
+}
+
+/** Pure: the returned line that brings its original line to its FULL
+ *  quantity takes the remainder — its discount is set (as a fixed amount) so
+ *  its amount = the original line's amount − what every other live note
+ *  already returns of it (`remainingAmount`), clamped to [0, gross]. With an
+ *  exact gross (whole quantities) that is exactly the original discount − the
+ *  discounts already returned; so whole returns sum to the original line. */
+export function completedLine(
+  line: NoteLineInput,
+  remainingAmount: string,
+): NoteLineInput {
+  const gross = Money.of(line.unitPrice).multiply(line.quantity);
+  const discount = gross.subtract(Money.of(remainingAmount));
+  const clamped = discount.isNegative()
+    ? Money.zero()
+    : discount.greaterThan(gross)
+      ? gross
+      : discount;
+  return {
+    ...line,
+    discountPercent: null,
+    discountAmount: clamped.toPersistence(),
+  };
+}
+
+/** Per tax code, what a note may still credit/debit of its original: the
+ *  original's posted (rupiah-rounded) amount − what every OTHER live note
+ *  takes (`remaining`), and whether every original line carrying the code is
+ *  fully returned once this note counts (`complete`). */
+export type NoteTaxPlan = Record<
+  string,
+  { remaining: string; complete: boolean }
+>;
+
+interface PlanLine {
+  amount: string;
+  taxCodeIds: string[];
+}
+
+const isPpn = (kind: TaxKind) => kind === 'PPN_OUTPUT' || kind === 'PPN_INPUT';
+
+/** Per-code rupiah amounts of `lines` (TaxService rounding: base × rate,
+ *  rounded once per code). */
+function codeAmounts(
+  lines: PlanLine[],
+  codes: Map<string, { rate: string; kind: TaxKind }>,
+): Map<string, Money> {
+  const out = new Map<string, Money>();
+  for (const [id, base] of taxBases(lines)) {
+    const c = codes.get(id);
+    if (c) out.set(id, base.multiplyToRupiah(c.rate));
+  }
+  return out;
+}
+
+/** Pure: the tax plan of a note (see NoteTaxPlan). Another note's per-code
+ *  amounts are rebuilt from its lines and fitted to its STORED PPN/PPh totals
+ *  (taxTotal / withholdingTotal: what it actually takes, including its own
+ *  remainder/cap), any difference going to its largest code of that bucket —
+ *  exact whenever a note carries one code per bucket (one PPN + one PPh). */
+export function noteTaxPlan(input: {
+  codes: Map<string, { rate: string; kind: TaxKind }>;
+  /** Every original line; `complete` = fully returned once this note counts. */
+  original: (PlanLine & { complete: boolean })[];
+  others: { lines: PlanLine[]; taxTotal: string; withholdingTotal: string }[];
+}): NoteTaxPlan {
+  const remaining = codeAmounts(input.original, input.codes);
+  for (const other of input.others) {
+    const raw = codeAmounts(other.lines, input.codes);
+    for (const ppn of [true, false]) {
+      const ids = [...raw.keys()]
+        .filter((id) => isPpn(input.codes.get(id)!.kind) === ppn)
+        .sort((a, b) =>
+          raw.get(b)!.greaterThan(raw.get(a)!)
+            ? 1
+            : raw.get(a)!.greaterThan(raw.get(b)!)
+              ? -1
+              : a.localeCompare(b),
+        );
+      if (ids.length === 0) continue;
+      const stored = Money.of(ppn ? other.taxTotal : other.withholdingTotal);
+      const delta = stored.subtract(Money.sum(ids.map((id) => raw.get(id)!)));
+      raw.set(ids[0], raw.get(ids[0])!.add(delta));
+    }
+    for (const [id, amt] of raw)
+      remaining.set(id, (remaining.get(id) ?? Money.zero()).subtract(amt));
+  }
+  const plan: NoteTaxPlan = {};
+  for (const [id, rem] of remaining)
+    plan[id] = {
+      remaining: rem.toPersistence(),
+      complete: input.original.every(
+        (l) => l.complete || !l.taxCodeIds.includes(id),
+      ),
+    };
+  return plan;
+}
+
+/** Pure: the note's per-code tax amounts from its raw (rupiah-rounded) ones —
+ *  the code's remainder when the note completes it (every original line
+ *  carrying it fully returned), else the raw amount capped at the remainder;
+ *  never below 0. So the live notes of a code never take more than the
+ *  original, and whole returns take exactly the original. */
+export function noteTaxAmounts(
+  raw: readonly { taxCodeId: string; amount: string }[],
+  plan: NoteTaxPlan,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const t of raw) {
+    const p = plan[t.taxCodeId];
+    if (!p) continue;
+    const rem = Money.of(p.remaining).isNegative()
+      ? Money.zero()
+      : Money.of(p.remaining);
+    const amt = Money.of(t.amount);
+    out[t.taxCodeId] = (
+      p.complete || amt.greaterThan(rem) ? rem : amt
+    ).toPersistence();
+  }
+  return out;
 }
 
 /** Pure: how a note's settlement amount splits — `applied` settles the

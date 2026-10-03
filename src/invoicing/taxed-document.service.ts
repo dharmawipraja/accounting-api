@@ -92,7 +92,7 @@ export class TaxedDocumentService {
     const m = documentMessages(spec);
     assertDueDateNotBefore(input.date, input.dueDate);
     const partner = await this.partners.findById(input.partnerId);
-    if (!partner[spec.partnerFlag] || !partner.isActive)
+    if (!partnerUsable(spec, partner))
       throw new ValidationFailedError(m.partnerInactive, {
         partnerId: input.partnerId,
       });
@@ -111,6 +111,8 @@ export class TaxedDocumentService {
       spec.nature,
       settlementId,
       taxableLines(input.lines),
+      undefined,
+      noteTaxOptions(spec),
     );
     const common = {
       partnerId: input.partnerId,
@@ -129,7 +131,7 @@ export class TaxedDocumentService {
     // (422 OPEN_ITEMS), or this create sees the partner gone (422).
     return this.prisma.transaction(async (tx) => {
       const p = await lockLivePartnerForShare(tx, input.partnerId);
-      if (!p || !p[spec.partnerFlag] || !p.isActive)
+      if (!p || !partnerUsable(spec, p))
         throw new ValidationFailedError(m.partnerInactive, {
           partnerId: input.partnerId,
         });
@@ -184,6 +186,7 @@ export class TaxedDocumentService {
           settlementId,
           taxableLines(nextLines),
           ltx,
+          noteTaxOptions(spec),
         );
         const common = {
           date: input.date ?? row.date,
@@ -295,7 +298,7 @@ export class TaxedDocumentService {
     if (row.status !== 'DRAFT')
       throw new ValidationFailedError(m.notADraft, { id, status: row.status });
     const partner = await this.partners.findById(row.partnerId);
-    if (!partner[spec.partnerFlag] || !partner.isActive)
+    if (!partnerUsable(spec, partner))
       throw new ValidationFailedError(m.partnerInactive, {
         partnerId: row.partnerId,
       });
@@ -318,6 +321,10 @@ export class TaxedDocumentService {
         postedBy,
         documentType: spec.documentType,
         lines: taxableLines(row.lines ?? []),
+        taxOptions: {
+          ...noteTaxOptions(spec),
+          overrideAmounts: hooks?.overrideTaxAmounts?.bind(hooks),
+        },
         table: spec.table,
         notDraftMessage: m.noLongerDraft,
         journalLines: hooks && ((lines) => hooks.journalLines(lines)),
@@ -329,7 +336,7 @@ export class TaxedDocumentService {
           // the document lock so a concurrent deactivate/delete (FOR UPDATE)
           // serializes with this post — same 422 as the pre-tx check.
           const p = await lockLivePartnerForShare(tx, row.partnerId);
-          if (!p || !p[spec.partnerFlag] || !p.isActive)
+          if (!p || !partnerUsable(spec, p))
             throw new ValidationFailedError(m.partnerInactive, {
               partnerId: row.partnerId,
             });
@@ -472,6 +479,20 @@ export class TaxedDocumentService {
     if (rows[0].status !== 'DRAFT')
       throw new ValidationFailedError(message, { id, status: rows[0].status });
   }
+}
+
+/** A partner a document of this type may use: the type's flag (customer /
+ *  vendor) and active — a note may keep its original's deactivated partner. */
+function partnerUsable(
+  spec: DocumentDescriptor<TaxedRow>,
+  p: { isCustomer: boolean; isVendor: boolean; isActive: boolean },
+): boolean {
+  return p[spec.partnerFlag] && (p.isActive || spec.allowInactiveRefs === true);
+}
+
+/** Notes accept their original's (possibly now inactive) tax codes. */
+function noteTaxOptions(spec: DocumentDescriptor<TaxedRow>) {
+  return spec.allowInactiveRefs ? { allowInactiveCodes: true } : undefined;
 }
 
 /** void() serves invoices and bills only (notes void through their own

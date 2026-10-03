@@ -25,6 +25,20 @@ All notable changes to this project are documented here. The format is based on
 ### Changed
 
 - `REFRESH_REUSE_GRACE_MS` default `10000` → `5000`, max `60000` → `30000`.
+- **Credit/debit-note rounding drift** — partial notes recomputed per-code rupiah tax
+  on their own base, so returning a whole invoice in pieces could credit Rp1 more (a
+  phantom advance on Uang Muka Pelanggan/Pembelian) or Rp1 less (left outstanding with
+  nothing left to return) than the original; fixed discounts drifted ±0.0001 per note.
+  Now, under the original's lock, the note that brings a line to its full quantity takes
+  the line's remaining amount/discount, and per tax code a note takes the original's
+  remaining amount when it completes the code, else its own amount capped at the
+  remainder — so notes never exceed the original per code and whole returns reproduce
+  it exactly (see the domain glossary).
+- **Inactive references blocked returns** — a note can now be issued against an
+  original whose tax code (e.g. retired by a rate change), line account or partner has
+  since been deactivated (not deleted); invoices and bills stay strict.
+- **Zero-quantity original line** — returning from it answered `500` (division by
+  zero); now `422 VALIDATION_FAILED`.
 
 ## [1.2.0] - 2026-10-03
 

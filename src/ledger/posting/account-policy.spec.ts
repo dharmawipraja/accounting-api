@@ -1,6 +1,7 @@
 import {
   CLOSING_POLICY,
   MANUAL_ENTRY_POLICY,
+  NOTE_POLICY,
   UNRESTRICTED_POLICY,
   OPENING_POLICY,
   accountPolicyFor,
@@ -16,15 +17,15 @@ describe('account-policy', () => {
       'SALES_INVOICE',
       'PURCHASE_BILL',
       'PAYMENT',
-      'SALES_CREDIT_NOTE',
-      'PURCHASE_DEBIT_NOTE',
     ] as const) {
       expect(accountPolicyFor(t)).toBe(UNRESTRICTED_POLICY);
     }
+    for (const t of ['SALES_CREDIT_NOTE', 'PURCHASE_DEBIT_NOTE'] as const)
+      expect(accountPolicyFor(t).forbiddenRoles).toEqual([]);
     expect(accountPolicyFor('OPENING').forbiddenRoles).toEqual([]);
   });
 
-  it('CLOSING is role-unrestricted and the ONLY policy that tolerates inactive accounts', () => {
+  it('only CLOSING and credit/debit notes tolerate inactive accounts', () => {
     // A deactivated P&L account with FY movement must still be zeroed by the
     // year-end close; every other source type keeps the isActive check.
     expect(accountPolicyFor('CLOSING')).toBe(CLOSING_POLICY);
@@ -32,6 +33,10 @@ describe('account-policy', () => {
       forbiddenRoles: [],
       allowInactive: true,
     });
+    // A note mirrors its original's accounts, which may since be inactive.
+    for (const t of ['SALES_CREDIT_NOTE', 'PURCHASE_DEBIT_NOTE'] as const)
+      expect(accountPolicyFor(t)).toBe(NOTE_POLICY);
+    expect(NOTE_POLICY).toEqual({ forbiddenRoles: [], allowInactive: true });
     for (const t of [
       'MANUAL',
       'OPENING',
@@ -39,8 +44,6 @@ describe('account-policy', () => {
       'SALES_INVOICE',
       'PURCHASE_BILL',
       'PAYMENT',
-      'SALES_CREDIT_NOTE',
-      'PURCHASE_DEBIT_NOTE',
     ] as const) {
       expect(accountPolicyFor(t).allowInactive ?? false).toBe(false);
     }

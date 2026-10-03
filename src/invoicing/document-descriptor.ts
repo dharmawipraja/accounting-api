@@ -6,7 +6,7 @@ import {
 } from '@prisma/client';
 import type { LedgerTx } from '../common/prisma/prisma.service';
 import type { PostedDocContext } from './document-posting.service';
-import type { CalculatedLine } from '../tax/tax.service';
+import type { CalculatedLine, TaxBreakdownRow } from '../tax/tax.service';
 import { SoftDeletableModel } from '../ledger/document-lifecycle.service';
 
 /** A document line as read back from the DB (Decimal money columns). */
@@ -166,6 +166,12 @@ export interface DocumentDescriptor<
     table: 'sales_credit_notes' | 'purchase_debit_notes';
     noun: string;
   };
+  /** Credit/debit notes: they reuse the ORIGINAL's partner, line accounts and
+   *  tax codes, which may since have been deactivated (e.g. a rate change
+   *  retires a code). Inactive is then accepted; deleted, partner flag and
+   *  kind/nature rules still apply. (Accounts: the note source types' posting
+   *  policy, accountPolicyFor.) Invoices/bills stay strict. */
+  allowInactiveRefs?: boolean;
   /** Own searched columns for fuzzy ?q= search — a non-empty tuple (trigramSearch requires ≥1). */
   trigramColumns: [string, ...string[]];
   model: SoftDeletableModel;
@@ -211,6 +217,8 @@ export interface DocumentDescriptor<
  *  plan — the post restarts), and write more rows in the same tx. */
 export interface DocumentPostHooks {
   journalLines(lines: CalculatedLine[]): CalculatedLine[];
+  /** Per-code tax amount overrides (TaxableTransaction.overrideAmounts). */
+  overrideTaxAmounts?(raw: readonly TaxBreakdownRow[]): Record<string, string>;
   verifyInTx(tx: LedgerTx): Promise<void>;
   finalizeInTx(tx: LedgerTx, ctx: PostedDocContext): Promise<void>;
 }
