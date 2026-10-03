@@ -3,9 +3,9 @@ import { JournalEntry, Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import {
   PostingService,
-  LedgerTx,
   POSTING_TX_OPTIONS,
 } from '../ledger/posting/posting.service';
+import type { LedgerTx } from '../common/prisma/prisma.service';
 import {
   TaxService,
   TaxableLineInput,

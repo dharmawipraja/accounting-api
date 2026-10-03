@@ -16,10 +16,10 @@ import {
 import { lockLivePartnerForShare } from './partner-lock';
 import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
 import {
-  LedgerTx,
   POSTING_TX_OPTIONS,
   PostingService,
 } from '../ledger/posting/posting.service';
+import type { LedgerTx } from '../common/prisma/prisma.service';
 import { trigramSearch } from '../common/search/trigram-search';
 import { listPaginated } from '../common/pagination/paginated';
 import {

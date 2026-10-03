@@ -1,4 +1,4 @@
-import { LedgerTx } from '../ledger/posting/posting.service';
+import type { LedgerTx } from '../common/prisma/prisma.service';
 
 /** The partner flags the in-tx checks look at. */
 export interface LockedPartner {

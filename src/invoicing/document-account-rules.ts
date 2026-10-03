@@ -8,10 +8,8 @@ import {
 } from '@prisma/client';
 import { ValidationFailedError } from '../common/errors/domain-errors';
 import { accountPolicyFor } from '../ledger/posting/account-policy';
-import type {
-  LedgerTx,
-  PostingService,
-} from '../ledger/posting/posting.service';
+import type { PostingService } from '../ledger/posting/posting.service';
+import type { LedgerTx } from '../common/prisma/prisma.service';
 import { taxAccountViolation } from '../tax/tax-account-rule';
 
 /** Account fields the document account rules look at. */

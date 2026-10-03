@@ -5,7 +5,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { Money } from '../common/money/money';
-import { LedgerTx } from '../ledger/posting/posting.service';
+import type { LedgerTx } from '../common/prisma/prisma.service';
 import { ExtendedPrismaClient } from '../common/prisma/soft-delete.extension';
 import {
   ConflictDomainError,

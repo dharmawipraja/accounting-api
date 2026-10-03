@@ -1,11 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
-import {
-  PostingService,
-  LedgerTx,
-  POSTING_TX_OPTIONS,
-} from './posting/posting.service';
+import { PostingService, POSTING_TX_OPTIONS } from './posting/posting.service';
+import type { LedgerTx } from '../common/prisma/prisma.service';
 import { ValidationFailedError } from '../common/errors/domain-errors';
 
 export type SoftDeletableModel = {

@@ -10,10 +10,10 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { trigramSearch } from '../common/search/trigram-search';
 import { Money } from '../common/money/money';
 import {
-  LedgerTx,
   POSTING_TX_OPTIONS,
   PostingService,
 } from '../ledger/posting/posting.service';
+import type { LedgerTx } from '../common/prisma/prisma.service';
 import {
   NotFoundDomainError,
   ValidationFailedError,

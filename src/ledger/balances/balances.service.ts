@@ -13,7 +13,7 @@ import {
   POSTED_JE,
   excludeClosingJe,
 } from './posted-entry.sql';
-import type { LedgerTx } from '../posting/posting.service';
+import type { LedgerTx } from '../../common/prisma/prisma.service';
 
 export interface TrialBalanceRow {
   accountId: string;
@@ -92,14 +92,6 @@ export class BalancesService {
     return this.prisma.transaction(fn, REPORT_SNAPSHOT_TX);
   }
 
-  /**
-   * Truncate to UTC midnight so an as-of date carrying a time-of-day still
-   * includes entries dated on that day (`je.date` is a `@db.Date`).
-   */
-  private toUtcDay(d: Date): Date {
-    return truncateToUtcDay(d);
-  }
-
   /** Grouped per-account debit/credit sums + metadata over a date predicate.
    *  Uses POSTED_JE (the shared posted/not-soft-deleted entry predicate) plus the
    *  accounts-join soft-delete guard. */
@@ -127,7 +119,7 @@ export class BalancesService {
     const parts: Prisma.Sql[] = [];
     if (opts.excludeClosing) parts.push(excludeClosingJe());
     else if (opts.excludeClosingFrom)
-      parts.push(excludeClosingJe(this.toUtcDay(opts.excludeClosingFrom)));
+      parts.push(excludeClosingJe(truncateToUtcDay(opts.excludeClosingFrom)));
     if (opts.excludeOpening) parts.push(EXCLUDE_OPENING_JE);
     return parts.length ? Prisma.join(parts, ' AND ') : Prisma.sql`TRUE`;
   }
@@ -158,7 +150,7 @@ export class BalancesService {
     asOf: Date,
     opts?: BalanceQueryOpts,
   ): Promise<AccountBalanceRow[]> {
-    const day = this.toUtcDay(asOf);
+    const day = truncateToUtcDay(asOf);
     const rows = await this.groupedBalances(
       Prisma.sql`je.date <= ${day}`,
       opts,
@@ -172,8 +164,8 @@ export class BalancesService {
     to: Date,
     opts?: BalanceQueryOpts,
   ): Promise<AccountBalanceRow[]> {
-    const f = this.toUtcDay(from);
-    const t = this.toUtcDay(to);
+    const f = truncateToUtcDay(from);
+    const t = truncateToUtcDay(to);
     const rows = await this.groupedBalances(
       Prisma.sql`je.date >= ${f} AND je.date <= ${t}`,
       opts,
@@ -182,7 +174,7 @@ export class BalancesService {
   }
 
   async trialBalance(asOf: Date): Promise<TrialBalance> {
-    const day = this.toUtcDay(asOf);
+    const day = truncateToUtcDay(asOf);
     const rows = await this.groupedBalances(Prisma.sql`je.date <= ${day}`);
     // Sum via Money (40-digit precision): Prisma.Decimal's default 20
     // significant digits would round a trial-balance total past 16 integer
@@ -225,7 +217,7 @@ export class BalancesService {
     balance: string;
   }> {
     const account = await this.accounts.findById(accountId, opts.tx);
-    const day = this.toUtcDay(asOf);
+    const day = truncateToUtcDay(asOf);
     const client = opts.tx ?? this.prisma;
     const rows = await client.$queryRaw<
       { debit: Prisma.Decimal; credit: Prisma.Decimal }[]

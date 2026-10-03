@@ -27,10 +27,8 @@ import {
   findForbiddenType,
 } from './account-policy';
 
-/** Re-exported from PrismaService (its home) so existing imports keep working. */
 import type { LedgerTx } from '../../common/prisma/prisma.service';
 import { assertNotAfterToday } from '../../common/dates/not-after-today';
-export type { LedgerTx };
 
 /** Explicit interactive-tx bounds for the posting writes (direct post,
  *  postDraft, reversal): wait up to 5s for a pool connection, run up to 20s
@@ -132,8 +130,8 @@ export class PostingService {
     // the authoritative re-checks happen inside the write tx (stampPostedInTx:
     // period FOR SHARE + year advisory lock, then accounts FOR SHARE).
     const { periodId, fiscalYear } = await this.assertPostableDate(input.date);
-    await this.assertPostableAccounts(
-      input.lines,
+    await this.resolvePostableAccounts(
+      input.lines.map((l) => l.accountId),
       accountPolicyFor(input.sourceType),
     );
     return new PreparedPosting(
@@ -554,31 +552,13 @@ export class PostingService {
         },
       );
     }
-    const period = await this.periods.resolveOpenPeriodForDate(draft.date);
-    if (!period) {
-      throw new ClosedPeriodError(
-        'No open accounting period contains this date',
-        {
-          date: draft.date.toISOString().slice(0, 10),
-        },
-      );
-    }
-    await this.assertPostableAccounts(
-      lines,
+    // Same open-period + year-lock checks as preparePosting: a draft created
+    // while the year was open must not be postable once it has been closed.
+    const { periodId, fiscalYear } = await this.assertPostableDate(draft.date);
+    await this.resolvePostableAccounts(
+      lines.map((l) => l.accountId),
       accountPolicyFor(draft.sourceType),
     );
-    const fiscalYear = await this.company.fiscalYearFor(draft.date);
-    // Same year-lock as preparePosting: a draft created while the year was open
-    // must not be postable into it once the year has been closed.
-    const closedYear = await this.prisma.client.yearEndClosing.findFirst({
-      where: { fiscalYear, status: 'CLOSED' },
-    });
-    if (closedYear) {
-      throw new ClosedYearError(
-        'Fiscal year is closed; reopen it before posting',
-        { fiscalYear },
-      );
-    }
 
     return this.prisma.transaction(async (tx) => {
       // Lock the draft row and re-check status BEFORE consuming a number, so a
@@ -603,7 +583,7 @@ export class PostingService {
       });
       const { entryNumber, entryRef } = await this.stampPostedInTx(
         tx,
-        period.id,
+        periodId,
         fiscalYear,
         {
           accounts: {
@@ -618,7 +598,7 @@ export class PostingService {
           entryNumber,
           entryRef,
           fiscalYear,
-          periodId: period.id,
+          periodId,
           status: 'POSTED',
           postedBy,
           postedAt: new Date(),
@@ -749,15 +729,5 @@ export class PostingService {
   ): void {
     const hit = findForbiddenRole(accounts, policy);
     if (hit) throw new ValidationFailedError(FORBIDDEN_ROLE_MESSAGE, hit);
-  }
-
-  private async assertPostableAccounts(
-    lines: PostLineInput[],
-    policy: AccountPolicy,
-  ): Promise<void> {
-    await this.resolvePostableAccounts(
-      lines.map((l) => l.accountId),
-      policy,
-    );
   }
 }

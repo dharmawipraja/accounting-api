@@ -1,5 +1,5 @@
 import { AccountRole, DocumentStatus, Prisma } from '@prisma/client';
-import { LedgerTx } from '../ledger/posting/posting.service';
+import type { LedgerTx } from '../common/prisma/prisma.service';
 import { PostedDocContext } from './document-posting.service';
 import { SoftDeletableModel } from '../ledger/document-lifecycle.service';
 

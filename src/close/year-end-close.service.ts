@@ -4,9 +4,9 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { Money } from '../common/money/money';
 import {
   PostingService,
-  LedgerTx,
   POSTING_TX_OPTIONS,
 } from '../ledger/posting/posting.service';
+import type { LedgerTx } from '../common/prisma/prisma.service';
 import { BalancesService } from '../ledger/balances/balances.service';
 import { CompanyService } from '../company/company.service';
 import { PostLineInput } from '../ledger/posting/posting.types';
