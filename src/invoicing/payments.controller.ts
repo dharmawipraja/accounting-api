@@ -22,7 +22,12 @@ import {
   PaymentResponseDto,
 } from './dto/payment-response.dto';
 import { PaymentsService } from './payments.service';
-import { ApplyPaymentDto, CreatePaymentDto } from './dto/create-payment.dto';
+import {
+  ApplyPaymentDto,
+  CreatePaymentDto,
+  RefundCreditDto,
+  refundInput,
+} from './dto/create-payment.dto';
 import { PaymentListQueryDto } from './dto/list-payments.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../auth/role.enum';
@@ -66,6 +71,7 @@ export class PaymentsController {
       partnerId: dto.partnerId,
       date: businessDate(dto.date),
       cashAccountId: dto.cashAccountId,
+      opening: dto.opening,
       description: dto.description,
       amount: dto.amount,
       allocations: dto.allocations ?? [],
@@ -142,6 +148,48 @@ export class PaymentsController {
       await this.payments.reverseApplication(
         id,
         applicationId,
+        user.id,
+        optionalBusinessDate(dto?.date),
+      ),
+    );
+  }
+
+  /** Refund part of a POSTED payment's unapplied (advance) amount in cash:
+   *  Dr Uang Muka Pelanggan / Cr cash (receipt), Dr cash / Cr Uang Muka
+   *  Pembelian (disbursement). Same roles and SoD as apply. */
+  @Roles(Role.APPROVER, Role.ADMIN)
+  @ApiOkResponse({ type: PaymentResponseDto })
+  @IdempotentWrite()
+  @Post(':id/refunds')
+  @HttpCode(200)
+  async refund(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RefundCreditDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.payments.present(
+      await this.payments.refund(id, refundInput(dto), user.id),
+    );
+  }
+
+  /** Reverse one refund (its journal entry); the amount returns to the
+   *  payment's unapplied balance. */
+  @Roles(Role.APPROVER, Role.ADMIN)
+  @ApiOkResponse({ type: PaymentResponseDto })
+  @IdempotentWrite()
+  @ApiBody({ type: VoidDocumentDto, required: false })
+  @Post(':id/refunds/:refundId/reverse')
+  @HttpCode(200)
+  async reverseRefund(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('refundId', ParseUUIDPipe) refundId: string,
+    @Body() dto: VoidDocumentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.payments.present(
+      await this.payments.reverseRefund(
+        id,
+        refundId,
         user.id,
         optionalBusinessDate(dto?.date),
       ),

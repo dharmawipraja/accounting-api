@@ -30,6 +30,7 @@ import {
 import { DocumentLifecycleService } from '../ledger/document-lifecycle.service';
 import {
   assertCashAccount,
+  assertOpeningEquityAccount,
   assertPaymentCashAccountPostable,
 } from './document-account-rules';
 import { lockLivePartnerForShare } from './partner-lock';
@@ -61,7 +62,13 @@ export interface CreatePaymentInput {
   direction: PaymentDirection;
   partnerId: string;
   date: Date;
-  cashAccountId: string;
+  /** Required unless `opening` (which books against Saldo Awal instead). */
+  cashAccountId?: string;
+  /** A go-live customer deposit / vendor prepayment: no cash moves, the
+   *  journal is Dr Saldo Awal / Cr Uang Muka Pelanggan (receipt) or
+   *  Dr Uang Muka Pembelian / Cr Saldo Awal (disbursement), and the whole
+   *  `amount` is unapplied credit to apply or refund later. */
+  opening?: boolean;
   description?: string;
   /** Total; defaults to the allocation sum. The excess is an advance. */
   amount?: string;
@@ -99,15 +106,7 @@ export class PaymentsService {
       throw new ValidationFailedError(target.partnerRequiredMessage, {
         partnerId: input.partnerId,
       });
-    // Same cash-account checks, order and errors as preview / post: exists,
-    // live, postable, active (422 INVALID_ACCOUNT { accountId }, the posting
-    // path's own check under the PAYMENT policy), then the CASH role (422
-    // VALIDATION_FAILED).
-    await assertPaymentCashAccountPostable(
-      this.posting,
-      this.prisma.client,
-      input.cashAccountId,
-    );
+    const cashAccountId = await this.counterAccountFor(input);
 
     const allocated = await this.checkAllocations(
       target,
@@ -145,7 +144,8 @@ export class PaymentsService {
           direction: input.direction,
           partnerId: input.partnerId,
           date: input.date,
-          cashAccountId: input.cashAccountId,
+          cashAccountId,
+          opening: input.opening ?? false,
           amount: total.toPersistence(),
           unappliedAmount: unapplied.toPersistence(),
           description: input.description,
@@ -161,6 +161,37 @@ export class PaymentsService {
         include: WITH_CHILDREN,
       });
     });
+  }
+
+  /** The payment's cash-side account. A normal payment: the caller's
+   *  account, with the same checks, order and errors as preview / post —
+   *  exists, live, postable, active (422 INVALID_ACCOUNT { accountId }, the
+   *  posting path's own check under the PAYMENT policy), then the CASH role
+   *  (422 VALIDATION_FAILED). An opening credit: no cash account and no
+   *  allocations allowed, `amount` required; the Saldo Awal
+   *  (OPENING_BALANCE_EQUITY) account takes the cash slot, so the opening
+   *  entry's cash is never counted twice. */
+  private async counterAccountFor(input: CreatePaymentInput): Promise<string> {
+    if (!input.opening) {
+      if (!input.cashAccountId)
+        throw new ValidationFailedError('cashAccountId is required', {});
+      await assertPaymentCashAccountPostable(
+        this.posting,
+        this.prisma.client,
+        input.cashAccountId,
+      );
+      return input.cashAccountId;
+    }
+    if (input.cashAccountId || input.allocations.length > 0)
+      throw new ValidationFailedError(
+        'An opening credit takes no cash account and no allocations (it books against Saldo Awal; apply or refund it after posting)',
+        { reason: 'OPENING_CREDIT_SHAPE' },
+      );
+    if (input.amount === undefined)
+      throw new ValidationFailedError('An opening credit needs an amount', {
+        reason: 'OPENING_CREDIT_SHAPE',
+      });
+    return findControlAccountId(this.prisma, 'OPENING_BALANCE_EQUITY');
   }
 
   /** Create-time (and apply-time) allocation checks, no locks — each is
@@ -371,8 +402,11 @@ export class PaymentsService {
       // the cashAccountId, amount and allocations read before this tx are
       // the locked row's; a concurrent delete fails the re-check above.
       // Post-time re-validation: the cash side must still be a CASH-role
-      // account (catches drafts written before the rule existed).
-      await assertCashAccount(tx, payment.cashAccountId);
+      // account (catches drafts written before the rule existed) — or, for
+      // an opening credit, the Saldo Awal account.
+      if (payment.opening)
+        await assertOpeningEquityAccount(tx, payment.cashAccountId);
+      else await assertCashAccount(tx, payment.cashAccountId);
       // The partner must still be live, active and carry the direction's
       // flag (customer for receipts, vendor for disbursements). FOR SHARE
       // serializes with a partner soft-delete (FOR UPDATE) / deactivation.
@@ -521,13 +555,7 @@ export class PaymentsService {
             allocations: allocations.map((a) => serializeMoney(a, ['amount'])),
           }
         : {}),
-      ...(applications
-        ? {
-            applications: applications.map((a) =>
-              serializeMoney(a, ['amount']),
-            ),
-          }
-        : {}),
+      ...(applications ? splitCreditUses(applications) : {}),
     };
   }
 
@@ -569,6 +597,43 @@ export class PaymentsService {
     return this.getById(id);
   }
 
+  /** Refund part of a POSTED payment's unapplied (advance) amount in cash.
+   *  See refundCredit. */
+  async refund(
+    id: string,
+    refund: CreditRefundInput,
+    refundedBy: string,
+  ): Promise<PaymentWithAllocations> {
+    const payment = await this.getById(id);
+    await this.refundCredit(
+      paymentCreditSource(payment.direction),
+      creditHolderOf(payment),
+      refund,
+      refundedBy,
+    );
+    return this.getById(id);
+  }
+
+  /** Undo one refund of a payment's advance (its journal is reversed; the
+   *  amount returns to the unapplied balance). */
+  async reverseRefund(
+    id: string,
+    refundId: string,
+    reversedBy: string,
+    date?: Date,
+  ): Promise<PaymentWithAllocations> {
+    const payment = await this.getById(id);
+    await this.reverseCreditApplication(
+      paymentCreditSource(payment.direction),
+      creditHolderOf(payment),
+      refundId,
+      reversedBy,
+      date,
+      'refund',
+    );
+    return this.getById(id);
+  }
+
   /** Move part of a POSTED credit holder's unapplied amount (a payment's
    *  advance, or a credit/debit note's excess) onto invoices / bills of the
    *  same partner, dated `date` (on/after the holder and each document). One
@@ -590,21 +655,7 @@ export class PaymentsService {
     appliedBy: string,
   ): Promise<void> {
     const { id } = holder;
-    const N = cap(source.noun);
-    if (holder.status !== 'POSTED')
-      throw new ValidationFailedError(
-        `Only a POSTED ${source.noun} can be applied`,
-        { id, status: holder.status },
-      );
-    if (date.getTime() < holder.date.getTime())
-      throw new ValidationFailedError(
-        `Application date cannot be before the ${source.noun} date`,
-        {
-          id,
-          date: date.toISOString().slice(0, 10),
-          [source.dateKey]: holder.date.toISOString().slice(0, 10),
-        },
-      );
+    assertCreditUsable(source, holder, date, 'application');
     const target = source.target;
     const total = await this.checkAllocations(
       target,
@@ -612,7 +663,13 @@ export class PaymentsService {
       date,
       allocations,
     );
-    assertWithinUnapplied(source, id, holder.unappliedAmount, total);
+    assertWithinUnapplied(
+      source,
+      id,
+      holder.unappliedAmount,
+      total,
+      'application',
+    );
     const [advanceId, controlId] = await Promise.all([
       findControlAccountId(this.prisma, target.advanceRole),
       findControlAccountId(this.prisma, target.controlRole),
@@ -639,15 +696,7 @@ export class PaymentsService {
       );
 
     await this.prisma.transaction(async (tx) => {
-      const [locked] = await tx.$queryRaw<
-        { status: string; unapplied_amount: string }[]
-      >(Prisma.sql`
-        SELECT status, unapplied_amount::text AS unapplied_amount
-        FROM ${Prisma.raw(source.table)}
-        WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`);
-      if (!locked || locked.status !== 'POSTED')
-        throw new ValidationFailedError(`${N} is no longer posted`, { id });
-      assertWithinUnapplied(source, id, locked.unapplied_amount, total);
+      await lockHolderWithinUnapplied(tx, source, id, total, 'application');
       await this.assertPartnerInTx(tx, holder.partnerId, target);
       const settled = new Map<string, Money>();
       for (const a of inLockOrder(target, allocations)) {
@@ -674,32 +723,111 @@ export class PaymentsService {
     }, POSTING_TX_OPTIONS);
   }
 
-  /** Undo one application: reverse its journal entry (dated `date`, default
-   *  the application date; never after today (WIB) or before the application
-   *  date), give the amount back to the document's outstanding and to the
-   *  holder's unapplied balance. Same locks and partner rule as a payment
-   *  void (holder FOR UPDATE → partner FOR SHARE → document FOR UPDATE). */
+  /** Pay part of a POSTED credit holder's unapplied amount back in cash — a
+   *  customer refund (Dr Uang Muka Pelanggan / Cr cash) or a vendor refund
+   *  received (Dr cash / Cr Uang Muka Pembelian), through the guarded posting
+   *  path. Stored as a payment_applications row whose target is the CASH-role
+   *  account (`cashAccountId`), so it shares the application rules: same SoD
+   *  (entry creator = holder creator, poster = refunder), same partner rule,
+   *  same lock order (holder FOR UPDATE → partner FOR SHARE → ledger chain)
+   *  and the same unapplied re-check under the holder lock — a concurrent
+   *  apply and refund can't jointly overdraw the credit. Date on/after the
+   *  holder's, not after today (WIB), in an open period. */
+  async refundCredit(
+    source: CreditSource,
+    holder: CreditHolder,
+    refund: CreditRefundInput,
+    refundedBy: string,
+  ): Promise<void> {
+    const { id } = holder;
+    const { date, cashAccountId } = refund;
+    assertCreditUsable(source, holder, date, 'refund');
+    assertNotAfterToday(date, 'Refund date cannot be in the future');
+    const amount = Money.of(refund.amount);
+    if (amount.isZero() || amount.isNegative())
+      throw new ValidationFailedError('Refund amount must be positive', { id });
+    assertWithinUnapplied(source, id, holder.unappliedAmount, amount, 'refund');
+    await assertPaymentCashAccountPostable(
+      this.posting,
+      this.prisma.client,
+      cashAccountId,
+    );
+    const advanceId = await findControlAccountId(
+      this.prisma,
+      source.target.advanceRole,
+    );
+    // The advance account takes the cash slot and the real cash account the
+    // counter slot: Dr advance / Cr cash (receipt side), Dr cash / Cr advance
+    // (disbursement side) — the reverse of how the credit came in.
+    const prepared = await this.posting.preparePosting(
+      {
+        date,
+        description:
+          refund.description ?? `Refund of ${source.noun} ${holder.ref ?? id}`,
+        sourceType: source.sourceType,
+        sourceId: id,
+        createdBy: holder.createdBy,
+        lines: buildPaymentLines(
+          source.target,
+          advanceId,
+          cashAccountId,
+          amount.toPersistence(),
+        ),
+      },
+      refundedBy,
+    );
+    await this.prisma.transaction(async (tx) => {
+      await lockHolderWithinUnapplied(tx, source, id, amount, 'refund');
+      await this.assertPartnerInTx(tx, holder.partnerId, source.target);
+      await assertCashAccount(tx, cashAccountId);
+      const entry = await this.posting.createPostedEntryInTx(tx, prepared);
+      await tx.paymentApplication.create({
+        data: {
+          [source.holderField]: id,
+          cashAccountId,
+          amount: amount.toPersistence(),
+          date,
+          journalEntryId: entry.id,
+          createdBy: refundedBy,
+        },
+      });
+      await adjustUnapplied(tx, source, id, Money.zero().subtract(amount));
+    }, POSTING_TX_OPTIONS);
+  }
+
+  /** Undo one application (or, `kind: 'refund'`, one refund): reverse its
+   *  journal entry (dated `date`, default the application date; never after
+   *  today (WIB) or before the application date), give the amount back to the
+   *  document's outstanding (applications only) and to the holder's unapplied
+   *  balance. Same locks and partner rule as a payment void (holder FOR
+   *  UPDATE → partner FOR SHARE → document FOR UPDATE). */
   async reverseCreditApplication(
     source: CreditSource,
     holder: CreditHolder,
     applicationId: string,
     reversedBy: string,
     date?: Date,
+    kind: CreditUse = 'application',
   ): Promise<void> {
     const { id } = holder;
-    const N = cap(source.noun);
+    const what = `${cap(source.noun)} ${kind}`;
+    const idKey = `${kind}Id`;
     const application = await this.prisma.client.paymentApplication.findFirst({
-      where: { id: applicationId, [source.holderField]: id },
+      where: {
+        id: applicationId,
+        [source.holderField]: id,
+        cashAccountId: kind === 'refund' ? { not: null } : null,
+      },
     });
     if (!application)
-      throw new NotFoundDomainError(`${N} application not found`, {
+      throw new NotFoundDomainError(`${what} not found`, {
         id,
-        applicationId,
+        [idKey]: applicationId,
       });
     if (application.reversedOn)
-      throw new ValidationFailedError(`${N} application was already reversed`, {
+      throw new ValidationFailedError(`${what} was already reversed`, {
         id,
-        applicationId,
+        [idKey]: applicationId,
       });
     if (date)
       assertNotAfterToday(date, 'Reversal date cannot be in the future', {
@@ -712,8 +840,8 @@ export class PaymentsService {
       journalEntryId: application.journalEntryId,
       reversedBy,
       reversalDate: reversedOn,
-      alreadyReversedMessage: `${N} application was already reversed`,
-      notPostedMessage: `${N} is not posted`,
+      alreadyReversedMessage: `${what} was already reversed`,
+      notPostedMessage: `${cap(source.noun)} is not posted`,
       lock: async (tx) => {
         const locked = await tx.$queryRaw<{ status: string }[]>(Prisma.sql`
           SELECT status FROM ${Prisma.raw(source.table)}
@@ -724,16 +852,18 @@ export class PaymentsService {
         const [row] = await tx.$queryRaw<{ reversed_on: Date | null }[]>`
           SELECT reversed_on FROM payment_applications WHERE id = ${applicationId}`;
         if (row.reversed_on)
-          throw new ValidationFailedError(
-            `${N} application was already reversed`,
-            { id, applicationId },
-          );
+          throw new ValidationFailedError(`${what} was already reversed`, {
+            id,
+            [idKey]: applicationId,
+          });
         if (!(await lockLivePartnerForShare(tx, holder.partnerId)))
           throw new ValidationFailedError(
-            'Cannot reverse an application whose partner has been deleted',
+            `Cannot reverse ${kind === 'refund' ? 'a refund' : 'an application'} whose partner has been deleted`,
             { id, partnerId: holder.partnerId, reason: 'PARTNER_DELETED' },
           );
-        await unwindInTx(tx, target, toAllocationInput(application));
+        // A refund settled no document; only an application reopens one.
+        if (!application.cashAccountId)
+          await unwindInTx(tx, target, toAllocationInput(application));
         await tx.paymentApplication.update({
           where: { id: applicationId },
           data: { reversedOn, reversedBy },
@@ -804,6 +934,19 @@ function cap(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/** A holder's payment_applications rows as the API shows them: onto
+ *  documents (`applications`) and cash refunds (`refunds`, cashAccountId
+ *  set), 4dp money. */
+export function splitCreditUses<
+  T extends { cashAccountId: string | null; amount: Prisma.Decimal },
+>(rows: T[]) {
+  const shown = rows.map((a) => serializeMoney(a, ['amount']));
+  return {
+    applications: shown.filter((a) => a.cashAccountId === null),
+    refunds: shown.filter((a) => a.cashAccountId !== null),
+  };
+}
+
 /** Add `delta` (negative to consume) to the holder's unapplied_amount; the
  *  table's CHECK keeps it within [0, …]. */
 async function adjustUnapplied(
@@ -819,16 +962,78 @@ async function adjustUnapplied(
     WHERE id = ${id}`);
 }
 
-/** 422 when `requested` exceeds the holder's unapplied balance. */
-function assertWithinUnapplied(
+/** What a holder's unapplied credit is used for: applied onto documents, or
+ *  refunded in cash. */
+export type CreditUse = 'application' | 'refund';
+
+/** POST /…/:id/refunds body, as the service takes it. */
+export interface CreditRefundInput {
+  date: Date;
+  amount: string;
+  /** CASH-role account the money moves through. */
+  cashAccountId: string;
+  description?: string;
+}
+
+/** Pre-lock holder rules for an application / refund (pure): the holder is
+ *  POSTED and `date` is on/after its date (422). */
+export function assertCreditUsable(
+  source: Pick<CreditSource, 'noun' | 'dateKey'>,
+  holder: Pick<CreditHolder, 'id' | 'status' | 'date'>,
+  date: Date,
+  use: CreditUse,
+): void {
+  const { id } = holder;
+  if (holder.status !== 'POSTED')
+    throw new ValidationFailedError(
+      `Only a POSTED ${source.noun} can be ${use === 'refund' ? 'refunded' : 'applied'}`,
+      { id, status: holder.status },
+    );
+  if (date.getTime() < holder.date.getTime())
+    throw new ValidationFailedError(
+      `${cap(use)} date cannot be before the ${source.noun} date`,
+      {
+        id,
+        date: date.toISOString().slice(0, 10),
+        [source.dateKey]: holder.date.toISOString().slice(0, 10),
+      },
+    );
+}
+
+/** Lock the holder FOR UPDATE, then re-check it is still POSTED and that
+ *  `total` fits its unapplied balance — the authoritative over-use guard
+ *  every application and refund of the same holder serializes on. */
+async function lockHolderWithinUnapplied(
+  tx: LedgerTx,
   source: CreditSource,
+  id: string,
+  total: Money,
+  use: CreditUse,
+): Promise<void> {
+  const [locked] = await tx.$queryRaw<
+    { status: string; unapplied_amount: string }[]
+  >(Prisma.sql`
+    SELECT status, unapplied_amount::text AS unapplied_amount
+    FROM ${Prisma.raw(source.table)}
+    WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`);
+  if (!locked || locked.status !== 'POSTED')
+    throw new ValidationFailedError(`${cap(source.noun)} is no longer posted`, {
+      id,
+    });
+  assertWithinUnapplied(source, id, locked.unapplied_amount, total, use);
+}
+
+/** 422 when `requested` exceeds the holder's unapplied balance (pure). */
+export function assertWithinUnapplied(
+  source: Pick<CreditSource, 'noun'>,
   id: string,
   unappliedAmount: string,
   requested: Money,
+  use: CreditUse,
 ): void {
   if (Money.of(unappliedAmount).subtract(requested).isNegative())
     throw new ValidationFailedError(
-      `Application exceeds the ${source.noun} unapplied amount`,
+      `${cap(use)} exceeds the ${source.noun} unapplied amount`,
       {
         id,
         unappliedAmount: Money.of(unappliedAmount).toPersistence(),
@@ -863,7 +1068,7 @@ export async function assertNoLiveApplicationsInTx(
     FROM payment_applications WHERE ${column} = ${id}`);
   if (r.live > 0)
     throw new ValidationFailedError(
-      `Reverse this ${source.noun}'s applications before voiding it`,
+      `Reverse this ${source.noun}'s applications and refunds before voiding it`,
       { id, reason: 'HAS_APPLICATIONS', applications: r.live },
     );
   if (r.last_reversed_on && r.last_reversed_on.getTime() > voidedOn.getTime())

@@ -182,6 +182,7 @@ model Account {
   salesCreditNoteLines   SalesCreditNoteLine[]
   purchaseDebitNoteLines PurchaseDebitNoteLine[]
   cashPayments           Payment[]
+  creditRefunds          PaymentApplication[]
   taxCodes               TaxCode[]
 
   @@unique([code], name: "accounts_code_unique")
@@ -645,6 +646,10 @@ model Payment {
   // CUSTOMER_ADVANCE / VENDOR_ADVANCE account. 0 once VOID.
   // + hand-authored CHECK payments_unapplied_amount_range (0 <= unapplied_amount <= amount)
   unappliedAmount Decimal              @default(0) @map("unapplied_amount") @db.Decimal(20, 4)
+  // (20261012000000) A go-live customer deposit / vendor prepayment: no cash
+  // moves — cashAccountId is the OPENING_BALANCE_EQUITY (Saldo Awal) account
+  // and the whole amount is unapplied credit (no allocations).
+  opening         Boolean              @default(false)
   description     String?
   status          DocumentStatus       @default(DRAFT)
   journalEntryId  String?              @map("journal_entry_id")
@@ -694,6 +699,8 @@ model PaymentAllocation {
 /// A later move of part of a POSTED payment's unapplied (advance) amount onto
 /// an invoice/bill: its own journal (Dr Uang Muka Pelanggan / Cr AR, or
 /// Dr AP / Cr Uang Muka Pembelian). Live on [date, reversedOn).
+/// Or (cashAccountId set) a cash REFUND of that credit: Dr Uang Muka Pelanggan /
+/// Cr cash, or Dr cash / Cr Uang Muka Pembelian.
 model PaymentApplication {
   id                  String             @id @default(uuid())
   // The credit applied: a payment's unapplied advance, or (20261009000000) a
@@ -708,6 +715,10 @@ model PaymentApplication {
   salesInvoice        SalesInvoice?      @relation(fields: [salesInvoiceId], references: [id], onDelete: Restrict)
   purchaseBillId      String?            @map("purchase_bill_id")
   purchaseBill        PurchaseBill?      @relation(fields: [purchaseBillId], references: [id], onDelete: Restrict)
+  // (20261012000000) A REFUND of the credit in cash instead of an application
+  // onto a document: the CASH-role account the money moved through.
+  cashAccountId       String?            @map("cash_account_id")
+  cashAccount         Account?           @relation(fields: [cashAccountId], references: [id], onDelete: Restrict)
   amount              Decimal            @db.Decimal(20, 4)
   date                DateTime           @db.Date
   journalEntryId      String             @unique @map("journal_entry_id")
@@ -718,7 +729,7 @@ model PaymentApplication {
   reversedBy          String?            @map("reversed_by")
 
   // + hand-authored CHECKs: payment_applications_amount_positive (amount > 0),
-  //   payment_applications_one_target (exactly one of the two targets),
+  //   payment_applications_one_target (exactly one of invoice / bill / cash account),
   //   payment_applications_reversal_shape (reversed_on/by set together, reversed_on >= date),
   //   payment_applications_one_source (exactly one of payment / credit note / debit note).
 
@@ -727,6 +738,7 @@ model PaymentApplication {
   @@index([purchaseDebitNoteId])
   @@index([salesInvoiceId])
   @@index([purchaseBillId])
+  @@index([cashAccountId])
   @@map("payment_applications")
 }
 

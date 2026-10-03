@@ -22,7 +22,32 @@ describe('account-policy', () => {
     }
     for (const t of ['SALES_CREDIT_NOTE', 'PURCHASE_DEBIT_NOTE'] as const)
       expect(accountPolicyFor(t).forbiddenRoles).toEqual([]);
-    expect(accountPolicyFor('OPENING').forbiddenRoles).toEqual([]);
+    // OPENING: only the advance roles (a lump sum there has no per-partner
+    // credit to apply or refund) — AR/AP control stays allowed at go-live.
+    expect(accountPolicyFor('OPENING').forbiddenRoles).toEqual([
+      'CUSTOMER_ADVANCE',
+      'VENDOR_ADVANCE',
+    ]);
+  });
+
+  it('OPENING refuses the advance roles with its own reason, allows AR/AP control', () => {
+    expect(
+      findForbiddenRole(
+        [
+          { id: 'ar', role: 'AR_CONTROL' },
+          { id: 'ap', role: 'AP_CONTROL' },
+          { id: 'eq', role: 'OPENING_BALANCE_EQUITY' },
+        ],
+        OPENING_POLICY,
+      ),
+    ).toBeNull();
+    for (const role of ['CUSTOMER_ADVANCE', 'VENDOR_ADVANCE'] as const)
+      expect(findForbiddenRole([{ id: 'adv', role }], OPENING_POLICY)).toEqual({
+        accountId: 'adv',
+        role,
+      });
+    expect(OPENING_POLICY.forbiddenRoleRule?.reason).toBe('ADVANCE_IN_OPENING');
+    expect(MANUAL_ENTRY_POLICY.forbiddenRoleRule).toBeUndefined();
   });
 
   it('only CLOSING and credit/debit notes tolerate inactive accounts', () => {

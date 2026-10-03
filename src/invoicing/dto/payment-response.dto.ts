@@ -44,6 +44,13 @@ export class PaymentApplicationResponseDto {
   @ApiProperty({ format: 'uuid', nullable: true }) purchaseBillId!:
     | string
     | null;
+  @ApiProperty({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Set on a refund (the CASH-role account the credit was paid back through); null on an application.',
+  })
+  cashAccountId!: string | null;
   @ApiMoney() amount!: string;
   @ApiProperty({ type: String, format: 'date', example: '2026-03-01' })
   date!: string;
@@ -69,11 +76,21 @@ export class PaymentResponseDto {
   @ApiProperty({ format: 'uuid' }) partnerId!: string;
   @ApiProperty({ type: String, format: 'date', example: '2026-01-15' })
   date!: string;
-  @ApiProperty({ format: 'uuid' }) cashAccountId!: string;
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      'Cash/bank account; for an `opening` credit, the Saldo Awal (OPENING_BALANCE_EQUITY) account.',
+  })
+  cashAccountId!: string;
+  @ApiProperty({
+    description:
+      'Opening (go-live) customer deposit / vendor prepayment: booked against Saldo Awal, no cash moved.',
+  })
+  opening!: boolean;
   @ApiMoney() amount!: string;
   @ApiMoney({
     description:
-      'Part of `amount` not (yet) settling a document — held on the customer/vendor advance account until applied. amount − allocations − live applications; 0 once VOID.',
+      'Part of `amount` not (yet) settling a document — held on the customer/vendor advance account until applied or refunded. amount − allocations − live applications − live refunds; 0 once VOID.',
   })
   unappliedAmount!: string;
   @ApiProperty({ nullable: true }) description!: string | null;
@@ -99,6 +116,11 @@ export class PaymentResponseDto {
   allocations?: PaymentAllocationResponseDto[];
   @ApiPropertyOptional({ type: [PaymentApplicationResponseDto] })
   applications?: PaymentApplicationResponseDto[];
+  @ApiPropertyOptional({
+    type: [PaymentApplicationResponseDto],
+    description: 'Cash refunds of the unapplied amount (cashAccountId set).',
+  })
+  refunds?: PaymentApplicationResponseDto[];
 }
 
 export const PaymentListResponseDto = PaginatedDto(

@@ -69,7 +69,7 @@ export class NoteResponseDto {
   creditedAmount!: string;
   @ApiMoney({
     description:
-      'Partner credit not yet applied: total − creditedAmount − live applications, held on the customer/vendor advance account; apply it via POST /…/:id/apply. 0 once VOID.',
+      'Partner credit not yet applied: total − creditedAmount − live applications − live refunds, held on the customer/vendor advance account; apply it via POST /…/:id/apply or refund it via POST /…/:id/refunds. 0 once VOID.',
   })
   unappliedAmount!: string;
   @ApiProperty({ format: 'uuid', nullable: true }) journalEntryId!:
@@ -93,6 +93,11 @@ export class NoteResponseDto {
   lines?: NoteLineResponseDto[];
   @ApiPropertyOptional({ type: [PaymentApplicationResponseDto] })
   applications?: PaymentApplicationResponseDto[];
+  @ApiPropertyOptional({
+    type: [PaymentApplicationResponseDto],
+    description: 'Cash refunds of the unapplied excess (cashAccountId set).',
+  })
+  refunds?: PaymentApplicationResponseDto[];
 }
 
 export const NoteListResponseDto = PaginatedDto(

@@ -594,6 +594,12 @@ DELETE /ledger/journal-entries/:id      delete a DRAFT          (ACCOUNTANT+)
   but only until the first sales invoice, purchase bill or payment exists (any status):
   after that an AR/AP control line in opening balances → `422 VALIDATION_FAILED`
   `details: { accountId, role, reason: 'DOCUMENTS_EXIST' }`.
+- **No advance accounts in opening balances.** A line on *Uang Muka Pelanggan* /
+  *Uang Muka Pembelian* (`role` `CUSTOMER_ADVANCE` / `VENDOR_ADVANCE`) →
+  `422 VALIDATION_FAILED` `details: { accountId, role, reason: 'ADVANCE_IN_OPENING' }`:
+  a lump sum there belongs to no partner, so it could never be applied or refunded.
+  Enter each go-live customer deposit / vendor prepayment as an **opening credit**
+  (`POST /v1/payments` with `opening: true`, see Payment) instead.
 - **Only one live opening-balance entry.** Posting opening balances while an earlier
   opening entry is still posted (not reversed) → `409 CONFLICT`
   `details: { existingEntryId, entryRef }`. To correct opening balances, reverse that
@@ -776,6 +782,10 @@ POST /payments/:id/post   post the payment                            (APPROVER/
 POST /payments/:id/apply  apply unapplied (advance) amount to documents (APPROVER/ADMIN)
 POST /payments/:id/applications/:applicationId/reverse
                           reverse one application                     (APPROVER/ADMIN)
+POST /payments/:id/refunds
+                          refund unapplied amount in cash             (APPROVER/ADMIN)
+POST /payments/:id/refunds/:refundId/reverse
+                          reverse one refund                          (APPROVER/ADMIN)
 POST /payments/:id/void   void a posted payment                       (APPROVER/ADMIN)
 DELETE /payments/:id      delete a DRAFT                               (ACCOUNTANT+)
 ```
@@ -819,8 +829,44 @@ the application date; not before it, not after today WIB) reverses that applicat
 journal entry and returns the amount to the document's outstanding and to
 `unappliedAmount`. Twice → `422`.
 
-**Void with applications:** a payment with a live (unreversed) application cannot be
-voided → `422 { id, reason: "HAS_APPLICATIONS", applications }`; reverse them first. The
+**Refunds (new).** Unapplied credit can also be paid back in cash instead of applied:
+`POST /payments/:id/refunds` `{ "date": "YYYY-MM-DD", "amount", "cashAccountId",
+"description"? }` (requires `Idempotency-Key`; APPROVER/ADMIN; same SoD as apply — the
+payment's creator cannot refund it, `403`). `cashAccountId` is any CASH-role (cash/bank)
+account, checked like a payment's. Rules: POSTED holder; `date` on/after the payment
+date (`422 { id, date, paymentDate }`), not after today WIB (`422 { date, today }`), in
+an open period/year (`409`); `amount` > 0 and ≤ `unappliedAmount` →
+`422 { id, unappliedAmount, requested }` (also when a concurrent apply/refund won — both
+serialize on the payment row); the partner must be active with the customer/vendor flag.
+
+| Flow | Journal |
+| --- | --- |
+| refund (receipt — we pay the customer back) | Dr Uang Muka Pelanggan / Cr Kas/Bank |
+| refund (disbursement — the vendor pays us back) | Dr Kas/Bank / Cr Uang Muka Pembelian |
+
+Refunds are listed in the payment's `refunds` (same row shape as `applications`, with
+`cashAccountId` set and no document id); `applications` only holds applications onto
+documents. `POST /payments/:id/refunds/:refundId/reverse` (optional `{ "date" }`, same
+rules as an application reversal) reverses the refund's journal and returns the amount
+to `unappliedAmount`. An application id on the refund route (or the reverse) → `404`. A
+fully refunded payment (`unappliedAmount` 0) is no longer an open item of its partner.
+In the cash-flow report a refund is an operating flow (the advance accounts are
+OPERATING).
+
+**Opening credit (go-live deposits / prepayments, new).** `POST /payments` with
+`"opening": true`, `amount` required, **no** `cashAccountId` and no `allocations`
+(`422 { reason: "OPENING_CREDIT_SHAPE" }` otherwise) creates a payment whose counter
+account is *Saldo Awal* (role `OPENING_BALANCE_EQUITY`, returned as `cashAccountId`) —
+no cash moves, so the cash already in the opening-balance entry is not counted twice.
+Post it as usual (`/post`); journal: RECEIPT Dr Saldo Awal / Cr Uang Muka Pelanggan,
+DISBURSEMENT Dr Uang Muka Pembelian / Cr Saldo Awal. The whole amount is
+`unappliedAmount`, applied or refunded like any advance; `opening: true` marks it in
+responses. It is excluded from the cash-flow report (a beginning balance, like the
+opening entry); its later applications/refunds are not.
+
+**Void with applications:** a payment with a live (unreversed) application or refund
+cannot be voided → `422 { id, reason: "HAS_APPLICATIONS", applications }` (the count
+covers both); reverse them first. The
 void date must also be on/after the latest application reversal date → `422 { id, date,
 applicationReversedOn }`. A voided payment shows `unappliedAmount: "0.0000"`.
 
@@ -889,8 +935,10 @@ is now `total − amountPaid − creditedTotal` (and `paymentStatus` counts cred
 settled). If the original was already (partly) paid, the **excess** becomes partner
 credit on Uang Muka Pelanggan / Pembelian — the note's `unappliedAmount` — applied to
 other invoices/bills with `POST …/:id/apply` exactly like a payment advance (`applications`
-rows carry `salesCreditNoteId` / `purchaseDebitNoteId`; `paymentId` is `null`).
-Refunding note credit in cash is not supported (v1).
+rows carry `salesCreditNoteId` / `purchaseDebitNoteId`; `paymentId` is `null`), or
+refunded in cash with `POST …/:id/refunds` / reversed with
+`POST …/:id/refunds/:refundId/reverse` — same body, rules and journals as payment
+refunds (listed in the note's `refunds`).
 
 **Void:** only a POSTED note, only while none of its credit is applied (`422 { id,
 reason: "HAS_APPLICATIONS" }` — reverse the applications first; the void date must be
@@ -1153,7 +1201,7 @@ no auth.
 - `POST   /v1/ledger/journal-entries/:id/post` · APPROVER/ADMIN · post draft · **requires `Idempotency-Key`**
 - `POST   /v1/ledger/journal-entries/:id/reverse` · APPROVER/ADMIN · reverse a posted MANUAL/OPENING entry (optional body `{ date }`: original date ≤ date ≤ max(today WIB, original date) — `422 { date, today[, originalDate] }`; document-owned entries → `422`) · **requires `Idempotency-Key`**
 - `DELETE /v1/ledger/journal-entries/:id` · ACCOUNTANT+ · delete draft
-- `POST   /v1/ledger/opening-balances` · ADMIN · post opening balances · **requires `Idempotency-Key`** · one live opening entry at a time (`409 CONFLICT { existingEntryId, entryRef }`); AR/AP control lines only before the first document (`422 { accountId, role, reason: "DOCUMENTS_EXIST" }`)
+- `POST   /v1/ledger/opening-balances` · ADMIN · post opening balances · **requires `Idempotency-Key`** · one live opening entry at a time (`409 CONFLICT { existingEntryId, entryRef }`); AR/AP control lines only before the first document (`422 { accountId, role, reason: "DOCUMENTS_EXIST" }`); advance accounts (Uang Muka) never (`422 { accountId, role, reason: "ADVANCE_IN_OPENING" }` — use opening-credit payments)
 
 ### Ledger — periods & trial balance
 
@@ -1245,16 +1293,20 @@ Same routes under `/v1/sales-credit-notes` (original = sales invoice, ref `CN/�
 - `POST   /v1/sales-credit-notes/:id/void` · APPROVER/ADMIN · void (optional `{ date }`, same rules as invoices) · **requires `Idempotency-Key`** · live applications → `422 { id, reason: 'HAS_APPLICATIONS', applications }`
 - `POST   /v1/sales-credit-notes/:id/apply` · APPROVER/ADMIN · apply the note's unapplied credit `{ date, allocations }` (as payments) · **requires `Idempotency-Key`**
 - `POST   /v1/sales-credit-notes/:id/applications/:applicationId/reverse` · APPROVER/ADMIN · reverse one application (optional `{ date }`) · **requires `Idempotency-Key`**
+- `POST   /v1/sales-credit-notes/:id/refunds` · APPROVER/ADMIN · refund unapplied credit in cash `{ date, amount, cashAccountId, description? }` (as payments) · **requires `Idempotency-Key`**
+- `POST   /v1/sales-credit-notes/:id/refunds/:refundId/reverse` · APPROVER/ADMIN · reverse one refund (optional `{ date }`) · **requires `Idempotency-Key`**
 - `DELETE /v1/sales-credit-notes/:id` · ACCOUNTANT+ · delete draft
 
 ### Payments
 
 - `GET    /v1/payments` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `q, partnerId, direction, status, unapplied, limit, offset`; `unapplied=true` → POSTED payments with `unappliedAmount > 0`)
 - `GET    /v1/payments/:id` · any · get one
-- `POST   /v1/payments` · ACCOUNTANT+ · create draft (RECEIPT/DISBURSEMENT, optional `amount` + allocations; excess = advance) · **requires `Idempotency-Key`**
+- `POST   /v1/payments` · ACCOUNTANT+ · create draft (RECEIPT/DISBURSEMENT, optional `amount` + allocations; excess = advance; `opening: true` = go-live credit against Saldo Awal, no `cashAccountId`) · **requires `Idempotency-Key`**
 - `POST   /v1/payments/:id/post` · APPROVER/ADMIN · post · **requires `Idempotency-Key`**
 - `POST   /v1/payments/:id/apply` · APPROVER/ADMIN · apply unapplied amount `{ date, allocations }` · **requires `Idempotency-Key`**
 - `POST   /v1/payments/:id/applications/:applicationId/reverse` · APPROVER/ADMIN · reverse one application (optional `{ date }`) · **requires `Idempotency-Key`**
+- `POST   /v1/payments/:id/refunds` · APPROVER/ADMIN · refund unapplied amount in cash `{ date, amount, cashAccountId, description? }` · **requires `Idempotency-Key`**
+- `POST   /v1/payments/:id/refunds/:refundId/reverse` · APPROVER/ADMIN · reverse one refund (optional `{ date }`) · **requires `Idempotency-Key`**
 - `POST   /v1/payments/:id/void` · APPROVER/ADMIN · void (optional body `{ date }`: document date ≤ date ≤ max(today WIB, document date) — `422 { date, today[, originalDate] }`) · **requires `Idempotency-Key`** · a payment whose partner has been deleted → `422 VALIDATION_FAILED` `{ id, partnerId, reason: 'PARTNER_DELETED' }` (voiding would reopen a balance on a deleted partner) · live applications → `422 { id, reason: 'HAS_APPLICATIONS', applications }`
 - `DELETE /v1/payments/:id` · ACCOUNTANT+ · delete draft
 

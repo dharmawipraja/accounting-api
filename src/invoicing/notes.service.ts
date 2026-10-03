@@ -46,6 +46,8 @@ import {
   PaymentsService,
   assertNoLiveApplicationsInTx,
   creditHolderOf,
+  CreditRefundInput,
+  splitCreditUses,
 } from './payments.service';
 import { lockLivePartnerForShare } from './partner-lock';
 import {
@@ -364,6 +366,43 @@ export class NotesService {
       applicationId,
       reversedBy,
       date,
+    );
+    return this.getById(key, id);
+  }
+
+  /** Refund part of a POSTED note's unapplied excess in cash —
+   *  PaymentsService.refundCredit. */
+  async refund(
+    key: NoteKindKey,
+    id: string,
+    refund: CreditRefundInput,
+    refundedBy: string,
+  ): Promise<NoteRow> {
+    const note = await this.getById(key, id);
+    await this.payments.refundCredit(
+      this.kinds[key].credit,
+      creditHolderOf(note),
+      refund,
+      refundedBy,
+    );
+    return this.getById(key, id);
+  }
+
+  async reverseRefund(
+    key: NoteKindKey,
+    id: string,
+    refundId: string,
+    reversedBy: string,
+    date?: Date,
+  ): Promise<NoteRow> {
+    const note = await this.getById(key, id);
+    await this.payments.reverseCreditApplication(
+      this.kinds[key].credit,
+      creditHolderOf(note),
+      refundId,
+      reversedBy,
+      date,
+      'refund',
     );
     return this.getById(key, id);
   }
@@ -1051,8 +1090,6 @@ export function presentNote(row: NoteRow) {
           ),
         }
       : {}),
-    ...(applications
-      ? { applications: applications.map((a) => serializeMoney(a, ['amount'])) }
-      : {}),
+    ...(applications ? splitCreditUses(applications) : {}),
   };
 }

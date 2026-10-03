@@ -29,7 +29,11 @@ import { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { IdempotentWrite } from '../common/idempotency/idempotent-write.decorator';
 import { DocumentListQueryDto } from './dto/document-list-query.dto';
 import { VoidDocumentDto } from './dto/void-document.dto';
-import { ApplyPaymentDto } from './dto/create-payment.dto';
+import {
+  ApplyPaymentDto,
+  RefundCreditDto,
+  refundInput,
+} from './dto/create-payment.dto';
 import { CreateNoteDto, UpdateNoteDto } from './dto/note.dto';
 import { NoteListResponseDto, NoteResponseDto } from './dto/note-response.dto';
 import { NoteKindKey, NotesService } from './notes.service';
@@ -161,6 +165,47 @@ abstract class NotesController {
         this.kind,
         id,
         applicationId,
+        user.id,
+        optionalBusinessDate(dto?.date),
+      ),
+    );
+  }
+
+  /** Refund part of a POSTED note's unapplied excess (partner credit) in
+   *  cash — mirrors POST /payments/:id/refunds. */
+  @Roles(Role.APPROVER, Role.ADMIN)
+  @ApiOkResponse({ type: NoteResponseDto })
+  @IdempotentWrite()
+  @Post(':id/refunds')
+  @HttpCode(200)
+  async refund(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RefundCreditDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.notes.present(
+      await this.notes.refund(this.kind, id, refundInput(dto), user.id),
+    );
+  }
+
+  /** Reverse one refund; the amount returns to the note's unapplied balance. */
+  @Roles(Role.APPROVER, Role.ADMIN)
+  @ApiOkResponse({ type: NoteResponseDto })
+  @IdempotentWrite()
+  @ApiBody({ type: VoidDocumentDto, required: false })
+  @Post(':id/refunds/:refundId/reverse')
+  @HttpCode(200)
+  async reverseRefund(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('refundId', ParseUUIDPipe) refundId: string,
+    @Body() dto: VoidDocumentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.notes.present(
+      await this.notes.reverseRefund(
+        this.kind,
+        id,
+        refundId,
         user.id,
         optionalBusinessDate(dto?.date),
       ),

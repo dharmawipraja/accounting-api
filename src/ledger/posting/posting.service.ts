@@ -228,8 +228,9 @@ export class PostingService {
    *  it cannot deadlock against close/reopen or other posts.
    *  1. At most ONE live opening entry: another POSTED OPENING entry → 409
    *     `{ existingEntryId, entryRef }`; reversing it re-opens the slot.
-   *  2. AR/AP control (and payment advance) lines only before the first sales invoice, purchase bill
-   *     or payment (any status; soft-deleted drafts don't count): after that a
+   *  2. AR/AP control lines only before the first sales invoice, purchase bill
+   *     or (non-opening) payment (any status; soft-deleted drafts don't
+   *     count; an opening credit touches no control account): after that a
    *     lump-sum control balance would have no subledger document behind it →
    *     422 `{ accountId, role, reason: 'DOCUMENTS_EXIST' }`.
    *  ponytail: (2) does not lock the document tables — a document created
@@ -255,13 +256,14 @@ export class PostingService {
     const [control] = await tx.$queryRaw<{ id: string; role: string }[]>`
       SELECT id, role::text AS role FROM accounts
       WHERE id = ANY(${ids}::text[])
-        AND role IN ('AR_CONTROL', 'AP_CONTROL', 'CUSTOMER_ADVANCE', 'VENDOR_ADVANCE')
+        AND role IN ('AR_CONTROL', 'AP_CONTROL')
       ORDER BY id LIMIT 1`;
     if (!control) return;
     const [{ exists }] = await tx.$queryRaw<{ exists: boolean }[]>`
       SELECT EXISTS (SELECT 1 FROM sales_invoices WHERE deleted_at IS NULL)
           OR EXISTS (SELECT 1 FROM purchase_bills WHERE deleted_at IS NULL)
-          OR EXISTS (SELECT 1 FROM payments WHERE deleted_at IS NULL) AS exists`;
+          OR EXISTS (SELECT 1 FROM payments
+                     WHERE deleted_at IS NULL AND NOT opening) AS exists`;
     if (exists)
       throw new ValidationFailedError(
         'AR/AP control accounts can only take opening balances before the first sales invoice, purchase bill or payment; enter open items as documents instead',
@@ -729,6 +731,10 @@ export class PostingService {
     policy: AccountPolicy,
   ): void {
     const hit = findForbiddenRole(accounts, policy);
-    if (hit) throw new ValidationFailedError(FORBIDDEN_ROLE_MESSAGE, hit);
+    if (!hit) return;
+    const rule = policy.forbiddenRoleRule;
+    throw rule
+      ? new ValidationFailedError(rule.message, { ...hit, reason: rule.reason })
+      : new ValidationFailedError(FORBIDDEN_ROLE_MESSAGE, hit);
   }
 }

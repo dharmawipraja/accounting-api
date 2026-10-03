@@ -349,6 +349,28 @@ AR/AP (`buildPaymentLines`, `src/invoicing/payment-targets.ts`).
   application is live on `[date, reversed_on)`; reversing it
   (`POST /payments/:id/applications/:applicationId/reverse`) reverses its journal and
   gives the amount back to the document and the payment.
+- **Refund** (`POST /payments/:id/refunds`, `PaymentsService.refundCredit`; also
+  `/sales-credit-notes/:id/refunds`, `/purchase-debit-notes/:id/refunds`) pays unapplied
+  credit back in cash: a `PaymentApplication` row whose target is `cash_account_id` (a
+  CASH-role account) instead of a document — CHECK `payment_applications_one_target`
+  (exactly one of invoice / bill / cash account). Journal (holder's source type, through
+  `preparePosting` / `createPostedEntryInTx`): receipt side Dr Uang Muka Pelanggan /
+  Cr cash, disbursement side Dr cash / Cr Uang Muka Pembelian (`buildPaymentLines` with
+  the advance in the cash slot and the cash account as counter). Same SoD, partner rule,
+  holder `FOR UPDATE` lock and unapplied re-check as an application (so a concurrent
+  apply + refund cannot overdraw), date ≥ holder date and ≤ today (WIB). Reversed via
+  `/refunds/:refundId/reverse` (`reverseCreditApplication(…, 'refund')` — no document to
+  unwind). Refunds count as live applications for the void rule. API shows them as
+  `refunds`, separate from `applications`.
+- **Opening credit** (`payments.opening`): a go-live customer deposit / vendor
+  prepayment entered per partner (`POST /payments` `opening: true`, no cash account, no
+  allocations). `cash_account_id` is the `OPENING_BALANCE_EQUITY` (Saldo Awal) account,
+  so the journal is Dr Saldo Awal / Cr Uang Muka Pelanggan (receipt) or Dr Uang Muka
+  Pembelian / Cr Saldo Awal (disbursement) — no cash, so nothing in the opening entry is
+  counted twice. Its whole amount is unapplied credit, applied/refunded like any
+  advance. The cash-flow report treats its own entry (and void reversal) as a beginning
+  balance (`EXCLUDE_OPENING_JE`). It does not count as a "document" for the opening
+  entry's `DOCUMENTS_EXIST` rule.
 - **Void rule:** a payment with a live application is not voidable (`422
   HAS_APPLICATIONS`) — reverse its applications first (each reversal is an ordinary,
   dated, reversible step; a cascading void would have to reverse several journals with
@@ -362,8 +384,8 @@ AR/AP (`buildPaymentLines`, `src/invoicing/payment-targets.ts`).
   backdated-void rule and the document-void date rule), so aging still ties to AR/AP
   control. Advances are **not** AR/AP and never appear in aging; the advance account
   ties to the sum of POSTED payments' `unapplied_amount`. Both advance accounts are
-  document-only (MANUAL journals and invoice/bill lines may not use them; OPENING only
-  before the first document). Open credit per partner: `GET
+  document-only (MANUAL journals, OPENING entries — `422 ADVANCE_IN_OPENING`, use an
+  opening credit — and invoice/bill lines may not use them). Open credit per partner: `GET
   /payments?partnerId=…&unapplied=true`; a partner with an unapplied advance cannot be
   deleted (`OPEN_ITEMS.unappliedPayments`).
 - **Out of scope (v1):** PPN on advances (*faktur pajak uang muka*) — no tax is computed
@@ -435,8 +457,8 @@ shared `TaxedDocumentService` through one `DocumentDescriptor` per kind plus
   `POST /sales-credit-notes/:id/apply` (or `/purchase-debit-notes/…`) writes a
   `PaymentApplication` row with `sales_credit_note_id` / `purchase_debit_note_id`
   (`payment_id` NULL; CHECK exactly one source, a credit note only onto invoices, a debit
-  note only onto bills) and a journal of the note's source type. Refunding note credit in
-  cash is not built (v1).
+  note only onto bills) and a journal of the note's source type. Note credit can also be
+  refunded in cash (see **Refund** under Advance).
 - **Void:** only while no application of its excess is live (`422 HAS_APPLICATIONS`; void
   date on/after the latest application reversal). Reverses the journal and takes
   `creditedAmount` back off the original (kept on the VOID note: its credit was live on

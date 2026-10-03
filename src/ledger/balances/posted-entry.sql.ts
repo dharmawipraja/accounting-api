@@ -39,5 +39,9 @@ export function excludeClosingJe(from?: Date): Prisma.Sql {
 }
 
 /** Excludes OPENING entries (and their reversals) — cash flow treats them as
- *  beginning balances, not flows. */
-export const EXCLUDE_OPENING_JE = Prisma.sql`NOT ${isSourceOrItsReversal('OPENING')}`;
+ *  beginning balances, not flows. Opening-credit payments (go-live deposits /
+ *  prepayments, Saldo Awal ↔ Uang Muka, no cash) are beginning balances too:
+ *  their own entry and its void reversal are excluded — matched by the
+ *  payment's journal_entry_id, so their later applications and cash refunds
+ *  (same source id) still count as flows. */
+export const EXCLUDE_OPENING_JE = Prisma.sql`NOT ${isSourceOrItsReversal('OPENING')} AND NOT EXISTS (SELECT 1 FROM payments op WHERE op.opening AND op.journal_entry_id IN (je.id, je.reversal_of_id))`;

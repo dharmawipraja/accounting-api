@@ -3012,6 +3012,124 @@
         ]
       }
     },
+    "/v1/payments/{id}/refunds": {
+      "post": {
+        "operationId": "PaymentsController_refund_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable. On ANY retry — including after a 408 timeout or a network failure — reuse the SAME key: the original request may still have succeeded server-side, and a fresh key would duplicate the write. Replays return the original response; a still-running original returns 409.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefundCreditDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Refund part of a POSTED payment's unapplied (advance) amount in cash:\n Dr Uang Muka Pelanggan / Cr cash (receipt), Dr cash / Cr Uang Muka\n Pembelian (disbursement). Same roles and SoD as apply.",
+        "tags": [
+          "Payments"
+        ]
+      }
+    },
+    "/v1/payments/{id}/refunds/{refundId}/reverse": {
+      "post": {
+        "operationId": "PaymentsController_reverseRefund_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "refundId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable. On ANY retry — including after a 408 timeout or a network failure — reuse the SAME key: the original request may still have succeeded server-side, and a fresh key would duplicate the write. Replays return the original response; a still-running original returns 409.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidDocumentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Reverse one refund (its journal entry); the amount returns to the\n payment's unapplied balance.",
+        "tags": [
+          "Payments"
+        ]
+      }
+    },
     "/v1/journal-entries/preview": {
       "post": {
         "operationId": "JournalPreviewController_preview_v1",
@@ -3490,6 +3608,124 @@
         ]
       }
     },
+    "/v1/sales-credit-notes/{id}/refunds": {
+      "post": {
+        "operationId": "SalesCreditNotesController_refund_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable. On ANY retry — including after a 408 timeout or a network failure — reuse the SAME key: the original request may still have succeeded server-side, and a fresh key would duplicate the write. Replays return the original response; a still-running original returns 409.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefundCreditDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Refund part of a POSTED note's unapplied excess (partner credit) in\n cash — mirrors POST /payments/:id/refunds.",
+        "tags": [
+          "Sales Credit Notes"
+        ]
+      }
+    },
+    "/v1/sales-credit-notes/{id}/refunds/{refundId}/reverse": {
+      "post": {
+        "operationId": "SalesCreditNotesController_reverseRefund_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "refundId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable. On ANY retry — including after a 408 timeout or a network failure — reuse the SAME key: the original request may still have succeeded server-side, and a fresh key would duplicate the write. Replays return the original response; a still-running original returns 409.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidDocumentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Reverse one refund; the amount returns to the note's unapplied balance.",
+        "tags": [
+          "Sales Credit Notes"
+        ]
+      }
+    },
     "/v1/purchase-debit-notes": {
       "get": {
         "operationId": "PurchaseDebitNotesController_list_v1",
@@ -3927,6 +4163,124 @@
           }
         ],
         "summary": "Reverse one application; the amount returns to the document's\n outstanding and the note's unapplied balance.",
+        "tags": [
+          "Purchase Debit Notes"
+        ]
+      }
+    },
+    "/v1/purchase-debit-notes/{id}/refunds": {
+      "post": {
+        "operationId": "PurchaseDebitNotesController_refund_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable. On ANY retry — including after a 408 timeout or a network failure — reuse the SAME key: the original request may still have succeeded server-side, and a fresh key would duplicate the write. Replays return the original response; a still-running original returns 409.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefundCreditDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Refund part of a POSTED note's unapplied excess (partner credit) in\n cash — mirrors POST /payments/:id/refunds.",
+        "tags": [
+          "Purchase Debit Notes"
+        ]
+      }
+    },
+    "/v1/purchase-debit-notes/{id}/refunds/{refundId}/reverse": {
+      "post": {
+        "operationId": "PurchaseDebitNotesController_reverseRefund_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "refundId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable. On ANY retry — including after a 408 timeout or a network failure — reuse the SAME key: the original request may still have succeeded server-side, and a fresh key would duplicate the write. Replays return the original response; a still-running original returns 409.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidDocumentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Reverse one refund; the amount returns to the note's unapplied balance.",
         "tags": [
           "Purchase Debit Notes"
         ]
@@ -7584,6 +7938,12 @@
             "nullable": true,
             "format": "uuid"
           },
+          "cashAccountId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "Set on a refund (the CASH-role account the credit was paid back through); null on an application."
+          },
           "amount": {
             "type": "string",
             "example": "1000.0000",
@@ -7625,6 +7985,7 @@
           "purchaseDebitNoteId",
           "salesInvoiceId",
           "purchaseBillId",
+          "cashAccountId",
           "amount",
           "date",
           "journalEntryId",
@@ -7671,7 +8032,12 @@
           },
           "cashAccountId": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Cash/bank account; for an `opening` credit, the Saldo Awal (OPENING_BALANCE_EQUITY) account."
+          },
+          "opening": {
+            "type": "boolean",
+            "description": "Opening (go-live) customer deposit / vendor prepayment: booked against Saldo Awal, no cash moved."
           },
           "amount": {
             "type": "string",
@@ -7681,7 +8047,7 @@
           "unappliedAmount": {
             "type": "string",
             "example": "1000.0000",
-            "description": "Part of `amount` not (yet) settling a document — held on the customer/vendor advance account until applied. amount − allocations − live applications; 0 once VOID."
+            "description": "Part of `amount` not (yet) settling a document — held on the customer/vendor advance account until applied or refunded. amount − allocations − live applications − live refunds; 0 once VOID."
           },
           "description": {
             "type": "string",
@@ -7739,6 +8105,13 @@
             "items": {
               "$ref": "#/components/schemas/PaymentApplicationResponseDto"
             }
+          },
+          "refunds": {
+            "description": "Cash refunds of the unapplied amount (cashAccountId set).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentApplicationResponseDto"
+            }
           }
         },
         "required": [
@@ -7750,6 +8123,7 @@
           "partnerId",
           "date",
           "cashAccountId",
+          "opening",
           "amount",
           "unappliedAmount",
           "description",
@@ -7830,7 +8204,12 @@
           },
           "cashAccountId": {
             "type": "string",
+            "description": "CASH-role account the money moves through. Required, except for an\n `opening` credit (which must omit it).",
             "format": "uuid"
+          },
+          "opening": {
+            "type": "boolean",
+            "description": "Go-live customer deposit / vendor prepayment (opening credit): no cash\n moves — the journal is Dr Saldo Awal / Cr Uang Muka Pelanggan (RECEIPT)\n or Dr Uang Muka Pembelian / Cr Saldo Awal (DISBURSEMENT). Requires\n `amount`, no `cashAccountId`, no `allocations`; the whole amount becomes\n `unappliedAmount`, applied or refunded after posting."
           },
           "description": {
             "type": "string",
@@ -7851,8 +8230,7 @@
         "required": [
           "direction",
           "partnerId",
-          "date",
-          "cashAccountId"
+          "date"
         ]
       },
       "ApplyPaymentDto": {
@@ -7873,6 +8251,33 @@
         "required": [
           "date",
           "allocations"
+        ]
+      },
+      "RefundCreditDto": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Refund date: on/after the holder's date, not after today (WIB), in an\n open period of an open fiscal year."
+          },
+          "amount": {
+            "type": "string",
+            "description": "Positive; at most the holder's `unappliedAmount`."
+          },
+          "cashAccountId": {
+            "type": "string",
+            "description": "CASH-role (cash/bank) account the refund moves through.",
+            "format": "uuid"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "date",
+          "amount",
+          "cashAccountId"
         ]
       },
       "PreviewJournalEntryDto": {
@@ -8166,7 +8571,7 @@
           "unappliedAmount": {
             "type": "string",
             "example": "1000.0000",
-            "description": "Partner credit not yet applied: total − creditedAmount − live applications, held on the customer/vendor advance account; apply it via POST /…/:id/apply. 0 once VOID."
+            "description": "Partner credit not yet applied: total − creditedAmount − live applications − live refunds, held on the customer/vendor advance account; apply it via POST /…/:id/apply or refund it via POST /…/:id/refunds. 0 once VOID."
           },
           "journalEntryId": {
             "type": "string",
@@ -8208,6 +8613,13 @@
             }
           },
           "applications": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentApplicationResponseDto"
+            }
+          },
+          "refunds": {
+            "description": "Cash refunds of the unapplied excess (cashAccountId set).",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PaymentApplicationResponseDto"

@@ -6,7 +6,32 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **Refunds of unapplied credit** — `POST /v1/payments/:id/refunds`,
+  `/v1/sales-credit-notes/:id/refunds`, `/v1/purchase-debit-notes/:id/refunds`
+  `{ date, amount, cashAccountId, description? }` pay a payment advance or a note's
+  excess back in cash (customer: Dr Uang Muka Pelanggan / Cr cash; vendor: Dr cash /
+  Cr Uang Muka Pembelian), reversible via `…/refunds/:refundId/reverse`. Same roles,
+  SoD, partner rule and holder lock as apply; refund ≤ unapplied, date ≥ holder date and
+  ≤ today (WIB). Stored as `payment_applications` rows with the new `cash_account_id`
+  target (migration `20261012000000_credit_refunds`); responses list them as `refunds`.
+  Live refunds block voiding the holder like applications.
+- **Opening credit** — `POST /v1/payments` with `opening: true` (no `cashAccountId`, no
+  allocations) enters a go-live customer deposit / vendor prepayment per partner against
+  Saldo Awal (Dr Saldo Awal / Cr Uang Muka Pelanggan, or Dr Uang Muka Pembelian / Cr Saldo
+  Awal), creating unapplied credit that can be applied or refunded. Excluded from the
+  cash-flow report like the opening entry.
+
 ### Fixed
+
+- **Customer/vendor credit could never be refunded** — unapplied advances and note
+  excess could only be applied to documents (manual journals are barred from the advance
+  accounts). See refunds above.
+- **Opening-balance advances were stuck** — an OPENING entry may no longer touch
+  `CUSTOMER_ADVANCE` / `VENDOR_ADVANCE` (`422 { accountId, role, reason:
+  'ADVANCE_IN_OPENING' }`): a lump sum there belonged to no partner and could never be
+  applied. Use opening credits instead.
 
 - **Refresh grace window minted unlimited sessions** — every replay of a consumed
   refresh token inside `REFRESH_REUSE_GRACE_MS` issued a new sibling, so anyone who

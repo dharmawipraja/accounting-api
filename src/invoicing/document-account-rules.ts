@@ -230,6 +230,23 @@ export async function assertCashAccount(
   if (a) throwIf(cashAccountViolation(a));
 }
 
+/** Post-time re-check of an opening credit's counter account: still the
+ *  OPENING_BALANCE_EQUITY (Saldo Awal) account (422 otherwise). */
+export async function assertOpeningEquityAccount(
+  db: LedgerTx,
+  accountId: string,
+): Promise<void> {
+  const a = await db.account.findFirst({
+    where: { id: accountId },
+    select: { role: true },
+  });
+  if (a?.role !== 'OPENING_BALANCE_EQUITY')
+    throw new ValidationFailedError(
+      'An opening credit must book against the Saldo Awal (OPENING_BALANCE_EQUITY) account',
+      { accountId, role: a?.role ?? null },
+    );
+}
+
 /** An invoice / bill: its line-account rule set and posting source type. */
 export interface DocumentAccountKind {
   nature: 'SALE' | 'PURCHASE';

@@ -5,6 +5,12 @@ import { AccountRole, AccountType, JournalSourceType } from '@prisma/client';
  *  PostingService. */
 export interface AccountPolicy {
   readonly forbiddenRoles: readonly AccountRole[];
+  /** 422 message + `reason` for a forbiddenRoles hit (default:
+   *  FORBIDDEN_ROLE_MESSAGE, no reason). */
+  readonly forbiddenRoleRule?: {
+    readonly reason: string;
+    readonly message: string;
+  };
   /** Account types the source type may not post to; a hit is a 422
    *  `{ accountId, reason }` with this policy's reason/message. */
   readonly forbiddenTypes?: {
@@ -41,13 +47,21 @@ export const UNRESTRICTED_POLICY: AccountPolicy = { forbiddenRoles: [] };
 
 /** Opening balances are balance-sheet positions only: a REVENUE/EXPENSE
  *  account is a 422 `PNL_IN_OPENING` (mid-year YTD P&L goes in as a MANUAL
- *  journal). Role-unrestricted — go-live may seed AR/AP control, but only
- *  before the first document and only as the one live opening entry (both
- *  checked in-tx by PostingService.assertOpeningAllowedInTx). Enforced by
- *  PostingService for every OPENING post, not only the endpoint. Account type
- *  is immutable, so the pre-tx check cannot go stale. */
+ *  journal). The advance accounts are a 422 `ADVANCE_IN_OPENING`: their
+ *  balance must equal the per-partner unapplied credit, which a lump sum has
+ *  none of (it could never be applied or refunded) — go-live deposits /
+ *  prepayments go in per partner as opening-credit payments instead. Go-live
+ *  may seed AR/AP control, but only before the first document and only as the
+ *  one live opening entry (both checked in-tx by
+ *  PostingService.assertOpeningAllowedInTx). Enforced by PostingService for
+ *  every OPENING post, not only the endpoint. */
 export const OPENING_POLICY: AccountPolicy = {
-  forbiddenRoles: [],
+  forbiddenRoles: ['CUSTOMER_ADVANCE', 'VENDOR_ADVANCE'],
+  forbiddenRoleRule: {
+    reason: 'ADVANCE_IN_OPENING',
+    message:
+      'Customer deposits / vendor prepayments cannot go in the opening entry; enter each as an opening credit (POST /v1/payments with opening: true) so it can be applied or refunded',
+  },
   forbiddenTypes: {
     types: ['REVENUE', 'EXPENSE'],
     reason: 'PNL_IN_OPENING',
