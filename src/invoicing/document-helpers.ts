@@ -5,6 +5,7 @@ import { ValidationFailedError } from '../common/errors/domain-errors';
 import type { TaxCalculation } from '../tax/tax.service';
 import { nextSequenceNumber, SqlTx } from '../common/db/sequence';
 import { buildDocRef } from '../common/db/doc-ref';
+import { assertNotAfterToday } from '../common/dates/not-after-today';
 
 type DecimalLike = Prisma.Decimal | string;
 
@@ -104,6 +105,32 @@ export function assertVoidDateNotBefore(
       },
     );
   }
+}
+
+/** The pre-tx rules every void (document, note, payment) shares; returns the
+ *  void date. 422 `onlyPostedMessage` unless POSTED. The void (reversal) date
+ *  defaults to the row's own date; a later date lets it be voided after its
+ *  own period has closed. An explicit void date may not be after max(today
+ *  (WIB), own date) — 422 { date, today[, originalDate] }: a future-dated
+ *  original may be voided on its own date, like the no-body void — nor
+ *  before its own date (assertVoidDateNotBefore). */
+export function resolveVoidDate(
+  row: { id: string; status: string; date: Date },
+  date: Date | undefined,
+  onlyPostedMessage: string,
+): Date {
+  if (row.status !== 'POSTED')
+    throw new ValidationFailedError(onlyPostedMessage, {
+      id: row.id,
+      status: row.status,
+    });
+  const voidedOn = date ?? row.date;
+  if (date)
+    assertNotAfterToday(date, 'Void date cannot be in the future', {
+      originalDate: row.date,
+    });
+  assertVoidDateNotBefore(voidedOn, row.date, row.id);
+  return voidedOn;
 }
 
 /** A document's due date may equal its date but never precede it. Both are

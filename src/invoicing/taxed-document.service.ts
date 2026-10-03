@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { DocumentStatus, Prisma, TaxInvoiceStatus } from '@prisma/client';
-import { assertNotAfterToday } from '../common/dates/not-after-today';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { Money } from '../common/money/money';
 import {
@@ -27,7 +26,7 @@ import { lockLiveRow } from '../common/db/lock-live-row';
 import {
   taxableLines,
   findControlAccountId,
-  assertVoidDateNotBefore,
+  resolveVoidDate,
   assertDueDateNotBefore,
   samePostableContent,
   discountTotal,
@@ -360,22 +359,7 @@ export class TaxedDocumentService {
   ): Promise<R> {
     const m = documentMessages(spec);
     const row = await this.getById(spec, id);
-    if (row.status !== 'POSTED')
-      throw new ValidationFailedError(m.onlyPostedVoid, {
-        id,
-        status: row.status,
-      });
-    // The void (reversal) date defaults to the document date; a later date lets
-    // a document be voided after its own period has closed.
-    const voidedOn = date ?? row.date;
-    // An explicit void date may not be after max(today (WIB), own date) —
-    // 422 { date, today[, originalDate] }: a future-dated original may be
-    // voided on its own date, like the no-body void.
-    if (date)
-      assertNotAfterToday(date, 'Void date cannot be in the future', {
-        originalDate: row.date,
-      });
-    assertVoidDateNotBefore(voidedOn, row.date, id);
+    const voidedOn = resolveVoidDate(row, date, m.onlyPostedVoid);
     if (!Money.of(row.amountPaid.toString()).isZero())
       throw new ConflictDomainError(m.voidWithPaymentsFirst, { id });
     await this.lifecycle.reverseWithGuard({

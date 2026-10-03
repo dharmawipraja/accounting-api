@@ -6,7 +6,6 @@ import {
   SalesCreditNote,
   SalesCreditNoteLine,
 } from '@prisma/client';
-import { assertNotAfterToday } from '../common/dates/not-after-today';
 import { PrismaService } from '../common/prisma/prisma.service';
 import type { LedgerTx } from '../common/prisma/prisma.service';
 import { Money } from '../common/money/money';
@@ -31,7 +30,7 @@ import {
 } from './document-descriptor';
 import { buildLineCreateData, documentMessages } from './document-presenter';
 import {
-  assertVoidDateNotBefore,
+  resolveVoidDate,
   discountTotal,
   findControlAccountId,
   taxableLines,
@@ -281,17 +280,7 @@ export class NotesService {
     const kind = this.kinds[key];
     const m = documentMessages(kind.spec);
     const row = await this.getById(key, id);
-    if (row.status !== 'POSTED')
-      throw new ValidationFailedError(m.onlyPostedVoid, {
-        id,
-        status: row.status,
-      });
-    const voidedOn = date ?? row.date;
-    if (date)
-      assertNotAfterToday(date, 'Void date cannot be in the future', {
-        originalDate: row.date,
-      });
-    assertVoidDateNotBefore(voidedOn, row.date, id);
+    const voidedOn = resolveVoidDate(row, date, m.onlyPostedVoid);
     await this.lifecycle.reverseWithGuard({
       id,
       journalEntryId: row.journalEntryId!,

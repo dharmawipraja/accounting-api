@@ -24,7 +24,7 @@ import { BusinessPartnersService } from './business-partners.service';
 import { listPaginated } from '../common/pagination/paginated';
 import { serializeMoney } from '../common/money/serialize-money';
 import {
-  assertVoidDateNotBefore,
+  resolveVoidDate,
   findControlAccountId,
   nextDocumentNumber,
 } from './document-helpers';
@@ -469,22 +469,11 @@ export class PaymentsService {
 
   async void(id: string, voidedBy: string, date?: Date): Promise<Payment> {
     const payment = await this.getById(id);
-    if (payment.status !== 'POSTED')
-      throw new ValidationFailedError('Only a POSTED payment can be voided', {
-        id,
-        status: payment.status,
-      });
-    // Void (reversal) date defaults to the payment date; a later date lets a
-    // payment be voided after its own period has closed.
-    const voidedOn = date ?? payment.date;
-    // An explicit void date may not be after max(today (WIB), own date) —
-    // 422 { date, today[, originalDate] }: a future-dated original may be
-    // voided on its own date, like the no-body void.
-    if (date)
-      assertNotAfterToday(date, 'Void date cannot be in the future', {
-        originalDate: payment.date,
-      });
-    assertVoidDateNotBefore(voidedOn, payment.date, id);
+    const voidedOn = resolveVoidDate(
+      payment,
+      date,
+      'Only a POSTED payment can be voided',
+    );
     const allocations = payment.allocations.map(toAllocationInput);
     await this.lifecycle.reverseWithGuard({
       id,

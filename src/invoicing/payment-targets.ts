@@ -56,15 +56,11 @@ export interface PaymentTarget {
   noun: string; // short: 'invoice' | 'bill' (post-path messages)
   label: string; // long: 'sales invoice' | 'purchase bill' (loadTarget messages)
   cashIsDebit: boolean;
+  /** The Prisma delegate of `table` (invoices and bills share the columns
+   *  findTarget / applyPaid touch). */
+  model: 'salesInvoice' | 'purchaseBill';
   allocId(a: AllocationInput): string | undefined;
   otherId(a: AllocationInput): string | undefined;
-  find(client: ExtendedPrismaClient, id: string): Promise<TargetRow | null>;
-  applyPaid(
-    tx: LedgerTx,
-    id: string,
-    amount: Prisma.Decimal,
-    sign: 1 | -1,
-  ): Promise<void>;
 }
 
 export const PAYMENT_TARGETS: Record<PaymentDirection, PaymentTarget> = {
@@ -79,31 +75,9 @@ export const PAYMENT_TARGETS: Record<PaymentDirection, PaymentTarget> = {
     noun: 'invoice',
     label: 'sales invoice',
     cashIsDebit: true,
+    model: 'salesInvoice',
     allocId: (a) => a.salesInvoiceId,
     otherId: (a) => a.purchaseBillId,
-    find: async (client, id) => {
-      const inv = await client.salesInvoice.findFirst({ where: { id } });
-      return inv
-        ? {
-            id: inv.id,
-            partnerId: inv.partnerId,
-            status: inv.status,
-            date: inv.date,
-            total: inv.total,
-            amountPaid: inv.amountPaid,
-            creditedTotal: inv.creditedTotal,
-          }
-        : null;
-    },
-    applyPaid: async (tx, id, amount, sign) => {
-      await tx.salesInvoice.update({
-        where: { id },
-        data: {
-          amountPaid:
-            sign === 1 ? { increment: amount } : { decrement: amount },
-        },
-      });
-    },
   },
   DISBURSEMENT: {
     direction: 'DISBURSEMENT',
@@ -116,33 +90,52 @@ export const PAYMENT_TARGETS: Record<PaymentDirection, PaymentTarget> = {
     noun: 'bill',
     label: 'purchase bill',
     cashIsDebit: false,
+    model: 'purchaseBill',
     allocId: (a) => a.purchaseBillId,
     otherId: (a) => a.salesInvoiceId,
-    find: async (client, id) => {
-      const bill = await client.purchaseBill.findFirst({ where: { id } });
-      return bill
-        ? {
-            id: bill.id,
-            partnerId: bill.partnerId,
-            status: bill.status,
-            date: bill.date,
-            total: bill.total,
-            amountPaid: bill.amountPaid,
-            creditedTotal: bill.creditedTotal,
-          }
-        : null;
-    },
-    applyPaid: async (tx, id, amount, sign) => {
-      await tx.purchaseBill.update({
-        where: { id },
-        data: {
-          amountPaid:
-            sign === 1 ? { increment: amount } : { decrement: amount },
-        },
-      });
-    },
   },
 };
+
+/** The target's delegate, typed as the (same-shaped) sales invoice one. */
+function targetModel(db: LedgerTx, target: PaymentTarget) {
+  return db[target.model] as unknown as LedgerTx['salesInvoice'];
+}
+
+/** Read the target document (soft-delete filtered), or null. */
+async function findTarget(
+  client: ExtendedPrismaClient,
+  target: PaymentTarget,
+  id: string,
+): Promise<TargetRow | null> {
+  const doc = await targetModel(client, target).findFirst({ where: { id } });
+  return doc
+    ? {
+        id: doc.id,
+        partnerId: doc.partnerId,
+        status: doc.status,
+        date: doc.date,
+        total: doc.total,
+        amountPaid: doc.amountPaid,
+        creditedTotal: doc.creditedTotal,
+      }
+    : null;
+}
+
+/** amountPaid += amount (sign 1) or −= amount (sign −1). */
+async function applyPaid(
+  tx: LedgerTx,
+  target: PaymentTarget,
+  id: string,
+  amount: Prisma.Decimal,
+  sign: 1 | -1,
+): Promise<void> {
+  await targetModel(tx, target).update({
+    where: { id },
+    data: {
+      amountPaid: sign === 1 ? { increment: amount } : { decrement: amount },
+    },
+  });
+}
 
 /** Pure over-allocation check: does settling `amount` drive the document past its
  *  outstanding (total − settled, settled = amountPaid + creditedTotal)? No I/O.
@@ -397,7 +390,7 @@ export async function loadTarget(
       `A ${target.direction.toLowerCase()} allocation must reference a ${target.label}`,
       {},
     );
-  const row = await target.find(client, id);
+  const row = await findTarget(client, target, id);
   if (!row)
     throw new NotFoundDomainError(`${cap(target.label)} not found`, { id });
   return row;
@@ -470,7 +463,7 @@ export async function settleInTx(
     paymentDate,
     settledBefore.add(Money.of(alloc.amount)).toPersistence(),
   );
-  await target.applyPaid(tx, id, new Prisma.Decimal(alloc.amount), 1);
+  await applyPaid(tx, target, id, new Prisma.Decimal(alloc.amount), 1);
 }
 
 /** Lock the target FOR UPDATE, floor-check, decrement amountPaid (void path). */
@@ -493,5 +486,5 @@ export async function unwindInTx(
     throw new ConflictDomainError('Void would drive amountPaid negative', {
       id,
     });
-  await target.applyPaid(tx, id, new Prisma.Decimal(alloc.amount), -1);
+  await applyPaid(tx, target, id, new Prisma.Decimal(alloc.amount), -1);
 }
