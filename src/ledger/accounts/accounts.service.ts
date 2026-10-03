@@ -15,7 +15,7 @@ import {
 import { CHART_OF_ACCOUNTS } from './chart-of-accounts.seed';
 import { Money } from '../../common/money/money';
 import { POSTED_JE } from '../balances/posted-entry.sql';
-import { assertCashAssignable } from './cash-role';
+import { assertCashAssignable, assertRoleShape } from './cash-role';
 import {
   normalizeDisplayName,
   normalizeIdentifierCode,
@@ -215,14 +215,17 @@ export class AccountsService implements OnModuleInit {
       });
     }
 
-    // CASH: the same shape rule as PATCH role=CASH (postable, debit-normal ASSET).
-    if (input.role === 'CASH')
-      assertCashAssignable({
+    // Every system role needs its account shape (ROLE_SHAPES); CASH goes
+    // through the same rule as PATCH role=CASH.
+    if (input.role) {
+      const shape = {
         type: input.type,
         normalBalance: input.normalBalance,
         isPostable: input.isPostable ?? true,
-        role: null,
-      });
+      };
+      if (input.role === 'CASH') assertCashAssignable({ ...shape, role: null });
+      else assertRoleShape(input.role, shape);
+    }
 
     // Singleton roles (everything except CASH) may be held by at most one account.
     // This CASH carve-out MUST stay in sync with the partial-unique index in

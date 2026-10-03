@@ -318,6 +318,28 @@ describe('Accounts (e2e)', () => {
       .expect(409);
   });
 
+  it('rejects a system role on the wrong account shape with 422 (before the 409)', async () => {
+    const res = await request(app.getHttpServer() as App)
+      .post('/v1/ledger/accounts')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: '1-1260',
+        name: 'AP on an asset',
+        type: 'ASSET',
+        subtype: 'CURRENT_ASSET',
+        normalBalance: 'DEBIT',
+        role: 'AP_CONTROL',
+        parentCode: '1-0000',
+      })
+      .expect(422);
+    expect(res.body).toMatchObject({
+      details: {
+        role: 'AP_CONTROL',
+        required: { type: 'LIABILITY', normalBalance: 'CREDIT' },
+      },
+    });
+  });
+
   it('iter9: a singleton-role race (pre-check passed, unique index fires) is the role 409, not "code already exists"', async () => {
     // A live violation carries the index name where uniqueViolationIndex
     // reads it.

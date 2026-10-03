@@ -58,8 +58,14 @@ describe('PreviewJournalEntryDto foreign-nature fields (iteration-5)', () => {
 
   it('still requires the fields of its own nature', () => {
     expect(errorsFor({ nature: 'SALE' })).toContain('lines');
-    expect(errorsFor({ nature: 'PAYMENT' })).toEqual(
-      expect.arrayContaining(['direction', 'cashAccountId', 'allocations']),
-    );
+    // allocations / amount are optional (a pure advance); the service 422s
+    // when both are missing, like payment create.
+    expect(errorsFor({ nature: 'PAYMENT' })).toEqual([
+      'direction',
+      'cashAccountId',
+    ]);
+    expect(
+      errorsFor({ nature: 'PAYMENT', amount: 'x', allocations: 'y' }),
+    ).toEqual(expect.arrayContaining(['amount', 'allocations']));
   });
 });

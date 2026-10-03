@@ -21,10 +21,14 @@ describe('parseCorsOrigins', () => {
 });
 
 describe('corsOptions', () => {
-  it('exposes Retry-After so a browser client can read the 429 back-off', () => {
+  it('exposes Retry-After and the Coretax export headers to browser clients', () => {
     expect(corsOptions('https://a.com')).toEqual({
       origin: ['https://a.com'],
-      exposedHeaders: ['Retry-After'],
+      exposedHeaders: [
+        'Retry-After',
+        'Content-Disposition',
+        'X-Coretax-Invoice-Count',
+      ],
     });
   });
   it('stays fail-closed (origin false) when CORS_ORIGIN is unset', () => {

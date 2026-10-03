@@ -452,6 +452,101 @@ describe('Journal preview (e2e)', () => {
     ).toBe('400000.0000');
   });
 
+  it('PAYMENT preview with an advance (amount > allocations, or none) matches the posted GL', async () => {
+    const inv = await request(server())
+      .post('/v1/sales-invoices')
+      .set('Authorization', `Bearer ${acct}`)
+      .set('Idempotency-Key', randomUUID())
+      .send({
+        partnerId: customerId,
+        date: '2026-02-10',
+        lines: [
+          {
+            description: 'Jasa',
+            accountId: acc['4-1000'],
+            quantity: '1',
+            unitPrice: '500000',
+            taxCodeIds: [],
+          },
+        ],
+      })
+      .expect(201);
+    const invId = (inv.body as { id: string }).id;
+    await request(server())
+      .post(`/v1/sales-invoices/${invId}/post`)
+      .set('Authorization', `Bearer ${appr}`)
+      .set('Idempotency-Key', randomUUID())
+      .expect(200);
+
+    for (const body of [
+      { amount: '250000', allocations: [] }, // pure advance
+      {
+        amount: '300000',
+        allocations: [{ salesInvoiceId: invId, amount: '100000' }],
+      },
+    ]) {
+      const pay = await request(server())
+        .post('/v1/payments')
+        .set('Authorization', `Bearer ${acct}`)
+        .set('Idempotency-Key', randomUUID())
+        .send({
+          direction: 'RECEIPT',
+          partnerId: customerId,
+          date: '2026-02-15',
+          cashAccountId: acc['1-1000'],
+          ...body,
+        })
+        .expect(201);
+      const posted = await request(server())
+        .post(`/v1/payments/${(pay.body as { id: string }).id}/post`)
+        .set('Authorization', `Bearer ${appr}`)
+        .set('Idempotency-Key', randomUUID())
+        .expect(200);
+      const jeLines = await prisma.client.journalLine.findMany({
+        where: {
+          journalEntryId: (posted.body as { journalEntryId: string })
+            .journalEntryId,
+        },
+      });
+      const preview = (
+        await request(server())
+          .post('/v1/journal-entries/preview')
+          .set('Authorization', `Bearer ${acct}`)
+          .send({
+            nature: 'PAYMENT',
+            direction: 'RECEIPT',
+            cashAccountId: acc['1-1000'],
+            ...body,
+          })
+          .expect(200)
+      ).body as {
+        lines: { accountId: string; debit: string; credit: string }[];
+        balanced: boolean;
+      };
+      expect(preview.balanced).toBe(true);
+      type Num = string | { toString(): string };
+      const key = (l: { accountId: string; debit: Num; credit: Num }) =>
+        `${l.accountId}|${norm(l.debit)}|${norm(l.credit)}`;
+      expect(preview.lines.map(key).sort()).toEqual(jeLines.map(key).sort());
+    }
+
+    // Same amount rules as payment create.
+    const base = {
+      nature: 'PAYMENT',
+      direction: 'RECEIPT',
+      cashAccountId: acc['1-1000'],
+    };
+    for (const extra of [
+      {},
+      { amount: '50', allocations: [{ salesInvoiceId: invId, amount: '100' }] },
+    ])
+      await request(server())
+        .post('/v1/journal-entries/preview')
+        .set('Authorization', `Bearer ${acct}`)
+        .send({ ...base, ...extra })
+        .expect(422);
+  });
+
   it('rejects a RECEIPT allocation that references a purchase bill (422)', async () => {
     await request(server())
       .post('/v1/journal-entries/preview')

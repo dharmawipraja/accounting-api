@@ -22,6 +22,9 @@ export const THROTTLE = {
   refresh: Number(process.env.THROTTLE_REFRESH_LIMIT) || 30,
   // Bounds stolen-token password guessing AND per-request argon2 work.
   changePassword: Number(process.env.THROTTLE_CHANGE_PASSWORD_LIMIT) || 10,
+  // Per-user Coretax XML export (builds up to 1000 invoices x 100 lines in
+  // memory per call).
+  coretaxExport: Number(process.env.THROTTLE_CORETAX_EXPORT_LIMIT) || 10,
 } as const;
 
 /** Per-account failed-login ceiling (LoginFailureLimiter): after `limit`

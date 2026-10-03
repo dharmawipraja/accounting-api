@@ -406,7 +406,7 @@ describe('Reporting AR/AP aging (e2e)', () => {
     expect(full.partners.some((p) => p.documents.length >= 2)).toBe(true);
 
     for (let cap = 1; cap < totalDocs; cap++) {
-      const capped = await aging.aging('AR', asOf, cap);
+      const capped = await aging.aging('AR', asOf, undefined, cap);
       expect(capped.truncated).toBe(true);
       // Totals never depend on the cap.
       expect(capped.totalOutstanding).toBe(full.totalOutstanding);
@@ -420,6 +420,34 @@ describe('Reporting AR/AP aging (e2e)', () => {
       expect(included).toBeLessThanOrEqual(cap);
       expect(included + full.partners[n].documents.length).toBeGreaterThan(cap);
     }
+
+    // afterPartnerId continuation: walking nextAfterPartnerId pages returns
+    // every partner exactly once (cap >= the largest partner), same totals.
+    const cap = Math.max(...full.partners.map((p) => p.documents.length));
+    const walked: typeof full.partners = [];
+    let after: string | undefined;
+    for (let i = 0; i < 100; i++) {
+      const page = await aging.aging('AR', asOf, after, cap);
+      expect(page.totalOutstanding).toBe(full.totalOutstanding);
+      walked.push(...page.partners);
+      if (!page.truncated) break;
+      after = page.nextAfterPartnerId!;
+    }
+    expect(walked).toEqual(full.partners);
+    expect(full.nextAfterPartnerId).toBeNull();
+    // Over HTTP; an unknown cursor partner is a 422.
+    const last = full.partners[full.partners.length - 1].partnerId;
+    const tail = await get(
+      `/v1/reports/ar-aging?asOf=2026-07-01&afterPartnerId=${last}`,
+    ).expect(200);
+    expect(tail.body).toMatchObject({
+      truncated: false,
+      partners: [],
+      totalOutstanding: full.totalOutstanding,
+    });
+    await get(
+      `/v1/reports/ar-aging?asOf=2026-07-01&afterPartnerId=${randomUUID()}`,
+    ).expect(422);
   });
 
   // Void dated in a later period: aging as of D must honour voided_on, and the

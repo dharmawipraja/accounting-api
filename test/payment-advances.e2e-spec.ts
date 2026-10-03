@@ -563,10 +563,13 @@ describe('Payment advances (e2e)', () => {
             (e: unknown) => e,
           );
       const racing = Promise.all([settle(invA), settle(invB)]);
-      for (let k = 0; k < 100; k++) {
+      // Both applies must be parked on the payment's row lock before release,
+      // or the test would pass without racing.
+      for (let k = 0; ; k++) {
         const [{ w }] = await prisma.client.$queryRaw<{ w: number }[]>`
           SELECT count(*)::int AS w FROM pg_locks WHERE NOT granted`;
         if (w >= 2) break;
+        if (k > 200) throw new Error('expected 2 lock waiters');
         await new Promise((r) => setTimeout(r, 50));
       }
       release();

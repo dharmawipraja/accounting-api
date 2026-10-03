@@ -79,8 +79,9 @@ export class JournalPreviewService {
   }
 
   /** PAYMENT: reuse buildPaymentLines + control-account-by-role — the exact
-   *  derivation PaymentsService.post uses. The many allocations collapse into the
-   *  single 2-line cash<->control entry for their total, exactly as posting does. */
+   *  derivation PaymentsService.post uses. The many allocations collapse into
+   *  one cash<->control line for their total; an `amount` above that total is
+   *  the advance (Uang Muka) line, exactly as create + post book it. */
   private async paymentLines(
     dto: PreviewJournalEntryDto,
   ): Promise<PreviewSourceLine[]> {
@@ -92,8 +93,8 @@ export class JournalPreviewService {
       this.prisma.client,
       dto.cashAccountId!,
     );
-    let total = Money.zero();
-    for (const a of dto.allocations! as AllocationInput[]) {
+    let allocated = Money.zero();
+    for (const a of (dto.allocations ?? []) as AllocationInput[]) {
       // Same allocation type-shape check as loadTarget (no DB read needed for the JE shape).
       if (!target.allocId(a) || target.otherId(a))
         throw new ValidationFailedError(
@@ -106,17 +107,40 @@ export class JournalPreviewService {
           'Allocation amount must be positive',
           {},
         );
-      total = total.add(amt);
+      allocated = allocated.add(amt);
     }
+    // Same amount rules (and messages) as PaymentsService.create.
+    const total = dto.amount === undefined ? allocated : Money.of(dto.amount);
+    if (total.isZero())
+      throw new ValidationFailedError(
+        'A payment needs a positive amount or at least one allocation',
+        {},
+      );
+    const unapplied = total.subtract(allocated);
+    if (unapplied.isNegative())
+      throw new ValidationFailedError('Allocations exceed the payment amount', {
+        amount: total.toPersistence(),
+        allocated: allocated.toPersistence(),
+      });
     const controlId = await findControlAccountId(
       this.prisma,
       target.controlRole,
     );
+    const advance = unapplied.isZero()
+      ? undefined
+      : {
+          accountId: await findControlAccountId(
+            this.prisma,
+            target.advanceRole,
+          ),
+          amount: unapplied.toPersistence(),
+        };
     return buildPaymentLines(
       target,
       dto.cashAccountId!,
       controlId,
       total.toPersistence(),
+      advance,
     );
   }
 }

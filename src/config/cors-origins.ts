@@ -10,13 +10,21 @@ export function parseCorsOrigins(raw: string | undefined): string[] | false {
   return origins.length > 0 ? origins : false;
 }
 
-/** The app's CORS options. `Retry-After` is exposed so a browser client can
- *  read the back-off on a 429 (it is not a CORS-safelisted response header). */
+/** The app's CORS options. Non-safelisted response headers a browser client
+ *  must read: `Retry-After` (429 back-off), and `Content-Disposition` +
+ *  `X-Coretax-Invoice-Count` (the Coretax XML export's filename and count). */
 export function corsOptions(raw: string | undefined): {
   origin: string[] | false;
   exposedHeaders: string[];
 } {
-  return { origin: parseCorsOrigins(raw), exposedHeaders: ['Retry-After'] };
+  return {
+    origin: parseCorsOrigins(raw),
+    exposedHeaders: [
+      'Retry-After',
+      'Content-Disposition',
+      'X-Coretax-Invoice-Count',
+    ],
+  };
 }
 
 /** Hosts a production browser frontend can never be served from. */

@@ -113,13 +113,14 @@ auth endpoints **per IP** (login additionally per email).
 | `POST /auth/refresh`         | 30 / min  | IP                 |
 | `POST /auth/logout`          | 30 / min  | IP                 |
 | `POST /auth/change-password` | 10 / min  | authenticated user |
+| `GET /tax/coretax/faktur-keluaran` | 10 / min | authenticated user |
 | All other endpoints          | 300 / min | authenticated user |
 
 Both login buckets apply at once: 10 attempts per account and 30 attempts per client
 IP (whatever emails it tries), per minute. Either one returns **429**.
 
 (Defaults; operators can override via `THROTTLE_LOGIN_LIMIT` / `THROTTLE_LOGIN_IP_LIMIT` / `THROTTLE_REFRESH_LIMIT`
-/ `THROTTLE_CHANGE_PASSWORD_LIMIT` / `THROTTLE_LIMIT`. Health/readiness/metrics probes
+/ `THROTTLE_CHANGE_PASSWORD_LIMIT` / `THROTTLE_CORETAX_EXPORT_LIMIT` / `THROTTLE_LIMIT`. Health/readiness/metrics probes
 are not throttled.)
 
 On a **429**, back off and retry later: every 429 carries a standard `Retry-After`
@@ -987,18 +988,24 @@ discriminated by `nature`:
   `settlementAccountId` is **deprecated and ignored** (still accepted, must be a UUID if
   sent); stop sending it.
 
-- **`PAYMENT`** — its own shape (a payment has no tax lines; its entry is cash ↔ AR/AP
-  control for the allocation total):
+- **`PAYMENT`** — its own shape, the same `amount` / `allocations` as `POST
+  /payments` (a payment has no tax lines; its entry is cash ↔ AR/AP control for the
+  allocation total, plus a customer/vendor **advance** line for any `amount` above it):
 
   ```jsonc
   {
     "nature": "PAYMENT",
     "direction": "RECEIPT", // or "DISBURSEMENT"
     "cashAccountId": "<uuid>",
+    "amount": "800000.0000", // optional; defaults to the allocation sum
     "allocations": [{ "salesInvoiceId": "<uuid>", "amount": "500000.0000" }],
   }
   // DISBURSEMENT allocations use "purchaseBillId" instead
+  // A pure advance: "amount" with no / empty "allocations"
   ```
+
+  Same `422`s as payment create: no `amount` and no allocations, or allocations
+  above `amount`.
 
 - **Fields of the other shape are rejected.** A `SALE`/`PURCHASE` body carrying
   `direction`, `cashAccountId` or `allocations`, and a `PAYMENT` body carrying `lines`
@@ -1190,8 +1197,10 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing on the last page).
 - `GET    /v1/reports/ar-aging?asOf=` · any · AR aging — 10,000 open-document
   cap, cut at **partner boundaries** (every returned partner is complete;
   partners ordered by name). `truncated: true` means later partners were left
-  out; `totalsByBucket`, `totalOutstanding` and `documentCount` always cover
-  **all** open documents
+  out — fetch them with `&afterPartnerId=<nextAfterPartnerId>` (same `asOf`;
+  repeat until `truncated: false`). `totalsByBucket`, `totalOutstanding` and
+  `documentCount` always cover **all** open documents, on every page. Unknown
+  `afterPartnerId` → `422`
 - `GET    /v1/reports/ap-aging?asOf=` · any · AP aging — same cap and totals
 - `GET    /v1/reports/cash-flow?from=&to=` · any · Arus Kas — closing entries
   excluded; opening-balance (Saldo Awal) entries dated inside the range are
@@ -1352,7 +1361,12 @@ never changes amounts or postings.
    `{ taxInvoiceNumber: '<17 digits>', taxInvoiceDate: 'YYYY-MM-DD', status?, trxCode? }`
    · APPROVER/ADMIN · returns the invoice. A number without `status` → `APPROVED`
    (needs the date, else `422`). `status` can also be set alone (`EXPORTED`,
-   `CANCELLED` when the faktur is cancelled in Coretax, `NONE`). Invoice must be POSTED
+   `CANCELLED` when the faktur is cancelled in Coretax, `NONE`). Allowed status
+   moves, else `422`: `NONE`→`EXPORTED`|`APPROVED`, `EXPORTED`→`NONE`|`APPROVED`,
+   `APPROVED`→`CANCELLED`; `CANCELLED` is final (a replacement faktur goes on a new
+   invoice); re-sending the current status is allowed (e.g. an `APPROVED` invoice's
+   corrected NSFP). An `APPROVED` faktur can never return to `NONE`/`EXPORTED`, so it
+   is never re-exported (duplicate upload to DJP). Invoice must be POSTED
    or VOID (DRAFT → `422`); same NSFP on another live invoice → `409`; `trxCode` cannot
    change once APPROVED. Financial fields stay immutable — `PATCH /v1/sales-invoices/:id`
    still refuses a POSTED invoice.

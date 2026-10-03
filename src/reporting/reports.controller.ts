@@ -8,6 +8,7 @@ import {
   IncomeStatementDto,
 } from './dto/report-response.dto';
 import {
+  AgingQueryDto,
   AsOfQueryDto,
   RangeQueryDto,
   LedgerQueryDto,
@@ -63,14 +64,14 @@ export class ReportsController {
 
   @ApiOkResponse({ type: AgingReportDto })
   @Get('ar-aging')
-  arAging(@Query() q: AsOfQueryDto) {
-    return this.agingSvc.aging('AR', asOfOrToday(q.asOf));
+  arAging(@Query() q: AgingQueryDto) {
+    return this.agingSvc.aging('AR', asOfOrToday(q.asOf), q.afterPartnerId);
   }
 
   @ApiOkResponse({ type: AgingReportDto })
   @Get('ap-aging')
-  apAging(@Query() q: AsOfQueryDto) {
-    return this.agingSvc.aging('AP', asOfOrToday(q.asOf));
+  apAging(@Query() q: AgingQueryDto) {
+    return this.agingSvc.aging('AP', asOfOrToday(q.asOf), q.afterPartnerId);
   }
 
   @ApiOkResponse({ type: CashFlowDto })

@@ -17,6 +17,8 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { Throttle } from '@nestjs/throttler';
+import { THROTTLE, THROTTLE_TTL_MS } from '../config/throttle.config';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../auth/role.enum';
 import { SalesInvoicesService } from '../invoicing/sales-invoices.service';
@@ -56,6 +58,9 @@ export class CoretaxController {
     description:
       'Coretax TaxInvoiceBulk import file (attachment). 422 { problems[] } when master data is missing.',
     content: { 'application/xml': { schema: { type: 'string' } } },
+  })
+  @Throttle({
+    default: { ttl: THROTTLE_TTL_MS, limit: THROTTLE.coretaxExport },
   })
   @Get('tax/coretax/faktur-keluaran')
   async exportFakturKeluaran(

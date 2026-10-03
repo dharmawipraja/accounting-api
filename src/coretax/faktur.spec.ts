@@ -8,6 +8,7 @@ import {
   CoretaxVatCode,
   coretaxNumber,
   goodServiceAmounts,
+  isFakturTransitionAllowed,
   renderTaxInvoiceBulk,
   sellerProblems,
   statutoryVatRate,
@@ -344,5 +345,22 @@ describe('assembleTaxInvoice', () => {
         (p) => p.field,
       ),
     ).toEqual(['companySettings.isPkp', 'companySettings.npwp']);
+  });
+});
+
+describe('faktur status transitions', () => {
+  it('allows the DJP lifecycle and refuses going back from APPROVED/CANCELLED', () => {
+    const ok = isFakturTransitionAllowed;
+    expect(ok('NONE', 'EXPORTED')).toBe(true);
+    expect(ok('NONE', 'APPROVED')).toBe(true);
+    expect(ok('EXPORTED', 'NONE')).toBe(true);
+    expect(ok('EXPORTED', 'APPROVED')).toBe(true);
+    expect(ok('APPROVED', 'CANCELLED')).toBe(true);
+    expect(ok('APPROVED', 'APPROVED')).toBe(true); // replacement NSFP
+    expect(ok('NONE', 'CANCELLED')).toBe(false);
+    expect(ok('APPROVED', 'NONE')).toBe(false);
+    expect(ok('APPROVED', 'EXPORTED')).toBe(false);
+    expect(ok('CANCELLED', 'NONE')).toBe(false);
+    expect(ok('CANCELLED', 'APPROVED')).toBe(false);
   });
 });

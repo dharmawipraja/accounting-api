@@ -51,6 +51,7 @@ services:
       THROTTLE_REFRESH_LIMIT: ${THROTTLE_REFRESH_LIMIT:-30}
       REFRESH_REUSE_GRACE_MS: ${REFRESH_REUSE_GRACE_MS:-5000}
       THROTTLE_CHANGE_PASSWORD_LIMIT: ${THROTTLE_CHANGE_PASSWORD_LIMIT:-10}
+      THROTTLE_CORETAX_EXPORT_LIMIT: ${THROTTLE_CORETAX_EXPORT_LIMIT:-10}
       ARGON2_MAX_CONCURRENCY: ${ARGON2_MAX_CONCURRENCY:-8}
       # This base file publishes the api directly (no Caddy in front), so no
       # proxy hop is trusted: a client-sent X-Forwarded-For must not set req.ip.

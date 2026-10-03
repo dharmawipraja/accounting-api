@@ -349,6 +349,14 @@ describe('Coretax (e2e)', () => {
       .set(as(appr))
       .send({ trxCode: '01' })
       .expect(422);
+    // APPROVED can only be CANCELLED — never back to NONE/EXPORTED, which
+    // would put it in the default export again (duplicate upload to DJP).
+    for (const status of ['NONE', 'EXPORTED'])
+      await request(server())
+        .patch(`/v1/sales-invoices/${inv1.id}/tax-invoice`)
+        .set(as(appr))
+        .send({ status })
+        .expect(422);
     const none = await exportXml('from=2026-03-01&to=2026-03-31').expect(422);
     expect((none.body as ErrBody).details.reason).toBe('NOTHING_TO_EXPORT');
   });

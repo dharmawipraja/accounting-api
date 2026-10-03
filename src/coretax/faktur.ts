@@ -411,3 +411,25 @@ export function assembleTaxInvoice(
     },
   };
 }
+
+type FakturStatus = 'NONE' | 'EXPORTED' | 'APPROVED' | 'CANCELLED';
+
+/** Allowed taxInvoiceStatus moves (a same-status write is always allowed —
+ *  e.g. APPROVED→APPROVED records a replacement faktur's NSFP). An APPROVED
+ *  faktur can only be cancelled at DJP: moving it back to NONE/EXPORTED would
+ *  put it in the default export again → a duplicate upload. A CANCELLED
+ *  faktur is final in Coretax; its replacement is a new invoice. */
+export const FAKTUR_TRANSITIONS: Record<FakturStatus, readonly FakturStatus[]> =
+  {
+    NONE: ['EXPORTED', 'APPROVED'],
+    EXPORTED: ['NONE', 'APPROVED'],
+    APPROVED: ['CANCELLED'],
+    CANCELLED: [],
+  };
+
+export function isFakturTransitionAllowed(
+  from: FakturStatus,
+  to: FakturStatus,
+): boolean {
+  return from === to || FAKTUR_TRANSITIONS[from].includes(to);
+}

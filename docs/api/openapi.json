@@ -4378,6 +4378,16 @@
         "operationId": "ReportsController_arAging_v1",
         "parameters": [
           {
+            "name": "afterPartnerId",
+            "required": false,
+            "in": "query",
+            "description": "Continue a truncated aging: list only partners after this one (a previous page's nextAfterPartnerId, same asOf). Totals still cover the whole report.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
             "name": "asOf",
             "required": false,
             "in": "query",
@@ -4412,6 +4422,16 @@
       "get": {
         "operationId": "ReportsController_apAging_v1",
         "parameters": [
+          {
+            "name": "afterPartnerId",
+            "required": false,
+            "in": "query",
+            "description": "Continue a truncated aging: list only partners after this one (a previous page's nextAfterPartnerId, same asOf). Totals still cover the whole report.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
           {
             "name": "asOf",
             "required": false,
@@ -7898,9 +7918,13 @@
             "format": "uuid",
             "description": "Required for PAYMENT; rejected (400) for SALE/PURCHASE"
           },
+          "amount": {
+            "type": "string",
+            "description": "PAYMENT only (400 for SALE/PURCHASE). Total amount, as on payment create: defaults to the allocation sum; the excess is previewed as the customer/vendor advance line.",
+            "example": "1000000.0000"
+          },
           "allocations": {
-            "minItems": 1,
-            "description": "Required for PAYMENT; rejected (400) for SALE/PURCHASE",
+            "description": "PAYMENT only (400 for SALE/PURCHASE). May be empty/omitted when `amount` is given (a pure advance).",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AllocationDto"
@@ -8366,7 +8390,7 @@
               "APPROVED",
               "CANCELLED"
             ],
-            "description": "Omitted: APPROVED when a taxInvoiceNumber is sent, else unchanged."
+            "description": "Omitted: APPROVED when a taxInvoiceNumber is sent, else unchanged. Allowed moves (422 otherwise): NONE→EXPORTED|APPROVED, EXPORTED→NONE|APPROVED, APPROVED→CANCELLED; CANCELLED is final. Same-status writes are allowed."
           },
           "trxCode": {
             "type": "string",
@@ -8857,7 +8881,13 @@
           },
           "truncated": {
             "type": "boolean",
-            "description": "True when partners were cut off at the server-side cap (10,000 documents). The cut is at partner boundaries — every returned partner is complete. totalsByBucket / totalOutstanding / documentCount always cover ALL open documents."
+            "description": "True when partners were cut off at the server-side cap (10,000 documents). The cut is at partner boundaries — every returned partner is complete; fetch the rest with ?afterPartnerId=<nextAfterPartnerId>. totalsByBucket / totalOutstanding / documentCount always cover ALL open documents (every page carries the same totals)."
+          },
+          "nextAfterPartnerId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "When truncated: pass as afterPartnerId (same asOf) to fetch the next partners. Null when this page is complete."
           },
           "partners": {
             "type": "array",
@@ -8887,6 +8917,7 @@
           "kind",
           "asOf",
           "truncated",
+          "nextAfterPartnerId",
           "partners",
           "totalsByBucket",
           "totalOutstanding",

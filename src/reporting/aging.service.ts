@@ -4,6 +4,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { Money } from '../common/money/money';
 import { truncateToUtcDay } from '../common/dates/utc-day';
 import { settlementsSql } from '../invoicing/payment-targets';
+import { ValidationFailedError } from '../common/errors/domain-errors';
 
 /** One row per included open document, LEFT JOINed onto the one-row totals
  *  aggregate: when no document is included (none open, or the cap cut before
@@ -20,6 +21,7 @@ interface AgingRow {
   outstanding: Prisma.Decimal | null;
   bucket: string | null;
   doc_count: bigint;
+  page_doc_count: bigint;
   t_current: Prisma.Decimal;
   t_1_30: Prisma.Decimal;
   t_31_60: Prisma.Decimal;
@@ -38,9 +40,26 @@ export const AGING_MAX_DOCS = 10_000;
 export class AgingService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** kind: 'AR' (sales_invoices + sales_invoice_id) | 'AP' (purchase_bills + purchase_bill_id) */
-  async aging(kind: 'AR' | 'AP', asOf: Date, maxDocs = AGING_MAX_DOCS) {
+  /** kind: 'AR' (sales_invoices + sales_invoice_id) | 'AP' (purchase_bills + purchase_bill_id).
+   *  `afterPartnerId` continues a truncated report: only partners ordered
+   *  after it (by name, id) are listed. Totals always cover the whole report. */
+  async aging(
+    kind: 'AR' | 'AP',
+    asOf: Date,
+    afterPartnerId?: string,
+    maxDocs = AGING_MAX_DOCS,
+  ) {
     const day = truncateToUtcDay(asOf);
+    let after = Prisma.sql`true`;
+    if (afterPartnerId) {
+      const p = await this.prisma.$queryRaw<{ name: string }[]>`
+        SELECT name FROM business_partners WHERE id = ${afterPartnerId}`;
+      if (p.length === 0)
+        throw new ValidationFailedError('afterPartnerId is not a partner', {
+          afterPartnerId,
+        });
+      after = Prisma.sql`(o.partner_name, o.partner_id) > (${p[0].name}, ${afterPartnerId})`;
+    }
     const docTable =
       kind === 'AR'
         ? Prisma.raw('sales_invoices')
@@ -60,7 +79,8 @@ export class AgingService {
     // - totals are aggregated over EVERY open document, whatever the cap;
     // - the cap cuts only at partner boundaries: `through_partner` counts the
     //   documents up to and including the row's whole partner (RANGE frame:
-    //   peers = same partner), so a partner is either fully in or fully out.
+    //   peers = same partner), so a partner is either fully in or fully out;
+    // - `afterPartnerId` only narrows `ranked` (the listed page), never totals.
     const rows = await this.prisma.$queryRaw<AgingRow[]>(Prisma.sql`
       WITH open_docs AS (
         SELECT doc.*, doc.total - doc.paid_as_of AS outstanding,
@@ -98,16 +118,19 @@ export class AgingService {
       ),
       ranked AS (
         SELECT o.*, COUNT(*) OVER (ORDER BY o.partner_name, o.partner_id) AS through_partner
-        FROM open_docs o
+        FROM open_docs o WHERE ${after}
       )
       SELECT r.id, r.ref, r.partner_id, r.partner_name, r.date, r.due_date,
-             r.total, r.paid_as_of, r.outstanding, r.bucket, t.*
+             r.total, r.paid_as_of, r.outstanding, r.bucket, t.*,
+             (SELECT COUNT(*) FROM ranked) AS page_doc_count
       FROM totals t
       LEFT JOIN ranked r ON r.through_partner <= ${maxDocs}
       ORDER BY r.partner_name ASC, r.partner_id ASC, r.date ASC, r.id ASC`);
     const t = rows[0]; // the totals row always exists
     const docs = rows.filter((r) => r.id !== null);
-    const truncated = docs.length < Number(t.doc_count);
+    // ponytail: a single partner with more than maxDocs open documents can
+    // never be listed (cut at partner boundaries) — raise the cap if it occurs.
+    const truncated = docs.length < Number(t.page_doc_count);
 
     const byPartner = new Map<
       string,
@@ -155,6 +178,8 @@ export class AgingService {
       kind,
       asOf: asOf.toISOString().slice(0, 10),
       truncated,
+      nextAfterPartnerId:
+        truncated && docs.length > 0 ? docs[docs.length - 1].partner_id : null,
       partners: [...byPartner.values()].map((g) => ({
         partnerId: g.partnerId,
         partnerName: g.partnerName,

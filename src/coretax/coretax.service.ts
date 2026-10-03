@@ -13,7 +13,9 @@ import {
   assembleTaxInvoice,
   CoretaxProblem,
   CoretaxVatCode,
+  FAKTUR_TRANSITIONS,
   FakturTaxInvoice,
+  isFakturTransitionAllowed,
   renderTaxInvoiceBulk,
   sellerProblems,
 } from './faktur';
@@ -253,6 +255,12 @@ export class CoretaxService {
       const status =
         input.status ??
         (input.taxInvoiceNumber ? 'APPROVED' : row.tax_invoice_status!);
+      const from = row.tax_invoice_status!;
+      if (!isFakturTransitionAllowed(from, status))
+        throw new ValidationFailedError(
+          `taxInvoiceStatus cannot change from ${from} to ${status}`,
+          { id, from, to: status, allowed: FAKTUR_TRANSITIONS[from] },
+        );
       if (status === 'APPROVED' && (!number || !date))
         throw new ValidationFailedError(
           'An APPROVED faktur needs taxInvoiceNumber and taxInvoiceDate',

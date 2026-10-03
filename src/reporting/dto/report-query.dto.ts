@@ -8,7 +8,19 @@ import {
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
-export { AsOfQueryDto } from '../../common/dto/as-of-query.dto';
+import { AsOfQueryDto } from '../../common/dto/as-of-query.dto';
+export { AsOfQueryDto };
+
+export class AgingQueryDto extends AsOfQueryDto {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "Continue a truncated aging: list only partners after this one (a previous page's nextAfterPartnerId, same asOf). Totals still cover the whole report.",
+  })
+  @IsOptional()
+  @IsUUID()
+  afterPartnerId?: string;
+}
 
 export class RangeQueryDto {
   @IsDateString() @IsBusinessDate() from!: string;

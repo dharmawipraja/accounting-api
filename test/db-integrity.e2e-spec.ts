@@ -669,6 +669,55 @@ describe('DB integrity — ledger invariants enforced by Postgres (e2e)', () => 
     });
   });
 
+  describe('notes: voided_on set exactly when VOID', () => {
+    const MIGRATION =
+      '../prisma/migrations/20261011000000_note_voided_on_check/migration.sql';
+    // A DRAFT note on the fixture invoice / bill, inserted inside the
+    // (rolled-back) tx.
+    const insertNote = (table: string, original: string, id: string) =>
+      `INSERT INTO ${table} (id, partner_id, original_id, date, created_by, updated_at)
+       SELECT '${id}', partner_id, id, date, 'a', now() FROM ${original}
+       WHERE id = '${original === 'sales_invoices' ? invoiceId : billId}'`;
+
+    it.each([
+      ['sales_credit_notes', 'sales_invoices'],
+      ['purchase_debit_notes', 'purchase_bills'],
+    ])(
+      '%s: rejects a non-VOID note carrying voided_on',
+      async (table, orig) => {
+        await expect(
+          inTx(async (tx) => {
+            await tx.$executeRawUnsafe(insertNote(table, orig, 'note-ck-1'));
+            await tx.$executeRawUnsafe(
+              `UPDATE ${table} SET voided_on = date WHERE id = 'note-ck-1'`,
+            );
+          }),
+        ).rejects.toThrow(new RegExp(`${table}_voided_on_iff_void`));
+      },
+    );
+
+    it('migration pre-check aborts with a clear message when violating rows exist', async () => {
+      const sql = readFileSync(join(__dirname, MIGRATION), 'utf8');
+      const precheck = /DO \$\$[\s\S]*?END \$\$;/.exec(sql)![0];
+      await expect(
+        inTx(async (tx) => {
+          await tx.$executeRawUnsafe(
+            'ALTER TABLE purchase_debit_notes DROP CONSTRAINT purchase_debit_notes_voided_on_iff_void',
+          );
+          await tx.$executeRawUnsafe(
+            insertNote('purchase_debit_notes', 'purchase_bills', 'note-ck-2'),
+          );
+          await tx.$executeRawUnsafe(
+            `UPDATE purchase_debit_notes SET voided_on = date WHERE id = 'note-ck-2'`,
+          );
+          await tx.$executeRawUnsafe(precheck);
+        }),
+      ).rejects.toThrow(
+        /note voided_on check aborted[\s\S]*purchase_debit_notes id note-ck-2: status DRAFT/,
+      );
+    });
+  });
+
   describe('foreign keys (ON DELETE RESTRICT)', () => {
     const ghost = '00000000-0000-0000-0000-000000000000';
 

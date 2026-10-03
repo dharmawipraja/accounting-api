@@ -69,7 +69,7 @@ export class RecordTaxInvoiceDto {
   @ApiPropertyOptional({
     enum: TaxInvoiceStatus,
     description:
-      'Omitted: APPROVED when a taxInvoiceNumber is sent, else unchanged.',
+      'Omitted: APPROVED when a taxInvoiceNumber is sent, else unchanged. Allowed moves (422 otherwise): NONE→EXPORTED|APPROVED, EXPORTED→NONE|APPROVED, APPROVED→CANCELLED; CANCELLED is final. Same-status writes are allowed.',
   })
   @IsOptional()
   @IsEnum(TaxInvoiceStatus)

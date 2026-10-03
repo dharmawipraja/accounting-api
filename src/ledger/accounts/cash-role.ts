@@ -1,4 +1,47 @@
+import type { AccountRole } from '@prisma/client';
 import { ValidationFailedError } from '../../common/errors/domain-errors';
+
+/** The account shape each system role requires (matches the seed chart):
+ *  every role-held account is postable; the type/normal side follow what
+ *  the posting code books to it. */
+export const ROLE_SHAPES: Record<
+  AccountRole,
+  { type: string; normalBalance: string }
+> = {
+  CASH: { type: 'ASSET', normalBalance: 'DEBIT' },
+  AR_CONTROL: { type: 'ASSET', normalBalance: 'DEBIT' },
+  VENDOR_ADVANCE: { type: 'ASSET', normalBalance: 'DEBIT' },
+  AP_CONTROL: { type: 'LIABILITY', normalBalance: 'CREDIT' },
+  CUSTOMER_ADVANCE: { type: 'LIABILITY', normalBalance: 'CREDIT' },
+  RETAINED_EARNINGS: { type: 'EQUITY', normalBalance: 'CREDIT' },
+  OPENING_BALANCE_EQUITY: { type: 'EQUITY', normalBalance: 'CREDIT' },
+  TAX_EXPENSE: { type: 'EXPENSE', normalBalance: 'DEBIT' },
+};
+
+/** 422 unless the account has the shape `role` requires (postable, plus the
+ *  ROLE_SHAPES type + normal balance). Pure. */
+export function assertRoleShape(
+  role: AccountRole,
+  a: { id?: string; type: string; normalBalance: string; isPostable: boolean },
+): void {
+  const want = ROLE_SHAPES[role];
+  if (
+    a.type !== want.type ||
+    a.normalBalance !== want.normalBalance ||
+    !a.isPostable
+  )
+    throw new ValidationFailedError(
+      `The ${role} role requires a postable, ${want.normalBalance.toLowerCase()}-normal ${want.type} account`,
+      {
+        id: a.id,
+        role,
+        required: { ...want, isPostable: true },
+        type: a.type,
+        normalBalance: a.normalBalance,
+        isPostable: a.isPostable,
+      },
+    );
+}
 
 /** The account attributes the CASH role rule looks at. `id` is absent on
  *  create (the account does not exist yet). */
@@ -35,14 +78,5 @@ export function assertCashAssignable(a: CashCandidate): void {
       'The CASH role cannot be assigned to a tax account (an account used by a tax code)',
       { id: a.id, reason: 'TAX_ACCOUNT' },
     );
-  if (a.type !== 'ASSET' || a.normalBalance !== 'DEBIT' || !a.isPostable)
-    throw new ValidationFailedError(
-      'The CASH role requires a postable, debit-normal ASSET account',
-      {
-        id: a.id,
-        type: a.type,
-        normalBalance: a.normalBalance,
-        isPostable: a.isPostable,
-      },
-    );
+  assertRoleShape('CASH', a);
 }

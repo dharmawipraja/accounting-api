@@ -139,9 +139,17 @@ export class AgingReportDto {
   @ApiProperty({ type: String, format: 'date' }) asOf!: string;
   @ApiProperty({
     description:
-      'True when partners were cut off at the server-side cap (10,000 documents). The cut is at partner boundaries — every returned partner is complete. totalsByBucket / totalOutstanding / documentCount always cover ALL open documents.',
+      'True when partners were cut off at the server-side cap (10,000 documents). The cut is at partner boundaries — every returned partner is complete; fetch the rest with ?afterPartnerId=<nextAfterPartnerId>. totalsByBucket / totalOutstanding / documentCount always cover ALL open documents (every page carries the same totals).',
   })
   truncated!: boolean;
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'When truncated: pass as afterPartnerId (same asOf) to fetch the next partners. Null when this page is complete.',
+  })
+  nextAfterPartnerId!: string | null;
   @ApiProperty({ type: [AgingPartnerDto] }) partners!: AgingPartnerDto[];
   @ApiProperty({
     type: 'object',

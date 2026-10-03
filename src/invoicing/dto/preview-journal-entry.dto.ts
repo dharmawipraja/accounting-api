@@ -17,6 +17,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { TaxableLineDto } from '../../tax/dto/calculate-tax.dto';
 import { MAX_LINE_ITEMS } from '../../common/dto/limits';
 import { AllocationDto } from './create-payment.dto';
+import { IsMoneyString } from '../../common/validators/is-money-string';
 
 export type PreviewNature = 'SALE' | 'PURCHASE' | 'PAYMENT';
 
@@ -122,13 +123,26 @@ export class PreviewJournalEntryDto {
   cashAccountId?: string;
 
   @ApiPropertyOptional({
-    type: [AllocationDto],
-    description: 'Required for PAYMENT; rejected (400) for SALE/PURCHASE',
+    description:
+      'PAYMENT only (400 for SALE/PURCHASE). Total amount, as on payment ' +
+      'create: defaults to the allocation sum; the excess is previewed as the ' +
+      'customer/vendor advance line.',
+    example: '1000000.0000',
   })
-  @ValidateIf(validateFor(PAYMENT, 'allocations'))
+  @ValidateIf((o: PreviewJournalEntryDto) => o.amount !== undefined)
+  @OnlyForNature(PAYMENT)
+  @IsMoneyString()
+  amount?: string;
+
+  @ApiPropertyOptional({
+    type: [AllocationDto],
+    description:
+      'PAYMENT only (400 for SALE/PURCHASE). May be empty/omitted when ' +
+      '`amount` is given (a pure advance).',
+  })
+  @ValidateIf((o: PreviewJournalEntryDto) => o.allocations !== undefined)
   @OnlyForNature(PAYMENT)
   @IsArray()
-  @ArrayMinSize(1)
   @ArrayMaxSize(MAX_LINE_ITEMS)
   @ValidateNested({ each: true })
   @Type(() => AllocationDto)
