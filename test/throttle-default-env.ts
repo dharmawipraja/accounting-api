@@ -4,3 +4,4 @@
 // the raised suite-wide value from setup-env.ts.
 process.env.THROTTLE_LOGIN_IP_LIMIT = '30';
 process.env.LOGIN_FAILURE_LIMIT = '20';
+process.env.LOGIN_FAILURE_HARD_LIMIT = '100';

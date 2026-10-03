@@ -8,7 +8,8 @@ import { type TokenPair } from '../src/auth/auth.service';
 import { bootstrapTestApp } from './e2e-helpers';
 
 /** Access tokens die with their session family (`sid`), and the default
- *  REFRESH_REUSE_GRACE_MS (10s) absorbs concurrent refreshes. */
+ *  REFRESH_REUSE_GRACE_MS (5s) absorbs concurrent refreshes — at most ONE
+ *  sibling per consumed token. */
 describe('Auth session revocation + concurrent refresh grace (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -114,12 +115,37 @@ describe('Auth session revocation + concurrent refresh grace (e2e)', () => {
     await refresh(t2.refreshToken).expect(200);
   });
 
+  it('a THIRD use of one token within the grace is reuse: the family dies', async () => {
+    const u = await newUser('third@sr.test');
+    const pair = await login('third@sr.test');
+    const [r1, r2] = await Promise.all([
+      refresh(pair.refreshToken),
+      refresh(pair.refreshToken),
+    ]);
+    expect([r1.status, r2.status]).toEqual([200, 200]);
+    const t1 = r1.body as TokenPair;
+    const t2 = r2.body as TokenPair;
+
+    // The token's one grace sibling is spent: a further replay (still inside
+    // the window) is theft, not a tab.
+    await refresh(pair.refreshToken).expect(401);
+    await me(t1.accessToken).expect(401);
+    await me(t2.accessToken).expect(401);
+    await refresh(t1.refreshToken).expect(401);
+    await refresh(t2.refreshToken).expect(401);
+    expect(
+      await prisma.client.refreshToken.count({
+        where: { userId: u.id, status: { not: 'REVOKED' } },
+      }),
+    ).toBe(0);
+  });
+
   it('a replay after the grace window is reuse: the family and its access tokens die', async () => {
     const u = await newUser('replay@sr.test');
     const pair = await login('replay@sr.test');
     const rotated = (await refresh(pair.refreshToken).expect(200))
       .body as TokenPair;
-    // Age the rotation past REFRESH_REUSE_GRACE_MS (default 10s).
+    // Age the rotation past REFRESH_REUSE_GRACE_MS (default 5s).
     await prisma.client.refreshToken.updateMany({
       where: { userId: u.id, status: 'CONSUMED' },
       data: { consumedAt: new Date(Date.now() - 11_000) },

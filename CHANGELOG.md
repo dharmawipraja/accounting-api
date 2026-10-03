@@ -6,6 +6,26 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **Refresh grace window minted unlimited sessions** — every replay of a consumed
+  refresh token inside `REFRESH_REUSE_GRACE_MS` issued a new sibling, so anyone who
+  saw the token could renew their own session without tripping reuse detection. Now
+  at most ONE grace sibling per consumed token (new `refresh_tokens.grace_child_id`,
+  migration `20261011100000_refresh_grace_sibling`); a further replay revokes the
+  family. Two concurrent refreshes still both succeed.
+- **Known-IP bypass of the per-account failure ceiling** — a known IP skipped the
+  ceiling entirely (a colleague behind the same office IP could guess unbounded).
+  New absolute ceiling `LOGIN_FAILURE_HARD_LIMIT` (default 100 per 15 min) refuses
+  every IP, known or not.
+- **Login-failure counter could lose its TTL** — `INCR` and `PEXPIRE` are now one
+  `MULTI` (`PEXPIRE … NX`), so a crash between them can no longer leave a permanent
+  counter that locks new IPs out forever. Redis errors still fail closed (`503`).
+
+### Changed
+
+- `REFRESH_REUSE_GRACE_MS` default `10000` → `5000`, max `60000` → `30000`.
+
 ## [1.2.0] - 2026-10-03
 
 ### Added

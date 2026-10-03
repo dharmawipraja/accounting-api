@@ -26,9 +26,11 @@ export const THROTTLE = {
 
 /** Per-account failed-login ceiling (LoginFailureLimiter): after `limit`
  *  failures within `windowMs`, the account refuses logins from IPs it has never
- *  logged in from (known IPs are remembered for `knownIpTtlMs`). */
+ *  logged in from (known IPs are remembered for `knownIpTtlMs`). After
+ *  `hardLimit` failures it refuses EVERY IP, known or not. */
 export const LOGIN_FAILURE = {
   limit: Number(process.env.LOGIN_FAILURE_LIMIT) || 20,
+  hardLimit: Number(process.env.LOGIN_FAILURE_HARD_LIMIT) || 100,
   windowMs: 15 * 60_000,
   knownIpTtlMs: 30 * 24 * 60 * 60_000,
 } as const;

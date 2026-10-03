@@ -20,6 +20,10 @@ import { normalizeEmail } from '../users/normalize-email';
  * failures within the window, further attempts are refused (429) — but ONLY
  * from IPs that have never logged in to that account successfully. The owner's
  * usual IPs keep working while an attacker sprays the account.
+ * `LOGIN_FAILURE.hardLimit` is an ABSOLUTE ceiling that ignores the known-IP
+ * exemption: past it every IP is refused, so a guesser sharing the owner's IP
+ * (one office NAT) is bounded too. The trade-off is that a spray past the hard
+ * limit locks the owner out until the window ends.
  *
  * Redis in dev/prod (shared across replicas, fail-closed like the throttler);
  * an in-process Map in tests (no Redis there).
@@ -35,13 +39,16 @@ export class LoginFailureLimiter {
     private readonly metrics: MetricsService,
   ) {}
 
-  /** Throws 429 when the account is over its failure ceiling and `ip` is not
-   *  one it has logged in from before. Call BEFORE verifying the password. */
+  /** Throws 429 when the account is over its hard failure ceiling, or over its
+   *  soft ceiling and `ip` is not one it has logged in from before. Call BEFORE
+   *  verifying the password. */
   async assertAllowed(email: string, ip: string | undefined): Promise<void> {
     const key = normalizeEmail(email);
     const failures = await this.get(`lf:${key}`);
-    if (failures < LOGIN_FAILURE.limit) return;
-    if (ip && (await this.get(`lk:${key}:${ip}`)) > 0) return;
+    if (failures < LOGIN_FAILURE.hardLimit) {
+      if (failures < LOGIN_FAILURE.limit) return;
+      if (ip && (await this.get(`lk:${key}:${ip}`)) > 0) return;
+    }
     this.metrics.incLoginLockout();
     throw new HttpException(
       'Too many failed logins for this account; try again later',
@@ -55,6 +62,8 @@ export class LoginFailureLimiter {
     const n = await this.incr(`lf:${key}`, LOGIN_FAILURE.windowMs);
     if (n === LOGIN_FAILURE.limit)
       this.logger.warn({ event: 'login_failure_ceiling', email: key });
+    if (n === LOGIN_FAILURE.hardLimit)
+      this.logger.warn({ event: 'login_failure_hard_ceiling', email: key });
   }
 
   async recordSuccess(email: string, ip: string | undefined): Promise<void> {
@@ -83,10 +92,13 @@ export class LoginFailureLimiter {
 
   private async incr(k: string, ttlMs: number): Promise<number> {
     if (this.redis) {
+      // One MULTI: the counter can never exist without a TTL (an INCR whose
+      // separate PEXPIRE failed would lock new IPs out forever). NX keeps the
+      // window fixed from the first failure (Redis >= 7).
       return this.redisOr503(async (r) => {
-        const n = await r.incr(k);
-        if (n === 1) await r.pexpire(k, ttlMs);
-        return n;
+        const res = await r.multi().incr(k).pexpire(k, ttlMs, 'NX').exec();
+        if (!res || res.some(([err]) => err)) throw new Error('multi failed');
+        return Number(res[0][1]);
       });
     }
     const e = this.mem.get(k);

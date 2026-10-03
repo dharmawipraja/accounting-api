@@ -152,16 +152,16 @@ describe('env validation', () => {
     expect(() => validate({ ...validEnv, TRUST_PROXY_HOPS: 'yes' })).toThrow();
   });
 
-  it('bounds REFRESH_REUSE_GRACE_MS to 0..60000 ms', () => {
+  it('bounds REFRESH_REUSE_GRACE_MS to 0..30000 ms', () => {
     expect(
       validate({ ...validEnv, REFRESH_REUSE_GRACE_MS: '0' })
         .REFRESH_REUSE_GRACE_MS,
     ).toBe(0);
     expect(() =>
-      validate({ ...validEnv, REFRESH_REUSE_GRACE_MS: '60000' }),
+      validate({ ...validEnv, REFRESH_REUSE_GRACE_MS: '30000' }),
     ).not.toThrow();
     expect(() =>
-      validate({ ...validEnv, REFRESH_REUSE_GRACE_MS: '60001' }),
+      validate({ ...validEnv, REFRESH_REUSE_GRACE_MS: '30001' }),
     ).toThrow();
     expect(() =>
       validate({ ...validEnv, REFRESH_REUSE_GRACE_MS: '-1' }),
@@ -178,7 +178,9 @@ describe('env validation', () => {
     THROTTLE_LOGIN_LIMIT: '10',
     THROTTLE_LOGIN_IP_LIMIT: '30',
     THROTTLE_REFRESH_LIMIT: '30',
-    REFRESH_REUSE_GRACE_MS: '10000',
+    LOGIN_FAILURE_LIMIT: '20',
+    REFRESH_REUSE_GRACE_MS: '5000',
+    LOGIN_FAILURE_HARD_LIMIT: '100',
     THROTTLE_CHANGE_PASSWORD_LIMIT: '10',
     ARGON2_MAX_CONCURRENCY: '8',
     TRUST_PROXY_HOPS: '1',

@@ -80,10 +80,11 @@ POST /auth/login      { "email": "...", "password": "..." }
   change, deactivation or deletion, the next request with it is `401` — and so is
   the refresh. **Deploy note (2026-10):** access tokens issued before this change
   (no `sid` claim) are rejected with `401`; refresh once or log in again.
-- **Concurrent refreshes are safe**: two tabs sending the same refresh token at
-  once (within ~10s, server `REFRESH_REUSE_GRACE_MS`) both get a valid new pair.
-  Still keep the newest pair per tab. A refresh token replayed later than that is
-  treated as stolen: the whole session is revoked (`401`, back to login).
+- **Concurrent refreshes are safe — two of them**: two tabs sending the same refresh
+  token at once (within ~5s, server `REFRESH_REUSE_GRACE_MS`) both get a valid new
+  pair. A THIRD use of that token, or a replay later than that, is treated as stolen:
+  the whole session is revoked (`401`, back to login). Share one in-flight refresh
+  across tabs (e.g. a lock / BroadcastChannel) and keep the newest pair.
 - On a **401** (expired/invalid access token), call:
 
   ```

@@ -198,17 +198,23 @@ export class EnvVars {
   @Min(1)
   LOGIN_FAILURE_LIMIT?: number;
 
+  /** Absolute per-account failure ceiling (15 min) — known IPs are refused too. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  LOGIN_FAILURE_HARD_LIMIT?: number;
+
   @IsOptional()
   @IsInt()
   @Min(1)
   THROTTLE_REFRESH_LIMIT?: number;
 
   /** Window (ms) after a refresh token's rotation in which a replay of it is
-   *  treated as a concurrent refresh (sibling issued), not reuse. 0 = off. */
+   *  treated as a concurrent refresh (ONE sibling issued), not reuse. 0 = off. */
   @IsOptional()
   @IsInt()
   @Min(0)
-  @Max(60_000)
+  @Max(30_000)
   REFRESH_REUSE_GRACE_MS?: number;
 
   /** Max concurrent argon2 hash/verify operations per process (64 MiB each). */

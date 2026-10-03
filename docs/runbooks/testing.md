@@ -173,7 +173,8 @@ client IP — so the per-IP login ceiling (`THROTTLE_LOGIN_IP_LIMIT`, prod defau
 raises it to 1000 for the whole suite; only `test/throttle.e2e-spec.ts` pins the
 production default back (its first import, `./throttle-default-env`, sets it before
 `src/config/throttle.config.ts` reads `process.env` at module load). The
-per-account failed-login ceiling (`LOGIN_FAILURE_LIMIT`) is raised the same way. The
+per-account failed-login ceilings (`LOGIN_FAILURE_LIMIT`, `LOGIN_FAILURE_HARD_LIMIT`)
+are raised the same way. The
 per-(email, IP) bucket (`THROTTLE_LOGIN_LIMIT`, 10/min) is NOT raised: use a distinct
 email per brute-force-style loop, or log in via `AuthService.login` (no HTTP, no bucket).
 

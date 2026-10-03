@@ -29,6 +29,9 @@
   `THROTTLE_LOGIN_LIMIT` (login attempts/min per (email, client IP), default 10),
   `LOGIN_FAILURE_LIMIT` (failed logins per account per 15 min, default 20; past it the
   account refuses logins from IPs it has never logged in from — `auth_login_lockouts_total`),
+  `LOGIN_FAILURE_HARD_LIMIT` (absolute failed logins per account per 15 min, default 100;
+  past it EVERY IP is refused, known ones too — bounds a guesser sharing the owner's IP;
+  same `auth_login_lockouts_total` metric),
   `THROTTLE_LOGIN_IP_LIMIT` (per-client-IP login attempts/min across all emails, default 30),
   `ARGON2_MAX_CONCURRENCY` (concurrent password hash/verify per process, 1-64,
   default 8; callers queue ≤5s, then `503`),
@@ -36,8 +39,9 @@
   to 1 for Caddy → api, the base `docker-compose.yml` alone — api published directly,
   no Caddy — to 0),
   `THROTTLE_REFRESH_LIMIT` (per-IP refresh attempts/min, default 30),
-  `REFRESH_REUSE_GRACE_MS` (a replay of a just-rotated refresh token within this
-  window is a concurrent refresh, not theft; default 10000, 0–60000, 0 = off),
+  `REFRESH_REUSE_GRACE_MS` (ONE replay of a just-rotated refresh token within this
+  window is a concurrent refresh, not theft — a second replay revokes the session;
+  default 5000, 0–30000, 0 = off),
   `THROTTLE_CHANGE_PASSWORD_LIMIT` (per-user change-password attempts/min, default 10),
   `JWT_ACCESS_TTL` / `JWT_REFRESH_TTL` (default `900s` / `7d`),
   `REQUEST_TIMEOUT_MS` (per-request cap → `408`, default 35000; keep

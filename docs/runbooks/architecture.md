@@ -115,11 +115,16 @@ Guards run in registration order:
    (minted before 2026-10) is `401`.
    Refresh rotation (`RefreshTokenService.rotate`, under the per-user session
    advisory lock): `ACTIVE` → consumed + successor; a `CONSUMED` token replayed
-   within `REFRESH_REUSE_GRACE_MS` (default 10s, 0 = off) of its rotation is a
+   within `REFRESH_REUSE_GRACE_MS` (default 5s, 0 = off) of its rotation is a
    concurrent refresh (two tabs) → a **sibling** successor in the same family,
    nothing consumed or revoked (rotating the family head instead would consume the
-   other tab's fresh token and trip reuse detection on its next refresh); outside
-   the window it is reuse → the whole family is revoked.
+   other tab's fresh token and trip reuse detection on its next refresh). At most
+   ONE sibling per consumed token (`refresh_tokens.grace_child_id`): a further
+   replay, even inside the window, is reuse — so a leaked token cannot mint its own
+   renewable session. Outside the window it is reuse → the whole family is revoked.
+   Login failures: `LoginFailureLimiter` counts failures per account per 15 min
+   (atomic `MULTI INCR + PEXPIRE NX` in Redis); past `LOGIN_FAILURE_LIMIT` only IPs
+   that logged in before are let through, past `LOGIN_FAILURE_HARD_LIMIT` none are.
 2. **`UserThrottlerGuard`** (`src/common/guards/user-throttler.guard.ts`) — rate
    limits keyed by *verified* user id (`user:<id>`); anonymous requests are keyed
    `ip:<ip>` — except the **login handler only** (marked `@LoginIpThrottle()`),

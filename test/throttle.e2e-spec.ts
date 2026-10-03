@@ -5,6 +5,7 @@ import request from 'supertest';
 import { type App } from 'supertest/types';
 import { UsersService } from '../src/users/users.service';
 import { AuthService } from '../src/auth/auth.service';
+import { LoginFailureLimiter } from '../src/auth/login-failure-limiter';
 import { PrismaService } from '../src/common/prisma/prisma.service';
 import { bootstrapTestApp } from './e2e-helpers';
 
@@ -111,6 +112,28 @@ describe('Throttle policy (e2e)', () => {
     await attempt('203.0.113.99', 'secret123').expect(429);
     // ...but the owner's known IP is not locked out.
     await attempt('192.0.2.200', 'secret123').expect(200);
+  });
+
+  it('LOGIN_FAILURE_HARD_LIMIT (100) refuses even a known IP — one shared office IP cannot guess forever', async () => {
+    await app.get(UsersService).create({
+      email: 'office@test.io',
+      password: 'secret123',
+      name: 'Office',
+      role: 'ACCOUNTANT',
+    });
+    const attempt = (password: string) =>
+      request(app.getHttpServer() as App)
+        .post('/v1/auth/login')
+        .set('X-Forwarded-For', '192.0.2.210')
+        .send({ email: 'office@test.io', password });
+    await attempt('secret123').expect(200); // the shared IP is now known
+    // 99 failures without HTTP (the per-(email, IP) bucket allows 10/min).
+    const limiter = app.get(LoginFailureLimiter);
+    for (let i = 0; i < 99; i++) await limiter.recordFailure('office@test.io');
+    // Past the soft ceiling the known IP still gets a password check...
+    await attempt('wrong-password').expect(401); // failure #100
+    // ...but at the hard ceiling it is refused too, right password or not.
+    await attempt('secret123').expect(429);
   });
 
   it('AUDIT3-7: login is ALSO capped per client IP — rotating emails cannot bypass it', async () => {

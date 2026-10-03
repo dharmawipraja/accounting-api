@@ -61,7 +61,7 @@ export class RefreshTokenService {
   }
 
   private reuseGraceMs(): number {
-    return this.config.get<number>('REFRESH_REUSE_GRACE_MS') ?? 10_000;
+    return this.config.get<number>('REFRESH_REUSE_GRACE_MS') ?? 5_000;
   }
 
   /**
@@ -97,9 +97,11 @@ export class RefreshTokenService {
    * Rotate an ACTIVE refresh token: consume it and issue a successor in the same
    * family. Replaying a CONSUMED token (theft signal) revokes the whole family —
    * unless the replay lands within REFRESH_REUSE_GRACE_MS of its rotation (two
-   * tabs refreshing at once): then a SIBLING successor is issued in the same
-   * family and nothing is consumed or revoked. Sibling, not "rotate the family's
-   * current head": consuming the head would orphan the other tab's fresh token
+   * tabs refreshing at once): then ONE SIBLING successor is issued in the same
+   * family and nothing is consumed or revoked. Only one per consumed token
+   * (recorded in grace_child_id): a further replay is reuse even inside the
+   * window, so a leaked token cannot mint unlimited renewable sessions.
+   * Sibling, not "rotate the family's current head": consuming the head would orphan the other tab's fresh token
    * and its next refresh would trip reuse detection. The window is anchored on
    * consumedAt, so replays cannot extend it; logout/revoke still kill siblings.
    * The consume + create (and the family revoke) are atomic.
@@ -125,14 +127,16 @@ export class RefreshTokenService {
             family_id: string;
             status: RefreshTokenStatus;
             consumed_at: Date | null;
+            grace_child_id: string | null;
           }[]
-        >`SELECT id, user_id, family_id, status, consumed_at FROM refresh_tokens WHERE id = ${jti} FOR UPDATE`;
+        >`SELECT id, user_id, family_id, status, consumed_at, grace_child_id FROM refresh_tokens WHERE id = ${jti} FOR UPDATE`;
         const row = rows[0];
         if (!row || row.user_id !== userId || row.status === 'REVOKED') {
           return { ok: false, reason: 'invalid' };
         }
         if (
           row.status === 'CONSUMED' &&
+          row.grace_child_id === null &&
           withinReuseGrace(row.consumed_at, Date.now(), this.reuseGraceMs())
         ) {
           const siblingJti = randomUUID();
@@ -143,6 +147,11 @@ export class RefreshTokenService {
               familyId: row.family_id,
               expiresAt: this.expiresAt(),
             },
+          });
+          // Spend the token's single grace sibling (row is FOR UPDATE-locked).
+          await tx.refreshToken.update({
+            where: { id: jti },
+            data: { graceChildId: siblingJti },
           });
           return { ok: true, jti: siblingJti, familyId: row.family_id };
         }

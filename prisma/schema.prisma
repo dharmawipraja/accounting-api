@@ -51,6 +51,9 @@ model RefreshToken {
   createdAt    DateTime           @default(now()) @map("created_at")
   consumedAt   DateTime?          @map("consumed_at")
   replacedById String?            @map("replaced_by_id")
+  /// The ONE sibling issued for a grace-window replay of this CONSUMED token;
+  /// a further replay is reuse (family revoked).
+  graceChildId String?            @map("grace_child_id")
   user         User               @relation(fields: [userId], references: [id])
 
   @@index([userId])

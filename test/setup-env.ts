@@ -13,3 +13,4 @@ process.env.JWT_REFRESH_TTL = '7d';
 process.env.THROTTLE_LOGIN_IP_LIMIT ??= '1000';
 // Same for the per-account failed-login ceiling (specs probe many bad logins).
 process.env.LOGIN_FAILURE_LIMIT ??= '1000';
+process.env.LOGIN_FAILURE_HARD_LIMIT ??= '1000';
