@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { Money } from '../common/money/money';
 import { serializeMoney } from '../common/money/serialize-money';
 import { lineAmounts } from './document-helpers';
@@ -85,20 +86,37 @@ export function presentDocument<T extends DocumentRow>(
       'creditedTotal',
       'discountTotal',
     ]),
-    ...(lines
-      ? {
-          lines: lines.map((l) =>
-            serializeMoney(l, [
-              'quantity',
-              'unitPrice',
-              'discountPercent',
-              'discountAmount',
-              'amount',
-            ]),
-          ),
-        }
-      : {}),
+    ...(lines ? { lines: presentLines(lines) } : {}),
     outstanding: outstanding.toPersistence(),
     paymentStatus,
+  };
+}
+
+/** A document / note line's money columns, 4dp strings in responses. */
+const LINE_MONEY = [
+  'quantity',
+  'unitPrice',
+  'discountPercent',
+  'discountAmount',
+  'amount',
+] as const;
+
+/** API shape of document / note lines: 4dp money strings. */
+export function presentLines<
+  T extends Record<(typeof LINE_MONEY)[number], unknown>,
+>(lines: T[]): T[] {
+  return lines.map((l) => serializeMoney(l, [...LINE_MONEY]));
+}
+
+/** A credit holder's payment_applications rows as the API shows them: onto
+ *  documents (`applications`) and cash refunds (`refunds`, cashAccountId
+ *  set), 4dp money. */
+export function presentApplications<
+  T extends { cashAccountId: string | null; amount: Prisma.Decimal },
+>(rows: T[]) {
+  const shown = rows.map((a) => serializeMoney(a, ['amount']));
+  return {
+    applications: shown.filter((a) => a.cashAccountId === null),
+    refunds: shown.filter((a) => a.cashAccountId !== null),
   };
 }

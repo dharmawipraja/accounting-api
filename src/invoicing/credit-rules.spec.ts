@@ -1,11 +1,8 @@
 import { Prisma } from '@prisma/client';
 import { Money } from '../common/money/money';
 import { ValidationFailedError } from '../common/errors/domain-errors';
-import {
-  assertCreditUsable,
-  assertWithinUnapplied,
-  splitCreditUses,
-} from './payments.service';
+import { assertCreditUsable, assertWithinUnapplied } from './payments.service';
+import { presentApplications } from './document-presenter';
 
 const source = { noun: 'payment', dateKey: 'paymentDate' };
 const holder = {
@@ -94,7 +91,7 @@ describe('credit rules (apply / refund)', () => {
       cashAccountId,
       amount: new Prisma.Decimal('5'),
     });
-    const out = splitCreditUses([
+    const out = presentApplications([
       row('a', null),
       row('r', 'kas'),
       row('b', null),

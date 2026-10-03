@@ -35,6 +35,7 @@ import {
   assertPaymentCashAccountPostable,
 } from './document-account-rules';
 import { lockLivePartnerForShare } from './partner-lock';
+import { presentApplications } from './document-presenter';
 import {
   AllocationInput,
   PAYMENT_TARGETS,
@@ -535,7 +536,7 @@ export class PaymentsService {
             allocations: allocations.map((a) => serializeMoney(a, ['amount'])),
           }
         : {}),
-      ...(applications ? splitCreditUses(applications) : {}),
+      ...(applications ? presentApplications(applications) : {}),
     };
   }
 
@@ -908,19 +909,6 @@ function paymentCreditSource(direction: PaymentDirection): CreditSource {
 
 function cap(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-/** A holder's payment_applications rows as the API shows them: onto
- *  documents (`applications`) and cash refunds (`refunds`, cashAccountId
- *  set), 4dp money. */
-export function splitCreditUses<
-  T extends { cashAccountId: string | null; amount: Prisma.Decimal },
->(rows: T[]) {
-  const shown = rows.map((a) => serializeMoney(a, ['amount']));
-  return {
-    applications: shown.filter((a) => a.cashAccountId === null),
-    refunds: shown.filter((a) => a.cashAccountId !== null),
-  };
 }
 
 /** Add `delta` (negative to consume) to the holder's unapplied_amount; the

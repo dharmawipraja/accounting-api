@@ -28,7 +28,12 @@ import {
   DocumentPostHooks,
   UpdateDocumentInput,
 } from './document-descriptor';
-import { buildLineCreateData, documentMessages } from './document-presenter';
+import {
+  buildLineCreateData,
+  documentMessages,
+  presentApplications,
+  presentLines,
+} from './document-presenter';
 import {
   resolveVoidDate,
   discountTotal,
@@ -47,7 +52,6 @@ import {
   assertNoLiveApplicationsInTx,
   creditHolderOf,
   CreditRefundInput,
-  splitCreditUses,
 } from './payments.service';
 import { lockLivePartnerForShare } from './partner-lock';
 import {
@@ -1009,19 +1013,7 @@ export function presentNote(row: NoteRow) {
       'creditedAmount',
       'unappliedAmount',
     ]),
-    ...(lines
-      ? {
-          lines: lines.map((l) =>
-            serializeMoney(l, [
-              'quantity',
-              'unitPrice',
-              'discountPercent',
-              'discountAmount',
-              'amount',
-            ]),
-          ),
-        }
-      : {}),
-    ...(applications ? splitCreditUses(applications) : {}),
+    ...(lines ? { lines: presentLines(lines) } : {}),
+    ...(applications ? presentApplications(applications) : {}),
   };
 }
