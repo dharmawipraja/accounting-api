@@ -46,3 +46,29 @@ describe('toStorableString', () => {
     expect(toStorableString(s)).toBe(s);
   });
 });
+
+describe('isWellFormed/toWellFormed vs the former lone-surrogate regexes', () => {
+  // The pre-ES2024 implementation, kept as an equivalence oracle.
+  const LONE =
+    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  const oldHas = (s: string) => s.includes('\u0000') || LONE.test(s);
+  const oldFix = (s: string) =>
+    oldHas(s)
+      ? s
+          .replace(new RegExp(LONE.source, 'g'), '\ufffd')
+          .split('\u0000')
+          .join('')
+      : s;
+
+  it('agrees on every string of length 0..5 over {a, NUL, hi/lo surrogate range edges}', () => {
+    const alphabet = ['a', '\u0000', '\ud800', '\udbff', '\udc00', '\udfff'];
+    let layer = [''];
+    for (let len = 0; len <= 5; len++) {
+      for (const s of layer) {
+        expect(hasInvalidCharacters(s)).toBe(oldHas(s));
+        expect(toStorableString(s)).toBe(oldFix(s));
+      }
+      layer = layer.flatMap((s) => alphabet.map((c) => s + c));
+    }
+  });
+});

@@ -1,4 +1,4 @@
-import { registerDecorator, ValidationOptions } from 'class-validator';
+import { ValidateBy, ValidationOptions } from 'class-validator';
 import { isBusinessDateString } from '../dates/business-date';
 
 /** Pair with @IsDateString() on every business-date field (JE/document/
@@ -6,18 +6,17 @@ import { isBusinessDateString } from '../dates/business-date';
  *  impossible days such as `2026-02-30`; this rejects them at the DTO boundary
  *  (400), consistent with other malformed dates. Kept as an extra decorator so
  *  the OpenAPI format inferred from IsDateString is unchanged. */
-export function IsBusinessDate(options?: ValidationOptions) {
-  return function (object: object, propertyName: string): void {
-    registerDecorator({
+export const IsBusinessDate = (
+  options?: ValidationOptions,
+): PropertyDecorator =>
+  ValidateBy(
+    {
       name: 'isBusinessDate',
-      target: object.constructor,
-      propertyName,
-      options,
       validator: {
         validate: (value: unknown) => isBusinessDateString(value),
         defaultMessage: () =>
-          `${propertyName} must be a real calendar date in YYYY-MM-DD form (no time)`,
+          '$property must be a real calendar date in YYYY-MM-DD form (no time)',
       },
-    });
-  };
-}
+    },
+    options,
+  );
