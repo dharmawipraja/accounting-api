@@ -11,6 +11,7 @@ import { SalesInvoicesController } from './sales-invoices.controller';
 import { PurchaseBillsService } from './purchase-bills.service';
 import { PurchaseBillsController } from './purchase-bills.controller';
 import { PaymentsService } from './payments.service';
+import { CreditApplicationService } from './credit-application';
 import { PaymentsController } from './payments.controller';
 import { JournalPreviewService } from './journal-preview.service';
 import { JournalPreviewController } from './journal-preview.controller';
@@ -29,6 +30,7 @@ import {
     SalesInvoicesService,
     PurchaseBillsService,
     PaymentsService,
+    CreditApplicationService,
     JournalPreviewService,
     NotesService,
   ],

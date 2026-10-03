@@ -17,7 +17,7 @@ import {
 import { IsMoneyString } from '../../common/validators/is-money-string';
 import { MAX_LINE_ITEMS } from '../../common/dto/limits';
 import { businessDate } from '../../common/dates/business-date';
-import type { CreditRefundInput } from '../payments.service';
+import type { CreditRefundInput } from '../credit-application';
 
 export class AllocationDto {
   @IsOptional() @IsUUID() salesInvoiceId?: string;

@@ -6,6 +6,8 @@ import {
 } from '@prisma/client';
 import { Money } from '../common/money/money';
 import { lockLiveRow } from '../common/db/lock-live-row';
+import { lockLivePartnerForShare } from './partner-lock';
+import { cap } from './document-presenter';
 import type { LedgerTx } from '../common/prisma/prisma.service';
 import { ExtendedPrismaClient } from '../common/prisma/soft-delete.extension';
 import {
@@ -374,10 +376,6 @@ export function buildPaymentLines(
       ];
 }
 
-function cap(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
 /** Validate the allocation references the right document type, then read it (create-draft path). */
 export async function loadTarget(
   client: ExtendedPrismaClient,
@@ -411,6 +409,26 @@ export function inLockOrder(
   );
 }
 
+/** Settle every allocation (settleInTx) — in target-document id order, so
+ *  concurrent payments over overlapping documents can't deadlock — passing
+ *  each call what this list already allocated to the same document
+ *  (`settledBefore`, for the backdated-void check). */
+export async function settleAllInTx(
+  tx: LedgerTx,
+  target: PaymentTarget,
+  allocations: readonly AllocationInput[],
+  partnerId: string,
+  date: Date,
+): Promise<void> {
+  const settled = new Map<string, Money>();
+  for (const a of inLockOrder(target, allocations)) {
+    const docId = target.allocId(a)!;
+    const before = settled.get(docId) ?? Money.zero();
+    await settleInTx(tx, target, a, partnerId, date, before);
+    settled.set(docId, before.add(Money.of(a.amount)));
+  }
+}
+
 /** Lock the target FOR UPDATE, re-verify POSTED + partner + payment date + outstanding
  *  + the backdated-void rule, increment amountPaid. Call once per allocation so repeated
  *  allocations to one document see each other's increment under the lock;
@@ -423,7 +441,7 @@ export async function settleInTx(
   alloc: AllocationInput,
   partnerId: string,
   paymentDate: Date,
-  settledBefore: Money = Money.zero(),
+  settledBefore: Money,
 ): Promise<void> {
   const id = target.allocId(alloc)!;
   const row = await lockLiveRow<{
@@ -488,3 +506,89 @@ export async function unwindInTx(
     });
   await applyPaid(tx, target, id, new Prisma.Decimal(alloc.amount), -1);
 }
+
+/** Create-time (and apply-time) allocation checks, no locks — each is
+ *  re-done under the document FOR UPDATE lock by settleInTx: right document
+ *  type, positive amount, same partner, POSTED, `date` on/after the
+ *  document's, within its outstanding (net of earlier entries of this same
+ *  list to that document), and the backdated-void rule. Returns the sum. */
+export async function checkAllocations(
+  client: ExtendedPrismaClient,
+  target: PaymentTarget,
+  partnerId: string,
+  date: Date,
+  allocations: readonly AllocationInput[],
+): Promise<Money> {
+  let total = Money.zero();
+  const allocatedByDoc = new Map<string, Money>();
+  for (const alloc of allocations) {
+    const amt = Money.of(alloc.amount);
+    if (amt.isZero() || amt.isNegative())
+      throw new ValidationFailedError('Allocation amount must be positive', {});
+    const targetRow = await loadTarget(client, target, alloc);
+    if (targetRow.partnerId !== partnerId)
+      throw new ValidationFailedError(
+        'Allocated document belongs to another partner',
+        { documentId: targetRow.id },
+      );
+    if (targetRow.status !== 'POSTED')
+      throw new ValidationFailedError(
+        'Can only allocate to a POSTED document',
+        { documentId: targetRow.id, status: targetRow.status },
+      );
+    assertPaymentDateNotBefore(date, targetRow);
+    // Outstanding net of what THIS list already allocated to the same
+    // document, so two allocations to one invoice can't each pass in isolation.
+    const alreadyAllocated = allocatedByDoc.get(targetRow.id) ?? Money.zero();
+    const outstanding = Money.of(targetRow.total.toString())
+      .subtract(Money.of(targetRow.amountPaid.toString()))
+      .subtract(Money.of(targetRow.creditedTotal.toString()))
+      .subtract(alreadyAllocated);
+    // amt > outstanding  ⟺  (outstanding − amt) < 0
+    if (outstanding.subtract(amt).isNegative()) {
+      throw new ValidationFailedError(
+        'Allocation exceeds the document outstanding',
+        { documentId: targetRow.id },
+      );
+    }
+    // Backdated-void pre-check (re-done under the document lock at post).
+    await assertNoBackdatedOverAllocation(
+      client,
+      target,
+      targetRow,
+      date,
+      alreadyAllocated.add(amt).toPersistence(),
+    );
+    allocatedByDoc.set(targetRow.id, alreadyAllocated.add(amt));
+    total = total.add(amt);
+  }
+  return total;
+}
+
+/** In-tx partner re-check for payment create / post and credit apply /
+ *  refund (422 on failure). */
+export async function assertPartnerInTx(
+  tx: LedgerTx,
+  partnerId: string,
+  target: PaymentTarget,
+): Promise<void> {
+  const p = await lockLivePartnerForShare(tx, partnerId);
+  if (!p || !p.isActive)
+    throw new ValidationFailedError('Partner is inactive', { partnerId });
+  const hasFlag = p[target.partnerFlag];
+  if (!hasFlag)
+    throw new ValidationFailedError(target.partnerRequiredMessage, {
+      partnerId,
+    });
+}
+
+/** A stored allocation / application row as an AllocationInput. */
+export const toAllocationInput = (a: {
+  salesInvoiceId: string | null;
+  purchaseBillId: string | null;
+  amount: Prisma.Decimal;
+}): AllocationInput => ({
+  salesInvoiceId: a.salesInvoiceId ?? undefined,
+  purchaseBillId: a.purchaseBillId ?? undefined,
+  amount: a.amount.toString(),
+});

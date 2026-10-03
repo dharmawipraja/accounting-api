@@ -48,11 +48,11 @@ import {
 } from './payment-targets';
 import {
   CreditSource,
-  PaymentsService,
+  CreditApplicationService,
   assertNoLiveApplicationsInTx,
   creditHolderOf,
   CreditRefundInput,
-} from './payments.service';
+} from './credit-application';
 import { lockLivePartnerForShare } from './partner-lock';
 import {
   NoteLineInput,
@@ -182,7 +182,7 @@ interface LockedOriginal {
  * - the posted journal mirrors the original's for the returned part; its
  *   settlement first settles the original (creditedAmount → the original's
  *   creditedTotal), any excess goes to the advance account as partner credit
- *   (unappliedAmount), applied later through PaymentsService.applyCredit —
+ *   (unappliedAmount), applied later through CreditApplicationService.applyCredit —
  *   the same machinery as payment advances;
  * - void reverses the journal and gives the credit back to the original, once
  *   no application of the excess is live.
@@ -198,7 +198,7 @@ export class NotesService {
     private readonly prisma: PrismaService,
     private readonly docs: TaxedDocumentService,
     private readonly lifecycle: DocumentLifecycleService,
-    private readonly payments: PaymentsService,
+    private readonly credit: CreditApplicationService,
     private readonly docPosting: DocumentPostingService,
   ) {
     this.kinds = {
@@ -326,7 +326,7 @@ export class NotesService {
   // ---- partner credit (excess) ---------------------------------------------
 
   /** Apply part of a POSTED note's unapplied excess to invoices (credit note)
-   *  / bills (debit note) of the same partner — PaymentsService.applyCredit. */
+   *  / bills (debit note) of the same partner — CreditApplicationService.applyCredit. */
   async apply(
     key: NoteKindKey,
     id: string,
@@ -336,7 +336,7 @@ export class NotesService {
   ): Promise<NoteRow> {
     const kind = this.kinds[key];
     const note = await this.getById(key, id);
-    await this.payments.applyCredit(
+    await this.credit.applyCredit(
       kind.credit,
       creditHolderOf(note),
       date,
@@ -355,7 +355,7 @@ export class NotesService {
   ): Promise<NoteRow> {
     const kind = this.kinds[key];
     const note = await this.getById(key, id);
-    await this.payments.reverseCreditApplication(
+    await this.credit.reverseCreditApplication(
       kind.credit,
       creditHolderOf(note),
       applicationId,
@@ -366,7 +366,7 @@ export class NotesService {
   }
 
   /** Refund part of a POSTED note's unapplied excess in cash —
-   *  PaymentsService.refundCredit. */
+   *  CreditApplicationService.refundCredit. */
   async refund(
     key: NoteKindKey,
     id: string,
@@ -374,7 +374,7 @@ export class NotesService {
     refundedBy: string,
   ): Promise<NoteRow> {
     const note = await this.getById(key, id);
-    await this.payments.refundCredit(
+    await this.credit.refundCredit(
       this.kinds[key].credit,
       creditHolderOf(note),
       refund,
@@ -391,7 +391,7 @@ export class NotesService {
     date?: Date,
   ): Promise<NoteRow> {
     const note = await this.getById(key, id);
-    await this.payments.reverseCreditApplication(
+    await this.credit.reverseCreditApplication(
       this.kinds[key].credit,
       creditHolderOf(note),
       refundId,

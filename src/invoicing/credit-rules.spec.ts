@@ -1,7 +1,10 @@
 import { Prisma } from '@prisma/client';
 import { Money } from '../common/money/money';
 import { ValidationFailedError } from '../common/errors/domain-errors';
-import { assertCreditUsable, assertWithinUnapplied } from './payments.service';
+import {
+  assertCreditUsable,
+  assertWithinUnapplied,
+} from './credit-application';
 import { presentApplications } from './document-presenter';
 
 const source = { noun: 'payment', dateKey: 'paymentDate' };

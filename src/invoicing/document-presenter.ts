@@ -9,7 +9,7 @@ import {
   DocumentLabels,
 } from './document-descriptor';
 
-function cap(s: string): string {
+export function cap(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
