@@ -54,3 +54,6 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 # Local AI planning notes / agent scratch (not part of the project)
 .superpowers/
 docs/superpowers/
+
+# Local audit reports (not committed)
+docs/audit/
