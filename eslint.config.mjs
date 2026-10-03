@@ -17,6 +17,7 @@ export default defineConfig(
       'coverage-merged/**',
       '.nyc_output/**',
       '.superpowers/**',
+      '.claude/**', // agent git worktrees
     ],
   },
   eslint.configs.recommended,
@@ -44,7 +45,7 @@ export default defineConfig(
         'error',
         { varsIgnorePattern: '^_', argsIgnorePattern: '^_' },
       ],
-      "prettier/prettier": ["error", { endOfLine: "auto" }],
+      'prettier/prettier': ['error', { endOfLine: 'auto' }],
     },
   },
   {
