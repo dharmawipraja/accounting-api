@@ -432,9 +432,15 @@ failures, and never marks an idempotency key. Single-query reports (trial balanc
 Laba Rugi, aging) are already consistent on their own.
 
 ### Balance sheet / Neraca
-Assets, liabilities, and equity as of a date, grouped by subtype. Equity includes a
-synthetic **Laba (Rugi) Berjalan** line = cumulative P&L (`Σ credit−debit` over
-REVENUE+EXPENSE), since current-year profit hasn't been closed to retained earnings yet.
+Assets, liabilities, and equity as of a date, grouped by subtype. Equity adds the
+still-open cumulative P&L (`Σ credit−debit` over REVENUE+EXPENSE) as synthetic
+lines, split per SAK presentation: **Laba (Rugi) Berjalan** (`CURRENT_EARNINGS`) =
+`currentYearEarnings`, the fiscal year containing the as-of date; the remainder —
+P&L of **earlier** fiscal years never closed (or reopened) — is retained earnings,
+shown as **Laba Ditahan (tahun belum ditutup)** (`UNCLOSED_PRIOR_EARNINGS`, only when
+non-zero; `unclosedPriorYearsEarnings`). The remainder is exact because every counted
+closing entry/reopen reversal belongs to an earlier year. Closing that year moves the
+amount into the real Laba Ditahan account; totals don't change.
 It is a **pre-closing** view: a `CLOSING` entry (or its reopen reversal) dated **on** the
 as-of date is excluded (`excludeClosingFrom: asOf`), so Neraca at the fiscal year-end
 shows the year's profit as Laba (Rugi) Berjalan; from the next day it sits in Laba
@@ -469,12 +475,18 @@ lands in operating as the non-cash add-back.
 Outstanding posted invoices/bills as of a date, bucketed by days past due
 (`Current`, `1-30`, `31-60`, `61-90`, `>90`) and grouped by partner. `paid_as_of` is the
 posted allocations on or before the as-of date, so the total reconciles to the AR/AP
-control balance at that date.
+control balance at that date. Buckets and totals are computed in one SQL statement:
+totals aggregate **all** open documents, while the `AGING_MAX_DOCS` (10,000) cap cuts
+only at partner boundaries (`truncated: true`; `documentCount` = all open documents).
 - `AgingService.aging('AR' | 'AP', asOf)` (`src/reporting/aging.service.ts`).
 
 ### General ledger (buku besar)
 One account's posted lines over a date range, with an opening balance and a per-line
-running balance signed by the account's normal balance.
+running balance signed by the account's normal balance. Lines are keyset-ordered by
+`(date, entry_number, entry id, line_no)`; past the `GL_MAX_LINES` (10,000) cap the
+response carries `nextCursor` (base64url of the last row's key). A cursor page's
+opening balance is the account's posted sum through that key (server-side), so it
+equals the previous page's last running balance.
 - `GeneralLedgerService.generate` (`src/reporting/general-ledger.service.ts`).
 
 ---

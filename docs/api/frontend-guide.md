@@ -1049,22 +1049,37 @@ Every report is **snapshot-consistent**: all of a report's queries read one
 database snapshot (a read-only REPEATABLE READ transaction), so a posting that
 commits while a report is being built is either entirely in it or entirely out
 of it — never half (the next request sees it). Totals inside one response always
-tie (`reconciles`, `balanced`, GL opening + lines = closing).
+tie (`reconciles`, `balanced`, GL opening + lines = closing on the last page).
 
 - `GET    /v1/reports/balance-sheet?asOf=` · any · Neraca — pre-closing view:
   a year-end closing entry dated **on** `asOf` is ignored, so Neraca at the
   fiscal year-end shows the year's profit as Laba (Rugi) Berjalan /
-  `currentYearEarnings` (it moves into Laba Ditahan from the next day)
+  `currentYearEarnings` (it moves into Laba Ditahan from the next day).
+  Laba (Rugi) Berjalan (equity group `CURRENT_EARNINGS`) is **only** the fiscal
+  year containing `asOf`; profit of earlier fiscal years that were never closed
+  (or were reopened) is shown as retained earnings in a separate equity group
+  `UNCLOSED_PRIOR_EARNINGS` ("Laba Ditahan (tahun belum ditutup)", present only
+  when non-zero) and in `unclosedPriorYearsEarnings` (`"0.0000"` once every
+  prior year is closed)
 - `GET    /v1/reports/income-statement?from=&to=` · any · Laba Rugi — year-end
   closing entries (and their reopen reversals) are excluded, so figures are the
   same before and after a year is closed
 - `GET    /v1/reports/general-ledger?accountId=&from=&to=` · any · Buku Besar —
-  span capped at **366 days** (`422` beyond); response carries `truncated: true`
-  when the 10,000-line cap cut the list (narrow the range; `closingBalance` stays
-  correct either way)
-- `GET    /v1/reports/ar-aging?asOf=` · any · AR aging — response carries a
-  `truncated` flag (10,000 open-document cap)
-- `GET    /v1/reports/ap-aging?asOf=` · any · AP aging — same `truncated` flag
+  span capped at **366 days** (`422` beyond); at most 10,000 lines per page.
+  When the cap cuts the list the response has `truncated: true` and a
+  `nextCursor` token — repeat the request with the same `accountId`/`from`/`to`
+  plus `&cursor=<nextCursor>` until `nextCursor` is `null`. Each page's
+  `openingBalance` is the previous page's last `runningBalance`, so running
+  balances continue across pages; `closingBalance` is always the balance at `to`.
+  Each page is its own snapshot: a back-dated post landing between page requests
+  shows up in the next page's `openingBalance` (still correct as of that read).
+  A malformed cursor, or one outside `from`/`to`, is `422`
+- `GET    /v1/reports/ar-aging?asOf=` · any · AR aging — 10,000 open-document
+  cap, cut at **partner boundaries** (every returned partner is complete;
+  partners ordered by name). `truncated: true` means later partners were left
+  out; `totalsByBucket`, `totalOutstanding` and `documentCount` always cover
+  **all** open documents
+- `GET    /v1/reports/ap-aging?asOf=` · any · AP aging — same cap and totals
 - `GET    /v1/reports/cash-flow?from=&to=` · any · Arus Kas — closing entries
   excluded; opening-balance (Saldo Awal) entries dated inside the range are
   part of `kasAwal`, not operating/financing flows. **Intended:** `kasAwal` =

@@ -2984,6 +2984,16 @@
         "operationId": "ReportsController_generalLedger_v1",
         "parameters": [
           {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "Continuation token from a truncated response's nextCursor (same accountId/from/to). Omit for the first page.",
+            "schema": {
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          {
             "name": "accountId",
             "required": true,
             "in": "query",
@@ -4172,7 +4182,7 @@
           "fiscalYear": {
             "type": "number",
             "minimum": 2000,
-            "maximum": 2200
+            "maximum": 2100
           }
         },
         "required": [
@@ -6188,7 +6198,12 @@
           "currentYearEarnings": {
             "type": "string",
             "example": "1000.0000",
-            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+            "description": "Fiscal-year-to-date P&L (closings excluded) — the \"Laba (Rugi) Berjalan\" (CURRENT_EARNINGS) equity line; ties to the income statement over [fiscal-year start, asOf]."
+          },
+          "unclosedPriorYearsEarnings": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "P&L of EARLIER fiscal years that were never closed (or were reopened), presented as retained earnings in the \"Laba Ditahan (tahun belum ditutup)\" (UNCLOSED_PRIOR_EARNINGS) equity line, which is emitted only when non-zero. Zero once every prior year is closed."
           },
           "balanced": {
             "type": "boolean",
@@ -6204,6 +6219,7 @@
           "totalLiabilities",
           "totalEquity",
           "currentYearEarnings",
+          "unclosedPriorYearsEarnings",
           "balanced"
         ]
       },
@@ -6392,7 +6408,7 @@
           "openingBalance": {
             "type": "string",
             "example": "1000.0000",
-            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+            "description": "Balance before the first line of this page: the balance as of the day before `from` on the first page, the previous page's last runningBalance on a cursor page."
           },
           "lines": {
             "type": "array",
@@ -6402,7 +6418,12 @@
           },
           "truncated": {
             "type": "boolean",
-            "description": "True when lines were cut off at the server-side cap (10,000); narrow the date range to see the rest. closingBalance stays the true as-of balance either way."
+            "description": "True when lines were cut off at the server-side cap (10,000 per page); fetch the rest by repeating the request with cursor=nextCursor. closingBalance stays the true as-of balance at `to` either way."
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true,
+            "description": "Opaque continuation token when truncated, else null. Pass it back as `cursor` (same accountId/from/to) for the next page; that page's openingBalance equals this page's last runningBalance."
           },
           "closingBalance": {
             "type": "string",
@@ -6417,6 +6438,7 @@
           "openingBalance",
           "lines",
           "truncated",
+          "nextCursor",
           "closingBalance"
         ]
       },
@@ -6526,7 +6548,7 @@
           },
           "truncated": {
             "type": "boolean",
-            "description": "True when open documents were cut off at the server-side cap (10,000); totals cover only the included documents."
+            "description": "True when partners were cut off at the server-side cap (10,000 documents). The cut is at partner boundaries — every returned partner is complete. totalsByBucket / totalOutstanding / documentCount always cover ALL open documents."
           },
           "partners": {
             "type": "array",
@@ -6539,12 +6561,17 @@
             "additionalProperties": {
               "type": "string"
             },
-            "description": "Grand totals per bucket (money strings)."
+            "description": "Grand totals per bucket over ALL open documents (money strings)."
           },
           "totalOutstanding": {
             "type": "string",
             "example": "1000.0000",
-            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+            "description": "Total over ALL open documents."
+          },
+          "documentCount": {
+            "type": "number",
+            "example": 2,
+            "description": "Number of ALL open documents (including any cut off)."
           }
         },
         "required": [
@@ -6553,7 +6580,8 @@
           "truncated",
           "partners",
           "totalsByBucket",
-          "totalOutstanding"
+          "totalOutstanding",
+          "documentCount"
         ]
       },
       "CashFlowLineDto": {

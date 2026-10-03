@@ -4,15 +4,27 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { Money } from '../common/money/money';
 import { truncateToUtcDay } from '../common/dates/utc-day';
 
-interface DocRow {
-  id: string;
+/** One row per included open document, LEFT JOINed onto the one-row totals
+ *  aggregate: when no document is included (none open, or the cap cut before
+ *  the first partner) a single all-null document row still carries totals. */
+interface AgingRow {
+  id: string | null;
   ref: string | null;
-  partner_id: string;
-  partner_name: string;
-  date: Date;
+  partner_id: string | null;
+  partner_name: string | null;
+  date: Date | null;
   due_date: Date | null;
-  total: Prisma.Decimal;
-  paid_as_of: Prisma.Decimal;
+  total: Prisma.Decimal | null;
+  paid_as_of: Prisma.Decimal | null;
+  outstanding: Prisma.Decimal | null;
+  bucket: string | null;
+  doc_count: bigint;
+  t_current: Prisma.Decimal;
+  t_1_30: Prisma.Decimal;
+  t_31_60: Prisma.Decimal;
+  t_61_90: Prisma.Decimal;
+  t_over_90: Prisma.Decimal;
+  t_all: Prisma.Decimal;
 }
 
 const BUCKETS = ['Current', '1-30', '31-60', '61-90', '>90'] as const;
@@ -25,21 +37,9 @@ export const AGING_MAX_DOCS = 10_000;
 export class AgingService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private day(d: Date): Date {
-    return truncateToUtcDay(d);
-  }
-
-  private bucketOf(daysPastDue: number): string {
-    if (daysPastDue <= 0) return 'Current';
-    if (daysPastDue <= 30) return '1-30';
-    if (daysPastDue <= 60) return '31-60';
-    if (daysPastDue <= 90) return '61-90';
-    return '>90';
-  }
-
   /** kind: 'AR' (sales_invoices + sales_invoice_id) | 'AP' (purchase_bills + purchase_bill_id) */
   async aging(kind: 'AR' | 'AP', asOf: Date, maxDocs = AGING_MAX_DOCS) {
-    const day = this.day(asOf);
+    const day = truncateToUtcDay(asOf);
     const docTable =
       kind === 'AR'
         ? Prisma.raw('sales_invoices')
@@ -56,27 +56,59 @@ export class AgingService {
     // reversal date, which may be later than the document date). This keeps the
     // subledger tied to the control account for every as-of date.
     // Fully-paid documents are filtered in SQL (not JS) so only genuinely open
-    // items are materialized; the LIMIT is a backstop against unbounded rows.
-    const rows = await this.prisma.$queryRaw<DocRow[]>(Prisma.sql`
-      SELECT * FROM (
-        SELECT d.id, ${refCol} AS ref,
-               d.partner_id, bp.name AS partner_name, d.date, d.due_date, d.total,
-               COALESCE((
-                 SELECT SUM(pa.amount) FROM payment_allocations pa
-                 JOIN payments p ON p.id = pa.payment_id
-                 WHERE pa.${allocCol} = d.id AND p.deleted_at IS NULL AND p.date <= ${day}
-                   AND (p.status = 'POSTED' OR (p.status = 'VOID' AND p.voided_on > ${day}))
-               ), 0) AS paid_as_of
-        FROM ${docTable} d
-        JOIN business_partners bp ON bp.id = d.partner_id
-        WHERE d.deleted_at IS NULL AND d.date <= ${day}
-          AND (d.status = 'POSTED' OR (d.status = 'VOID' AND d.voided_on > ${day}))
-      ) doc
-      WHERE doc.total > doc.paid_as_of
-      ORDER BY doc.partner_name ASC, doc.date ASC
-      LIMIT ${maxDocs + 1}`);
-    const truncated = rows.length > maxDocs;
-    const included = truncated ? rows.slice(0, maxDocs) : rows;
+    // items are materialized. ONE statement (so one consistent snapshot):
+    // - totals are aggregated over EVERY open document, whatever the cap;
+    // - the cap cuts only at partner boundaries: `through_partner` counts the
+    //   documents up to and including the row's whole partner (RANGE frame:
+    //   peers = same partner), so a partner is either fully in or fully out.
+    const rows = await this.prisma.$queryRaw<AgingRow[]>(Prisma.sql`
+      WITH open_docs AS (
+        SELECT doc.*, doc.total - doc.paid_as_of AS outstanding,
+               CASE
+                 WHEN ${day}::date - COALESCE(doc.due_date, doc.date) <= 0 THEN 'Current'
+                 WHEN ${day}::date - COALESCE(doc.due_date, doc.date) <= 30 THEN '1-30'
+                 WHEN ${day}::date - COALESCE(doc.due_date, doc.date) <= 60 THEN '31-60'
+                 WHEN ${day}::date - COALESCE(doc.due_date, doc.date) <= 90 THEN '61-90'
+                 ELSE '>90'
+               END AS bucket
+        FROM (
+          SELECT d.id, ${refCol} AS ref,
+                 d.partner_id, bp.name AS partner_name, d.date, d.due_date, d.total,
+                 COALESCE((
+                   SELECT SUM(pa.amount) FROM payment_allocations pa
+                   JOIN payments p ON p.id = pa.payment_id
+                   WHERE pa.${allocCol} = d.id AND p.deleted_at IS NULL AND p.date <= ${day}
+                     AND (p.status = 'POSTED' OR (p.status = 'VOID' AND p.voided_on > ${day}))
+                 ), 0) AS paid_as_of
+          FROM ${docTable} d
+          JOIN business_partners bp ON bp.id = d.partner_id
+          WHERE d.deleted_at IS NULL AND d.date <= ${day}
+            AND (d.status = 'POSTED' OR (d.status = 'VOID' AND d.voided_on > ${day}))
+        ) doc
+        WHERE doc.total > doc.paid_as_of
+      ),
+      totals AS (
+        SELECT COUNT(*) AS doc_count,
+               COALESCE(SUM(outstanding) FILTER (WHERE bucket = 'Current'), 0) AS t_current,
+               COALESCE(SUM(outstanding) FILTER (WHERE bucket = '1-30'), 0) AS t_1_30,
+               COALESCE(SUM(outstanding) FILTER (WHERE bucket = '31-60'), 0) AS t_31_60,
+               COALESCE(SUM(outstanding) FILTER (WHERE bucket = '61-90'), 0) AS t_61_90,
+               COALESCE(SUM(outstanding) FILTER (WHERE bucket = '>90'), 0) AS t_over_90,
+               COALESCE(SUM(outstanding), 0) AS t_all
+        FROM open_docs
+      ),
+      ranked AS (
+        SELECT o.*, COUNT(*) OVER (ORDER BY o.partner_name, o.partner_id) AS through_partner
+        FROM open_docs o
+      )
+      SELECT r.id, r.ref, r.partner_id, r.partner_name, r.date, r.due_date,
+             r.total, r.paid_as_of, r.outstanding, r.bucket, t.*
+      FROM totals t
+      LEFT JOIN ranked r ON r.through_partner <= ${maxDocs}
+      ORDER BY r.partner_name ASC, r.partner_id ASC, r.date ASC, r.id ASC`);
+    const t = rows[0]; // the totals row always exists
+    const docs = rows.filter((r) => r.id !== null);
+    const truncated = docs.length < Number(t.doc_count);
 
     const byPartner = new Map<
       string,
@@ -95,41 +127,30 @@ export class AgingService {
         buckets: Record<string, Money>;
       }
     >();
-    const grand: Record<string, Money> = Object.fromEntries(
-      BUCKETS.map((b) => [b, Money.zero()]),
-    );
-    let grandTotal = Money.zero();
 
-    for (const r of included) {
-      const outstanding = Money.of(r.total.toString()).subtract(
-        Money.of(r.paid_as_of.toString()),
-      );
-      if (outstanding.isZero() || outstanding.isNegative()) continue;
-      const dueOrDate = r.due_date ?? r.date;
-      const daysPastDue = Math.floor(
-        (day.getTime() - this.day(dueOrDate).getTime()) / 86_400_000,
-      );
-      const bucket = this.bucketOf(daysPastDue);
-      const g = byPartner.get(r.partner_id) ?? {
-        partnerId: r.partner_id,
-        partnerName: r.partner_name,
+    for (const r of docs) {
+      // Non-null for every real document row (r.id !== null above).
+      const outstanding = Money.of(r.outstanding!.toString());
+      const bucket = r.bucket!;
+      const g = byPartner.get(r.partner_id!) ?? {
+        partnerId: r.partner_id!,
+        partnerName: r.partner_name!,
         rows: [],
         buckets: Object.fromEntries(BUCKETS.map((b) => [b, Money.zero()])),
       };
       g.rows.push({
         ref: r.ref,
-        date: r.date.toISOString().slice(0, 10),
+        date: r.date!.toISOString().slice(0, 10),
         dueDate: r.due_date ? r.due_date.toISOString().slice(0, 10) : null,
-        total: Money.of(r.total.toString()).toPersistence(),
-        paidAsOf: Money.of(r.paid_as_of.toString()).toPersistence(),
+        total: Money.of(r.total!.toString()).toPersistence(),
+        paidAsOf: Money.of(r.paid_as_of!.toString()).toPersistence(),
         outstanding: outstanding.toPersistence(),
         bucket,
       });
       g.buckets[bucket] = g.buckets[bucket].add(outstanding);
-      byPartner.set(r.partner_id, g);
-      grand[bucket] = grand[bucket].add(outstanding);
-      grandTotal = grandTotal.add(outstanding);
+      byPartner.set(r.partner_id!, g);
     }
+    const money = (d: Prisma.Decimal) => Money.of(d.toString()).toPersistence();
 
     return {
       kind,
@@ -143,10 +164,15 @@ export class AgingService {
           BUCKETS.map((b) => [b, g.buckets[b].toPersistence()]),
         ),
       })),
-      totalsByBucket: Object.fromEntries(
-        BUCKETS.map((b) => [b, grand[b].toPersistence()]),
-      ),
-      totalOutstanding: grandTotal.toPersistence(),
+      totalsByBucket: {
+        Current: money(t.t_current),
+        '1-30': money(t.t_1_30),
+        '31-60': money(t.t_31_60),
+        '61-90': money(t.t_61_90),
+        '>90': money(t.t_over_90),
+      },
+      totalOutstanding: money(t.t_all),
+      documentCount: Number(t.doc_count),
     };
   }
 }

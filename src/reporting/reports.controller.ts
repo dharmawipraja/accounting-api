@@ -16,6 +16,7 @@ import { BalanceSheetService } from './balance-sheet.service';
 import { IncomeStatementService } from './income-statement.service';
 import {
   GeneralLedgerService,
+  GL_MAX_LINES,
   GL_MAX_RANGE_DAYS,
 } from './general-ledger.service';
 import { AgingService } from './aging.service';
@@ -51,7 +52,13 @@ export class ReportsController {
   @Get('general-ledger')
   generalLedger(@Query() q: LedgerQueryDto) {
     const { from, to } = dateRange(q.from, q.to, GL_MAX_RANGE_DAYS);
-    return this.generalLedgerSvc.generate(q.accountId, from, to);
+    return this.generalLedgerSvc.generate(
+      q.accountId,
+      from,
+      to,
+      GL_MAX_LINES,
+      q.cursor,
+    );
   }
 
   @ApiOkResponse({ type: AgingReportDto })

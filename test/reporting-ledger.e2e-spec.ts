@@ -153,6 +153,61 @@ describe('Reporting general ledger (e2e)', () => {
     expect(report.closingBalance).toBe('11500000.0000');
   });
 
+  it('pages past the cap with nextCursor; running balances continue across pages', async () => {
+    const gl = app.get(GeneralLedgerService);
+    const from = new Date('2026-01-01');
+    const to = new Date('2026-12-31');
+    const full = await gl.generate(kasId, from, to);
+    expect(full.nextCursor).toBeNull();
+
+    const pages: Awaited<ReturnType<typeof gl.generate>>[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await gl.generate(kasId, from, to, 1, cursor);
+      pages.push(page);
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+
+    // Page size 1 over 3 lines → 2 truncated pages + a final page.
+    expect(pages.map((p) => p.truncated)).toEqual([true, true, false]);
+    // Concatenated pages == the unpaged report, line for line.
+    expect(pages.flatMap((p) => p.lines)).toEqual(full.lines);
+    // Page N+1 opens at page N's last running balance (computed server-side).
+    for (let i = 1; i < pages.length; i++) {
+      const prev = pages[i - 1].lines;
+      expect(pages[i].openingBalance).toBe(
+        prev[prev.length - 1].runningBalance,
+      );
+    }
+    expect(pages[0].openingBalance).toBe(full.openingBalance);
+    for (const p of pages) expect(p.closingBalance).toBe('11500000.0000');
+  });
+
+  it('the cursor round-trips over HTTP; malformed or out-of-range cursors are 422', async () => {
+    const page1 = await app
+      .get(GeneralLedgerService)
+      .generate(kasId, new Date('2026-01-01'), new Date('2026-12-31'), 2);
+    const res = await get(
+      `/v1/reports/general-ledger?accountId=${kasId}&from=2026-01-01&to=2026-12-31&cursor=${page1.nextCursor}`,
+    ).expect(200);
+    const body = res.body as {
+      openingBalance: string;
+      lines: { runningBalance: string }[];
+      nextCursor: string | null;
+    };
+    expect(body.openingBalance).toBe('12000000.0000');
+    expect(body.lines.map((l) => l.runningBalance)).toEqual(['11500000.0000']);
+    expect(body.nextCursor).toBeNull();
+
+    await get(
+      `/v1/reports/general-ledger?accountId=${kasId}&from=2026-01-01&to=2026-12-31&cursor=garbage`,
+    ).expect(422);
+    // Cursor positioned on 2026-02-10 but the range starts later → 422.
+    await get(
+      `/v1/reports/general-ledger?accountId=${kasId}&from=2026-03-01&to=2026-12-31&cursor=${page1.nextCursor}`,
+    ).expect(422);
+  });
+
   it('rejects a date span longer than 366 days with 422', async () => {
     await get(
       `/v1/reports/general-ledger?accountId=${kasId}&from=2016-01-01&to=2026-12-31`,

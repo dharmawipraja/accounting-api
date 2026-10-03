@@ -143,4 +143,70 @@ describe('Reporting after year-end close (e2e)', () => {
     expect(bs.currentYearEarnings).toBe('0.0000');
     expect(bs.balanced).toBe(true);
   });
+
+  it('unclosed prior year: Neraca splits its P&L into Laba Ditahan (tahun belum ditutup), not Laba (Rugi) Berjalan', async () => {
+    // FY2006 left unclosed (reopened); FY2007 Q1 has a 300,000 cash sale.
+    await close.reopen(2006, 'admin');
+    await app.get(PostingService).post(
+      {
+        date: new Date('2007-02-01'),
+        description: 'Q1 2007 sale',
+        sourceType: 'MANUAL',
+        createdBy: 'a',
+        lines: [
+          { accountId: acc['1-1000'], debit: '300000' },
+          { accountId: acc['4-1000'], credit: '300000' },
+        ],
+      },
+      'p',
+    );
+    const asOf = new Date('2007-03-31');
+    const bs = await app.get(BalanceSheetService).generate(asOf);
+    const is = await app
+      .get(IncomeStatementService)
+      .generate(new Date('2007-01-01'), asOf);
+    const group = (subtype: string) =>
+      bs.equity.groups.find((g) => g.subtype === subtype);
+
+    expect(bs.currentYearEarnings).toBe('300000.0000');
+    expect(group('CURRENT_EARNINGS')?.lines).toEqual([
+      { code: '', name: 'Laba (Rugi) Berjalan', amount: '300000.0000' },
+    ]);
+    // Cross-report tie: current-year earnings == Laba Rugi FY-to-date.
+    expect(is.netIncome).toBe(bs.currentYearEarnings);
+    // FY2006's 1,400,000 is retained earnings, not current-year profit.
+    expect(bs.unclosedPriorYearsEarnings).toBe('1400000.0000');
+    expect(group('UNCLOSED_PRIOR_EARNINGS')?.lines).toEqual([
+      {
+        code: '',
+        name: 'Laba Ditahan (tahun belum ditutup)',
+        amount: '1400000.0000',
+      },
+    ]);
+    // The reopened year's closing is reversed, so the real Laba Ditahan holds none of it.
+    expect(bs.equity.groups.flatMap((g) => g.lines)).toContainEqual({
+      code: '3-2000',
+      name: 'Laba Ditahan',
+      amount: '0.0000',
+    });
+    expect(bs.balanced).toBe(true);
+
+    // Closing FY2006 moves the same amount into the real Laba Ditahan line;
+    // every total is unchanged and the synthetic prior line disappears.
+    await close.close(2006, 'admin');
+    const after = await app.get(BalanceSheetService).generate(asOf);
+    expect(after.unclosedPriorYearsEarnings).toBe('0.0000');
+    expect(
+      after.equity.groups.find((g) => g.subtype === 'UNCLOSED_PRIOR_EARNINGS'),
+    ).toBeUndefined();
+    expect(after.equity.groups.flatMap((g) => g.lines)).toContainEqual({
+      code: '3-2000',
+      name: 'Laba Ditahan',
+      amount: '1400000.0000',
+    });
+    expect(after.currentYearEarnings).toBe('300000.0000');
+    expect(after.totalEquity).toBe(bs.totalEquity);
+    expect(after.totalAssets).toBe(bs.totalAssets);
+    expect(after.balanced).toBe(true);
+  });
 });

@@ -70,33 +70,47 @@ export class BalanceSheetService {
     const equityRows = rows.filter((r) => r.type === 'EQUITY');
     const eq = this.group(equityRows);
 
-    // Cumulative earnings = Σ(credit − debit) over all P&L rows (revenue − expense).
+    // Cumulative earnings = Σ(credit − debit) over all P&L rows (revenue − expense)
+    // still open (not swept to Laba Ditahan by a counted closing entry).
     const pl = rows.filter((r) => r.type === 'REVENUE' || r.type === 'EXPENSE');
     const cumulativeEarnings = pl.reduce(
       (s, r) => s.add(Money.of(r.credit).subtract(Money.of(r.debit))),
       Money.zero(),
     );
-    // Current-FY portion (sub-figure).
+    // Current-FY portion: FY-to-date P&L movement, closings excluded. Every
+    // CLOSING entry (or reopen reversal) counted in `rows` belongs to an
+    // EARLIER fiscal year (this year's closing is dated at its year-end ≥ asOf
+    // → excluded above), so the remainder is exactly the P&L of earlier fiscal
+    // years that were never closed (or were reopened). SAK presents that as
+    // retained earnings, not as current-year profit.
     const currentYearEarnings = fyRows
       .filter((r) => r.type === 'REVENUE' || r.type === 'EXPENSE')
       .reduce(
         (s, r) => s.add(Money.of(r.credit).subtract(Money.of(r.debit))),
         Money.zero(),
       );
+    const unclosedPriorYearsEarnings =
+      cumulativeEarnings.subtract(currentYearEarnings);
 
+    const line = (subtype: string, name: string, amount: Money) => ({
+      subtype,
+      lines: [{ code: '', name, amount: amount.toPersistence() }],
+      subtotal: amount.toPersistence(),
+    });
     const equityGroups = [
       ...eq.groups,
-      {
-        subtype: 'CURRENT_EARNINGS',
-        lines: [
-          {
-            code: '',
-            name: 'Laba (Rugi) Berjalan',
-            amount: cumulativeEarnings.toPersistence(),
-          },
-        ],
-        subtotal: cumulativeEarnings.toPersistence(),
-      },
+      // Only when non-zero, so a ledger whose prior years are all closed
+      // keeps its exact previous shape.
+      ...(unclosedPriorYearsEarnings.isZero()
+        ? []
+        : [
+            line(
+              'UNCLOSED_PRIOR_EARNINGS',
+              'Laba Ditahan (tahun belum ditutup)',
+              unclosedPriorYearsEarnings,
+            ),
+          ]),
+      line('CURRENT_EARNINGS', 'Laba (Rugi) Berjalan', currentYearEarnings),
     ];
     const totalEquity = eq.total.add(cumulativeEarnings);
 
@@ -112,6 +126,7 @@ export class BalanceSheetService {
       totalLiabilities: liabilities.total.toPersistence(),
       totalEquity: totalEquity.toPersistence(),
       currentYearEarnings: currentYearEarnings.toPersistence(),
+      unclosedPriorYearsEarnings: unclosedPriorYearsEarnings.toPersistence(),
       balanced: assets.total.equals(liabilities.total.add(totalEquity)),
     };
   }

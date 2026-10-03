@@ -393,18 +393,35 @@ describe('Reporting AR/AP aging (e2e)', () => {
     expect(doc).toBeUndefined();
   });
 
-  it('caps documents at maxDocs and flags truncation', async () => {
+  it('caps at partner boundaries and keeps totals over ALL open documents', async () => {
     const aging = app.get(AgingService);
-    // asOf 2026-07-01: both seeded invoices are on the books and outstanding.
-    const full = await aging.aging('AR', new Date('2026-07-01'));
+    // asOf 2026-07-01: the seeded invoices are on the books and outstanding.
+    const asOf = new Date('2026-07-01');
+    const full = await aging.aging('AR', asOf);
     expect(full.truncated).toBe(false);
-    const outstandingDocs = full.partners.flatMap((p) => p.documents);
-    expect(outstandingDocs.length).toBeGreaterThanOrEqual(2);
+    const totalDocs = full.partners.flatMap((p) => p.documents).length;
+    expect(totalDocs).toBeGreaterThanOrEqual(2);
+    expect(full.documentCount).toBe(totalDocs);
+    // At least one partner has ≥ 2 documents, so some cap would split it.
+    expect(full.partners.some((p) => p.documents.length >= 2)).toBe(true);
 
-    const capped = await aging.aging('AR', new Date('2026-07-01'), 1);
-    expect(capped.truncated).toBe(true);
-    expect(capped.partners.flatMap((p) => p.documents)).toHaveLength(1);
+    for (let cap = 1; cap < totalDocs; cap++) {
+      const capped = await aging.aging('AR', asOf, cap);
+      expect(capped.truncated).toBe(true);
+      // Totals never depend on the cap.
+      expect(capped.totalOutstanding).toBe(full.totalOutstanding);
+      expect(capped.totalsByBucket).toEqual(full.totalsByBucket);
+      expect(capped.documentCount).toBe(totalDocs);
+      // Returned partners are a whole-partner prefix of the full report: the
+      // largest one fitting under the cap.
+      const n = capped.partners.length;
+      expect(capped.partners).toEqual(full.partners.slice(0, n));
+      const included = capped.partners.flatMap((p) => p.documents).length;
+      expect(included).toBeLessThanOrEqual(cap);
+      expect(included + full.partners[n].documents.length).toBeGreaterThan(cap);
+    }
   });
+
   // Void dated in a later period: aging as of D must honour voided_on, and the
   // AR subledger must tie to the AR control for every D (before the void,
   // between the original and the void date, and after).

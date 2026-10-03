@@ -93,14 +93,39 @@ describe('BalanceSheetService.generate', () => {
     expect(r.totalEquity).toBe('600.0000'); // capital 500 + cumulative earnings 100
     expect(r.currentYearEarnings).toBe('50.0000'); // REV 80 − EXP 30, from movementsBetween (not cumulative 100)
     expect(r.balanced).toBe(true);
-    // the synthetic CURRENT_EARNINGS equity group carries the cumulative figure:
+    // Cumulative 100 is split: current FY 50 → Laba (Rugi) Berjalan; the other
+    // 50 is earlier unclosed years' P&L → retained earnings, not current profit.
     const ce = r.equity.groups.find((g) => g.subtype === 'CURRENT_EARNINGS');
-    expect(ce?.subtotal).toBe('100.0000');
+    expect(ce?.subtotal).toBe('50.0000');
+    const prior = r.equity.groups.find(
+      (g) => g.subtype === 'UNCLOSED_PRIOR_EARNINGS',
+    );
+    expect(prior?.lines[0].name).toBe('Laba Ditahan (tahun belum ditutup)');
+    expect(prior?.subtotal).toBe('50.0000');
+    expect(r.unclosedPriorYearsEarnings).toBe('50.0000');
+    // Equity groups still sum to totalEquity.
+    const groupSum = r.equity.groups.reduce(
+      (s, g) => s + Number(g.subtotal),
+      0,
+    );
+    expect(groupSum).toBe(600);
     // the contra asset reads negative in its group line:
     const akum = r.assets.groups
       .flatMap((g) => g.lines)
       .find((l) => l.code === 'AKUM');
     expect(akum?.amount).toBe('-300.0000');
+  });
+
+  it('omits the unclosed-prior line when every earlier year is closed', async () => {
+    const asOfRows = [
+      row({ code: 'KAS', type: 'ASSET', debit: '100' }),
+      row({ code: 'REV', type: 'REVENUE', credit: '100' }),
+    ];
+    const fyRows = [row({ code: 'REV', type: 'REVENUE', credit: '100' })];
+    const r = await make(asOfRows, fyRows).generate(AS_OF);
+    expect(r.unclosedPriorYearsEarnings).toBe('0.0000');
+    expect(r.equity.groups.map((g) => g.subtype)).toEqual(['CURRENT_EARNINGS']);
+    expect(r.balanced).toBe(true);
   });
 
   it('flags balanced=false when assets != liabilities + equity', async () => {

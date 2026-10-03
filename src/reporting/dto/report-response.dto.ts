@@ -28,7 +28,16 @@ export class BalanceSheetDto {
   @ApiMoney() totalAssets!: string;
   @ApiMoney() totalLiabilities!: string;
   @ApiMoney() totalEquity!: string;
-  @ApiMoney() currentYearEarnings!: string;
+  @ApiMoney({
+    description:
+      'Fiscal-year-to-date P&L (closings excluded) — the "Laba (Rugi) Berjalan" (CURRENT_EARNINGS) equity line; ties to the income statement over [fiscal-year start, asOf].',
+  })
+  currentYearEarnings!: string;
+  @ApiMoney({
+    description:
+      'P&L of EARLIER fiscal years that were never closed (or were reopened), presented as retained earnings in the "Laba Ditahan (tahun belum ditutup)" (UNCLOSED_PRIOR_EARNINGS) equity line, which is emitted only when non-zero. Zero once every prior year is closed.',
+  })
+  unclosedPriorYearsEarnings!: string;
   @ApiProperty({ example: true }) balanced!: boolean;
 }
 
@@ -72,13 +81,24 @@ export class GeneralLedgerDto {
   account!: GeneralLedgerAccountDto;
   @ApiProperty({ type: String, format: 'date' }) from!: string;
   @ApiProperty({ type: String, format: 'date' }) to!: string;
-  @ApiMoney() openingBalance!: string;
+  @ApiMoney({
+    description:
+      "Balance before the first line of this page: the balance as of the day before `from` on the first page, the previous page's last runningBalance on a cursor page.",
+  })
+  openingBalance!: string;
   @ApiProperty({ type: [GeneralLedgerLineDto] }) lines!: GeneralLedgerLineDto[];
   @ApiProperty({
     description:
-      'True when lines were cut off at the server-side cap (10,000); narrow the date range to see the rest. closingBalance stays the true as-of balance either way.',
+      'True when lines were cut off at the server-side cap (10,000 per page); fetch the rest by repeating the request with cursor=nextCursor. closingBalance stays the true as-of balance at `to` either way.',
   })
   truncated!: boolean;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      "Opaque continuation token when truncated, else null. Pass it back as `cursor` (same accountId/from/to) for the next page; that page's openingBalance equals this page's last runningBalance.",
+  })
+  nextCursor!: string | null;
   @ApiMoney() closingBalance!: string;
 }
 
@@ -119,17 +139,24 @@ export class AgingReportDto {
   @ApiProperty({ type: String, format: 'date' }) asOf!: string;
   @ApiProperty({
     description:
-      'True when open documents were cut off at the server-side cap (10,000); totals cover only the included documents.',
+      'True when partners were cut off at the server-side cap (10,000 documents). The cut is at partner boundaries — every returned partner is complete. totalsByBucket / totalOutstanding / documentCount always cover ALL open documents.',
   })
   truncated!: boolean;
   @ApiProperty({ type: [AgingPartnerDto] }) partners!: AgingPartnerDto[];
   @ApiProperty({
     type: 'object',
-    description: 'Grand totals per bucket (money strings).',
+    description:
+      'Grand totals per bucket over ALL open documents (money strings).',
     additionalProperties: { type: 'string' },
   })
   totalsByBucket!: Record<string, string>;
-  @ApiMoney() totalOutstanding!: string;
+  @ApiMoney({ description: 'Total over ALL open documents.' })
+  totalOutstanding!: string;
+  @ApiProperty({
+    example: 2,
+    description: 'Number of ALL open documents (including any cut off).',
+  })
+  documentCount!: number;
 }
 
 export class CashFlowLineDto {

@@ -56,6 +56,23 @@ All notable changes to this project are documented here. The format is based on
   Reactivating an account (`PATCH { isActive: true }`) under an inactive parent
   header is now `422 { id, reason: "PARENT_INACTIVE", parentId }` (taken under the
   same row locks as deactivation).
+- **Neraca no longer reports earlier unclosed years as current-year profit** —
+  the `CURRENT_EARNINGS` "Laba (Rugi) Berjalan" line now carries only the fiscal
+  year containing `asOf` (= `currentYearEarnings`, ties to Laba Rugi); P&L of
+  earlier fiscal years never closed (or reopened) moves to a new
+  `UNCLOSED_PRIOR_EARNINGS` "Laba Ditahan (tahun belum ditutup)" equity group
+  (emitted only when non-zero) and a new `unclosedPriorYearsEarnings` field.
+  `totalEquity` / `balanced` are unchanged.
+- **Buku Besar can page past the 10,000-line cap** — a truncated response now
+  carries `nextCursor`; pass it back as `?cursor=` (same `accountId`/`from`/`to`)
+  for the next page, whose `openingBalance` is the previous page's last
+  `runningBalance` (computed server-side). `nextCursor` is `null` otherwise; a
+  malformed or out-of-range cursor is 422.
+- **AR/AP aging totals cover every open document** — `totalsByBucket` and
+  `totalOutstanding` are SQL aggregates over all open documents even when the
+  10,000-document cap truncates, a new `documentCount` gives the full count, and
+  the cap now cuts only at partner boundaries (a partner is never split;
+  ordering is partner name, then partner id).
 - **Tax codes no longer stack** — a document line may carry at most one PPN code
   and one PPh code (e.g. `PPH23-PAY` + `PPH42-PAY` on one line → 422).
 - **Final PPh 4(2) is an expense** — the seeded `PPH42-PRE` now posts to the new
