@@ -26,6 +26,8 @@ interface OpenApiDoc {
 
 // Endpoints whose 2xx body is legitimately not application/json.
 const TEXT_PLAIN_PATHS = new Set(['/metrics']);
+/** File downloads documented with their own media type. */
+const XML_PATHS = new Set(['/v1/tax/coretax/faktur-keluaran']);
 
 describe('OpenAPI response contract', () => {
   const doc = JSON.parse(
@@ -40,6 +42,11 @@ describe('OpenAPI response contract', () => {
           if (!code.startsWith('2')) continue;
           if (code === '204') continue; // no body by design
           const label = `${method.toUpperCase()} ${path} (${code})`;
+          if (XML_PATHS.has(path)) {
+            if (!res.content?.['application/xml']?.schema)
+              offenders.push(label);
+            continue;
+          }
           if (TEXT_PLAIN_PATHS.has(path)) {
             if (!res.content?.['text/plain']?.schema) offenders.push(label);
             continue;

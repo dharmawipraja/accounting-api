@@ -6,6 +6,9 @@ export interface SeedTaxCode {
   kind: TaxKind;
   rate: string;
   accountCode: string;
+  /** Coretax presentation (PPN Output). */
+  dppNilaiLain?: boolean;
+  coretaxVatRate?: string;
 }
 
 export const TAX_CODE_SEED: SeedTaxCode[] = [
@@ -15,6 +18,9 @@ export const TAX_CODE_SEED: SeedTaxCode[] = [
     kind: 'PPN_OUTPUT',
     rate: '0.11',
     accountCode: '2-1100',
+    // PMK 131/2024: 12% on DPP Nilai Lain 11/12 = 11% of DPP (non-luxury).
+    dppNilaiLain: true,
+    coretaxVatRate: '12',
   },
   {
     code: 'PPN-IN-11',

@@ -91,7 +91,6 @@ describe('@MaxLength caps on free-text inputs', () => {
   const s = (n: number) => 'x'.repeat(n);
   const cases: [string, Ctor, Record<string, unknown>, string, number][] = [
     ['company legalName', UpdateCompanySettingsDto, {}, 'legalName', 200],
-    ['company npwp', UpdateCompanySettingsDto, {}, 'npwp', 32],
     ['company address', UpdateCompanySettingsDto, {}, 'address', 500],
     [
       'account parentCode',
@@ -153,5 +152,16 @@ describe('AuditQueryDto', () => {
         userId: '8f14e45f-ceea-467a-9575-6a2c3a1c1e11',
       }),
     ).toEqual([]);
+  });
+});
+
+describe('NPWP format (no longer free text)', () => {
+  it('accepts 16 digits or punctuated legacy 15 digits; rejects the rest', () => {
+    for (const ok of ['0012345678901000', '01.234.567.8-901.000'])
+      expect(failing(UpdateCompanySettingsDto, { npwp: ok })).toEqual([]);
+    for (const bad of ['123', 'x'.repeat(33), '0012345678901000X'])
+      expect(failing(UpdateCompanySettingsDto, { npwp: bad })).toContain(
+        'npwp',
+      );
   });
 });

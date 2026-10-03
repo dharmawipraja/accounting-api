@@ -1,5 +1,9 @@
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { CoretaxBuyerDocument } from '@prisma/client';
+import { Npwp } from '../../common/validators/npwp';
 import {
   IsBoolean,
+  IsEnum,
   IsEmail,
   IsOptional,
   IsString,
@@ -18,11 +22,51 @@ export class UpdateBusinessPartnerDto {
   @MaxLength(160)
   name?: string;
   // npwp / email / phone / address are nullable columns: `null` clears them.
-  @IsOptional() @IsString() @MaxLength(32) npwp?: string | null;
+  @IsOptional() @IsString() @MaxLength(32) @Npwp() npwp?: string | null;
   @IsOptional() @IsEmail() email?: string | null;
   @IsOptional() @IsString() @MaxLength(32) phone?: string | null;
   @IsOptional() @IsString() @MaxLength(255) address?: string | null;
   @OptionalNonNull() @IsBoolean() isCustomer?: boolean;
   @OptionalNonNull() @IsBoolean() isVendor?: boolean;
   @OptionalNonNull() @IsBoolean() isActive?: boolean;
+  @ApiPropertyOptional({
+    enum: CoretaxBuyerDocument,
+    default: 'TIN',
+    description:
+      'Coretax BuyerDocument: TIN (uses npwp), NATIONAL_ID (NIK), PASSPORT or OTHER.',
+  })
+  @OptionalNonNull()
+  @IsEnum(CoretaxBuyerDocument)
+  buyerDocumentType?: CoretaxBuyerDocument;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    maxLength: 64,
+    description:
+      'NIK (16 digits) for NATIONAL_ID, passport / other document number otherwise; unused for TIN.',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\S(.*\S)?$/, {
+    message: 'buyerDocumentNumber must be trimmed and non-blank',
+  })
+  @MaxLength(64)
+  buyerDocumentNumber?: string | null;
+  @ApiPropertyOptional({
+    example: '000000',
+    description:
+      'NITKU place-of-business suffix: BuyerIDTKU = npwp + this (6 digits).',
+  })
+  @OptionalNonNull()
+  @Matches(/^\d{6}$/, { message: 'nitkuSuffix must be 6 digits' })
+  nitkuSuffix?: string;
+  @ApiPropertyOptional({
+    example: 'IDN',
+    description: 'ISO 3166-1 alpha-3 (Coretax BuyerCountry).',
+  })
+  @OptionalNonNull()
+  @Matches(/^[A-Z]{3}$/, {
+    message: 'country must be an ISO 3166-1 alpha-3 code, e.g. IDN',
+  })
+  country?: string;
 }

@@ -27,6 +27,14 @@ export class PurchaseBillResponseDto extends TransactionalDocumentResponseDto {
   @ApiProperty({ nullable: true }) billNumber!: number | null;
   @ApiProperty({ nullable: true }) billRef!: string | null;
   @ApiProperty({ nullable: true }) vendorInvoiceNo!: string | null;
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Bukti potong (BPPU) number Coretax issued (PATCH …/withholding-slip).',
+  })
+  withholdingSlipNumber!: string | null;
+  @ApiProperty({ type: String, format: 'date', nullable: true })
+  withholdingSlipDate!: string | null;
   @ApiPropertyOptional({ type: [PurchaseBillLineResponseDto] })
   lines?: PurchaseBillLineResponseDto[];
 }

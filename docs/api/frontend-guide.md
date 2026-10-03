@@ -1203,7 +1203,8 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing on the last page).
 
 ### Sales invoices
 
-- `GET    /v1/sales-invoices` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `q, partnerId, status, limit, offset`)
+- `GET    /v1/sales-invoices` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `q, partnerId, status, taxInvoiceStatus, limit, offset`)
+- Coretax metadata routes (`…/:id/tax-invoice`, `…/:id/withholding-slip`): see *Coretax (e-Faktur)* below
 - `GET    /v1/sales-invoices/:id` · any · get one
 - `POST   /v1/sales-invoices` · ACCOUNTANT+ · create draft · **requires `Idempotency-Key`**
 - `PATCH  /v1/sales-invoices/:id` · ACCOUNTANT+ · update draft
@@ -1298,6 +1299,122 @@ Same routes under `/v1/sales-credit-notes` (original = sales invoice, ref `CN/�
 - `POST   /v1/tax/codes/:id/deactivate` · ADMIN · deactivate
 - `DELETE /v1/tax/codes/:id` · ADMIN · delete
 - `POST   /v1/tax/calculate` · any · PPN/PPh preview (posts nothing)
+
+Tax codes also carry the Coretax presentation fields `dppNilaiLain` (boolean) and
+`coretaxVatRate` (statutory %, string, `null` = derived from `rate`) — **PPN_OUTPUT only**
+(`422` on another kind). They never change the computed tax. The seeded `PPN-OUT-11`
+(rate 0.11) is `dppNilaiLain: true, coretaxVatRate: "12"`: 12% on DPP Nilai Lain 11/12
+(PMK 131/2024) = 11% of DPP.
+
+### Coretax (e-Faktur) — faktur keluaran export, NSFP, bukti potong
+
+Coretax DJP (mandatory since 2025; e-Faktur desktop retired) imports output tax invoices
+as an XML file. The API produces that file and records what Coretax gives back — it
+never changes amounts or postings.
+
+**Operator flow**
+
+1. One-time master data: `PATCH /v1/company/settings` `npwp` (16 digits; a legacy
+   15-digit NPWP is accepted and stored as `0` + 15 digits), `nitkuSuffix` (6 digits,
+   default `000000` → SellerIDTKU = npwp + suffix), `coretaxDefaultItemType` (`A` goods /
+   `B` services), `coretaxDefaultItemCode` (default `000000`), `coretaxDefaultUnitCode`
+   (`UM.xxxx`, e.g. `UM.0018` Unit). Per customer (`/v1/partners`): `npwp`, `address`
+   (required by Coretax), `buyerDocumentType` (`TIN` default / `NATIONAL_ID` /
+   `PASSPORT` / `OTHER`), `buyerDocumentNumber` (16-digit NIK for `NATIONAL_ID`),
+   `nitkuSuffix`, `country` (ISO alpha-3, default `IDN`). Optional per sales-invoice line
+   (create / draft update): `coretaxItemType`, `coretaxItemCode` (6 digits),
+   `coretaxUnitCode`; per invoice: `trxCode` override (`01`–`06`, `09`, `10`).
+2. **Export**: `GET /v1/tax/coretax/faktur-keluaran?from=YYYY-MM-DD&to=YYYY-MM-DD[&status=NONE|EXPORTED]`
+   · any role · `application/xml` attachment (`Content-Disposition: attachment;
+   filename="faktur-keluaran_<from>_<to>.xml"`, header `X-Coretax-Invoice-Count`).
+   Includes every POSTED (not VOID) sales invoice dated in range whose
+   `taxInvoiceStatus` is `NONE` or `EXPORTED` (or exactly `status`), one `TaxInvoice`
+   each; APPROVED / CANCELLED fakturs are never re-exported. Only lines carrying a
+   PPN Output code become `GoodService` rows; an invoice without PPN Output is not a
+   faktur and is skipped. Range ≤ 366 days, ≤ 1000 invoices. The GET does **not**
+   change anything.
+   - `422 { reason: 'CORETAX_DATA_INCOMPLETE', problems: [{ invoiceId, invoiceRef, field, message }] }`
+     lists **every** missing / inconsistent item (seller NPWP or not PKP; buyer NPWP /
+     NIK / document number / address; line type or unit with no company default;
+     invoice mixing DPP Nilai Lain and regular PPN lines without `trxCode`; a tax code
+     whose `coretaxVatRate` × (11/12) ≠ `rate`; faktur VAT not reconciling with the
+     posted PPN) — no partial file is produced.
+   - `422 { reason: 'NOTHING_TO_EXPORT' }` when no invoice qualifies.
+3. Upload the file in Coretax (e-Faktur → Pajak Keluaran → Impor), review, **sign**.
+4. `POST /v1/tax/coretax/faktur-keluaran/mark-exported` `{ invoiceIds: uuid[] }` ·
+   APPROVER/ADMIN · `200 { updated }` — sets `taxInvoiceStatus: EXPORTED` and
+   `coretaxExportedAt`. All or nothing: `422 { invalid: [{ id, status, taxInvoiceStatus }] }`
+   unless every id is a POSTED invoice in `NONE`/`EXPORTED`. Take the ids from
+   `GET /v1/sales-invoices?status=POSTED&taxInvoiceStatus=NONE` (the export does not
+   mutate, so marking is explicit and only touches what you uploaded).
+5. Record the NSFP Coretax assigned: `PATCH /v1/sales-invoices/:id/tax-invoice`
+   `{ taxInvoiceNumber: '<17 digits>', taxInvoiceDate: 'YYYY-MM-DD', status?, trxCode? }`
+   · APPROVER/ADMIN · returns the invoice. A number without `status` → `APPROVED`
+   (needs the date, else `422`). `status` can also be set alone (`EXPORTED`,
+   `CANCELLED` when the faktur is cancelled in Coretax, `NONE`). Invoice must be POSTED
+   or VOID (DRAFT → `422`); same NSFP on another live invoice → `409`; `trxCode` cannot
+   change once APPROVED. Financial fields stay immutable — `PATCH /v1/sales-invoices/:id`
+   still refuses a POSTED invoice.
+
+**Bukti potong / retur references** (APPROVER/ADMIN, body `{ number, date }` — both set,
+or both `null` to clear; returns the document):
+
+- `PATCH /v1/sales-invoices/:id/withholding-slip` — the bukti potong the customer gave
+  you for PPh it withheld (`PPH_PREPAID`).
+- `PATCH /v1/purchase-bills/:id/withholding-slip` — the BPPU number Coretax issued for
+  PPh you withheld (`PPH_PAYABLE`).
+  Both: POSTED only, and the document must carry withholding (`withholdingTotal > 0`),
+  else `422 { reason: 'NO_WITHHOLDING' }`.
+- `PATCH /v1/sales-credit-notes/:id/retur-reference`,
+  `PATCH /v1/purchase-debit-notes/:id/retur-reference` — the Coretax retur number/date
+  (POSTED or VOID note). Metadata only.
+
+New response fields: sales invoice `trxCode`, `taxInvoiceNumber`, `taxInvoiceDate`,
+`taxInvoiceStatus` (`NONE|EXPORTED|APPROVED|CANCELLED`), `coretaxExportedAt`,
+`withholdingSlipNumber`, `withholdingSlipDate`, lines `coretaxItemType` /
+`coretaxItemCode` / `coretaxUnitCode`; purchase bill `withholdingSlipNumber/Date`;
+notes `returNumber/Date`; partner and company settings as above.
+
+**XML mapping** (DJP template `TaxInvoiceBulk` v1.4): `TIN` = seller NPWP;
+`TaxInvoiceDate` = invoice date; `TaxInvoiceOpt` = `Normal`; `TrxCode` = override, else
+`04` when the lines' PPN code has DPP Nilai Lain, else `01`; `RefDesc` = invoice ref;
+`AddInfo` / `CustomDoc` / `CustomDocMonthYear` / `FacilityStamp` empty (codes 07/08
+not supported); `BuyerTin` = npwp (TIN) or `0000000000000000`; `BuyerDocument` =
+`TIN` / `National ID` / `Passport` / `Other ID`; `BuyerDocumentNumber` empty for TIN;
+`BuyerIDTKU` = npwp + suffix (TIN) or `000000`. Per line: `Price`, `Qty`,
+`TotalDiscount` (the line discount), `TaxBase` = net line amount (DPP),
+`OtherTaxBase` = TaxBase × 11/12 with DPP Nilai Lain else TaxBase, `VATRate` =
+statutory %, `VAT` = OtherTaxBase × VATRate, `STLGRate`/`STLG` (PPnBM) `0`. Numbers:
+≤ 2 dp, half-up, `.` decimal separator, no thousands separator. The sum of `VAT` must
+equal the posted `taxTotal` within rounding (0.5 per PPN code + 0.01 per line), else
+the invoice is refused.
+
+**Sources** (fetched 2026-10-03): DJP "Template XML dan Converter Excel ke XML",
+<https://www.pajak.go.id/en/node/112031> — *Sample Faktur PK Template v.1.4.xml*
+(<https://pajak.go.id/sites/default/files/2025-03/Sample%20Faktur%20PK%20Template%20v.1.4.xml.zip>,
+kept verbatim as the golden test fixture `src/coretax/fixtures/djp-sample-faktur-pk-v1.4.xml`)
+and *ConverterEfakturCoretax v1.6*
+(<https://pajak.go.id/sites/default/files/2026-01/ConverterEfakturCoretax__v1.6.zip>:
+Excel template v1.6.1 reference sheets — TrxCode list, `BuyerDocument` values, `UM.*`
+units, country codes — and its "Keterangan" rules). Kode transaksi 04 for DPP Nilai Lain
+11/12: PMK 131/2024 + PER-1/PJ/2025 (e.g. <https://ikpi.or.id/?p=13685>,
+<https://news.ddtc.co.id/berita/nasional/1808027/hitung-ppn-pakai-dpp-1112-harga-jual-perhatikan-lagi-kode-fakturnya>).
+
+**Verified vs assumed.** Verified against the official sample (byte-identical golden
+test): element names incl. `BuyerAdress` [sic], order, root attributes, date format
+`yyyy-MM-dd`, empty elements as `<X/>`. From the Excel template: `BuyerDocument`
+values, zero TIN / `000000` IDTKU for non-TIN buyers, `IDN` = Indonesia (DJP's XML
+sample shows `IND`, which in its own country list is **India** — we emit `IDN`),
+OtherTaxBase = TaxBase when no DPP Nilai Lain, VAT = rate × OtherTaxBase, 2-dp numbers.
+**Assumed / unverified**: no XSD (`TaxInvoice.xsd`) is published, so required-ness comes
+from the Excel "Keterangan" sheet; `BuyerDocumentNumber` is emitted empty for TIN
+buyers as in the XML sample (the Excel template writes `-`); per-line 2-dp rounding of
+OtherTaxBase / VAT (Coretax's own rounding is not documented); NSFP = 17 digits (from
+DJP's retur sample `04002500000348920`). **BPPU (bukti potong unifikasi) XML export is
+not implemented**: DJP publishes a `BpuBulk` template
+(<https://pajak.go.id/sites/default/files/2024-12/bppu.zip>), but it needs a
+`TaxObjectCode` (kode objek pajak), a `Document` type and the recipient NITKU per
+withholding, which this API does not model yet — only the BPPU number is stored.
 
 ### Journal-entry preview
 

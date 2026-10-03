@@ -1960,6 +1960,20 @@
             }
           },
           {
+            "name": "taxInvoiceStatus",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "NONE",
+                "EXPORTED",
+                "APPROVED",
+                "CANCELLED"
+              ]
+            }
+          },
+          {
             "name": "partnerId",
             "required": false,
             "in": "query",
@@ -3918,6 +3932,307 @@
         ]
       }
     },
+    "/v1/tax/coretax/faktur-keluaran": {
+      "get": {
+        "operationId": "CoretaxController_exportFakturKeluaran_v1",
+        "parameters": [
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "Only invoices with this taxInvoiceStatus; omitted = NONE and EXPORTED (never APPROVED / CANCELLED — re-uploading those would duplicate a faktur).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "NONE",
+                "EXPORTED"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Coretax TaxInvoiceBulk import file (attachment). 422 { problems[] } when master data is missing.",
+            "content": {
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Coretax"
+        ]
+      }
+    },
+    "/v1/tax/coretax/faktur-keluaran/mark-exported": {
+      "post": {
+        "operationId": "CoretaxController_markExported_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkExportedDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkExportedResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Coretax"
+        ]
+      }
+    },
+    "/v1/sales-invoices/{id}/tax-invoice": {
+      "patch": {
+        "operationId": "CoretaxController_recordTaxInvoice_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordTaxInvoiceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SalesInvoiceResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Coretax"
+        ]
+      }
+    },
+    "/v1/sales-invoices/{id}/withholding-slip": {
+      "patch": {
+        "operationId": "CoretaxController_invoiceWithholdingSlip_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentReferenceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SalesInvoiceResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Coretax"
+        ]
+      }
+    },
+    "/v1/purchase-bills/{id}/withholding-slip": {
+      "patch": {
+        "operationId": "CoretaxController_billWithholdingSlip_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentReferenceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurchaseBillResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Coretax"
+        ]
+      }
+    },
+    "/v1/sales-credit-notes/{id}/retur-reference": {
+      "patch": {
+        "operationId": "CoretaxController_creditNoteRetur_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentReferenceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Coretax"
+        ]
+      }
+    },
+    "/v1/purchase-debit-notes/{id}/retur-reference": {
+      "patch": {
+        "operationId": "CoretaxController_debitNoteRetur_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentReferenceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Coretax"
+        ]
+      }
+    },
     "/v1/reports/balance-sheet": {
       "get": {
         "operationId": "ReportsController_balanceSheet_v1",
@@ -4761,7 +5076,8 @@
           "npwp": {
             "type": "string",
             "nullable": true,
-            "example": "01.234.567.8-901.000"
+            "example": "0012345678901000",
+            "description": "16 digits"
           },
           "address": {
             "type": "string",
@@ -4783,6 +5099,27 @@
             "type": "boolean",
             "example": true
           },
+          "nitkuSuffix": {
+            "type": "string",
+            "example": "000000"
+          },
+          "coretaxDefaultItemType": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "A",
+              "B"
+            ]
+          },
+          "coretaxDefaultItemCode": {
+            "type": "string",
+            "example": "000000"
+          },
+          "coretaxDefaultUnitCode": {
+            "type": "string",
+            "nullable": true,
+            "example": "UM.0018"
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -4802,6 +5139,10 @@
           "baseCurrency",
           "segregationOfDutiesEnabled",
           "isPkp",
+          "nitkuSuffix",
+          "coretaxDefaultItemType",
+          "coretaxDefaultItemCode",
+          "coretaxDefaultUnitCode",
           "createdAt",
           "updatedAt"
         ]
@@ -4809,14 +5150,44 @@
       "UpdateCompanySettingsDto": {
         "type": "object",
         "properties": {
-          "legalName": {
-            "type": "string",
-            "maxLength": 200
-          },
           "npwp": {
             "type": "string",
             "nullable": true,
-            "maxLength": 32
+            "maxLength": 32,
+            "example": "0012345678901000",
+            "description": "Seller NPWP: 16 digits (punctuation stripped; a legacy 15-digit NPWP is stored as 0 + 15 digits)."
+          },
+          "nitkuSuffix": {
+            "type": "string",
+            "pattern": "^\\d{6}$",
+            "example": "000000",
+            "description": "Coretax NITKU suffix: SellerIDTKU = npwp + this (6 digits)."
+          },
+          "coretaxDefaultItemType": {
+            "nullable": true,
+            "enum": [
+              "A",
+              "B"
+            ],
+            "type": "string",
+            "description": "Default Coretax line type: A = goods, B = services."
+          },
+          "coretaxDefaultItemCode": {
+            "type": "string",
+            "pattern": "^\\d{6}$",
+            "example": "000000",
+            "description": "Default Coretax item code (6 digits; 000000 = none)."
+          },
+          "coretaxDefaultUnitCode": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^UM\\.\\d{4}$",
+            "example": "UM.0018",
+            "description": "Default Coretax unit code (UM.xxxx, DJP reference list)."
+          },
+          "legalName": {
+            "type": "string",
+            "maxLength": 200
           },
           "address": {
             "type": "string",
@@ -5670,6 +6041,17 @@
             "type": "string",
             "format": "uuid"
           },
+          "dppNilaiLain": {
+            "type": "boolean",
+            "example": false,
+            "description": "Coretax: DPP Nilai Lain 11/12 (PPN Output)."
+          },
+          "coretaxVatRate": {
+            "type": "string",
+            "nullable": true,
+            "example": "12",
+            "description": "Coretax statutory VATRate %; null = derived from rate."
+          },
           "isActive": {
             "type": "boolean",
             "example": true
@@ -5690,6 +6072,8 @@
           "kind",
           "rate",
           "taxAccountId",
+          "dppNilaiLain",
+          "coretaxVatRate",
           "isActive",
           "createdAt",
           "updatedAt"
@@ -5727,6 +6111,17 @@
       "CreateTaxCodeDto": {
         "type": "object",
         "properties": {
+          "dppNilaiLain": {
+            "type": "boolean",
+            "description": "PPN Output only — Coretax presentation: DPP Nilai Lain = 11/12 × DPP (PMK 131/2024). Does not change the computed tax."
+          },
+          "coretaxVatRate": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^\\d{1,3}(\\.\\d{1,2})?$",
+            "example": "12",
+            "description": "PPN Output only — statutory VATRate (%) shown on the faktur; null = derived from rate. rate × 100 must equal it (× 11/12 with dppNilaiLain)."
+          },
           "code": {
             "type": "string",
             "maxLength": 32,
@@ -5768,6 +6163,17 @@
       "UpdateTaxCodeDto": {
         "type": "object",
         "properties": {
+          "dppNilaiLain": {
+            "type": "boolean",
+            "description": "PPN Output only — Coretax presentation: DPP Nilai Lain = 11/12 × DPP (PMK 131/2024). Does not change the computed tax."
+          },
+          "coretaxVatRate": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^\\d{1,3}(\\.\\d{1,2})?$",
+            "example": "12",
+            "description": "PPN Output only — statutory VATRate (%) shown on the faktur; null = derived from rate. rate × 100 must equal it (× 11/12 with dppNilaiLain)."
+          },
           "name": {
             "type": "string",
             "maxLength": 128,
@@ -5952,7 +6358,30 @@
           },
           "npwp": {
             "type": "string",
+            "nullable": true,
+            "example": "0012345678901000",
+            "description": "16 digits"
+          },
+          "buyerDocumentType": {
+            "type": "string",
+            "enum": [
+              "TIN",
+              "NATIONAL_ID",
+              "PASSPORT",
+              "OTHER"
+            ]
+          },
+          "buyerDocumentNumber": {
+            "type": "string",
             "nullable": true
+          },
+          "nitkuSuffix": {
+            "type": "string",
+            "example": "000000"
+          },
+          "country": {
+            "type": "string",
+            "example": "IDN"
           },
           "email": {
             "type": "string",
@@ -5993,6 +6422,10 @@
           "code",
           "name",
           "npwp",
+          "buyerDocumentType",
+          "buyerDocumentNumber",
+          "nitkuSuffix",
+          "country",
           "email",
           "phone",
           "address",
@@ -6035,6 +6468,36 @@
       "CreateBusinessPartnerDto": {
         "type": "object",
         "properties": {
+          "buyerDocumentType": {
+            "enum": [
+              "TIN",
+              "NATIONAL_ID",
+              "PASSPORT",
+              "OTHER"
+            ],
+            "type": "string",
+            "default": "TIN",
+            "description": "Coretax BuyerDocument: TIN (uses npwp), NATIONAL_ID (NIK), PASSPORT or OTHER."
+          },
+          "buyerDocumentNumber": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 64,
+            "pattern": "^\\S(.*\\S)?$",
+            "description": "NIK (16 digits) for NATIONAL_ID, passport / other document number otherwise; unused for TIN."
+          },
+          "nitkuSuffix": {
+            "type": "string",
+            "pattern": "^\\d{6}$",
+            "example": "000000",
+            "description": "NITKU place-of-business suffix: BuyerIDTKU = npwp + this (6 digits)."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "example": "IDN",
+            "description": "ISO 3166-1 alpha-3 (Coretax BuyerCountry)."
+          },
           "code": {
             "type": "string",
             "maxLength": 32,
@@ -6076,6 +6539,36 @@
       "UpdateBusinessPartnerDto": {
         "type": "object",
         "properties": {
+          "buyerDocumentType": {
+            "enum": [
+              "TIN",
+              "NATIONAL_ID",
+              "PASSPORT",
+              "OTHER"
+            ],
+            "type": "string",
+            "default": "TIN",
+            "description": "Coretax BuyerDocument: TIN (uses npwp), NATIONAL_ID (NIK), PASSPORT or OTHER."
+          },
+          "buyerDocumentNumber": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 64,
+            "pattern": "^\\S(.*\\S)?$",
+            "description": "NIK (16 digits) for NATIONAL_ID, passport / other document number otherwise; unused for TIN."
+          },
+          "nitkuSuffix": {
+            "type": "string",
+            "pattern": "^\\d{6}$",
+            "example": "000000",
+            "description": "NITKU place-of-business suffix: BuyerIDTKU = npwp + this (6 digits)."
+          },
+          "country": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$",
+            "example": "IDN",
+            "description": "ISO 3166-1 alpha-3 (Coretax BuyerCountry)."
+          },
           "name": {
             "type": "string",
             "maxLength": 160,
@@ -6166,6 +6659,24 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          "coretaxItemType": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "A",
+              "B"
+            ]
+          },
+          "coretaxItemCode": {
+            "type": "string",
+            "nullable": true,
+            "example": "000000"
+          },
+          "coretaxUnitCode": {
+            "type": "string",
+            "nullable": true,
+            "example": "UM.0018"
           }
         },
         "required": [
@@ -6179,7 +6690,10 @@
           "discountPercent",
           "discountAmount",
           "amount",
-          "taxCodeIds"
+          "taxCodeIds",
+          "coretaxItemType",
+          "coretaxItemCode",
+          "coretaxUnitCode"
         ]
       },
       "SalesInvoiceResponseDto": {
@@ -6308,6 +6822,47 @@
             "type": "string",
             "nullable": true
           },
+          "trxCode": {
+            "type": "string",
+            "nullable": true,
+            "example": "04",
+            "description": "Coretax kode transaksi override (null = derived at export)."
+          },
+          "taxInvoiceNumber": {
+            "type": "string",
+            "nullable": true,
+            "example": "04002500000348920",
+            "description": "NSFP: the 17-digit faktur pajak number Coretax assigned."
+          },
+          "taxInvoiceDate": {
+            "type": "string",
+            "nullable": true,
+            "format": "date"
+          },
+          "taxInvoiceStatus": {
+            "type": "string",
+            "enum": [
+              "NONE",
+              "EXPORTED",
+              "APPROVED",
+              "CANCELLED"
+            ]
+          },
+          "coretaxExportedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "withholdingSlipNumber": {
+            "type": "string",
+            "nullable": true,
+            "description": "Bukti potong PPh number (PATCH …/withholding-slip)."
+          },
+          "withholdingSlipDate": {
+            "type": "string",
+            "nullable": true,
+            "format": "date"
+          },
           "lines": {
             "type": "array",
             "items": {
@@ -6340,7 +6895,14 @@
           "outstanding",
           "paymentStatus",
           "invoiceNumber",
-          "invoiceRef"
+          "invoiceRef",
+          "trxCode",
+          "taxInvoiceNumber",
+          "taxInvoiceDate",
+          "taxInvoiceStatus",
+          "coretaxExportedAt",
+          "withholdingSlipNumber",
+          "withholdingSlipDate"
         ]
       },
       "SalesInvoiceListResponseDto": {
@@ -6372,7 +6934,7 @@
           "offset"
         ]
       },
-      "DocumentLineDto": {
+      "SalesInvoiceLineDto": {
         "type": "object",
         "properties": {
           "discountPercent": {
@@ -6387,6 +6949,29 @@
             "nullable": true,
             "example": "5000.0000",
             "description": "Line discount as a fixed amount (≤ qty × unitPrice). Mutually exclusive with discountPercent."
+          },
+          "coretaxItemType": {
+            "nullable": true,
+            "enum": [
+              "A",
+              "B"
+            ],
+            "type": "string",
+            "description": "Coretax line type: A = goods (barang), B = services (jasa)."
+          },
+          "coretaxItemCode": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^\\d{6}$",
+            "example": "000000",
+            "description": "Coretax item code (6 digits, DJP reference list)."
+          },
+          "coretaxUnitCode": {
+            "type": "string",
+            "nullable": true,
+            "pattern": "^UM\\.\\d{4}$",
+            "example": "UM.0018",
+            "description": "Coretax unit code (UM.xxxx, DJP reference list)."
           },
           "description": {
             "type": "string",
@@ -6421,6 +7006,21 @@
       "CreateSalesInvoiceDto": {
         "type": "object",
         "properties": {
+          "trxCode": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "01",
+              "02",
+              "03",
+              "04",
+              "05",
+              "06",
+              "09",
+              "10"
+            ],
+            "description": "Coretax kode transaksi override; omitted/null = derived at export (04 with DPP Nilai Lain, else 01)."
+          },
           "partnerId": {
             "type": "string",
             "format": "uuid"
@@ -6439,7 +7039,7 @@
             "minItems": 1,
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/DocumentLineDto"
+              "$ref": "#/components/schemas/SalesInvoiceLineDto"
             }
           }
         },
@@ -6464,6 +7064,21 @@
             "maxLength": 255,
             "description": "Send `null` to clear the description; omit to keep it."
           },
+          "trxCode": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "01",
+              "02",
+              "03",
+              "04",
+              "05",
+              "06",
+              "09",
+              "10"
+            ],
+            "description": "Coretax kode transaksi override; omitted/null = derived at export (04 with DPP Nilai Lain, else 01). Send `null` to clear."
+          },
           "date": {
             "type": "string"
           },
@@ -6471,7 +7086,7 @@
             "minItems": 1,
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/DocumentLineDto"
+              "$ref": "#/components/schemas/SalesInvoiceLineDto"
             }
           }
         }
@@ -6688,6 +7303,16 @@
             "type": "string",
             "nullable": true
           },
+          "withholdingSlipNumber": {
+            "type": "string",
+            "nullable": true,
+            "description": "Bukti potong (BPPU) number Coretax issued (PATCH …/withholding-slip)."
+          },
+          "withholdingSlipDate": {
+            "type": "string",
+            "nullable": true,
+            "format": "date"
+          },
           "lines": {
             "type": "array",
             "items": {
@@ -6721,7 +7346,9 @@
           "paymentStatus",
           "billNumber",
           "billRef",
-          "vendorInvoiceNo"
+          "vendorInvoiceNo",
+          "withholdingSlipNumber",
+          "withholdingSlipDate"
         ]
       },
       "PurchaseBillListResponseDto": {
@@ -6751,6 +7378,52 @@
           "total",
           "limit",
           "offset"
+        ]
+      },
+      "DocumentLineDto": {
+        "type": "object",
+        "properties": {
+          "discountPercent": {
+            "type": "string",
+            "nullable": true,
+            "example": "10",
+            "pattern": "^\\d{1,3}(\\.\\d{1,4})?$",
+            "description": "Line discount as a percent of qty × unitPrice (0–100, up to 4 dp). Mutually exclusive with discountAmount."
+          },
+          "discountAmount": {
+            "type": "string",
+            "nullable": true,
+            "example": "5000.0000",
+            "description": "Line discount as a fixed amount (≤ qty × unitPrice). Mutually exclusive with discountPercent."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "string"
+          },
+          "unitPrice": {
+            "type": "string"
+          },
+          "taxCodeIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "description",
+          "accountId",
+          "quantity",
+          "unitPrice",
+          "taxCodeIds"
         ]
       },
       "CreatePurchaseBillDto": {
@@ -7426,6 +8099,16 @@
               "VOID"
             ]
           },
+          "returNumber": {
+            "type": "string",
+            "nullable": true,
+            "description": "Coretax retur reference number (PATCH …/retur-reference)."
+          },
+          "returDate": {
+            "type": "string",
+            "nullable": true,
+            "format": "date"
+          },
           "subtotal": {
             "type": "string",
             "example": "1000.0000",
@@ -7517,6 +8200,8 @@
           "date",
           "description",
           "status",
+          "returNumber",
+          "returDate",
           "subtotal",
           "discountTotal",
           "taxTotal",
@@ -7630,6 +8315,94 @@
             }
           }
         }
+      },
+      "MarkExportedDto": {
+        "type": "object",
+        "properties": {
+          "invoiceIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "invoiceIds"
+        ]
+      },
+      "MarkExportedResponseDto": {
+        "type": "object",
+        "properties": {
+          "updated": {
+            "type": "number",
+            "example": 12,
+            "description": "Invoices now EXPORTED (already-EXPORTED ones included)."
+          }
+        },
+        "required": [
+          "updated"
+        ]
+      },
+      "RecordTaxInvoiceDto": {
+        "type": "object",
+        "properties": {
+          "taxInvoiceNumber": {
+            "type": "string",
+            "nullable": true,
+            "example": "04002500000348920",
+            "description": "NSFP (17 digits) Coretax assigned to the faktur; `null` clears it."
+          },
+          "taxInvoiceDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "NONE",
+              "EXPORTED",
+              "APPROVED",
+              "CANCELLED"
+            ],
+            "description": "Omitted: APPROVED when a taxInvoiceNumber is sent, else unchanged."
+          },
+          "trxCode": {
+            "type": "string",
+            "enum": [
+              "01",
+              "02",
+              "03",
+              "04",
+              "05",
+              "06",
+              "09",
+              "10"
+            ],
+            "nullable": true,
+            "description": "Coretax kode transaksi override; `null` = derived. Not changeable once APPROVED."
+          }
+        }
+      },
+      "DocumentReferenceDto": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 64
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          }
+        },
+        "required": [
+          "number",
+          "date"
+        ]
       },
       "ReportLineDto": {
         "type": "object",

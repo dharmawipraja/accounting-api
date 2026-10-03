@@ -101,6 +101,7 @@ export class TaxCodesService implements OnModuleInit {
       name: normalizeDisplayName(raw.name),
     };
     this.validateRate(input.rate);
+    assertCoretaxFields(input.kind, input);
     try {
       return await this.prisma.transaction(async (tx) => {
         await this.lockAndValidateAccount(tx, input.taxAccountId, input.kind);
@@ -119,6 +120,8 @@ export class TaxCodesService implements OnModuleInit {
             kind: input.kind,
             rate: input.rate,
             taxAccountId: input.taxAccountId,
+            dppNilaiLain: input.dppNilaiLain,
+            coretaxVatRate: input.coretaxVatRate,
           },
         });
       });
@@ -166,6 +169,7 @@ export class TaxCodesService implements OnModuleInit {
         ? raw
         : { ...raw, name: normalizeDisplayName(raw.name) };
     const current = await this.findById(id);
+    assertCoretaxFields(current.kind, input);
     if (input.rate !== undefined) {
       this.validateRate(input.rate);
       if (!new Decimal(input.rate).equals(current.rate.toString()))
@@ -173,7 +177,13 @@ export class TaxCodesService implements OnModuleInit {
     }
     return this.prisma.client.taxCode.update({
       where: { id },
-      data: { name: input.name, rate: input.rate, isActive: input.isActive },
+      data: {
+        name: input.name,
+        rate: input.rate,
+        isActive: input.isActive,
+        dppNilaiLain: input.dppNilaiLain,
+        coretaxVatRate: input.coretaxVatRate,
+      },
     });
   }
 
@@ -235,6 +245,8 @@ export class TaxCodesService implements OnModuleInit {
               kind: s.kind,
               rate: s.rate,
               taxAccountId,
+              dppNilaiLain: s.dppNilaiLain,
+              coretaxVatRate: s.coretaxVatRate,
             },
           });
         }
@@ -249,4 +261,19 @@ export class TaxCodesService implements OnModuleInit {
       throw err;
     }
   }
+}
+
+/** The Coretax presentation fields describe a PPN Output faktur only (422 on
+ *  any other kind when set to a non-default value). Whether they reproduce
+ *  the rate is checked at export, per invoice (src/coretax/faktur.ts). */
+function assertCoretaxFields(
+  kind: TaxKind,
+  input: { dppNilaiLain?: boolean; coretaxVatRate?: string | null },
+): void {
+  if (kind === 'PPN_OUTPUT') return;
+  if (input.dppNilaiLain || input.coretaxVatRate != null)
+    throw new ValidationFailedError(
+      'dppNilaiLain / coretaxVatRate apply to PPN_OUTPUT tax codes only',
+      { kind },
+    );
 }

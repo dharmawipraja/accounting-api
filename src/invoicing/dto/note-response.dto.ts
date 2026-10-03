@@ -49,6 +49,13 @@ export class NoteResponseDto {
   date!: string;
   @ApiProperty({ nullable: true }) description!: string | null;
   @ApiProperty({ enum: ['DRAFT', 'POSTED', 'VOID'] }) status!: string;
+  @ApiProperty({
+    nullable: true,
+    description: 'Coretax retur reference number (PATCH …/retur-reference).',
+  })
+  returNumber!: string | null;
+  @ApiProperty({ type: String, format: 'date', nullable: true })
+  returDate!: string | null;
   @ApiMoney() subtotal!: string;
   @ApiMoney() discountTotal!: string;
   @ApiMoney() taxTotal!: string;

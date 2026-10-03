@@ -1,6 +1,8 @@
 import {
   ArrayMaxSize,
   IsArray,
+  IsEnum,
+  Matches,
   IsOptional,
   IsString,
   IsUUID,
@@ -9,7 +11,7 @@ import {
   type ValidationArguments,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Prisma } from '@prisma/client';
+import { CoretaxItemType, Prisma } from '@prisma/client';
 import { MAX_TAX_CODES_PER_LINE } from '../../common/dto/limits';
 import { IsMoneyString } from '../../common/validators/is-money-string';
 
@@ -79,3 +81,38 @@ export class DocumentLineDto {
   @IsUUID('all', { each: true })
   taxCodeIds!: string[];
 }
+
+/** A sales invoice line: a DocumentLineDto plus the optional Coretax faktur
+ *  fields (null / omitted = the company default at export). */
+export class SalesInvoiceLineDto extends DocumentLineDto {
+  @ApiPropertyOptional({
+    enum: CoretaxItemType,
+    nullable: true,
+    description: 'Coretax line type: A = goods (barang), B = services (jasa).',
+  })
+  @IsOptional()
+  @IsEnum(CoretaxItemType)
+  coretaxItemType?: CoretaxItemType | null;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '000000',
+    description: 'Coretax item code (6 digits, DJP reference list).',
+  })
+  @IsOptional()
+  @Matches(/^\d{6}$/, { message: 'coretaxItemCode must be 6 digits' })
+  coretaxItemCode?: string | null;
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'UM.0018',
+    description: 'Coretax unit code (UM.xxxx, DJP reference list).',
+  })
+  @IsOptional()
+  @Matches(/^UM\.\d{4}$/, { message: 'coretaxUnitCode must look like UM.0018' })
+  coretaxUnitCode?: string | null;
+}
+
+/** Coretax kode transaksi a sales invoice may override (07 / 08 need facility
+ *  fields this API does not model). */
+export const TRX_CODES = ['01', '02', '03', '04', '05', '06', '09', '10'];

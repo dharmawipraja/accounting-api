@@ -60,19 +60,49 @@ model RefreshToken {
 }
 
 model CompanySettings {
-  id                         String   @id @default(uuid())
-  singleton                  Boolean  @unique @default(true)
-  legalName                  String   @map("legal_name")
+  id                         String           @id @default(uuid())
+  singleton                  Boolean          @unique @default(true)
+  legalName                  String           @map("legal_name")
   npwp                       String?
   address                    String?
-  fiscalYearStartMonth       Int      @default(1) @map("fiscal_year_start_month")
-  baseCurrency               String   @default("IDR") @map("base_currency")
-  segregationOfDutiesEnabled Boolean  @default(true) @map("segregation_of_duties_enabled")
-  isPkp                      Boolean  @default(true) @map("is_pkp")
-  createdAt                  DateTime @default(now()) @map("created_at")
-  updatedAt                  DateTime @updatedAt @map("updated_at")
+  fiscalYearStartMonth       Int              @default(1) @map("fiscal_year_start_month")
+  baseCurrency               String           @default("IDR") @map("base_currency")
+  segregationOfDutiesEnabled Boolean          @default(true) @map("segregation_of_duties_enabled")
+  isPkp                      Boolean          @default(true) @map("is_pkp")
+  /// Coretax: seller NITKU = npwp + this 6-digit place-of-business suffix.
+  nitkuSuffix                String           @default("000000") @map("nitku_suffix")
+  /// Coretax defaults for sales invoice lines that set none of their own.
+  coretaxDefaultItemType     CoretaxItemType? @map("coretax_default_item_type")
+  coretaxDefaultItemCode     String           @default("000000") @map("coretax_default_item_code")
+  coretaxDefaultUnitCode     String?          @map("coretax_default_unit_code")
+  createdAt                  DateTime         @default(now()) @map("created_at")
+  updatedAt                  DateTime         @updatedAt @map("updated_at")
 
+  // + hand-authored CHECKs (20261010000000_coretax): company_settings_npwp_format
+  //   (npwp NULL or 16 digits), company_settings_coretax_codes_format.
   @@map("company_settings")
+}
+
+/// Coretax faktur line type: A = Barang (goods), B = Jasa (services).
+enum CoretaxItemType {
+  A
+  B
+}
+
+/// Coretax `BuyerDocument` (Jenis ID Pembeli).
+enum CoretaxBuyerDocument {
+  TIN
+  NATIONAL_ID
+  PASSPORT
+  OTHER
+}
+
+/// Lifecycle of a sales invoice's Coretax faktur pajak (metadata only).
+enum TaxInvoiceStatus {
+  NONE
+  EXPORTED
+  APPROVED
+  CANCELLED
 }
 
 enum AccountType {
@@ -336,18 +366,22 @@ enum TaxKind {
 }
 
 model TaxCode {
-  id           String    @id @default(uuid())
-  code         String
-  name         String
-  kind         TaxKind
-  rate         Decimal   @db.Decimal(9, 6)
-  taxAccountId String    @map("tax_account_id")
-  taxAccount   Account   @relation(fields: [taxAccountId], references: [id], onDelete: Restrict)
-  isActive     Boolean   @default(true) @map("is_active")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
-  deletedAt    DateTime? @map("deleted_at")
-  deletedBy    String?   @map("deleted_by")
+  id             String    @id @default(uuid())
+  code           String
+  name           String
+  kind           TaxKind
+  rate           Decimal   @db.Decimal(9, 6)
+  /// Coretax presentation only (PPN_OUTPUT): DPP Nilai Lain = 11/12 × DPP
+  /// (PMK 131/2024) and the statutory VATRate shown on the faktur.
+  dppNilaiLain   Boolean   @default(false) @map("dpp_nilai_lain")
+  coretaxVatRate Decimal?  @map("coretax_vat_rate") @db.Decimal(5, 2)
+  taxAccountId   String    @map("tax_account_id")
+  taxAccount     Account   @relation(fields: [taxAccountId], references: [id], onDelete: Restrict)
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+  deletedBy      String?   @map("deleted_by")
 
   @@unique([code], name: "tax_codes_code_unique")
   // + hand-authored UNIQUE INDEX tax_codes_code_lower_live_key ON tax_codes
@@ -369,27 +403,35 @@ enum PaymentDirection {
 }
 
 model BusinessPartner {
-  id                 String              @id @default(uuid())
-  code               String
-  name               String
-  npwp               String?
-  email              String?
-  phone              String?
-  address            String?
-  isCustomer         Boolean             @default(false) @map("is_customer")
-  isVendor           Boolean             @default(false) @map("is_vendor")
-  isActive           Boolean             @default(true) @map("is_active")
-  createdAt          DateTime            @default(now()) @map("created_at")
-  updatedAt          DateTime            @updatedAt @map("updated_at")
-  deletedAt          DateTime?           @map("deleted_at")
-  deletedBy          String?             @map("deleted_by")
-  salesInvoices      SalesInvoice[]
-  purchaseBills      PurchaseBill[]
-  payments           Payment[]
-  salesCreditNotes   SalesCreditNote[]
-  purchaseDebitNotes PurchaseDebitNote[]
+  id                  String               @id @default(uuid())
+  code                String
+  name                String
+  npwp                String?
+  email               String?
+  phone               String?
+  address             String?
+  isCustomer          Boolean              @default(false) @map("is_customer")
+  isVendor            Boolean              @default(false) @map("is_vendor")
+  /// Coretax buyer identity (BuyerDocument / BuyerDocumentNumber /
+  /// BuyerIDTKU suffix / BuyerCountry).
+  buyerDocumentType   CoretaxBuyerDocument @default(TIN) @map("buyer_document_type")
+  buyerDocumentNumber String?              @map("buyer_document_number")
+  nitkuSuffix         String               @default("000000") @map("nitku_suffix")
+  country             String               @default("IDN")
+  isActive            Boolean              @default(true) @map("is_active")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  deletedAt           DateTime?            @map("deleted_at")
+  deletedBy           String?              @map("deleted_by")
+  salesInvoices       SalesInvoice[]
+  purchaseBills       PurchaseBill[]
+  payments            Payment[]
+  salesCreditNotes    SalesCreditNote[]
+  purchaseDebitNotes  PurchaseDebitNote[]
 
   // + hand-authored CHECK business_partners_customer_or_vendor (is_customer OR is_vendor)
+  // + hand-authored CHECKs (20261010000000_coretax): business_partners_npwp_format
+  //   (NULL or 16 digits), business_partners_coretax_format.
   @@unique([code], name: "business_partners_code_unique")
   // + hand-authored UNIQUE INDEX business_partners_code_lower_live_key ON
   //   business_partners (lower(code)) WHERE deleted_at IS NULL (20261005000000).
@@ -402,45 +444,60 @@ model BusinessPartner {
 }
 
 model SalesInvoice {
-  id               String               @id @default(uuid())
-  invoiceNumber    Int?                 @map("invoice_number")
-  invoiceRef       String?              @map("invoice_ref")
-  fiscalYear       Int?                 @map("fiscal_year")
-  partnerId        String               @map("partner_id")
-  partner          BusinessPartner      @relation(fields: [partnerId], references: [id], onDelete: Restrict)
-  date             DateTime             @db.Date
-  dueDate          DateTime?            @map("due_date") @db.Date
-  description      String?
-  status           DocumentStatus       @default(DRAFT)
-  subtotal         Decimal              @default(0) @db.Decimal(20, 4)
-  taxTotal         Decimal              @default(0) @map("tax_total") @db.Decimal(20, 4)
-  withholdingTotal Decimal              @default(0) @map("withholding_total") @db.Decimal(20, 4)
-  total            Decimal              @default(0) @db.Decimal(20, 4)
-  amountPaid       Decimal              @default(0) @map("amount_paid") @db.Decimal(20, 4)
+  id                    String               @id @default(uuid())
+  invoiceNumber         Int?                 @map("invoice_number")
+  invoiceRef            String?              @map("invoice_ref")
+  fiscalYear            Int?                 @map("fiscal_year")
+  partnerId             String               @map("partner_id")
+  partner               BusinessPartner      @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  date                  DateTime             @db.Date
+  dueDate               DateTime?            @map("due_date") @db.Date
+  description           String?
+  status                DocumentStatus       @default(DRAFT)
+  subtotal              Decimal              @default(0) @db.Decimal(20, 4)
+  taxTotal              Decimal              @default(0) @map("tax_total") @db.Decimal(20, 4)
+  withholdingTotal      Decimal              @default(0) @map("withholding_total") @db.Decimal(20, 4)
+  total                 Decimal              @default(0) @db.Decimal(20, 4)
+  amountPaid            Decimal              @default(0) @map("amount_paid") @db.Decimal(20, 4)
   /// Sum of the lines' discountAmount (subtotal is already net of it).
-  discountTotal    Decimal              @default(0) @map("discount_total") @db.Decimal(20, 4)
+  discountTotal         Decimal              @default(0) @map("discount_total") @db.Decimal(20, 4)
   /// Settled by POSTED credit/debit notes (their creditedAmount); outstanding
   /// = total − amountPaid − creditedTotal.
-  creditedTotal    Decimal              @default(0) @map("credited_total") @db.Decimal(20, 4)
-  journalEntryId   String?              @map("journal_entry_id")
-  createdBy        String               @map("created_by")
-  postedBy         String?              @map("posted_by")
-  postedAt         DateTime?            @map("posted_at")
-  voidedOn         DateTime?            @map("voided_on") @db.Date
-  createdAt        DateTime             @default(now()) @map("created_at")
-  updatedAt        DateTime             @updatedAt @map("updated_at")
-  deletedAt        DateTime?            @map("deleted_at")
-  deletedBy        String?              @map("deleted_by")
-  lines            SalesInvoiceLine[]
-  notes            SalesCreditNote[]
-  journalEntry     JournalEntry?        @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
-  allocations      PaymentAllocation[]
-  applications     PaymentApplication[]
+  creditedTotal         Decimal              @default(0) @map("credited_total") @db.Decimal(20, 4)
+  journalEntryId        String?              @map("journal_entry_id")
+  createdBy             String               @map("created_by")
+  postedBy              String?              @map("posted_by")
+  postedAt              DateTime?            @map("posted_at")
+  voidedOn              DateTime?            @map("voided_on") @db.Date
+  createdAt             DateTime             @default(now()) @map("created_at")
+  updatedAt             DateTime             @updatedAt @map("updated_at")
+  deletedAt             DateTime?            @map("deleted_at")
+  deletedBy             String?              @map("deleted_by")
+  /// Coretax kode transaksi override (null = derived: 04 with DPP Nilai Lain, else 01).
+  trxCode               String?              @map("trx_code")
+  /// Faktur pajak metadata, recorded after upload/approval in Coretax —
+  /// never part of the posted content (editable on POSTED rows).
+  taxInvoiceNumber      String?              @map("tax_invoice_number")
+  taxInvoiceDate        DateTime?            @map("tax_invoice_date") @db.Date
+  taxInvoiceStatus      TaxInvoiceStatus     @default(NONE) @map("tax_invoice_status")
+  coretaxExportedAt     DateTime?            @map("coretax_exported_at")
+  /// Bukti potong PPh received from the customer (PPH_PREPAID).
+  withholdingSlipNumber String?              @map("withholding_slip_number")
+  withholdingSlipDate   DateTime?            @map("withholding_slip_date") @db.Date
+  lines                 SalesInvoiceLine[]
+  notes                 SalesCreditNote[]
+  journalEntry          JournalEntry?        @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+  allocations           PaymentAllocation[]
+  applications          PaymentApplication[]
 
   // + hand-authored CHECK sales_invoices_amount_paid_range (0 <= amount_paid <= total)
   // + hand-authored CHECK sales_invoices_credited_total_range (credited_total >= 0 AND amount_paid + credited_total <= total)
   // + hand-authored CHECK sales_invoices_discount_total_nonnegative (discount_total >= 0)
   // + hand-authored CHECK sales_invoices_journal_entry_iff_not_draft ((status = 'DRAFT') = (journal_entry_id IS NULL))
+  // + hand-authored CHECK sales_invoices_coretax_format (trx_code, 17-digit NSFP,
+  //   APPROVED ⇒ NSFP + date) and partial UNIQUE INDEX
+  //   sales_invoices_tax_invoice_number_live_key ON (btrim(tax_invoice_number))
+  //   WHERE deleted_at IS NULL AND tax_invoice_number IS NOT NULL (20261010000000) → 409.
   @@unique([fiscalYear, invoiceNumber], name: "sales_invoices_fy_number_unique")
   @@index([deletedAt])
   @@index([partnerId])
@@ -468,6 +525,10 @@ model SalesInvoiceLine {
   amount          Decimal               @db.Decimal(20, 4)
   // No FK: an array of tax code ids (validated by the app).
   taxCodeIds      String[]              @map("tax_code_ids")
+  /// Coretax line fields; null = the company default.
+  coretaxItemType CoretaxItemType?      @map("coretax_item_type")
+  coretaxItemCode String?               @map("coretax_item_code")
+  coretaxUnitCode String?               @map("coretax_unit_code")
   noteLines       SalesCreditNoteLine[]
 
   // + hand-authored CHECK sales_invoice_lines_nonnegative (quantity, unit_price >= 0)
@@ -478,41 +539,44 @@ model SalesInvoiceLine {
 }
 
 model PurchaseBill {
-  id               String               @id @default(uuid())
-  billNumber       Int?                 @map("bill_number")
-  billRef          String?              @map("bill_ref")
-  fiscalYear       Int?                 @map("fiscal_year")
-  partnerId        String               @map("partner_id")
-  partner          BusinessPartner      @relation(fields: [partnerId], references: [id], onDelete: Restrict)
-  vendorInvoiceNo  String?              @map("vendor_invoice_no")
-  date             DateTime             @db.Date
-  dueDate          DateTime?            @map("due_date") @db.Date
-  description      String?
-  status           DocumentStatus       @default(DRAFT)
-  subtotal         Decimal              @default(0) @db.Decimal(20, 4)
-  taxTotal         Decimal              @default(0) @map("tax_total") @db.Decimal(20, 4)
-  withholdingTotal Decimal              @default(0) @map("withholding_total") @db.Decimal(20, 4)
-  total            Decimal              @default(0) @db.Decimal(20, 4)
-  amountPaid       Decimal              @default(0) @map("amount_paid") @db.Decimal(20, 4)
+  id                    String               @id @default(uuid())
+  billNumber            Int?                 @map("bill_number")
+  billRef               String?              @map("bill_ref")
+  fiscalYear            Int?                 @map("fiscal_year")
+  partnerId             String               @map("partner_id")
+  partner               BusinessPartner      @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  vendorInvoiceNo       String?              @map("vendor_invoice_no")
+  date                  DateTime             @db.Date
+  dueDate               DateTime?            @map("due_date") @db.Date
+  description           String?
+  status                DocumentStatus       @default(DRAFT)
+  subtotal              Decimal              @default(0) @db.Decimal(20, 4)
+  taxTotal              Decimal              @default(0) @map("tax_total") @db.Decimal(20, 4)
+  withholdingTotal      Decimal              @default(0) @map("withholding_total") @db.Decimal(20, 4)
+  total                 Decimal              @default(0) @db.Decimal(20, 4)
+  amountPaid            Decimal              @default(0) @map("amount_paid") @db.Decimal(20, 4)
   /// Sum of the lines' discountAmount (subtotal is already net of it).
-  discountTotal    Decimal              @default(0) @map("discount_total") @db.Decimal(20, 4)
+  discountTotal         Decimal              @default(0) @map("discount_total") @db.Decimal(20, 4)
   /// Settled by POSTED credit/debit notes (their creditedAmount); outstanding
   /// = total − amountPaid − creditedTotal.
-  creditedTotal    Decimal              @default(0) @map("credited_total") @db.Decimal(20, 4)
-  journalEntryId   String?              @map("journal_entry_id")
-  createdBy        String               @map("created_by")
-  postedBy         String?              @map("posted_by")
-  postedAt         DateTime?            @map("posted_at")
-  voidedOn         DateTime?            @map("voided_on") @db.Date
-  createdAt        DateTime             @default(now()) @map("created_at")
-  updatedAt        DateTime             @updatedAt @map("updated_at")
-  deletedAt        DateTime?            @map("deleted_at")
-  deletedBy        String?              @map("deleted_by")
-  lines            PurchaseBillLine[]
-  notes            PurchaseDebitNote[]
-  journalEntry     JournalEntry?        @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
-  allocations      PaymentAllocation[]
-  applications     PaymentApplication[]
+  creditedTotal         Decimal              @default(0) @map("credited_total") @db.Decimal(20, 4)
+  journalEntryId        String?              @map("journal_entry_id")
+  createdBy             String               @map("created_by")
+  postedBy              String?              @map("posted_by")
+  postedAt              DateTime?            @map("posted_at")
+  voidedOn              DateTime?            @map("voided_on") @db.Date
+  createdAt             DateTime             @default(now()) @map("created_at")
+  updatedAt             DateTime             @updatedAt @map("updated_at")
+  deletedAt             DateTime?            @map("deleted_at")
+  deletedBy             String?              @map("deleted_by")
+  /// Bukti potong (BPPU) issued in Coretax for the PPh we withheld (PPH_PAYABLE).
+  withholdingSlipNumber String?              @map("withholding_slip_number")
+  withholdingSlipDate   DateTime?            @map("withholding_slip_date") @db.Date
+  lines                 PurchaseBillLine[]
+  notes                 PurchaseDebitNote[]
+  journalEntry          JournalEntry?        @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+  allocations           PaymentAllocation[]
+  applications          PaymentApplication[]
 
   // + hand-authored CHECK purchase_bills_amount_paid_range (0 <= amount_paid <= total)
   // + hand-authored CHECK purchase_bills_credited_total_range (credited_total >= 0 AND amount_paid + credited_total <= total)
@@ -698,6 +762,9 @@ model SalesCreditNote {
   updatedAt        DateTime              @updatedAt @map("updated_at")
   deletedAt        DateTime?             @map("deleted_at")
   deletedBy        String?               @map("deleted_by")
+  /// Coretax retur (nota retur / pembatalan) reference — metadata only.
+  returNumber      String?               @map("retur_number")
+  returDate        DateTime?             @map("retur_date") @db.Date
   lines            SalesCreditNoteLine[]
   journalEntry     JournalEntry?         @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
   applications     PaymentApplication[]
@@ -774,6 +841,9 @@ model PurchaseDebitNote {
   updatedAt        DateTime                @updatedAt @map("updated_at")
   deletedAt        DateTime?               @map("deleted_at")
   deletedBy        String?                 @map("deleted_by")
+  /// Coretax retur (nota retur / pembatalan) reference — metadata only.
+  returNumber      String?                 @map("retur_number")
+  returDate        DateTime?               @map("retur_date") @db.Date
   lines            PurchaseDebitNoteLine[]
   journalEntry     JournalEntry?           @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
   applications     PaymentApplication[]

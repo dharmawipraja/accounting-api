@@ -508,6 +508,62 @@ a company-level flag.
   non-PKP company may neither charge PPN Output (sales) nor credit PPN Input (purchases) →
   422. PPh withholding is unaffected.
 
+### Coretax / faktur pajak keluaran
+DJP's tax administration system (mandatory since 2025; replaced e-Faktur desktop). Output
+tax invoices are imported as a `TaxInvoiceBulk` XML file, then signed in Coretax. The API
+exports that file from POSTED sales invoices and stores what Coretax returns — never
+amounts or postings.
+- `GET /v1/tax/coretax/faktur-keluaran` (`src/coretax/`); pure mapping + XML writer in
+  `src/coretax/faktur.ts` / `xml.ts`; workflow and sources in `docs/api/frontend-guide.md`
+  § Coretax.
+
+### NPWP (16 digits) / NIK
+Taxpayer number. Coretax uses a **16-digit** NPWP (`TIN`). A legacy 15-digit NPWP
+(`01.234.567.8-901.000`) maps to `0` + its 15 digits; a resident individual's NPWP is
+the 16-digit **NIK** (national ID). Stored digits-only (`^\d{16}$` CHECK); input
+punctuation is stripped. A buyer without NPWP is identified by `buyerDocumentType`
+`NATIONAL_ID` (NIK) / `PASSPORT` / `OTHER` + `buyerDocumentNumber`.
+- `normalizeNpwp` (`src/common/validators/npwp.ts`); migration `20261010000000_coretax`
+  normalized existing rows (audit rows `method = MIGRATION`).
+
+### NITKU / IDTKU
+*Nomor Identitas Tempat Kegiatan Usaha* — a 22-digit place-of-business id = NPWP (16) +
+a 6-digit suffix (`000000` = head office). `SellerIDTKU` / `BuyerIDTKU` on the faktur.
+- `CompanySettings.nitkuSuffix`, `BusinessPartner.nitkuSuffix`.
+
+### Kode transaksi (`TrxCode`)
+The 2-digit faktur type: `01` regular, `02` / `03` to a government / other PPN collector,
+`04` DPP Nilai Lain, `05` besaran tertentu, `06` foreign passport holders, `07` / `08`
+facility not collected / exempt (not supported — need facility fields), `09` assets
+not for sale, `10` other. Default: `04` when the PPN code has DPP Nilai Lain, else `01`;
+`SalesInvoice.trxCode` overrides.
+
+### DPP Nilai Lain (11/12)
+"Other tax base". Since PMK 131/2024 PPN is 12%, but for non-luxury goods/services the
+base is 11/12 of the price, so the effective PPN stays 11%. On the faktur: `TaxBase` =
+DPP, `OtherTaxBase` = DPP × 11/12, `VATRate` = 12, `VAT` = OtherTaxBase × 12% — the same
+amount the engine posts as DPP × 0.11. Luxury goods (PPnBM) use 12% on the full DPP.
+- `TaxCode.dppNilaiLain` + `coretaxVatRate` (presentation only; the export refuses a code
+  where VATRate × 11/12 ≠ rate, and an invoice whose faktur VAT does not reconcile with
+  its posted PPN).
+
+### NSFP (nomor seri faktur pajak)
+The 17-digit faktur number Coretax assigns on upload/approval. Recorded afterwards on
+the invoice (`taxInvoiceNumber`, `taxInvoiceDate`, `taxInvoiceStatus` NONE → EXPORTED →
+APPROVED / CANCELLED); unique among live invoices. Metadata only — editable on a POSTED
+invoice while its financial fields stay immutable.
+
+### Bukti potong / BPPU
+The PPh withholding slip. *Bukti Pemotongan/Pemungutan Unifikasi* (BPPU) covers PPh 23 /
+4(2) in Coretax. The withholder issues it: the customer for our `PPH_PREPAID` sale
+(`SalesInvoice.withholdingSlipNumber/Date`), we for a `PPH_PAYABLE` bill (Coretax issues
+the number, `PurchaseBill.withholdingSlipNumber/Date`). No BPPU XML export yet (needs the
+kode objek pajak per withholding).
+
+### Retur (nota retur)
+A sales credit note / purchase debit note's Coretax retur reference
+(`returNumber/returDate`) — metadata only.
+
 ---
 
 ## Reports

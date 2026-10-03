@@ -57,6 +57,7 @@ export class BusinessPartnersService {
       name: normalizeDisplayName(raw.name),
     };
     this.assertRole(input.isCustomer, input.isVendor);
+    assertNikFormat(input.buyerDocumentType, input.buyerDocumentNumber);
     const existing = await this.prisma.client.businessPartner.findFirst({
       where: { code: input.code },
     });
@@ -73,6 +74,10 @@ export class BusinessPartnersService {
           email: input.email,
           phone: input.phone,
           address: input.address,
+          buyerDocumentType: input.buyerDocumentType,
+          buyerDocumentNumber: input.buyerDocumentNumber,
+          nitkuSuffix: input.nitkuSuffix,
+          country: input.country,
           isCustomer: input.isCustomer ?? false,
           isVendor: input.isVendor ?? false,
         },
@@ -155,15 +160,27 @@ export class BusinessPartnersService {
         : { ...raw, name: normalizeDisplayName(raw.name) };
     return this.prisma.transaction(async (tx) => {
       const rows = await tx.$queryRaw<
-        { is_customer: boolean; is_vendor: boolean }[]
+        {
+          is_customer: boolean;
+          is_vendor: boolean;
+          buyer_document_type: string;
+          buyer_document_number: string | null;
+        }[]
       >`
-        SELECT is_customer, is_vendor FROM business_partners
+        SELECT buyer_document_type::text, buyer_document_number,
+               is_customer, is_vendor FROM business_partners
         WHERE id = ${id} AND deleted_at IS NULL FOR NO KEY UPDATE`;
       if (rows.length === 0)
         throw new NotFoundDomainError('Partner not found', { id });
       this.assertRole(
         input.isCustomer ?? rows[0].is_customer,
         input.isVendor ?? rows[0].is_vendor,
+      );
+      assertNikFormat(
+        input.buyerDocumentType ?? rows[0].buyer_document_type,
+        input.buyerDocumentNumber === undefined
+          ? rows[0].buyer_document_number
+          : input.buyerDocumentNumber,
       );
       if (rows[0].is_customer && input.isCustomer === false)
         await this.assertNoOpenItems(tx, id, 'CUSTOMER');
@@ -302,4 +319,18 @@ export class BusinessPartnersService {
       });
     });
   }
+}
+
+/** A NATIONAL_ID buyer document number is a NIK: 16 digits (422). Judged on
+ *  the merged values so a type-only PATCH cannot strand a non-NIK number
+ *  (the DB CHECK business_partners_coretax_format is the backstop). */
+function assertNikFormat(
+  type: string | undefined,
+  number: string | null | undefined,
+): void {
+  if (type === 'NATIONAL_ID' && number != null && !/^\d{16}$/.test(number))
+    throw new ValidationFailedError(
+      'buyerDocumentNumber must be a 16-digit NIK for buyerDocumentType NATIONAL_ID',
+      { buyerDocumentNumber: number },
+    );
 }

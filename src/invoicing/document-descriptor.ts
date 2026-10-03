@@ -1,4 +1,9 @@
-import { AccountRole, DocumentStatus, Prisma } from '@prisma/client';
+import {
+  AccountRole,
+  DocumentStatus,
+  Prisma,
+  TaxInvoiceStatus,
+} from '@prisma/client';
 import type { LedgerTx } from '../common/prisma/prisma.service';
 import type { PostedDocContext } from './document-posting.service';
 import type { CalculatedLine } from '../tax/tax.service';
@@ -131,6 +136,8 @@ export interface DocumentUpdateCommon extends DocumentTotals {
 export interface DocumentListWhere {
   partnerId?: string;
   status?: DocumentStatus;
+  /** Sales invoices only. */
+  taxInvoiceStatus?: TaxInvoiceStatus;
 }
 
 /** The label-bearing subset of a descriptor used to build error messages. */

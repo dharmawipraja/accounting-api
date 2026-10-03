@@ -30,7 +30,7 @@ import {
 import { SalesInvoicesService } from './sales-invoices.service';
 import { CreateSalesInvoiceDto } from './dto/create-sales-invoice.dto';
 import { UpdateSalesInvoiceDto } from './dto/update-sales-invoice.dto';
-import { DocumentListQueryDto } from './dto/document-list-query.dto';
+import { SalesInvoiceListQueryDto } from './dto/document-list-query.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '../auth/role.enum';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -46,7 +46,7 @@ export class SalesInvoicesController {
 
   @ApiOkResponse({ type: SalesInvoiceListResponseDto })
   @Get()
-  list(@Query() q: DocumentListQueryDto) {
+  list(@Query() q: SalesInvoiceListQueryDto) {
     return this.invoices.listPage(q);
   }
 
@@ -70,6 +70,7 @@ export class SalesInvoicesController {
       dueDate: optionalBusinessDate(dto.dueDate),
       description: dto.description,
       lines: dto.lines,
+      trxCode: dto.trxCode,
       createdBy: user.id,
     });
     return this.invoices.present(inv);
@@ -87,6 +88,7 @@ export class SalesInvoicesController {
       dueDate: patchBusinessDate(dto.dueDate),
       description: dto.description,
       lines: dto.lines,
+      trxCode: dto.trxCode,
     });
     return this.invoices.present(inv);
   }

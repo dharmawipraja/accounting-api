@@ -25,6 +25,7 @@ import { CompanyModule } from './company/company.module';
 import { LedgerModule } from './ledger/ledger.module';
 import { TaxModule } from './tax/tax.module';
 import { InvoicingModule } from './invoicing/invoicing.module';
+import { CoretaxModule } from './coretax/coretax.module';
 import { ReportingModule } from './reporting/reporting.module';
 import { CloseModule } from './close/close.module';
 import { AuditModule } from './audit/audit.module';
@@ -104,6 +105,7 @@ import {
     LedgerModule,
     TaxModule,
     InvoicingModule,
+    CoretaxModule,
     ReportingModule,
     CloseModule,
     AuditModule,

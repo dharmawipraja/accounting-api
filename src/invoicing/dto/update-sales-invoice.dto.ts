@@ -1,6 +1,7 @@
 import { IsBusinessDate } from '../../common/validators/is-business-date';
 import { Type } from 'class-transformer';
 import {
+  IsIn,
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
@@ -10,7 +11,7 @@ import {
   MaxLength,
   ValidateNested,
 } from 'class-validator';
-import { DocumentLineDto } from './document-line.dto';
+import { SalesInvoiceLineDto, TRX_CODES } from './document-line.dto';
 import { MAX_LINE_ITEMS } from '../../common/dto/limits';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { OptionalNonNull } from '../../common/validators/optional-non-null';
@@ -42,6 +43,16 @@ export class UpdateSalesInvoiceDto {
   @ArrayMinSize(1)
   @ArrayMaxSize(MAX_LINE_ITEMS)
   @ValidateNested({ each: true })
-  @Type(() => DocumentLineDto)
-  lines?: DocumentLineDto[];
+  @Type(() => SalesInvoiceLineDto)
+  lines?: SalesInvoiceLineDto[];
+  @ApiPropertyOptional({
+    type: String,
+    enum: TRX_CODES,
+    nullable: true,
+    description:
+      'Coretax kode transaksi override; omitted/null = derived at export (04 with DPP Nilai Lain, else 01). Send `null` to clear.',
+  })
+  @IsOptional()
+  @IsIn(TRX_CODES)
+  trxCode?: string | null;
 }

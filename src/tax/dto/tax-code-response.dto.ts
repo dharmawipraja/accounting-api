@@ -16,6 +16,18 @@ export class TaxCodeResponseDto {
   })
   rate!: string;
   @ApiProperty({ format: 'uuid' }) taxAccountId!: string;
+  @ApiProperty({
+    example: false,
+    description: 'Coretax: DPP Nilai Lain 11/12 (PPN Output).',
+  })
+  dppNilaiLain!: boolean;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: '12',
+    description: 'Coretax statutory VATRate %; null = derived from rate.',
+  })
+  coretaxVatRate!: string | null;
   @ApiProperty({ example: true }) isActive!: boolean;
   @ApiProperty({ format: 'date-time' }) createdAt!: string;
   @ApiProperty({ format: 'date-time' }) updatedAt!: string;

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DocumentStatus, Prisma } from '@prisma/client';
+import { DocumentStatus, Prisma, TaxInvoiceStatus } from '@prisma/client';
 import { assertNotAfterToday } from '../common/dates/not-after-today';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { Money } from '../common/money/money';
@@ -51,6 +51,8 @@ interface ListQuery {
   q?: string;
   partnerId?: string;
   status?: DocumentStatus;
+  /** Sales invoices only (the column exists on sales_invoices). */
+  taxInvoiceStatus?: TaxInvoiceStatus;
   limit?: number;
   offset?: number;
 }
@@ -217,9 +219,14 @@ export class TaxedDocumentService {
     const filters: Prisma.Sql[] = [];
     if (q.partnerId) filters.push(Prisma.sql`t.partner_id = ${q.partnerId}`);
     if (q.status) filters.push(Prisma.sql`t.status::text = ${q.status}`);
+    if (q.taxInvoiceStatus)
+      filters.push(
+        Prisma.sql`t.tax_invoice_status::text = ${q.taxInvoiceStatus}`,
+      );
     const where: DocumentListWhere = {
       partnerId: q.partnerId,
       status: q.status,
+      ...(q.taxInvoiceStatus ? { taxInvoiceStatus: q.taxInvoiceStatus } : {}),
     };
     return listPaginated({
       q: q.q,

@@ -1,4 +1,11 @@
-import { IsBoolean, IsString, Matches, MaxLength } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsBoolean,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 import { OptionalNonNull } from '../../common/validators/optional-non-null';
 import { NON_BLANK_MESSAGE } from '../../common/text/identifier';
 import { DisplayName } from '../../common/validators/identifier-code';
@@ -23,4 +30,26 @@ export class UpdateTaxCodeDto {
   @OptionalNonNull()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'PPN Output only — Coretax presentation: DPP Nilai Lain = 11/12 × DPP (PMK 131/2024). Does not change the computed tax.',
+  })
+  @OptionalNonNull()
+  @IsBoolean()
+  dppNilaiLain?: boolean;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: '12',
+    description:
+      'PPN Output only — statutory VATRate (%) shown on the faktur; null = derived from rate. rate × 100 must equal it (× 11/12 with dppNilaiLain).',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{1,3}(\.\d{1,2})?$/, {
+    message: 'coretaxVatRate must be a percent with up to 2 decimals, e.g. 12',
+  })
+  coretaxVatRate?: string | null;
 }

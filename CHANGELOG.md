@@ -8,6 +8,29 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Coretax (DJP) faktur keluaran XML export, NSFP and bukti potong records** —
+  `GET /v1/tax/coretax/faktur-keluaran?from&to[&status]` returns the Coretax
+  `TaxInvoiceBulk` import file (`application/xml` attachment) for POSTED sales invoices
+  with PPN Output (one `TaxInvoice` each; DPP Nilai Lain 11/12 → `TrxCode 04`,
+  `VATRate 12`, `OtherTaxBase = DPP × 11/12`; discounts in `TotalDiscount`), or `422`
+  listing every missing master-data field / unreconciled VAT instead of an invalid
+  file. The GET does not mutate; `POST …/mark-exported { invoiceIds }` marks invoices
+  EXPORTED. `PATCH /v1/sales-invoices/:id/tax-invoice` records the NSFP (17 digits,
+  `409` on a duplicate) / faktur status on POSTED invoices; `PATCH …/withholding-slip`
+  on sales invoices (PPH_PREPAID) and purchase bills (PPH_PAYABLE) and
+  `PATCH …/retur-reference` on credit/debit notes store bukti potong / retur
+  references. New fields: company `nitkuSuffix` + Coretax line defaults; partner
+  `buyerDocumentType`, `buyerDocumentNumber`, `nitkuSuffix`, `country`; tax code
+  `dppNilaiLain`, `coretaxVatRate` (presentation only; seeded `PPN-OUT-11` set to
+  12% × 11/12); invoice `trxCode` and line `coretaxItemType/ItemCode/UnitCode`;
+  `?taxInvoiceStatus=` list filter. **NPWP is now validated**: 16 digits, input
+  punctuation stripped, legacy 15-digit → `0` + 15. Migration `20261010000000_coretax`
+  normalizes existing NPWPs (audit rows `method = MIGRATION`) and **fails the deploy
+  listing any live NPWP it cannot normalize**. No ledger or amount change. Format from
+  DJP's official sample and converter (<https://www.pajak.go.id/en/node/112031>:
+  *Sample Faktur PK Template v.1.4.xml*, *ConverterEfakturCoretax v1.6*); unverified
+  points and the skipped BPPU XML export are listed in `docs/api/frontend-guide.md`
+  § Coretax.
 - **Per-line discounts on sales invoices and purchase bills, applied before tax** —
   each line accepts an optional `discountPercent` (0–100, up to 4 dp) **or**
   `discountAmount` (both → `400`; an amount above `quantity × unitPrice` → `422`). The
