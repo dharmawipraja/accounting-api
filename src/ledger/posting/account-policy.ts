@@ -19,10 +19,13 @@ export interface AccountPolicy {
 }
 
 /** AR/AP control balances must only move through documents (invoice, bill,
- *  payment) so the subledger stays equal to the control account. A MANUAL entry
- *  on a control account would drift the two apart. Likewise the advance
- *  accounts (Uang Muka Pelanggan / Pembelian) must equal the posted payments'
- *  unapplied amounts, so only payments and their applications move them. OPENING (go-live), CLOSING,
+ *  credit/debit note, payment) so the subledger stays equal to the control
+ *  account. A MANUAL entry on a control account would drift the two apart.
+ *  Likewise the advance accounts (Uang Muka Pelanggan / Pembelian) must equal
+ *  the posted payments' + notes' unapplied amounts, so only payments,
+ *  credit/debit notes (their excess) and their applications move them. The
+ *  note source types fall through to the unrestricted policy like invoices
+ *  and bills. OPENING (go-live), CLOSING,
  *  REVERSAL and the document source types are deliberately role-unrestricted. */
 export const MANUAL_ENTRY_POLICY: AccountPolicy = {
   forbiddenRoles: [

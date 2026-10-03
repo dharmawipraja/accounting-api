@@ -1,6 +1,7 @@
 import { AccountRole, DocumentStatus, Prisma } from '@prisma/client';
 import type { LedgerTx } from '../common/prisma/prisma.service';
-import { PostedDocContext } from './document-posting.service';
+import type { PostedDocContext } from './document-posting.service';
+import type { CalculatedLine } from '../tax/tax.service';
 import { SoftDeletableModel } from '../ledger/document-lifecycle.service';
 
 /** A document line as read back from the DB (Decimal money columns). */
@@ -16,13 +17,13 @@ export interface DocumentLineRow {
   taxCodeIds: string[];
 }
 
-/** Structural shape every taxed-document row shares; lets presentDocument stay generic. */
-export interface DocumentRow {
+/** Structural shape every taxed-document row shares (invoices, bills, and
+ *  credit/debit notes). */
+export interface TaxedRow {
   id: string;
   status: DocumentStatus;
   partnerId: string;
   date: Date;
-  dueDate: Date | null;
   description: string | null;
   createdBy: string;
   journalEntryId: string | null;
@@ -30,10 +31,31 @@ export interface DocumentRow {
   taxTotal: Prisma.Decimal;
   withholdingTotal: Prisma.Decimal;
   total: Prisma.Decimal;
-  amountPaid: Prisma.Decimal;
   discountTotal: Prisma.Decimal;
   lines?: DocumentLineRow[];
 }
+
+/** An invoice / bill row: a taxed row that is settled (payments, notes) and
+ *  ages; lets presentDocument stay generic. */
+export interface DocumentRow extends TaxedRow {
+  dueDate: Date | null;
+  amountPaid: Prisma.Decimal;
+  creditedTotal: Prisma.Decimal;
+}
+
+/** The journal source types of taxed documents. */
+export type TaxedSourceType =
+  | 'SALES_INVOICE'
+  | 'PURCHASE_BILL'
+  | 'SALES_CREDIT_NOTE'
+  | 'PURCHASE_DEBIT_NOTE';
+
+/** Their tables — constant literals, never user input (safe for Prisma.raw). */
+export type TaxedTable =
+  | 'sales_invoices'
+  | 'purchase_bills'
+  | 'sales_credit_notes'
+  | 'purchase_debit_notes';
 
 /** A document line as supplied by a caller (4dp strings). */
 export interface DocumentLineInput {
@@ -99,7 +121,8 @@ export interface DocumentCreateCommon extends DocumentTotals {
 
 export interface DocumentUpdateCommon extends DocumentTotals {
   date: Date;
-  dueDate: Date | null;
+  /** Absent for a document type without a due date (notes). */
+  dueDate?: Date | null;
   description: string | null;
   discountTotal: string;
   lines: { create: DocumentLineCreateData[] };
@@ -112,25 +135,30 @@ export interface DocumentListWhere {
 
 /** The label-bearing subset of a descriptor used to build error messages. */
 export interface DocumentLabels {
-  noun: string; // 'invoice' | 'bill'
-  label: string; // 'Sales invoice' | 'Purchase bill'
+  noun: string; // 'invoice' | 'bill' | 'credit note' | 'debit note'
+  label: string; // 'Sales invoice' | 'Purchase bill' | …
   article: 'a' | 'an';
   partnerFlag: 'isCustomer' | 'isVendor';
 }
 
 /** The typed adapter to one document type's Prisma delegate. */
 export interface DocumentDescriptor<
-  TRow extends DocumentRow,
+  TRow extends TaxedRow,
   TCreate extends CreateDocumentInput = CreateDocumentInput,
   TUpdate extends UpdateDocumentInput = UpdateDocumentInput,
 > extends DocumentLabels {
   nature: 'SALE' | 'PURCHASE';
   controlRole: AccountRole;
-  sourceType: 'SALES_INVOICE' | 'PURCHASE_BILL';
-  documentType: string; // 'INV' | 'BILL'
-  table: 'sales_invoices' | 'purchase_bills';
-  /** This document type's FK column on payment_allocations. */
-  allocationColumn: 'sales_invoice_id' | 'purchase_bill_id';
+  sourceType: TaxedSourceType;
+  documentType: string; // 'INV' | 'BILL' | 'CN' | 'DN'
+  table: TaxedTable;
+  /** This document type's FK column on payment_allocations (invoices/bills). */
+  allocationColumn?: 'sales_invoice_id' | 'purchase_bill_id';
+  /** Invoices/bills: the notes that return part of them (void guard). */
+  notes?: {
+    table: 'sales_credit_notes' | 'purchase_debit_notes';
+    noun: string;
+  };
   /** Own searched columns for fuzzy ?q= search — a non-empty tuple (trigramSearch requires ≥1). */
   trigramColumns: [string, ...string[]];
   model: SoftDeletableModel;
@@ -163,4 +191,19 @@ export interface DocumentDescriptor<
     postedBy: string,
   ): Promise<void>;
   markVoid(tx: LedgerTx, id: string, voidedOn: Date): Promise<void>;
+  /** API shape of a row (list + single reads). */
+  present(row: TRow): unknown;
+  /** Optional extra posting steps (credit/debit notes): planned from the
+   *  pre-lock read of each post attempt. */
+  postHooks?(row: TRow): Promise<DocumentPostHooks>;
+}
+
+/** Extra steps a document type adds to the shared post (see
+ *  DocumentPostingService.post): reshape the tax journal, verify more state
+ *  under the document lock (throw DraftChangedError when it moved since the
+ *  plan — the post restarts), and write more rows in the same tx. */
+export interface DocumentPostHooks {
+  journalLines(lines: CalculatedLine[]): CalculatedLine[];
+  verifyInTx(tx: LedgerTx): Promise<void>;
+  finalizeInTx(tx: LedgerTx, ctx: PostedDocContext): Promise<void>;
 }

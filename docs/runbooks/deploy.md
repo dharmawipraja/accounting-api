@@ -415,7 +415,7 @@ skips those — the list below still applies to the ones that remain):
 | Role | Used by | Privileges |
 |---|---|---|
 | `accounting` (`POSTGRES_USER`, owner) | `migrate`, `backup`, operators | owns the schema; DDL |
-| `accounting_app` | `api` (`DATABASE_URL` in `docker-compose.prod.yml`) | `SELECT/INSERT/UPDATE` on all tables, `DELETE` **only** on the hard-delete allow-list (`sales_invoice_lines`, `purchase_bill_lines`, `accounting_periods`, `idempotency_keys`, `refresh_tokens`), `USAGE/SELECT/UPDATE` on sequences; **no** TRUNCATE, **no** DDL, not superuser/createdb/createrole, owns nothing, no access to `_prisma_migrations`, INSERT/SELECT only on the append-only `audit_log` |
+| `accounting_app` | `api` (`DATABASE_URL` in `docker-compose.prod.yml`) | `SELECT/INSERT/UPDATE` on all tables, `DELETE` **only** on the hard-delete allow-list (`sales_invoice_lines`, `purchase_bill_lines`, `sales_credit_note_lines`, `purchase_debit_note_lines`, `accounting_periods`, `idempotency_keys`, `refresh_tokens`), `USAGE/SELECT/UPDATE` on sequences; **no** TRUNCATE, **no** DDL, not superuser/createdb/createrole, owns nothing, no access to `_prisma_migrations`, INSERT/SELECT only on the append-only `audit_log` |
 
 - **Where it is created:** `scripts/db/app-role.sql` (idempotent) is applied
   (a) by the postgres init hook `scripts/db/initdb/10-accounting-app-role.sh` on a

@@ -30,8 +30,10 @@ export class SalesInvoicesService {
       documentType: 'INV',
       table: 'sales_invoices',
       allocationColumn: 'sales_invoice_id',
+      notes: { table: 'sales_credit_notes', noun: 'credit note' },
       trigramColumns: ['invoice_ref', 'description'],
       model: this.prisma.client.salesInvoice,
+      present: (r) => presentDocument(r),
       findById: (id, db = this.prisma.client) =>
         db.salesInvoice.findFirst({
           where: { id },

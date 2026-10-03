@@ -13,6 +13,7 @@ function row(
   total: string,
   amountPaid: string,
   lines?: DocumentRow['lines'],
+  creditedTotal = '0',
 ): DocumentRow {
   return {
     id: 'd1',
@@ -28,6 +29,7 @@ function row(
     withholdingTotal: D('0'),
     total: D(total),
     amountPaid: D(amountPaid),
+    creditedTotal: D(creditedTotal),
     discountTotal: D('0'),
     lines,
   };
@@ -71,6 +73,16 @@ describe('presentDocument', () => {
     const out = presentDocument(row('1000', '1200'));
     expect(out.outstanding).toBe('-200.0000');
     expect(out.paymentStatus).toBe('PAID');
+  });
+
+  it('credit notes settle too: outstanding = total − paid − credited', () => {
+    const partial = presentDocument(row('1000', '0', undefined, '300'));
+    expect(partial.outstanding).toBe('700.0000');
+    expect(partial.paymentStatus).toBe('PARTIAL');
+    expect(partial.creditedTotal).toBe('300.0000');
+    const settled = presentDocument(row('1000', '600', undefined, '400'));
+    expect(settled.outstanding).toBe('0.0000');
+    expect(settled.paymentStatus).toBe('PAID');
   });
 
   it('serializes nested line money fields to 4dp strings', () => {

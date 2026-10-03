@@ -22,6 +22,8 @@ const SOD_SOURCES = new Set([
   'SALES_INVOICE',
   'PURCHASE_BILL',
   'PAYMENT',
+  'SALES_CREDIT_NOTE',
+  'PURCHASE_DEBIT_NOTE',
 ]);
 
 @Injectable()

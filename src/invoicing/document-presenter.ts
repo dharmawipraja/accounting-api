@@ -54,15 +54,19 @@ export function buildLineCreateData(
   }));
 }
 
-/** Shape an API response: 4dp money strings + derived outstanding/paymentStatus.
+/** Shape an API response: 4dp money strings + derived outstanding/paymentStatus
+ *  (outstanding = total − amountPaid − creditedTotal).
  *  Generic over any taxed-document row. */
 export function presentDocument<T extends DocumentRow>(
   doc: T,
 ): T & { outstanding: string; paymentStatus: string } {
   const total = Money.of(doc.total.toString());
-  const paid = Money.of(doc.amountPaid.toString());
-  const outstanding = total.subtract(paid);
-  const paymentStatus = paid.isZero()
+  // Settled = payments + POSTED credit/debit notes (creditedTotal).
+  const settled = Money.of(doc.amountPaid.toString()).add(
+    Money.of(doc.creditedTotal.toString()),
+  );
+  const outstanding = total.subtract(settled);
+  const paymentStatus = settled.isZero()
     ? 'UNPAID'
     : outstanding.isZero() || outstanding.isNegative()
       ? 'PAID'
@@ -78,6 +82,7 @@ export function presentDocument<T extends DocumentRow>(
       'withholdingTotal',
       'total',
       'amountPaid',
+      'creditedTotal',
       'discountTotal',
     ]),
     ...(lines

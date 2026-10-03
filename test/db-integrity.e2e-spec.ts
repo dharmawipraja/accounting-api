@@ -486,6 +486,10 @@ describe('DB integrity — ledger invariants enforced by Postgres (e2e)', () => 
       'purchase_bill_lines',
       'payments',
       'payment_allocations',
+      'sales_credit_notes',
+      'sales_credit_note_lines',
+      'purchase_debit_notes',
+      'purchase_debit_note_lines',
     ])('rejects TRUNCATE %s', async (table) => {
       await expect(runSql(`TRUNCATE ${table} CASCADE`)).rejects.toThrow(
         /TRUNCATE is not permitted/i,

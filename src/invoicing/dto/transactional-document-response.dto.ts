@@ -45,6 +45,12 @@ export class TransactionalDocumentResponseDto {
   @ApiMoney() withholdingTotal!: string;
   @ApiMoney() total!: string;
   @ApiMoney() amountPaid!: string;
+  @ApiMoney({
+    example: '0.0000',
+    description:
+      'Settled by POSTED sales credit notes / purchase debit notes against this document.',
+  })
+  creditedTotal!: string;
   @ApiProperty({ format: 'uuid', nullable: true }) journalEntryId!:
     | string
     | null;
@@ -62,6 +68,7 @@ export class TransactionalDocumentResponseDto {
   voidedOn!: string | null;
   @ApiProperty({ format: 'date-time' }) createdAt!: string;
   @ApiProperty({ format: 'date-time' }) updatedAt!: string;
-  @ApiMoney({ description: 'total − amountPaid' }) outstanding!: string;
+  @ApiMoney({ description: 'total − amountPaid − creditedTotal' })
+  outstanding!: string;
   @ApiProperty({ enum: ['UNPAID', 'PARTIAL', 'PAID'] }) paymentStatus!: string;
 }

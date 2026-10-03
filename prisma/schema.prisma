@@ -124,30 +124,32 @@ enum AccountRole {
 }
 
 model Account {
-  id                String             @id @default(uuid())
-  code              String
-  name              String
-  type              AccountType
-  subtype           AccountSubtype
-  cashFlowCategory  CashFlowCategory   @default(NONE) @map("cash_flow_category")
-  role              AccountRole?
-  normalBalance     NormalBalance      @map("normal_balance")
-  parentId          String?            @map("parent_id")
-  parent            Account?           @relation("AccountHierarchy", fields: [parentId], references: [id])
-  children          Account[]          @relation("AccountHierarchy")
-  isPostable        Boolean            @default(true) @map("is_postable")
-  isActive          Boolean            @default(true) @map("is_active")
-  currency          String             @default("IDR")
-  createdAt         DateTime           @default(now()) @map("created_at")
-  updatedAt         DateTime           @updatedAt @map("updated_at")
-  deletedAt         DateTime?          @map("deleted_at")
-  deletedBy         String?            @map("deleted_by")
+  id                     String                  @id @default(uuid())
+  code                   String
+  name                   String
+  type                   AccountType
+  subtype                AccountSubtype
+  cashFlowCategory       CashFlowCategory        @default(NONE) @map("cash_flow_category")
+  role                   AccountRole?
+  normalBalance          NormalBalance           @map("normal_balance")
+  parentId               String?                 @map("parent_id")
+  parent                 Account?                @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children               Account[]               @relation("AccountHierarchy")
+  isPostable             Boolean                 @default(true) @map("is_postable")
+  isActive               Boolean                 @default(true) @map("is_active")
+  currency               String                  @default("IDR")
+  createdAt              DateTime                @default(now()) @map("created_at")
+  updatedAt              DateTime                @updatedAt @map("updated_at")
+  deletedAt              DateTime?               @map("deleted_at")
+  deletedBy              String?                 @map("deleted_by")
   // Back-relations of the ON DELETE RESTRICT FKs (20260926300000_ledger_integrity).
-  journalLines      JournalLine[]
-  salesInvoiceLines SalesInvoiceLine[]
-  purchaseBillLines PurchaseBillLine[]
-  cashPayments      Payment[]
-  taxCodes          TaxCode[]
+  journalLines           JournalLine[]
+  salesInvoiceLines      SalesInvoiceLine[]
+  purchaseBillLines      PurchaseBillLine[]
+  salesCreditNoteLines   SalesCreditNoteLine[]
+  purchaseDebitNoteLines PurchaseDebitNoteLine[]
+  cashPayments           Payment[]
+  taxCodes               TaxCode[]
 
   @@unique([code], name: "accounts_code_unique")
   // + hand-authored UNIQUE INDEX accounts_code_lower_live_key ON accounts
@@ -200,6 +202,8 @@ enum JournalSourceType {
   PURCHASE_BILL
   PAYMENT
   CLOSING
+  SALES_CREDIT_NOTE
+  PURCHASE_DEBIT_NOTE
 }
 
 enum CloseStatus {
@@ -250,6 +254,8 @@ model JournalEntry {
   purchaseBills       PurchaseBill[]
   payments            Payment[]
   paymentApplications PaymentApplication[]
+  salesCreditNotes    SalesCreditNote[]
+  purchaseDebitNotes  PurchaseDebitNote[]
   yearEndClosings     YearEndClosing[]
 
   // DB-level invariants (20260926300000_ledger_integrity), hand-authored:
@@ -363,23 +369,25 @@ enum PaymentDirection {
 }
 
 model BusinessPartner {
-  id            String         @id @default(uuid())
-  code          String
-  name          String
-  npwp          String?
-  email         String?
-  phone         String?
-  address       String?
-  isCustomer    Boolean        @default(false) @map("is_customer")
-  isVendor      Boolean        @default(false) @map("is_vendor")
-  isActive      Boolean        @default(true) @map("is_active")
-  createdAt     DateTime       @default(now()) @map("created_at")
-  updatedAt     DateTime       @updatedAt @map("updated_at")
-  deletedAt     DateTime?      @map("deleted_at")
-  deletedBy     String?        @map("deleted_by")
-  salesInvoices SalesInvoice[]
-  purchaseBills PurchaseBill[]
-  payments      Payment[]
+  id                 String              @id @default(uuid())
+  code               String
+  name               String
+  npwp               String?
+  email              String?
+  phone              String?
+  address            String?
+  isCustomer         Boolean             @default(false) @map("is_customer")
+  isVendor           Boolean             @default(false) @map("is_vendor")
+  isActive           Boolean             @default(true) @map("is_active")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  deletedAt          DateTime?           @map("deleted_at")
+  deletedBy          String?             @map("deleted_by")
+  salesInvoices      SalesInvoice[]
+  purchaseBills      PurchaseBill[]
+  payments           Payment[]
+  salesCreditNotes   SalesCreditNote[]
+  purchaseDebitNotes PurchaseDebitNote[]
 
   // + hand-authored CHECK business_partners_customer_or_vendor (is_customer OR is_vendor)
   @@unique([code], name: "business_partners_code_unique")
@@ -411,6 +419,9 @@ model SalesInvoice {
   amountPaid       Decimal              @default(0) @map("amount_paid") @db.Decimal(20, 4)
   /// Sum of the lines' discountAmount (subtotal is already net of it).
   discountTotal    Decimal              @default(0) @map("discount_total") @db.Decimal(20, 4)
+  /// Settled by POSTED credit/debit notes (their creditedAmount); outstanding
+  /// = total − amountPaid − creditedTotal.
+  creditedTotal    Decimal              @default(0) @map("credited_total") @db.Decimal(20, 4)
   journalEntryId   String?              @map("journal_entry_id")
   createdBy        String               @map("created_by")
   postedBy         String?              @map("posted_by")
@@ -421,11 +432,13 @@ model SalesInvoice {
   deletedAt        DateTime?            @map("deleted_at")
   deletedBy        String?              @map("deleted_by")
   lines            SalesInvoiceLine[]
+  notes            SalesCreditNote[]
   journalEntry     JournalEntry?        @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
   allocations      PaymentAllocation[]
   applications     PaymentApplication[]
 
   // + hand-authored CHECK sales_invoices_amount_paid_range (0 <= amount_paid <= total)
+  // + hand-authored CHECK sales_invoices_credited_total_range (credited_total >= 0 AND amount_paid + credited_total <= total)
   // + hand-authored CHECK sales_invoices_discount_total_nonnegative (discount_total >= 0)
   // + hand-authored CHECK sales_invoices_journal_entry_iff_not_draft ((status = 'DRAFT') = (journal_entry_id IS NULL))
   @@unique([fiscalYear, invoiceNumber], name: "sales_invoices_fy_number_unique")
@@ -439,22 +452,23 @@ model SalesInvoice {
 }
 
 model SalesInvoiceLine {
-  id              String       @id @default(uuid())
-  salesInvoiceId  String       @map("sales_invoice_id")
-  invoice         SalesInvoice @relation(fields: [salesInvoiceId], references: [id], onDelete: Cascade)
-  lineNo          Int          @map("line_no")
+  id              String                @id @default(uuid())
+  salesInvoiceId  String                @map("sales_invoice_id")
+  invoice         SalesInvoice          @relation(fields: [salesInvoiceId], references: [id], onDelete: Cascade)
+  lineNo          Int                   @map("line_no")
   description     String
-  accountId       String       @map("account_id")
-  account         Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  quantity        Decimal      @db.Decimal(20, 4)
-  unitPrice       Decimal      @map("unit_price") @db.Decimal(20, 4)
+  accountId       String                @map("account_id")
+  account         Account               @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  quantity        Decimal               @db.Decimal(20, 4)
+  unitPrice       Decimal               @map("unit_price") @db.Decimal(20, 4)
   // Discount applied before tax: what the user entered (percent; null for a
   // fixed or no discount) and the resolved amount. `amount` is NET (the DPP).
-  discountPercent Decimal?     @map("discount_percent") @db.Decimal(7, 4)
-  discountAmount  Decimal      @default(0) @map("discount_amount") @db.Decimal(20, 4)
-  amount          Decimal      @db.Decimal(20, 4)
+  discountPercent Decimal?              @map("discount_percent") @db.Decimal(7, 4)
+  discountAmount  Decimal               @default(0) @map("discount_amount") @db.Decimal(20, 4)
+  amount          Decimal               @db.Decimal(20, 4)
   // No FK: an array of tax code ids (validated by the app).
-  taxCodeIds      String[]     @map("tax_code_ids")
+  taxCodeIds      String[]              @map("tax_code_ids")
+  noteLines       SalesCreditNoteLine[]
 
   // + hand-authored CHECK sales_invoice_lines_nonnegative (quantity, unit_price >= 0)
   // + hand-authored CHECK sales_invoice_lines_valid_discount (0 <= discount_amount <= round(quantity*unit_price, 4), amount >= 0, percent in [0, 100])
@@ -482,6 +496,9 @@ model PurchaseBill {
   amountPaid       Decimal              @default(0) @map("amount_paid") @db.Decimal(20, 4)
   /// Sum of the lines' discountAmount (subtotal is already net of it).
   discountTotal    Decimal              @default(0) @map("discount_total") @db.Decimal(20, 4)
+  /// Settled by POSTED credit/debit notes (their creditedAmount); outstanding
+  /// = total − amountPaid − creditedTotal.
+  creditedTotal    Decimal              @default(0) @map("credited_total") @db.Decimal(20, 4)
   journalEntryId   String?              @map("journal_entry_id")
   createdBy        String               @map("created_by")
   postedBy         String?              @map("posted_by")
@@ -492,11 +509,13 @@ model PurchaseBill {
   deletedAt        DateTime?            @map("deleted_at")
   deletedBy        String?              @map("deleted_by")
   lines            PurchaseBillLine[]
+  notes            PurchaseDebitNote[]
   journalEntry     JournalEntry?        @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
   allocations      PaymentAllocation[]
   applications     PaymentApplication[]
 
   // + hand-authored CHECK purchase_bills_amount_paid_range (0 <= amount_paid <= total)
+  // + hand-authored CHECK purchase_bills_credited_total_range (credited_total >= 0 AND amount_paid + credited_total <= total)
   // + hand-authored CHECK purchase_bills_discount_total_nonnegative (discount_total >= 0)
   // + hand-authored CHECK purchase_bills_journal_entry_iff_not_draft ((status = 'DRAFT') = (journal_entry_id IS NULL))
   @@unique([fiscalYear, billNumber], name: "purchase_bills_fy_number_unique")
@@ -516,22 +535,23 @@ model PurchaseBill {
 }
 
 model PurchaseBillLine {
-  id              String       @id @default(uuid())
-  purchaseBillId  String       @map("purchase_bill_id")
-  bill            PurchaseBill @relation(fields: [purchaseBillId], references: [id], onDelete: Cascade)
-  lineNo          Int          @map("line_no")
+  id              String                  @id @default(uuid())
+  purchaseBillId  String                  @map("purchase_bill_id")
+  bill            PurchaseBill            @relation(fields: [purchaseBillId], references: [id], onDelete: Cascade)
+  lineNo          Int                     @map("line_no")
   description     String
-  accountId       String       @map("account_id")
-  account         Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
-  quantity        Decimal      @db.Decimal(20, 4)
-  unitPrice       Decimal      @map("unit_price") @db.Decimal(20, 4)
+  accountId       String                  @map("account_id")
+  account         Account                 @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  quantity        Decimal                 @db.Decimal(20, 4)
+  unitPrice       Decimal                 @map("unit_price") @db.Decimal(20, 4)
   // Discount applied before tax: what the user entered (percent; null for a
   // fixed or no discount) and the resolved amount. `amount` is NET (the DPP).
-  discountPercent Decimal?     @map("discount_percent") @db.Decimal(7, 4)
-  discountAmount  Decimal      @default(0) @map("discount_amount") @db.Decimal(20, 4)
-  amount          Decimal      @db.Decimal(20, 4)
+  discountPercent Decimal?                @map("discount_percent") @db.Decimal(7, 4)
+  discountAmount  Decimal                 @default(0) @map("discount_amount") @db.Decimal(20, 4)
+  amount          Decimal                 @db.Decimal(20, 4)
   // No FK: an array of tax code ids (validated by the app).
-  taxCodeIds      String[]     @map("tax_code_ids")
+  taxCodeIds      String[]                @map("tax_code_ids")
+  noteLines       PurchaseDebitNoteLine[]
 
   // + hand-authored CHECK purchase_bill_lines_nonnegative (quantity, unit_price >= 0)
   // + hand-authored CHECK purchase_bill_lines_valid_discount (0 <= discount_amount <= round(quantity*unit_price, 4), amount >= 0, percent in [0, 100])
@@ -608,30 +628,191 @@ model PaymentAllocation {
 /// an invoice/bill: its own journal (Dr Uang Muka Pelanggan / Cr AR, or
 /// Dr AP / Cr Uang Muka Pembelian). Live on [date, reversedOn).
 model PaymentApplication {
-  id             String        @id @default(uuid())
-  paymentId      String        @map("payment_id")
-  payment        Payment       @relation(fields: [paymentId], references: [id], onDelete: Restrict)
-  salesInvoiceId String?       @map("sales_invoice_id")
-  salesInvoice   SalesInvoice? @relation(fields: [salesInvoiceId], references: [id], onDelete: Restrict)
-  purchaseBillId String?       @map("purchase_bill_id")
-  purchaseBill   PurchaseBill? @relation(fields: [purchaseBillId], references: [id], onDelete: Restrict)
-  amount         Decimal       @db.Decimal(20, 4)
-  date           DateTime      @db.Date
-  journalEntryId String        @unique @map("journal_entry_id")
-  journalEntry   JournalEntry  @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
-  createdBy      String        @map("created_by")
-  createdAt      DateTime      @default(now()) @map("created_at")
-  reversedOn     DateTime?     @map("reversed_on") @db.Date
-  reversedBy     String?       @map("reversed_by")
+  id                  String             @id @default(uuid())
+  // The credit applied: a payment's unapplied advance, or (20261009000000) a
+  // credit/debit note's unapplied excess — exactly one of the three is set.
+  paymentId           String?            @map("payment_id")
+  payment             Payment?           @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  salesCreditNoteId   String?            @map("sales_credit_note_id")
+  salesCreditNote     SalesCreditNote?   @relation(fields: [salesCreditNoteId], references: [id], onDelete: Restrict)
+  purchaseDebitNoteId String?            @map("purchase_debit_note_id")
+  purchaseDebitNote   PurchaseDebitNote? @relation(fields: [purchaseDebitNoteId], references: [id], onDelete: Restrict)
+  salesInvoiceId      String?            @map("sales_invoice_id")
+  salesInvoice        SalesInvoice?      @relation(fields: [salesInvoiceId], references: [id], onDelete: Restrict)
+  purchaseBillId      String?            @map("purchase_bill_id")
+  purchaseBill        PurchaseBill?      @relation(fields: [purchaseBillId], references: [id], onDelete: Restrict)
+  amount              Decimal            @db.Decimal(20, 4)
+  date                DateTime           @db.Date
+  journalEntryId      String             @unique @map("journal_entry_id")
+  journalEntry        JournalEntry       @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+  createdBy           String             @map("created_by")
+  createdAt           DateTime           @default(now()) @map("created_at")
+  reversedOn          DateTime?          @map("reversed_on") @db.Date
+  reversedBy          String?            @map("reversed_by")
 
   // + hand-authored CHECKs: payment_applications_amount_positive (amount > 0),
   //   payment_applications_one_target (exactly one of the two targets),
-  //   payment_applications_reversal_shape (reversed_on/by set together, reversed_on >= date).
+  //   payment_applications_reversal_shape (reversed_on/by set together, reversed_on >= date),
+  //   payment_applications_one_source (exactly one of payment / credit note / debit note).
 
   @@index([paymentId])
+  @@index([salesCreditNoteId])
+  @@index([purchaseDebitNoteId])
   @@index([salesInvoiceId])
   @@index([purchaseBillId])
   @@map("payment_applications")
+}
+
+/// Nota retur penjualan (sales credit note): returns part of ONE posted SalesInvoice (same partner). Lines copy the
+/// original line's price/discount/account/tax codes; the posted journal mirrors
+/// the original's for the returned part. creditedAmount settles the original
+/// (its creditedTotal); the rest (unappliedAmount at post) is partner credit on
+/// the advance account, applied later like a payment advance.
+model SalesCreditNote {
+  id               String                @id @default(uuid())
+  number           Int?
+  ref              String?
+  fiscalYear       Int?                  @map("fiscal_year")
+  partnerId        String                @map("partner_id")
+  partner          BusinessPartner       @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  originalId       String                @map("original_id")
+  original         SalesInvoice          @relation(fields: [originalId], references: [id], onDelete: Restrict)
+  date             DateTime              @db.Date
+  description      String?
+  status           DocumentStatus        @default(DRAFT)
+  subtotal         Decimal               @default(0) @db.Decimal(20, 4)
+  taxTotal         Decimal               @default(0) @map("tax_total") @db.Decimal(20, 4)
+  withholdingTotal Decimal               @default(0) @map("withholding_total") @db.Decimal(20, 4)
+  total            Decimal               @default(0) @db.Decimal(20, 4)
+  discountTotal    Decimal               @default(0) @map("discount_total") @db.Decimal(20, 4)
+  /// Part of total that settled the original (fixed at post; 0 for a draft).
+  creditedAmount   Decimal               @default(0) @map("credited_amount") @db.Decimal(20, 4)
+  /// Remaining partner credit (excess not yet applied); 0 once VOID.
+  unappliedAmount  Decimal               @default(0) @map("unapplied_amount") @db.Decimal(20, 4)
+  journalEntryId   String?               @map("journal_entry_id")
+  createdBy        String                @map("created_by")
+  postedBy         String?               @map("posted_by")
+  postedAt         DateTime?             @map("posted_at")
+  voidedOn         DateTime?             @map("voided_on") @db.Date
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+  deletedAt        DateTime?             @map("deleted_at")
+  deletedBy        String?               @map("deleted_by")
+  lines            SalesCreditNoteLine[]
+  journalEntry     JournalEntry?         @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+  applications     PaymentApplication[]
+
+  // + hand-authored CHECKs (20261009000000): sales_credit_notes_amounts_valid (money >= 0,
+  //   credited_amount + unapplied_amount <= total), sales_credit_notes_journal_entry_iff_not_draft.
+  @@unique([fiscalYear, number], name: "sales_credit_notes_fy_number_unique")
+  @@index([deletedAt])
+  @@index([partnerId])
+  @@index([originalId])
+  @@index([journalEntryId])
+  @@index([ref(ops: raw("gin_trgm_ops"))], type: Gin, map: "sales_credit_notes_ref_trgm")
+  @@index([description(ops: raw("gin_trgm_ops"))], type: Gin, map: "sales_credit_notes_description_trgm")
+  @@map("sales_credit_notes")
+}
+
+model SalesCreditNoteLine {
+  id              String           @id @default(uuid())
+  noteId          String           @map("note_id")
+  note            SalesCreditNote  @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  lineNo          Int              @map("line_no")
+  /// The returned line of the original document.
+  originalLineId  String           @map("original_line_id")
+  originalLine    SalesInvoiceLine @relation(fields: [originalLineId], references: [id], onDelete: Restrict)
+  description     String
+  accountId       String           @map("account_id")
+  account         Account          @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  quantity        Decimal          @db.Decimal(20, 4)
+  unitPrice       Decimal          @map("unit_price") @db.Decimal(20, 4)
+  discountPercent Decimal?         @map("discount_percent") @db.Decimal(7, 4)
+  discountAmount  Decimal          @default(0) @map("discount_amount") @db.Decimal(20, 4)
+  amount          Decimal          @db.Decimal(20, 4)
+  taxCodeIds      String[]         @map("tax_code_ids")
+
+  // + hand-authored CHECK sales_credit_note_lines_valid (quantity > 0, unit_price >= 0, valid discount)
+  @@unique([noteId, lineNo])
+  @@index([accountId])
+  @@index([originalLineId])
+  @@map("sales_credit_note_lines")
+}
+
+/// Nota retur pembelian (purchase debit note): returns part of ONE posted PurchaseBill (same partner). Lines copy the
+/// original line's price/discount/account/tax codes; the posted journal mirrors
+/// the original's for the returned part. creditedAmount settles the original
+/// (its creditedTotal); the rest (unappliedAmount at post) is partner credit on
+/// the advance account, applied later like a payment advance.
+model PurchaseDebitNote {
+  id               String                  @id @default(uuid())
+  number           Int?
+  ref              String?
+  fiscalYear       Int?                    @map("fiscal_year")
+  partnerId        String                  @map("partner_id")
+  partner          BusinessPartner         @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  originalId       String                  @map("original_id")
+  original         PurchaseBill            @relation(fields: [originalId], references: [id], onDelete: Restrict)
+  date             DateTime                @db.Date
+  description      String?
+  status           DocumentStatus          @default(DRAFT)
+  subtotal         Decimal                 @default(0) @db.Decimal(20, 4)
+  taxTotal         Decimal                 @default(0) @map("tax_total") @db.Decimal(20, 4)
+  withholdingTotal Decimal                 @default(0) @map("withholding_total") @db.Decimal(20, 4)
+  total            Decimal                 @default(0) @db.Decimal(20, 4)
+  discountTotal    Decimal                 @default(0) @map("discount_total") @db.Decimal(20, 4)
+  /// Part of total that settled the original (fixed at post; 0 for a draft).
+  creditedAmount   Decimal                 @default(0) @map("credited_amount") @db.Decimal(20, 4)
+  /// Remaining partner credit (excess not yet applied); 0 once VOID.
+  unappliedAmount  Decimal                 @default(0) @map("unapplied_amount") @db.Decimal(20, 4)
+  journalEntryId   String?                 @map("journal_entry_id")
+  createdBy        String                  @map("created_by")
+  postedBy         String?                 @map("posted_by")
+  postedAt         DateTime?               @map("posted_at")
+  voidedOn         DateTime?               @map("voided_on") @db.Date
+  createdAt        DateTime                @default(now()) @map("created_at")
+  updatedAt        DateTime                @updatedAt @map("updated_at")
+  deletedAt        DateTime?               @map("deleted_at")
+  deletedBy        String?                 @map("deleted_by")
+  lines            PurchaseDebitNoteLine[]
+  journalEntry     JournalEntry?           @relation(fields: [journalEntryId], references: [id], onDelete: Restrict)
+  applications     PaymentApplication[]
+
+  // + hand-authored CHECKs (20261009000000): purchase_debit_notes_amounts_valid (money >= 0,
+  //   credited_amount + unapplied_amount <= total), purchase_debit_notes_journal_entry_iff_not_draft.
+  @@unique([fiscalYear, number], name: "purchase_debit_notes_fy_number_unique")
+  @@index([deletedAt])
+  @@index([partnerId])
+  @@index([originalId])
+  @@index([journalEntryId])
+  @@index([ref(ops: raw("gin_trgm_ops"))], type: Gin, map: "purchase_debit_notes_ref_trgm")
+  @@index([description(ops: raw("gin_trgm_ops"))], type: Gin, map: "purchase_debit_notes_description_trgm")
+  @@map("purchase_debit_notes")
+}
+
+model PurchaseDebitNoteLine {
+  id              String            @id @default(uuid())
+  noteId          String            @map("note_id")
+  note            PurchaseDebitNote @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  lineNo          Int               @map("line_no")
+  /// The returned line of the original document.
+  originalLineId  String            @map("original_line_id")
+  originalLine    PurchaseBillLine  @relation(fields: [originalLineId], references: [id], onDelete: Restrict)
+  description     String
+  accountId       String            @map("account_id")
+  account         Account           @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  quantity        Decimal           @db.Decimal(20, 4)
+  unitPrice       Decimal           @map("unit_price") @db.Decimal(20, 4)
+  discountPercent Decimal?          @map("discount_percent") @db.Decimal(7, 4)
+  discountAmount  Decimal           @default(0) @map("discount_amount") @db.Decimal(20, 4)
+  amount          Decimal           @db.Decimal(20, 4)
+  taxCodeIds      String[]          @map("tax_code_ids")
+
+  // + hand-authored CHECK purchase_debit_note_lines_valid (quantity > 0, unit_price >= 0, valid discount)
+  @@unique([noteId, lineNo])
+  @@index([accountId])
+  @@index([originalLineId])
+  @@map("purchase_debit_note_lines")
 }
 
 model DocumentSequence {

@@ -293,7 +293,7 @@ types. The conventions the schemas encode (rely on these):
 - **Soft-delete bookkeeping is omitted.** `deletedAt` / `deletedBy` are intentionally
   absent from every response schema (a row you can read is, by definition, live).
 - **Computed fields** appear on documents beyond their stored columns: sales invoices
-  and purchase bills carry `outstanding` (= `total − amountPaid`) and `paymentStatus`
+  and purchase bills carry `outstanding` (= `total − amountPaid − creditedTotal`) and `paymentStatus`
   (`UNPAID | PARTIAL | PAID`).
 - **Nested collections are detail-only.** Invoice/bill `lines` and payment
   `allocations` are present on single-resource `GET`/`POST` responses but **omitted from
@@ -622,7 +622,7 @@ DELETE /ledger/journal-entries/:id      delete a DRAFT          (ACCOUNTANT+)
   `400`. A body-less reverse (original date) is never refused as future. ⚠️ The document **void** endpoints use a *different* detail shape for the same
   kind of error — see [Void date](#sales-invoice--purchase-bill).
 - Only `MANUAL` and `OPENING` entries can be reversed here. Reversing a document-owned
-  entry (`SALES_INVOICE`, `PURCHASE_BILL`, `PAYMENT`) — or a `REVERSAL`/`CLOSING`
+  entry (`SALES_INVOICE`, `PURCHASE_BILL`, `SALES_CREDIT_NOTE`, `PURCHASE_DEBIT_NOTE`, `PAYMENT`) — or a `REVERSAL`/`CLOSING`
   entry — returns `422 VALIDATION_FAILED` with message
   `"Only MANUAL or OPENING entries can be reversed here; void the source document instead"`
   and `details: { entryId, sourceType }`. Void the invoice/bill/payment instead (a year-end
@@ -858,6 +858,44 @@ The partner is re-checked on `/post` too: it must still exist, be active and car
 direction's flag (customer for RECEIPT, vendor for DISBURSEMENT) → else `422
 VALIDATION_FAILED` `details: { partnerId }` ("Partner is inactive" / "Receipt requires a
 customer" / "Disbursement requires a vendor").
+
+### Credit note / debit note (nota retur)
+
+```
+POST /sales-credit-notes          → DRAFT (ACCOUNTANT+)   — or /purchase-debit-notes
+PATCH /sales-credit-notes/:id     edit draft
+POST /sales-credit-notes/:id/post → POSTED (APPROVER/ADMIN)
+POST /sales-credit-notes/:id/void → VOID   (APPROVER/ADMIN)
+POST /sales-credit-notes/:id/apply  apply its partner credit to invoices (APPROVER/ADMIN)
+```
+
+A note returns part of **one POSTED** invoice (credit note) / bill (debit note):
+`originalId`, dated on/after it; its partner is the original's. Lines are `{
+originalLineId, quantity }` only — description, account, unit price and tax codes are
+copied from the original line; a percent discount keeps its percent, a fixed discount is
+pro-rated by quantity (4 dp, half-up). The returned quantity per original line, summed
+over every live (draft or posted) note, may not exceed the original quantity → `422
+VALIDATION_FAILED` "Returned quantity exceeds the quantity still returnable" `details: {
+originalLineId, quantity, returnable }` (on create, edit and post). Other `422`s: the
+original is not POSTED, a line of another document, the same line twice, a zero quantity,
+a date before the original's.
+
+Posting books the **mirror** of the original's journal for the returned part (tax
+recomputed on the returned DPP). The note `total` first settles the original:
+`creditedAmount` on the note and `creditedTotal` on the invoice/bill, whose `outstanding`
+is now `total − amountPaid − creditedTotal` (and `paymentStatus` counts credit as
+settled). If the original was already (partly) paid, the **excess** becomes partner
+credit on Uang Muka Pelanggan / Pembelian — the note's `unappliedAmount` — applied to
+other invoices/bills with `POST …/:id/apply` exactly like a payment advance (`applications`
+rows carry `salesCreditNoteId` / `purchaseDebitNoteId`; `paymentId` is `null`).
+Refunding note credit in cash is not supported (v1).
+
+**Void:** only a POSTED note, only while none of its credit is applied (`422 { id,
+reason: "HAS_APPLICATIONS" }` — reverse the applications first; the void date must be
+on/after the latest reversal). It gives the credit back to the original. An invoice/bill
+with a live (draft or posted) note cannot be voided → `422 { id, reason: "HAS_NOTES",
+notes }`; void/delete its notes first. Journal entries list with
+`?sourceType=SALES_CREDIT_NOTE` / `PURCHASE_DEBIT_NOTE`.
 
 ### Periods & year-end close
 
@@ -1182,6 +1220,21 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing on the last page).
 - `POST   /v1/purchase-bills/:id/post` · APPROVER/ADMIN · post · **requires `Idempotency-Key`**
 - `POST   /v1/purchase-bills/:id/void` · APPROVER/ADMIN · void (optional body `{ date }`: document date ≤ date ≤ max(today WIB, document date) — `422 { date, today[, originalDate] }`) · **requires `Idempotency-Key`**
 - `DELETE /v1/purchase-bills/:id` · ACCOUNTANT+ · delete draft
+
+### Sales credit notes / purchase debit notes
+
+Same routes under `/v1/sales-credit-notes` (original = sales invoice, ref `CN/…`) and
+`/v1/purchase-debit-notes` (original = purchase bill, ref `DN/…`):
+
+- `GET    /v1/sales-credit-notes` · any · **enveloped** list `{ data, total, limit, offset }` (filters: `q, partnerId, status, limit, offset`)
+- `GET    /v1/sales-credit-notes/:id` · any · get one (with `lines` and `applications`)
+- `POST   /v1/sales-credit-notes` · ACCOUNTANT+ · create draft `{ originalId, date, description?, lines: [{ originalLineId, quantity }] }` · **requires `Idempotency-Key`**
+- `PATCH  /v1/sales-credit-notes/:id` · ACCOUNTANT+ · update draft (`date`, `description`, `lines`)
+- `POST   /v1/sales-credit-notes/:id/post` · APPROVER/ADMIN · post · **requires `Idempotency-Key`**
+- `POST   /v1/sales-credit-notes/:id/void` · APPROVER/ADMIN · void (optional `{ date }`, same rules as invoices) · **requires `Idempotency-Key`** · live applications → `422 { id, reason: 'HAS_APPLICATIONS', applications }`
+- `POST   /v1/sales-credit-notes/:id/apply` · APPROVER/ADMIN · apply the note's unapplied credit `{ date, allocations }` (as payments) · **requires `Idempotency-Key`**
+- `POST   /v1/sales-credit-notes/:id/applications/:applicationId/reverse` · APPROVER/ADMIN · reverse one application (optional `{ date }`) · **requires `Idempotency-Key`**
+- `DELETE /v1/sales-credit-notes/:id` · ACCOUNTANT+ · delete draft
 
 ### Payments
 

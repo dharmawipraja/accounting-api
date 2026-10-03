@@ -107,17 +107,25 @@ the Prisma schema cannot express:
     reversal instead.
   - **No TRUNCATE** on `journal_entries`, `journal_lines`, `sales_invoices`,
     `sales_invoice_lines`, `purchase_bills`, `purchase_bill_lines`, `payments`,
-    `payment_allocations`, `payment_applications` (statement-level `BEFORE TRUNCATE` → `ledger_no_truncate()`).
+    `payment_allocations`, `payment_applications`, `sales_credit_notes`,
+    `sales_credit_note_lines`, `purchase_debit_notes`, `purchase_debit_note_lines`
+    (statement-level `BEFORE TRUNCATE` → `ledger_no_truncate()`).
   - **CHECKs** — `payments_amount_positive` (`amount > 0`),
     `payments_unapplied_amount_range` (`0 ≤ unapplied_amount ≤ amount`),
     `payment_allocations_one_target` (exactly one of invoice/bill),
-    `payment_applications_{amount_positive,one_target,reversal_shape}`,
+    `payment_applications_{amount_positive,one_target,reversal_shape,one_source}`
+    (one_source: exactly one of payment / credit note / debit note, a note only onto
+    its own document kind),
     `{sales_invoices,purchase_bills}_amount_paid_range` (`0 ≤ amount_paid ≤ total`),
+    `{sales_invoices,purchase_bills}_credited_total_range` (`credited_total ≥ 0`,
+    `amount_paid + credited_total ≤ total`), `{sales_credit,purchase_debit}_notes_amounts_valid`
+    (money ≥ 0, `credited_amount + unapplied_amount ≤ total`),
+    `{sales_credit,purchase_debit}_note_lines_valid` (`quantity > 0`, discount rule),
     `{sales_invoice,purchase_bill}_lines_nonnegative` (quantity, unit_price ≥ 0;
     zero-price lines stay legal), `accounting_periods_dates_ordered`, and
     `journal_entries_posted_complete` (DRAFT ⇔ `posted_at IS NULL`; a non-DRAFT
     entry carries `entry_number`, `fiscal_year`, `period_id`, `posted_at`),
-    and `{sales_invoices,purchase_bills,payments}_journal_entry_iff_not_draft`
+    and `{sales_invoices,purchase_bills,payments,sales_credit_notes,purchase_debit_notes}_journal_entry_iff_not_draft`
     (`(status = 'DRAFT') = (journal_entry_id IS NULL)` — post sets the journal
     entry, void keeps it; `20261002000000_document_journal_link_check_and_fk_indexes`,
     which also indexes the FK columns `journal_entries.{period_id,reversed_by_id}`,
@@ -128,7 +136,8 @@ the Prisma schema cannot express:
     concurrent FK checks' FOR KEY SHARE on the partner are not blocked).
   - **Hard DELETE is an allow-list** for the runtime role `accounting_app`
     (`scripts/db/app-role.sql`): only `sales_invoice_lines`,
-    `purchase_bill_lines` (draft line replacement), `accounting_periods`
+    `purchase_bill_lines`, `sales_credit_note_lines`, `purchase_debit_note_lines`
+    (draft line replacement), `accounting_periods`
     (OPEN-period regeneration), `idempotency_keys` and `refresh_tokens`. Every
     other table — including any table a new migration adds (default privileges
     grant SELECT/INSERT/UPDATE only) — rejects `DELETE` with *permission denied*.

@@ -1085,7 +1085,9 @@
                 "SALES_INVOICE",
                 "PURCHASE_BILL",
                 "PAYMENT",
-                "CLOSING"
+                "CLOSING",
+                "SALES_CREDIT_NOTE",
+                "PURCHASE_DEBIT_NOTE"
               ]
             }
           },
@@ -3032,6 +3034,890 @@
         ]
       }
     },
+    "/v1/sales-credit-notes": {
+      "get": {
+        "operationId": "SalesCreditNotesController_list_v1",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 100000,
+              "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
+          {
+            "name": "partnerId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DRAFT",
+                "POSTED",
+                "VOID"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteListResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Sales Credit Notes"
+        ]
+      },
+      "post": {
+        "operationId": "SalesCreditNotesController_create_v1",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable. On ANY retry — including after a 408 timeout or a network failure — reuse the SAME key: the original request may still have succeeded server-side, and a fresh key would duplicate the write. Replays return the original response; a still-running original returns 409.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateNoteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Sales Credit Notes"
+        ]
+      }
+    },
+    "/v1/sales-credit-notes/{id}": {
+      "get": {
+        "operationId": "SalesCreditNotesController_get_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Sales Credit Notes"
+        ]
+      },
+      "patch": {
+        "operationId": "SalesCreditNotesController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNoteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Sales Credit Notes"
+        ]
+      },
+      "delete": {
+        "operationId": "SalesCreditNotesController_remove_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Sales Credit Notes"
+        ]
+      }
+    },
+    "/v1/sales-credit-notes/{id}/post": {
+      "post": {
+        "operationId": "SalesCreditNotesController_post_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable. On ANY retry — including after a 408 timeout or a network failure — reuse the SAME key: the original request may still have succeeded server-side, and a fresh key would duplicate the write. Replays return the original response; a still-running original returns 409.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Sales Credit Notes"
+        ]
+      }
+    },
+    "/v1/sales-credit-notes/{id}/void": {
+      "post": {
+        "operationId": "SalesCreditNotesController_void_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable. On ANY retry — including after a 408 timeout or a network failure — reuse the SAME key: the original request may still have succeeded server-side, and a fresh key would duplicate the write. Replays return the original response; a still-running original returns 409.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidDocumentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Sales Credit Notes"
+        ]
+      }
+    },
+    "/v1/sales-credit-notes/{id}/apply": {
+      "post": {
+        "operationId": "SalesCreditNotesController_apply_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable. On ANY retry — including after a 408 timeout or a network failure — reuse the SAME key: the original request may still have succeeded server-side, and a fresh key would duplicate the write. Replays return the original response; a still-running original returns 409.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyPaymentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Apply part of a POSTED note's unapplied excess (partner credit) to\n invoices (credit note) / bills (debit note) of the same partner.",
+        "tags": [
+          "Sales Credit Notes"
+        ]
+      }
+    },
+    "/v1/sales-credit-notes/{id}/applications/{applicationId}/reverse": {
+      "post": {
+        "operationId": "SalesCreditNotesController_reverseApplication_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "applicationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable. On ANY retry — including after a 408 timeout or a network failure — reuse the SAME key: the original request may still have succeeded server-side, and a fresh key would duplicate the write. Replays return the original response; a still-running original returns 409.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidDocumentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Reverse one application; the amount returns to the document's\n outstanding and the note's unapplied balance.",
+        "tags": [
+          "Sales Credit Notes"
+        ]
+      }
+    },
+    "/v1/purchase-debit-notes": {
+      "get": {
+        "operationId": "PurchaseDebitNotesController_list_v1",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 100000,
+              "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 100,
+              "type": "string"
+            }
+          },
+          {
+            "name": "partnerId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DRAFT",
+                "POSTED",
+                "VOID"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteListResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Purchase Debit Notes"
+        ]
+      },
+      "post": {
+        "operationId": "PurchaseDebitNotesController_create_v1",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable. On ANY retry — including after a 408 timeout or a network failure — reuse the SAME key: the original request may still have succeeded server-side, and a fresh key would duplicate the write. Replays return the original response; a still-running original returns 409.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateNoteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Purchase Debit Notes"
+        ]
+      }
+    },
+    "/v1/purchase-debit-notes/{id}": {
+      "get": {
+        "operationId": "PurchaseDebitNotesController_get_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Purchase Debit Notes"
+        ]
+      },
+      "patch": {
+        "operationId": "PurchaseDebitNotesController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNoteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Purchase Debit Notes"
+        ]
+      },
+      "delete": {
+        "operationId": "PurchaseDebitNotesController_remove_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Purchase Debit Notes"
+        ]
+      }
+    },
+    "/v1/purchase-debit-notes/{id}/post": {
+      "post": {
+        "operationId": "PurchaseDebitNotesController_post_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable. On ANY retry — including after a 408 timeout or a network failure — reuse the SAME key: the original request may still have succeeded server-side, and a fresh key would duplicate the write. Replays return the original response; a still-running original returns 409.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Purchase Debit Notes"
+        ]
+      }
+    },
+    "/v1/purchase-debit-notes/{id}/void": {
+      "post": {
+        "operationId": "PurchaseDebitNotesController_void_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable. On ANY retry — including after a 408 timeout or a network failure — reuse the SAME key: the original request may still have succeeded server-side, and a fresh key would duplicate the write. Replays return the original response; a still-running original returns 409.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidDocumentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Purchase Debit Notes"
+        ]
+      }
+    },
+    "/v1/purchase-debit-notes/{id}/apply": {
+      "post": {
+        "operationId": "PurchaseDebitNotesController_apply_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable. On ANY retry — including after a 408 timeout or a network failure — reuse the SAME key: the original request may still have succeeded server-side, and a fresh key would duplicate the write. Replays return the original response; a still-running original returns 409.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyPaymentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Apply part of a POSTED note's unapplied excess (partner credit) to\n invoices (credit note) / bills (debit note) of the same partner.",
+        "tags": [
+          "Purchase Debit Notes"
+        ]
+      }
+    },
+    "/v1/purchase-debit-notes/{id}/applications/{applicationId}/reverse": {
+      "post": {
+        "operationId": "PurchaseDebitNotesController_reverseApplication_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "applicationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Unique key to make this write safely retryable. On ANY retry — including after a 408 timeout or a network failure — reuse the SAME key: the original request may still have succeeded server-side, and a fresh key would duplicate the write. Replays return the original response; a still-running original returns 409.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidDocumentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Reverse one application; the amount returns to the document's\n outstanding and the note's unapplied balance.",
+        "tags": [
+          "Purchase Debit Notes"
+        ]
+      }
+    },
     "/v1/reports/balance-sheet": {
       "get": {
         "operationId": "ReportsController_balanceSheet_v1",
@@ -4368,7 +5254,9 @@
               "SALES_INVOICE",
               "PURCHASE_BILL",
               "PAYMENT",
-              "CLOSING"
+              "CLOSING",
+              "SALES_CREDIT_NOTE",
+              "PURCHASE_DEBIT_NOTE"
             ]
           },
           "sourceId": {
@@ -4522,7 +5410,9 @@
               "SALES_INVOICE",
               "PURCHASE_BILL",
               "PAYMENT",
-              "CLOSING"
+              "CLOSING",
+              "SALES_CREDIT_NOTE",
+              "PURCHASE_DEBIT_NOTE"
             ]
           },
           "sourceId": {
@@ -5359,6 +6249,11 @@
             "example": "1000.0000",
             "description": "Decimal monetary amount as a string, fixed 4 decimal places."
           },
+          "creditedTotal": {
+            "type": "string",
+            "example": "0.0000",
+            "description": "Settled by POSTED sales credit notes / purchase debit notes against this document."
+          },
           "journalEntryId": {
             "type": "string",
             "nullable": true,
@@ -5395,7 +6290,7 @@
           "outstanding": {
             "type": "string",
             "example": "1000.0000",
-            "description": "total − amountPaid"
+            "description": "total − amountPaid − creditedTotal"
           },
           "paymentStatus": {
             "type": "string",
@@ -5434,6 +6329,7 @@
           "withholdingTotal",
           "total",
           "amountPaid",
+          "creditedTotal",
           "journalEntryId",
           "createdBy",
           "postedBy",
@@ -5729,6 +6625,11 @@
             "example": "1000.0000",
             "description": "Decimal monetary amount as a string, fixed 4 decimal places."
           },
+          "creditedTotal": {
+            "type": "string",
+            "example": "0.0000",
+            "description": "Settled by POSTED sales credit notes / purchase debit notes against this document."
+          },
           "journalEntryId": {
             "type": "string",
             "nullable": true,
@@ -5765,7 +6666,7 @@
           "outstanding": {
             "type": "string",
             "example": "1000.0000",
-            "description": "total − amountPaid"
+            "description": "total − amountPaid − creditedTotal"
           },
           "paymentStatus": {
             "type": "string",
@@ -5808,6 +6709,7 @@
           "withholdingTotal",
           "total",
           "amountPaid",
+          "creditedTotal",
           "journalEntryId",
           "createdBy",
           "postedBy",
@@ -5963,7 +6865,21 @@
           },
           "paymentId": {
             "type": "string",
-            "format": "uuid"
+            "nullable": true,
+            "format": "uuid",
+            "description": "Set when the applied credit is a payment advance."
+          },
+          "salesCreditNoteId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "Set when the applied credit is a sales credit note's excess."
+          },
+          "purchaseDebitNoteId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "Set when the applied credit is a purchase debit note's excess."
           },
           "salesInvoiceId": {
             "type": "string",
@@ -6012,6 +6928,8 @@
         "required": [
           "id",
           "paymentId",
+          "salesCreditNoteId",
+          "purchaseDebitNoteId",
           "salesInvoiceId",
           "purchaseBillId",
           "amount",
@@ -6384,6 +7302,334 @@
           "totalCredit",
           "balanced"
         ]
+      },
+      "NoteLineResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "noteId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lineNo": {
+            "type": "number",
+            "example": 1
+          },
+          "originalLineId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The returned original line."
+          },
+          "description": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Returned quantity, 4 dp string"
+          },
+          "unitPrice": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "discountPercent": {
+            "type": "string",
+            "nullable": true,
+            "example": "10.0000",
+            "description": "Discount percent as entered (4 dp string); null for a fixed or no discount."
+          },
+          "discountAmount": {
+            "type": "string",
+            "example": "0.0000",
+            "description": "Resolved discount: the original percent on the returned gross, or the original fixed amount pro-rated by quantity (rounded once to 4 dp half-up)."
+          },
+          "amount": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Net line amount = qty × unitPrice − discountAmount (4 dp): the tax base (DPP)."
+          },
+          "taxCodeIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "noteId",
+          "lineNo",
+          "originalLineId",
+          "description",
+          "accountId",
+          "quantity",
+          "unitPrice",
+          "discountPercent",
+          "discountAmount",
+          "amount",
+          "taxCodeIds"
+        ]
+      },
+      "NoteResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "number": {
+            "type": "number",
+            "nullable": true,
+            "example": 1
+          },
+          "ref": {
+            "type": "string",
+            "nullable": true,
+            "example": "CN/2026/000001"
+          },
+          "fiscalYear": {
+            "type": "number",
+            "nullable": true
+          },
+          "partnerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "originalId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The sales invoice / purchase bill this note returns part of."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-01-20"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "POSTED",
+              "VOID"
+            ]
+          },
+          "subtotal": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "discountTotal": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "taxTotal": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "withholdingTotal": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "total": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Settlement amount (subtotal + PPN − PPh)."
+          },
+          "creditedAmount": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Part of total that settled the original (its creditedTotal); fixed at post, 0 for a draft. Kept on a VOID note (its credit then ended on voidedOn)."
+          },
+          "unappliedAmount": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Partner credit not yet applied: total − creditedAmount − live applications, held on the customer/vendor advance account; apply it via POST /…/:id/apply. 0 once VOID."
+          },
+          "journalEntryId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "createdBy": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "postedBy": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "postedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "voidedOn": {
+            "type": "string",
+            "nullable": true,
+            "format": "date",
+            "description": "Void (reversal) date; set iff status is VOID."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NoteLineResponseDto"
+            }
+          },
+          "applications": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentApplicationResponseDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "ref",
+          "fiscalYear",
+          "partnerId",
+          "originalId",
+          "date",
+          "description",
+          "status",
+          "subtotal",
+          "discountTotal",
+          "taxTotal",
+          "withholdingTotal",
+          "total",
+          "creditedAmount",
+          "unappliedAmount",
+          "journalEntryId",
+          "createdBy",
+          "postedBy",
+          "postedAt",
+          "voidedOn",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "NoteListResponseDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NoteResponseDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "example": 240
+          },
+          "limit": {
+            "type": "number",
+            "example": 50
+          },
+          "offset": {
+            "type": "number",
+            "example": 0
+          }
+        },
+        "required": [
+          "data",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "NoteLineDto": {
+        "type": "object",
+        "properties": {
+          "originalLineId": {
+            "type": "string",
+            "description": "A line of the note's original invoice / bill.",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "string",
+            "description": "Returned quantity, > 0 and ≤ the original quantity minus what other\n live (draft/posted) notes already return (4 dp string)."
+          }
+        },
+        "required": [
+          "originalLineId",
+          "quantity"
+        ]
+      },
+      "CreateNoteDto": {
+        "type": "object",
+        "properties": {
+          "originalId": {
+            "type": "string",
+            "description": "The POSTED sales invoice (credit note) / purchase bill (debit note) this\n note returns part of; the note's partner is the original's.",
+            "format": "uuid"
+          },
+          "date": {
+            "type": "string",
+            "description": "On/after the original's date."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "lines": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NoteLineDto"
+            }
+          }
+        },
+        "required": [
+          "originalId",
+          "date",
+          "lines"
+        ]
+      },
+      "UpdateNoteDto": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 255,
+            "description": "Send `null` to clear the description; omit to keep it."
+          },
+          "date": {
+            "type": "string"
+          },
+          "lines": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NoteLineDto"
+            }
+          }
+        }
       },
       "ReportLineDto": {
         "type": "object",

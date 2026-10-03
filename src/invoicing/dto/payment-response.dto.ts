@@ -15,9 +15,29 @@ export class PaymentAllocationResponseDto {
   @ApiMoney() amount!: string;
 }
 
+/** An application of unapplied credit — a payment's advance, or a sales
+ *  credit note's / purchase debit note's excess (exactly one source id is set). */
 export class PaymentApplicationResponseDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
-  @ApiProperty({ format: 'uuid' }) paymentId!: string;
+  @ApiProperty({
+    format: 'uuid',
+    nullable: true,
+    description: 'Set when the applied credit is a payment advance.',
+  })
+  paymentId!: string | null;
+  @ApiProperty({
+    format: 'uuid',
+    nullable: true,
+    description: "Set when the applied credit is a sales credit note's excess.",
+  })
+  salesCreditNoteId!: string | null;
+  @ApiProperty({
+    format: 'uuid',
+    nullable: true,
+    description:
+      "Set when the applied credit is a purchase debit note's excess.",
+  })
+  purchaseDebitNoteId!: string | null;
   @ApiProperty({ format: 'uuid', nullable: true }) salesInvoiceId!:
     | string
     | null;

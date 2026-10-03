@@ -76,6 +76,8 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 -- Allow-list (keep in sync with every .delete/.deleteMany/DELETE FROM in src/;
 -- test/db-app-role.e2e-spec.ts classifies every table):
 --   sales_invoice_lines, purchase_bill_lines  draft line replacement (PATCH)
+--   sales_credit_note_lines,
+--   purchase_debit_note_lines                 draft line replacement (PATCH)
 --   accounting_periods                         OPEN-period regeneration when
 --                                              fiscalYearStartMonth changes
 --   idempotency_keys                           release / stale reclaim / purge
@@ -86,7 +88,8 @@ DECLARE
   t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
-    'sales_invoice_lines', 'purchase_bill_lines', 'accounting_periods',
+    'sales_invoice_lines', 'purchase_bill_lines', 'sales_credit_note_lines',
+    'purchase_debit_note_lines', 'accounting_periods',
     'idempotency_keys', 'refresh_tokens'
   ] LOOP
     -- Guarded: on a fresh volume (initdb hook) no table exists yet; the migrate

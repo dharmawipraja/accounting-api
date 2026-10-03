@@ -27,6 +27,8 @@ export interface TargetRow {
   date: Date;
   total: Prisma.Decimal;
   amountPaid: Prisma.Decimal;
+  /** Settled by POSTED credit/debit notes. */
+  creditedTotal: Prisma.Decimal;
 }
 
 /** One line of a payment's 2-line cash/control journal. */
@@ -88,6 +90,7 @@ export const PAYMENT_TARGETS: Record<PaymentDirection, PaymentTarget> = {
             date: inv.date,
             total: inv.total,
             amountPaid: inv.amountPaid,
+            creditedTotal: inv.creditedTotal,
           }
         : null;
     },
@@ -124,6 +127,7 @@ export const PAYMENT_TARGETS: Record<PaymentDirection, PaymentTarget> = {
             date: bill.date,
             total: bill.total,
             amountPaid: bill.amountPaid,
+            creditedTotal: bill.creditedTotal,
           }
         : null;
     },
@@ -140,14 +144,15 @@ export const PAYMENT_TARGETS: Record<PaymentDirection, PaymentTarget> = {
 };
 
 /** Pure over-allocation check: does settling `amount` drive the document past its
- *  outstanding (total − amountPaid)? No I/O. Exact-boundary is allowed (not exceeding). */
+ *  outstanding (total − settled, settled = amountPaid + creditedTotal)? No I/O.
+ *  Exact-boundary is allowed (not exceeding). */
 export function exceedsOutstanding(
   total: Prisma.Decimal,
-  amountPaid: Prisma.Decimal,
+  settled: Prisma.Decimal,
   amount: string,
 ): boolean {
   return Money.of(total.toString())
-    .subtract(Money.of(amountPaid.toString()))
+    .subtract(Money.of(settled.toString()))
     .subtract(Money.of(amount))
     .isNegative();
 }
@@ -298,7 +303,10 @@ export async function assertNoBackdatedOverAllocation(
  *  `[date, voided_on)` (status 'POSTED' = still live, 'VOID' = ended on
  *  voided_on):
  *  - a POSTED/VOID payment's allocations (date / voided_on of the payment);
- *  - a payment's later applications (own date; reversed_on ends them).
+ *  - later applications of a payment's advance or of a credit/debit note's
+ *    excess (own date; reversed_on ends them);
+ *  - a POSTED/VOID credit/debit note's creditedAmount on its own original
+ *    (date / voided_on of the note).
  *  The ONE definition of "what has paid this document as of a day" — aging,
  *  the backdated-void rule and the document-void date rule all read it, so
  *  the subledger they see always matches what the control account carries.
@@ -306,8 +314,13 @@ export async function assertNoBackdatedOverAllocation(
 export function settlementsSql(
   table: 'sales_invoices' | 'purchase_bills',
 ): Prisma.Sql {
-  const col = Prisma.raw(
-    table === 'sales_invoices' ? 'sales_invoice_id' : 'purchase_bill_id',
+  const sales = table === 'sales_invoices';
+  const col = Prisma.raw(sales ? 'sales_invoice_id' : 'purchase_bill_id');
+  const notes = Prisma.raw(
+    sales ? 'sales_credit_notes' : 'purchase_debit_notes',
+  );
+  const noteCol = Prisma.raw(
+    sales ? 'sales_credit_note_id' : 'purchase_debit_note_id',
   );
   return Prisma.sql`
     SELECT pa.${col} AS document_id, pa.amount, q.date,
@@ -319,10 +332,17 @@ export function settlementsSql(
     UNION ALL
     SELECT ap.${col}, ap.amount, ap.date,
            CASE WHEN ap.reversed_on IS NULL THEN 'POSTED' ELSE 'VOID' END,
-           ap.reversed_on, q.ref
+           ap.reversed_on, COALESCE(q.ref, n.ref)
     FROM payment_applications ap
-    JOIN payments q ON q.id = ap.payment_id
-    WHERE ap.${col} IS NOT NULL`;
+    LEFT JOIN payments q ON q.id = ap.payment_id
+    LEFT JOIN ${notes} n ON n.id = ap.${noteCol}
+    WHERE ap.${col} IS NOT NULL
+    UNION ALL
+    SELECT n.original_id, n.credited_amount, n.date,
+           n.status::text, n.voided_on, n.ref
+    FROM ${notes} n
+    WHERE n.deleted_at IS NULL AND n.status IN ('POSTED', 'VOID')
+      AND n.credited_amount > 0`;
 }
 
 /** A payment's journal. `amount` is the full cash movement; the part in
@@ -416,12 +436,12 @@ export async function settleInTx(
     {
       status: string;
       total: string;
-      amount_paid: string;
+      settled: string;
       partner_id: string;
       date: Date;
     }[]
   >(
-    Prisma.sql`SELECT status, total, amount_paid, partner_id, date FROM ${Prisma.raw(target.table)} WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`,
+    Prisma.sql`SELECT status, total, amount_paid + credited_total AS settled, partner_id, date FROM ${Prisma.raw(target.table)} WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`,
   );
   if (rows.length === 0 || rows[0].status !== 'POSTED')
     throw new ValidationFailedError(`Allocated ${target.noun} is not posted`, {
@@ -436,7 +456,7 @@ export async function settleInTx(
   if (
     exceedsOutstanding(
       new Prisma.Decimal(rows[0].total),
-      new Prisma.Decimal(rows[0].amount_paid),
+      new Prisma.Decimal(rows[0].settled),
       alloc.amount,
     )
   )

@@ -16,6 +16,8 @@ describe('account-policy', () => {
       'SALES_INVOICE',
       'PURCHASE_BILL',
       'PAYMENT',
+      'SALES_CREDIT_NOTE',
+      'PURCHASE_DEBIT_NOTE',
     ] as const) {
       expect(accountPolicyFor(t)).toBe(UNRESTRICTED_POLICY);
     }
@@ -37,6 +39,8 @@ describe('account-policy', () => {
       'SALES_INVOICE',
       'PURCHASE_BILL',
       'PAYMENT',
+      'SALES_CREDIT_NOTE',
+      'PURCHASE_DEBIT_NOTE',
     ] as const) {
       expect(accountPolicyFor(t).allowInactive ?? false).toBe(false);
     }
@@ -103,6 +107,8 @@ describe('account-policy', () => {
       'SALES_INVOICE',
       'PURCHASE_BILL',
       'PAYMENT',
+      'SALES_CREDIT_NOTE',
+      'PURCHASE_DEBIT_NOTE',
     ] as const) {
       expect(
         findForbiddenType(

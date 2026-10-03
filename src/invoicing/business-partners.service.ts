@@ -22,14 +22,15 @@ import type { UpdateBusinessPartnerDto } from './dto/update-business-partner.dto
 export type PartnerRole = 'CUSTOMER' | 'VENDOR';
 
 interface OpenItemCounts {
-  /** Live DRAFT invoices (customer) / bills (vendor). */
+  /** Live DRAFT invoices + credit notes (customer) / bills + debit notes
+   *  (vendor). */
   drafts: number;
-  /** POSTED invoices / bills with total > amount_paid. */
+  /** POSTED invoices / bills with total > amount_paid + credited_total. */
   outstanding: number;
   /** Live DRAFT RECEIPT (customer) / DISBURSEMENT (vendor) payments. */
   draftPayments: number;
-  /** POSTED RECEIPT / DISBURSEMENT payments with an unapplied (advance)
-   *  balance — the partner's open credit. */
+  /** POSTED RECEIPT / DISBURSEMENT payments and POSTED credit / debit notes
+   *  with an unapplied balance — the partner's open credit. */
   unappliedPayments: number;
 }
 
@@ -194,13 +195,19 @@ export class BusinessPartnersService {
         + (SELECT count(*)::int FROM purchase_bills
            WHERE ${vendor} AND partner_id = ${id} AND deleted_at IS NULL
              AND status = 'DRAFT')
+        + (SELECT count(*)::int FROM sales_credit_notes
+           WHERE ${customer} AND partner_id = ${id} AND deleted_at IS NULL
+             AND status = 'DRAFT')
+        + (SELECT count(*)::int FROM purchase_debit_notes
+           WHERE ${vendor} AND partner_id = ${id} AND deleted_at IS NULL
+             AND status = 'DRAFT')
           AS "drafts",
         (SELECT count(*)::int FROM sales_invoices
            WHERE ${customer} AND partner_id = ${id} AND deleted_at IS NULL
-             AND status = 'POSTED' AND total > amount_paid)
+             AND status = 'POSTED' AND total > amount_paid + credited_total)
         + (SELECT count(*)::int FROM purchase_bills
            WHERE ${vendor} AND partner_id = ${id} AND deleted_at IS NULL
-             AND status = 'POSTED' AND total > amount_paid)
+             AND status = 'POSTED' AND total > amount_paid + credited_total)
           AS "outstanding",
         (SELECT count(*)::int FROM payments
            WHERE partner_id = ${id} AND deleted_at IS NULL AND status = 'DRAFT'
@@ -212,6 +219,12 @@ export class BusinessPartnersService {
              AND unapplied_amount > 0
              AND ((${customer} AND direction = 'RECEIPT')
                OR (${vendor} AND direction = 'DISBURSEMENT')))
+        + (SELECT count(*)::int FROM sales_credit_notes
+           WHERE ${customer} AND partner_id = ${id} AND deleted_at IS NULL
+             AND status = 'POSTED' AND unapplied_amount > 0)
+        + (SELECT count(*)::int FROM purchase_debit_notes
+           WHERE ${vendor} AND partner_id = ${id} AND deleted_at IS NULL
+             AND status = 'POSTED' AND unapplied_amount > 0)
           AS "unappliedPayments"`;
     return open;
   }

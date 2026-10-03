@@ -98,7 +98,8 @@ identify system accounts via `account.role`, never by code string.
 ### Journal entry (jurnal / bukti jurnal)
 A single balanced transaction: a header (`date`, `description`, `sourceType`) plus its
 lines. `sourceType` (`JournalSourceType`) records what produced it: `MANUAL`, `OPENING`,
-`REVERSAL`, `SALES_INVOICE`, `PURCHASE_BILL`, `PAYMENT`, `CLOSING`.
+`REVERSAL`, `SALES_INVOICE`, `PURCHASE_BILL`, `PAYMENT`, `CLOSING`, `SALES_CREDIT_NOTE`,
+`PURCHASE_DEBIT_NOTE`.
 - `JournalEntry` + `JournalLine` models; orchestration in `PostingService`.
 
 ### Draft vs posted (status)
@@ -166,7 +167,7 @@ debits/credits are swapped, which nets the original to zero. The original is mar
   by voiding the document, and `CLOSING` entries by reopening the year.
 
 ### Segregation of duties (SoD)
-Internal control: for manual journal entries, sales invoices, purchase bills and payments,
+Internal control: for manual journal entries, sales invoices, purchase bills, credit/debit notes and payments,
 the user who posts must differ from the user who created it (toggleable per company; 403
 `SEGREGATION_OF_DUTIES`). Otherwise one user could create and post a vendor bill and then
 pay it. `OPENING` (admin-only, created and posted in one call), `CLOSING` and `REVERSAL`
@@ -368,10 +369,62 @@ AR/AP (`buildPaymentLines`, `src/invoicing/payment-targets.ts`).
   on an advance; the invoice it is applied to carries the tax. The journal preview covers
   fully allocated payments only.
 
+### Credit note / debit note (nota retur penjualan / pembelian)
+A `SalesCreditNote` returns part of ONE POSTED sales invoice; a `PurchaseDebitNote` part
+of ONE POSTED purchase bill (`originalId`; the partner is the original's; dated on/after
+it). Same lifecycle as invoices/bills (DRAFT → POSTED → VOID, soft-deleted drafts,
+gapless `CN/<FY>/nnnnnn` / `DN/<FY>/nnnnnn` via `nextDocumentNumber`), driven by the
+shared `TaxedDocumentService` through one `DocumentDescriptor` per kind plus
+`postHooks`; note-specific logic in `src/invoicing/notes.service.ts`, pure math in
+`note-lines.ts`.
+- **Lines** are `{ originalLineId, quantity }`; description, account, unit price and tax
+  codes are copied (`returnedLine`). A percent discount keeps its percent; a fixed
+  `discountAmount` is pro-rated by quantity, `discountAmount × qty / originalQty`
+  rounded once to 4 dp half-up (capped at the returned gross) — several partial returns
+  may differ from the original discount by ≤ 0.0001 each. Tax is recomputed on the
+  returned DPP with the original codes (per-code rupiah rounding), so partial notes may
+  differ from the original's tax by rounding.
+- **Over-return guard** (`lockReturnable`): under the ORIGINAL's `FOR UPDATE` lock, for
+  every original line, the quantities of all live (DRAFT/POSTED, not deleted) notes ≤
+  the original quantity — on create, edit and post, so concurrent notes queue on the
+  original and the loser gets `422`.
+- **Journal** = the mirror of the original's for the returned part (`noteJournalLines`):
+  credit note Dr revenue, Dr PPN Keluaran / Cr PPh prepaid (or the PPh 4(2) final
+  expense), Cr AR; debit note Dr AP, Dr PPh payable / Cr expense, Cr PPN Masukan. Source
+  types `SALES_CREDIT_NOTE` / `PURCHASE_DEBIT_NOTE` (role-unrestricted policy like the
+  documents; SoD applies).
+- **Settlement split** (`splitSettlement`): the note total first settles the original —
+  `creditedAmount` on the note, added to the original's `credited_total` (outstanding
+  everywhere = `total − amount_paid − credited_total`; DB CHECK `amount_paid +
+  credited_total ≤ total`) — and the **excess** (original already paid) posts to the
+  advance account instead (Cr Uang Muka Pelanggan / Dr Uang Muka Pembelian) as partner
+  credit, `unappliedAmount` on the note. The split is planned pre-lock and must be
+  unchanged under the original's lock, else the post restarts (bounded → 409).
+- **Partner credit** is applied exactly like a payment advance
+  (`PaymentsService.applyCredit` / `reverseCreditApplication`, `CreditSource`):
+  `POST /sales-credit-notes/:id/apply` (or `/purchase-debit-notes/…`) writes a
+  `PaymentApplication` row with `sales_credit_note_id` / `purchase_debit_note_id`
+  (`payment_id` NULL; CHECK exactly one source, a credit note only onto invoices, a debit
+  note only onto bills) and a journal of the note's source type. Refunding note credit in
+  cash is not built (v1).
+- **Void:** only while no application of its excess is live (`422 HAS_APPLICATIONS`; void
+  date on/after the latest application reversal). Reverses the journal and takes
+  `creditedAmount` back off the original (kept on the VOID note: its credit was live on
+  `[date, voided_on)`); `unapplied_amount` → 0. An invoice/bill with a live note cannot
+  be voided (`422 HAS_NOTES`).
+- **Subledgers:** a note's `creditedAmount` is a settlement of its original in
+  `settlementsSql` (live `[date, voided_on)`), and its applications are rows of the
+  application branch — so AR/AP aging (`paidAsOf` = payments + applications + note
+  credit) still ties to control, and the backdated-void / document-void date rules see
+  notes. Each advance account ties to POSTED payments' + POSTED notes'
+  `unapplied_amount`.
+- **Lock order:** note `FOR UPDATE` → partner `FOR SHARE` → original `FOR UPDATE` →
+  ledger chain (create: partner `FOR SHARE` → original `FOR UPDATE`).
+
 ### Allocation & over-allocation guard
 A `PaymentAllocation` ties part of a payment to a specific invoice/bill. You cannot
 allocate more than a document's outstanding amount. At post time, each target row is
-locked `FOR UPDATE` and outstanding (`total − amount_paid`) is re-verified, so concurrent
+locked `FOR UPDATE` and outstanding (`total − amount_paid − credited_total`) is re-verified, so concurrent
 payments can't jointly over-pay.
 - Pre-check and in-tx `FOR UPDATE` re-check in `PaymentsService` ("Allocation exceeds /
   now exceeds the document outstanding").

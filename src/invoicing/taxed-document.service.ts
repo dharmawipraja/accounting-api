@@ -34,15 +34,12 @@ import {
 import {
   DocumentDescriptor,
   DocumentRow,
+  TaxedRow,
   CreateDocumentInput,
   UpdateDocumentInput,
   DocumentListWhere,
 } from './document-descriptor';
-import {
-  presentDocument,
-  buildLineCreateData,
-  documentMessages,
-} from './document-presenter';
+import { buildLineCreateData, documentMessages } from './document-presenter';
 import { assertDocumentLineAccountsPostable } from './document-account-rules';
 
 /** Posting restarts from a fresh read at most this many times when the draft
@@ -76,7 +73,7 @@ export class TaxedDocumentService {
     private readonly posting: PostingService,
   ) {}
 
-  async getById<R extends DocumentRow>(
+  async getById<R extends TaxedRow>(
     spec: DocumentDescriptor<R>,
     id: string,
   ): Promise<R> {
@@ -86,7 +83,7 @@ export class TaxedDocumentService {
     return row;
   }
 
-  async createDraft<R extends DocumentRow, C extends CreateDocumentInput>(
+  async createDraft<R extends TaxedRow, C extends CreateDocumentInput>(
     spec: DocumentDescriptor<R, C>,
     input: C,
   ): Promise<R> {
@@ -144,7 +141,7 @@ export class TaxedDocumentService {
    *  post that wins leaves the edit a 422 onlyDraftEdit, and an edit that wins
    *  is what the post then sees. Lines/totals are derived from the row read
    *  under that lock (tax-code/account reads go through the same tx). */
-  async update<R extends DocumentRow, U extends UpdateDocumentInput>(
+  async update<R extends TaxedRow, U extends UpdateDocumentInput>(
     spec: DocumentDescriptor<R, CreateDocumentInput, U>,
     id: string,
     input: U,
@@ -189,7 +186,13 @@ export class TaxedDocumentService {
         const common = {
           date: input.date ?? row.date,
           // Explicit null clears; omitted (undefined) keeps the stored value.
-          dueDate: input.dueDate === undefined ? row.dueDate : input.dueDate,
+          // A type without a due date (notes) never writes one.
+          dueDate:
+            'dueDate' in row
+              ? input.dueDate === undefined
+                ? (row as TaxedRow & { dueDate: Date | null }).dueDate
+                : input.dueDate
+              : undefined,
           description:
             input.description === undefined
               ? row.description
@@ -210,7 +213,7 @@ export class TaxedDocumentService {
     return this.getById(spec, id);
   }
 
-  listPage<R extends DocumentRow>(spec: DocumentDescriptor<R>, q: ListQuery) {
+  listPage<R extends TaxedRow>(spec: DocumentDescriptor<R>, q: ListQuery) {
     const filters: Prisma.Sql[] = [];
     if (q.partnerId) filters.push(Prisma.sql`t.partner_id = ${q.partnerId}`);
     if (q.status) filters.push(Prisma.sql`t.status::text = ${q.status}`);
@@ -222,7 +225,7 @@ export class TaxedDocumentService {
       q: q.q,
       limit: q.limit,
       offset: q.offset,
-      present: (r: R) => presentDocument(r),
+      present: (r: R) => spec.present(r),
       search: ({ term, limit, offset }) =>
         trigramSearch(this.prisma, {
           table: spec.table,
@@ -244,7 +247,7 @@ export class TaxedDocumentService {
     });
   }
 
-  deleteDraft<R extends DocumentRow>(
+  deleteDraft<R extends TaxedRow>(
     spec: DocumentDescriptor<R>,
     id: string,
     deletedBy: string,
@@ -252,7 +255,7 @@ export class TaxedDocumentService {
     return this.lifecycle.softDeleteDraft(spec.model, id, deletedBy, spec.noun);
   }
 
-  async post<R extends DocumentRow>(
+  async post<R extends TaxedRow>(
     spec: DocumentDescriptor<R>,
     id: string,
     postedBy: string,
@@ -275,7 +278,7 @@ export class TaxedDocumentService {
     }
   }
 
-  private async postOnce<R extends DocumentRow>(
+  private async postOnce<R extends TaxedRow>(
     spec: DocumentDescriptor<R>,
     id: string,
     postedBy: string,
@@ -293,6 +296,8 @@ export class TaxedDocumentService {
       this.prisma,
       spec.controlRole,
     );
+    // Type-specific extra steps (notes), planned from this attempt's read.
+    const hooks = await spec.postHooks?.(row);
 
     await this.docPosting.post(
       {
@@ -308,6 +313,7 @@ export class TaxedDocumentService {
         lines: taxableLines(row.lines ?? []),
         table: spec.table,
         notDraftMessage: m.noLongerDraft,
+        journalLines: hooks && ((lines) => hooks.journalLines(lines)),
         verifyLockedInTx: async (tx) => {
           const locked = await spec.findById(id, tx);
           if (!locked || !samePostableContent(row, locked))
@@ -320,9 +326,13 @@ export class TaxedDocumentService {
             throw new ValidationFailedError(m.partnerInactive, {
               partnerId: row.partnerId,
             });
+          await hooks?.verifyInTx(tx);
         },
       },
-      (ctx) => spec.finalizePosted(ctx.tx, id, ctx, postedBy),
+      async (ctx) => {
+        await spec.finalizePosted(ctx.tx, id, ctx, postedBy);
+        await hooks?.finalizeInTx(ctx.tx, ctx);
+      },
     );
   }
 
@@ -363,11 +373,32 @@ export class TaxedDocumentService {
       applyInTx: async (tx, locked) => {
         if (!Money.of(locked.amount_paid.toString()).isZero())
           throw new ConflictDomainError(m.voidWithPayments, { id });
+        await this.assertNoLiveNotes(tx, spec, id);
         await this.assertNoLaterVoidedPayment(tx, spec, id, voidedOn);
         await spec.markVoid(tx, id, voidedOn);
       },
     });
     return this.getById(spec, id);
+  }
+
+  /** 422 HAS_NOTES while a DRAFT or POSTED credit/debit note returns part of
+   *  this document: void (or delete) those first. Read under the document
+   *  FOR UPDATE lock, which note create / post also take, so no note slips in. */
+  private async assertNoLiveNotes(
+    tx: LedgerTx,
+    spec: DocumentDescriptor<DocumentRow>,
+    id: string,
+  ): Promise<void> {
+    if (!spec.notes) return;
+    const [r] = await tx.$queryRaw<{ n: number }[]>(Prisma.sql`
+      SELECT count(*)::int AS n FROM ${Prisma.raw(spec.notes.table)}
+      WHERE original_id = ${id} AND deleted_at IS NULL
+        AND status IN ('DRAFT', 'POSTED')`);
+    if (r.n > 0)
+      throw new ValidationFailedError(
+        `Cannot void ${spec.article} ${spec.noun} with live ${spec.notes.noun}s; void or delete them first`,
+        { id, reason: 'HAS_NOTES', notes: r.n },
+      );
   }
 
   /** A payment allocated to this document that was voided on a LATER date than
@@ -386,7 +417,7 @@ export class TaxedDocumentService {
     const rows = await tx.$queryRaw<{ ref: string | null; voided_on: Date }[]>(
       Prisma.sql`
         SELECT st.ref, st.voided_on
-        FROM (${settlementsSql(spec.table)}) st
+        FROM (${settlementsSql(invoiceOrBillTable(spec))}) st
         WHERE st.document_id = ${id} AND st.status = 'VOID'
           AND st.voided_on > st.date AND st.voided_on > ${voidedOn}
         ORDER BY st.voided_on DESC
@@ -421,7 +452,7 @@ export class TaxedDocumentService {
    *  404 if the row is gone, 422 `message` if it is no longer a DRAFT. */
   private async lockDraftRow(
     tx: LedgerTx,
-    spec: DocumentDescriptor<DocumentRow>,
+    spec: DocumentDescriptor<TaxedRow>,
     id: string,
     message: string,
   ): Promise<void> {
@@ -434,4 +465,14 @@ export class TaxedDocumentService {
     if (rows[0].status !== 'DRAFT')
       throw new ValidationFailedError(message, { id, status: rows[0].status });
   }
+}
+
+/** void() serves invoices and bills only (notes void through their own
+ *  service), so the table is one of the two settled document tables. */
+function invoiceOrBillTable(
+  spec: DocumentDescriptor<DocumentRow>,
+): 'sales_invoices' | 'purchase_bills' {
+  if (spec.table !== 'sales_invoices' && spec.table !== 'purchase_bills')
+    throw new Error(`void() does not serve ${spec.table}`);
+  return spec.table;
 }

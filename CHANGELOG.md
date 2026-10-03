@@ -34,6 +34,29 @@ All notable changes to this project are documented here. The format is based on
   Out of scope: PPN on advances (faktur uang muka). Fully allocated payments are
   unchanged. The advance accounts are document-only (no MANUAL journal or
   invoice/bill line may use them).
+- **Sales credit notes (nota retur penjualan) and purchase debit notes (nota retur
+  pembelian)** — `/v1/sales-credit-notes` and `/v1/purchase-debit-notes` (list, get,
+  create, PATCH, post, void, delete draft, apply, reverse application; same roles and
+  `Idempotency-Key` rules as invoices/bills/payments). A note returns part of ONE
+  POSTED invoice / bill (`originalId`, same partner, dated on/after it); each line is
+  `{ originalLineId, quantity }` and copies the original line's price, account and tax
+  codes — a percent discount keeps its percent, a fixed discount is pro-rated by
+  quantity (rounded once to 4 dp half-up). The returnable quantity (original − every
+  live draft/posted note) is enforced under the original's row lock on create, edit
+  and post (`422`). Gapless refs `CN/<FY>/nnnnnn` / `DN/<FY>/nnnnnn`; journal source
+  types `SALES_CREDIT_NOTE` / `PURCHASE_DEBIT_NOTE` (SoD applies; journal list
+  filter). Posting mirrors the original's journal for the returned part (tax
+  recomputed on the returned DPP); its settlement first reduces the original's
+  outstanding — new `creditedTotal` on invoices/bills, `outstanding = total −
+  amountPaid − creditedTotal` — and any excess (original already paid) posts to Uang
+  Muka Pelanggan / Pembelian as partner credit (`unappliedAmount`), applied to other
+  documents exactly like a payment advance (`POST …/:id/apply`, application rows in
+  `payment_applications`, whose `paymentId` is now nullable with new
+  `salesCreditNoteId` / `purchaseDebitNoteId`). A note voids only while none of its
+  excess is applied (`422 HAS_APPLICATIONS`); an invoice/bill with live notes cannot
+  be voided (`422 HAS_NOTES`). Aging counts a note's credit on its original from the
+  note date (still ties to AR/AP control). Migration `20261009000000_credit_debit_notes`.
+  Out of scope: refunding note credit in cash, journal preview of a note.
 
 ### Changed (breaking)
 

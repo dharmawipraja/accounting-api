@@ -11,6 +11,7 @@ import { accountPolicyFor } from '../ledger/posting/account-policy';
 import type { PostingService } from '../ledger/posting/posting.service';
 import type { LedgerTx } from '../common/prisma/prisma.service';
 import { taxAccountViolation } from '../tax/tax-account-rule';
+import type { TaxedSourceType } from './document-descriptor';
 
 /** Account fields the document account rules look at. */
 export interface RuleAccount {
@@ -232,7 +233,7 @@ export async function assertCashAccount(
 /** An invoice / bill: its line-account rule set and posting source type. */
 export interface DocumentAccountKind {
   nature: 'SALE' | 'PURCHASE';
-  sourceType: 'SALES_INVOICE' | 'PURCHASE_BILL';
+  sourceType: TaxedSourceType;
 }
 
 /**

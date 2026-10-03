@@ -49,13 +49,16 @@ describe('CompanyService.isSegregationViolation', () => {
       false,
     );
   });
-  it.each(['SALES_INVOICE', 'PURCHASE_BILL', 'PAYMENT'])(
-    'true for %s created and posted by the same user',
-    async (sourceType) => {
-      const svc = build({ segregationOfDutiesEnabled: true });
-      expect(await svc.isSegregationViolation({ ...A, sourceType })).toBe(true);
-    },
-  );
+  it.each([
+    'SALES_INVOICE',
+    'PURCHASE_BILL',
+    'PAYMENT',
+    'SALES_CREDIT_NOTE',
+    'PURCHASE_DEBIT_NOTE',
+  ])('true for %s created and posted by the same user', async (sourceType) => {
+    const svc = build({ segregationOfDutiesEnabled: true });
+    expect(await svc.isSegregationViolation({ ...A, sourceType })).toBe(true);
+  });
   it.each(['OPENING', 'CLOSING', 'REVERSAL'])(
     'false for the exempt source %s',
     async (sourceType) => {

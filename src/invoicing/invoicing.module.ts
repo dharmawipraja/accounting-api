@@ -14,6 +14,11 @@ import { PaymentsService } from './payments.service';
 import { PaymentsController } from './payments.controller';
 import { JournalPreviewService } from './journal-preview.service';
 import { JournalPreviewController } from './journal-preview.controller';
+import { NotesService } from './notes.service';
+import {
+  PurchaseDebitNotesController,
+  SalesCreditNotesController,
+} from './notes.controller';
 
 @Module({
   imports: [LedgerModule, TaxModule, CompanyModule],
@@ -25,6 +30,7 @@ import { JournalPreviewController } from './journal-preview.controller';
     PurchaseBillsService,
     PaymentsService,
     JournalPreviewService,
+    NotesService,
   ],
   controllers: [
     BusinessPartnersController,
@@ -32,12 +38,15 @@ import { JournalPreviewController } from './journal-preview.controller';
     PurchaseBillsController,
     PaymentsController,
     JournalPreviewController,
+    SalesCreditNotesController,
+    PurchaseDebitNotesController,
   ],
   exports: [
     BusinessPartnersService,
     SalesInvoicesService,
     PurchaseBillsService,
     PaymentsService,
+    NotesService,
   ],
 })
 export class InvoicingModule {}

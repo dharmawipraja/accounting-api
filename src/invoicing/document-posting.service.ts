@@ -10,6 +10,7 @@ import {
   TaxService,
   TaxableLineInput,
   TaxCalculation,
+  CalculatedLine,
 } from '../tax/tax.service';
 import { ValidationFailedError } from '../common/errors/domain-errors';
 import { Money } from '../common/money/money';
@@ -17,7 +18,11 @@ import {
   assertDocumentLineAccountsPostable,
   assertTaxLineAccounts,
 } from './document-account-rules';
-import type { DocumentTotals } from './document-descriptor';
+import type {
+  DocumentTotals,
+  TaxedSourceType,
+  TaxedTable,
+} from './document-descriptor';
 import { nextDocumentNumber, sameTaxCalculation } from './document-helpers';
 
 /** Internal signal: the locked draft (or the tax state its entry was derived
@@ -30,14 +35,17 @@ export interface PostTaxedDocParams {
   settlementAccountId: string;
   date: Date;
   description: string;
-  sourceType: 'SALES_INVOICE' | 'PURCHASE_BILL';
+  sourceType: TaxedSourceType;
   sourceId: string;
   createdBy: string;
   postedBy: string;
-  documentType: string; // 'INV' | 'BILL'
+  documentType: string; // 'INV' | 'BILL' | 'CN' | 'DN'
   lines: TaxableLineInput[];
   /** Table the source document lives in — a constant literal, never user input. */
-  table: 'sales_invoices' | 'purchase_bills';
+  table: TaxedTable;
+  /** Reshape the tax calculation's journal before posting (credit/debit
+   *  notes: mirror it and split the settlement); default = as calculated. */
+  journalLines?: (lines: CalculatedLine[]) => CalculatedLine[];
   /** Runs right after the source row is locked FOR UPDATE and re-checked DRAFT.
    *  Must re-read the document through `tx` and throw if its postable content
    *  (date, description, lines) differs from what `date`/`description`/`lines`
@@ -116,7 +124,9 @@ export class DocumentPostingService {
       sourceType: params.sourceType,
       sourceId: params.sourceId,
       createdBy: params.createdBy,
-      lines: calc.journalLines,
+      lines: params.journalLines
+        ? params.journalLines(calc.journalLines)
+        : calc.journalLines,
     };
     const prepared = await this.posting.preparePosting(
       journalInput,
@@ -188,7 +198,7 @@ export class DocumentPostingService {
    *  user input), so Prisma.raw(table) is injection-safe; `id` is a bound param. */
   private async lockDraftInTx(
     tx: LedgerTx,
-    table: 'sales_invoices' | 'purchase_bills',
+    table: TaxedTable,
     id: string,
     notDraftMessage: string,
   ): Promise<void> {

@@ -20,6 +20,8 @@ export const SOFT_DELETE_MODELS = new Set<Prisma.ModelName>([
   'SalesInvoice',
   'PurchaseBill',
   'Payment',
+  'SalesCreditNote',
+  'PurchaseDebitNote',
 ]);
 
 const FILTERED_OPERATIONS = new Set([

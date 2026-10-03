@@ -318,6 +318,8 @@ describe('DB app role — accounting_app is least-privilege and runs the app (e2
     'payments',
     'payment_allocations',
     'payment_applications',
+    'sales_credit_notes',
+    'purchase_debit_notes',
     'document_sequences',
     'year_end_closings',
     'audit_log',
@@ -325,6 +327,8 @@ describe('DB app role — accounting_app is least-privilege and runs the app (e2
   const DELETE_ALLOWED = [
     'sales_invoice_lines', // draft line replacement (PATCH)
     'purchase_bill_lines', // draft line replacement (PATCH)
+    'sales_credit_note_lines', // draft line replacement (PATCH)
+    'purchase_debit_note_lines', // draft line replacement (PATCH)
     'accounting_periods', // OPEN-period regeneration on fiscalYearStartMonth change
     'idempotency_keys', // release / stale reclaim / retention purge
     'refresh_tokens', // expiry purge
@@ -373,7 +377,7 @@ describe('DB app role — accounting_app is least-privilege and runs the app (e2
     expect(rows[0].n).toBe('0');
   });
 
-  it('document flows that hard-delete only allow-listed rows work as accounting_app (draft PATCH, post, pay, void, soft-delete drafts, purges)', async () => {
+  it('document flows that hard-delete only allow-listed rows work as accounting_app (draft PATCH, post, credit note, pay, void, soft-delete drafts, purges)', async () => {
     const server = app.getHttpServer() as App;
     const token = (
       (
@@ -416,8 +420,30 @@ describe('DB app role — accounting_app is least-privilege and runs the app (e2
     await auth(request(server).patch(`/v1/sales-invoices/${inv.id}`))
       .send({ lines: [line(acc['4-1000'], '250000')] })
       .expect(200);
+    const posted = (
+      await auth(
+        request(server).post(`/v1/sales-invoices/${inv.id}/post`),
+      ).expect(200)
+    ).body as { lines: { id: string }[] };
+
+    // Credit note: draft → PATCH lines (hard-deletes its lines) → post → void.
+    const cn = (
+      await auth(request(server).post('/v1/sales-credit-notes'))
+        .send({
+          originalId: inv.id,
+          date: '2026-03-11',
+          lines: [{ originalLineId: posted.lines[0].id, quantity: '0.5' }],
+        })
+        .expect(201)
+    ).body as { id: string };
+    await auth(request(server).patch(`/v1/sales-credit-notes/${cn.id}`))
+      .send({ lines: [{ originalLineId: posted.lines[0].id, quantity: '1' }] })
+      .expect(200);
     await auth(
-      request(server).post(`/v1/sales-invoices/${inv.id}/post`),
+      request(server).post(`/v1/sales-credit-notes/${cn.id}/post`),
+    ).expect(200);
+    await auth(
+      request(server).post(`/v1/sales-credit-notes/${cn.id}/void`),
     ).expect(200);
 
     // Receipt: draft → post → void; then the invoice can be voided.

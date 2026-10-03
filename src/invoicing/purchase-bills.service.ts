@@ -59,8 +59,10 @@ export class PurchaseBillsService {
       documentType: 'BILL',
       table: 'purchase_bills',
       allocationColumn: 'purchase_bill_id',
+      notes: { table: 'purchase_debit_notes', noun: 'debit note' },
       trigramColumns: ['bill_ref', 'vendor_invoice_no', 'description'],
       model: this.prisma.client.purchaseBill,
+      present: (r) => presentDocument(r),
       findById: (id, db = this.prisma.client) =>
         db.purchaseBill.findFirst({
           where: { id },
