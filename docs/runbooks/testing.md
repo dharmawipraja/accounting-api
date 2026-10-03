@@ -10,22 +10,27 @@ for failure triage, and [`./conventions.md`](./conventions.md) for general code 
 | Tier | Files | Config | Runs against | Speed |
 | --- | --- | --- | --- | --- |
 | **Unit** | `src/**/*.spec.ts` | `jest` block in `package.json` (`rootDir: src`, `testRegex: .*\.spec\.ts$`) | nothing — pure logic, mocked deps | fast |
-| **E2E** | `test/*.e2e-spec.ts` | `test/jest-e2e.json` (`rootDir: ..`, `testRegex: .e2e-spec.ts$`) | a **real Postgres 16** per suite via Testcontainers | slow |
+| **E2E** | `test/*.e2e-spec.ts` | `test/jest-e2e.json` (`rootDir: ..`, `testRegex: .e2e-spec.ts$`) | a **real Postgres 16** (one shared container, a fresh cloned database per suite) | slow |
 
 - **Unit** tests exercise pure logic (money math, tax calc, validators, interceptors,
   guards) with hand-rolled mocks. No DB, no network. There are 42 unit spec files.
 - **E2E** tests boot the real `AppModule` and talk to a throwaway `postgres:16`
-  container (pinned to the same digest as `docker-compose.yml`'s `db` —
-  `POSTGRES_TEST_IMAGE` in `test/testcontainers.ts`; bump both together) started by
-  Testcontainers, connecting as the container superuser
-  (`bootstrapTestApp({ appDbUrl })` can swap in another role — see
-  `test/db-app-role.e2e-spec.ts`), with **migrations applied on every run**
-  (`npx prisma migrate deploy` against the fresh container — see `test/testcontainers.ts`).
-  `maxWorkers: 1` forces them to run **serially**; `testTimeout` is 30s (suite
-  `beforeAll` allows 120s for container start + migrate). There are 43 e2e spec files.
+  (pinned to the same digest as `docker-compose.yml`'s `db` — `POSTGRES_TEST_IMAGE`
+  in `test/testcontainers.ts`; bump both together), connecting as the container
+  superuser (`bootstrapTestApp({ appDbUrl })` can swap in another role — see
+  `test/db-app-role.e2e-spec.ts`). **One** container serves the whole run:
+  `test/global-setup.ts` (Jest `globalSetup`) starts it and applies the full
+  migration history **once** into a template database (`accounting_e2e_template`);
+  each suite's `startTestDb()` then gets its own copy (`CREATE DATABASE … TEMPLATE`,
+  dropped again in `stop()`), and `test/global-teardown.ts` stops the container.
+  Everything database-scoped (schema, data, `_prisma_migrations`) is still isolated
+  per suite; **roles are cluster-wide** — create them idempotently and reset any
+  `ALTER ROLE … SET` you make. `maxWorkers: 1` keeps suites **serial** (the shared
+  roles are why); `testTimeout` is 30s. Run e2e only through `test/jest-e2e.json` —
+  `startTestDb()` throws if the shared container (`E2E_PG_ADMIN_URL`) isn't up.
 
-> **Docker MUST be running for e2e.** Testcontainers spins up real Postgres
-> containers; with no Docker daemon, every e2e suite fails at `startTestDb()`.
+> **Docker MUST be running for e2e.** Testcontainers starts the shared Postgres
+> container in `globalSetup`; with no Docker daemon the run fails before any suite.
 > Unit tests need no Docker.
 
 ## Running
@@ -149,12 +154,11 @@ before opening a PR. **Docker must be up** for the e2e leg.
 
 ## ⚠️ Known issue: e2e flakiness under load
 
-The full e2e suite is environmentally **flaky under load**, not code-buggy. Each
-suite starts its own `postgres:16` container; running 42 suites back-to-back can
-saturate Docker (CPU, memory, container/port churn), and a suite may time out or
-fail to connect **even though it passes in isolation**. Despite `maxWorkers: 1`
-serializing the *tests*, container teardown/startup overlap and host contention
-still cause intermittent, non-deterministic failures in **unrelated** suites.
+The full e2e suite can be environmentally **flaky under load**, not code-buggy.
+Before the shared-container setup each suite started its own `postgres:16`, and the
+container churn caused intermittent failures in **unrelated** suites; one shared
+container removed most of that, but a loaded host (e.g. several runs in parallel)
+can still make a suite time out **even though it passes in isolation**.
 
 **Triage rule:** before treating an e2e failure as a real defect, **re-run the
 suspect suite alone**:
@@ -194,14 +198,14 @@ let prisma: PrismaService;
 let db: TestDb;
 
 beforeAll(async () => {
-  db = await startTestDb();                   // start postgres:16 + migrate deploy
+  db = await startTestDb();                   // clone the migrated template DB
   ({ app, prisma } = await bootstrapTestApp({ db }));
 
   // Seed the minimum fixtures the suite needs:
   await app.get(CompanyService).seedIfEmpty();
   await app.get(AccountsService).seedIfEmpty();
   await app.get(PeriodsService).generatePeriods(2026);
-}, 120_000);                                  // generous timeout: container + migrate
+}, 120_000);                                  // generous timeout: app boot + seed
 
 afterAll(async () => {
   await app.close();
@@ -240,8 +244,8 @@ Key rules:
 - **Year-end close fixtures use PAST years** (the existing specs use 2006–2017;
   `generatePeriods(<year>)` first). Close refuses a fiscal year that has not ended
   (WIB today), so closing the current or next year fails. Each spec **file** gets its
-  own Postgres testcontainer (`bootstrapTestApp()` → `startTestDb()` in its
-  `beforeAll`), so different files may reuse the same years (2006 appears in several);
+  own database (`bootstrapTestApp()` → `startTestDb()` in its `beforeAll` clones the
+  migrated template), so different files may reuse the same years (2006 appears in several);
   within one file the DB is shared across its tests, so a year closed by one test is
   still closed for the next — give each close scenario in a file its own year(s).
 

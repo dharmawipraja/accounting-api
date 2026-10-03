@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Internal (tests)
+
+- **E2E runs on one shared Postgres container** — `test/global-setup.ts` migrates
+  once into a template database and each suite clones it (`CREATE DATABASE …
+  TEMPLATE`), instead of starting a container and replaying every migration per
+  suite.
+
 ### Added
 
 - **Refunds of unapplied credit** — `POST /v1/payments/:id/refunds`,

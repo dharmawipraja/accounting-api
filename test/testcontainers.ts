@@ -1,13 +1,9 @@
-import { execSync } from 'node:child_process';
-import {
-  PostgreSqlContainer,
-  StartedPostgreSqlContainer,
-} from '@testcontainers/postgresql';
+import { randomUUID } from 'node:crypto';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
+import { Client } from 'pg';
 
 export interface TestDb {
-  container: StartedPostgreSqlContainer;
   url: string;
   prisma: PrismaClient;
   stop: () => Promise<void>;
@@ -18,38 +14,52 @@ export interface TestDb {
 export const POSTGRES_TEST_IMAGE =
   'postgres:16@sha256:fe03a7605299a34ddf5e4f285dff78c3d7190a576b3c6b46f2fcff69f4bffd54';
 
-export async function startTestDb(): Promise<TestDb> {
-  const container = await new PostgreSqlContainer(POSTGRES_TEST_IMAGE).start();
+/** Database global-setup.ts migrates once; every spec clones it. */
+export const E2E_TEMPLATE_DB = 'accounting_e2e_template';
+
+/** On the run's ONE shared Postgres (global-setup.ts), against the admin DB. */
+async function onAdminDb(sql: string): Promise<void> {
+  const adminUrl = process.env.E2E_PG_ADMIN_URL;
+  if (!adminUrl)
+    throw new Error(
+      'E2E_PG_ADMIN_URL is unset — run e2e specs through test/jest-e2e.json (its globalSetup starts the shared Postgres)',
+    );
+  const client = new Client({ connectionString: adminUrl });
+  await client.connect();
   try {
-    const url = container.getConnectionUri();
+    await client.query(sql);
+  } finally {
+    await client.end();
+  }
+}
 
-    // Apply the schema to the fresh container. prisma.config.ts reads DATABASE_URL
-    // from env; dotenv does NOT override an already-set env var, so the container
-    // URL we pass here wins over any .env value.
-    execSync('npx prisma migrate deploy', {
-      env: { ...process.env, DATABASE_URL: url },
-      stdio: 'inherit',
-    });
-
-    const adapter = new PrismaPg(url);
-    const prisma = new PrismaClient({ adapter });
+/** A fresh, fully migrated database for one spec: a copy of the migrated
+ *  template (CREATE DATABASE … TEMPLATE), dropped again by stop(). Isolation
+ *  equals the old container-per-spec setup for everything database-scoped
+ *  (schema, data, _prisma_migrations); roles are cluster-wide but the specs
+ *  that create one (db-app-role) do so idempotently. */
+export async function startTestDb(): Promise<TestDb> {
+  const name = `e2e_${randomUUID().replace(/-/g, '')}`;
+  await onAdminDb(`CREATE DATABASE ${name} TEMPLATE ${E2E_TEMPLATE_DB}`);
+  const u = new URL(process.env.E2E_PG_ADMIN_URL!);
+  u.pathname = `/${name}`;
+  const url = u.toString();
+  try {
+    const prisma = new PrismaClient({ adapter: new PrismaPg(url) });
     await prisma.$connect();
-
     return {
-      container,
       url,
       prisma,
       stop: async () => {
         try {
           await prisma.$disconnect();
         } finally {
-          await container.stop();
+          await onAdminDb(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
         }
       },
     };
   } catch (err) {
-    // Don't leak the container if migration or connection fails mid-setup.
-    await container.stop();
+    await onAdminDb(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
     throw err;
   }
 }
