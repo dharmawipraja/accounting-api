@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, TaxInvoiceStatus } from '@prisma/client';
+import { TaxInvoiceStatus } from '@prisma/client';
 import { LedgerTx, PrismaService } from '../common/prisma/prisma.service';
 import {
   NotFoundDomainError,
@@ -20,21 +20,24 @@ import {
   sellerProblems,
 } from './faktur';
 import { MAX_EXPORT_INVOICES } from './dto';
+import type { TaxedTable } from '../invoicing/document-descriptor';
+import { lockLiveRow } from '../common/db/lock-live-row';
 
-/** Document tables carrying Coretax metadata — constant literals, never
- *  user input (safe for Prisma.raw). */
-type MetaTable =
-  | 'sales_invoices'
-  | 'purchase_bills'
-  | 'sales_credit_notes'
-  | 'purchase_debit_notes';
-
-const LABEL: Record<MetaTable, string> = {
+const LABEL: Record<TaxedTable, string> = {
   sales_invoices: 'Sales invoice',
   purchase_bills: 'Purchase bill',
   sales_credit_notes: 'Sales credit note',
   purchase_debit_notes: 'Purchase debit note',
 };
+
+/** Each table's Prisma delegate. The Coretax reference columns an update
+ *  writes exist on both tables of a pair, so one delegate type serves both. */
+const MODEL = {
+  sales_invoices: 'salesInvoice',
+  purchase_bills: 'purchaseBill',
+  sales_credit_notes: 'salesCreditNote',
+  purchase_debit_notes: 'purchaseDebitNote',
+} as const;
 
 interface LockedDoc {
   status: string;
@@ -239,8 +242,8 @@ export class CoretaxService {
   async recordTaxInvoice(id: string, input: TaxInvoiceInput): Promise<void> {
     await this.prisma.transaction(async (tx) => {
       const row = await this.lockPostedOrVoid(tx, 'sales_invoices', id, {
-        extra: Prisma.sql`, tax_invoice_status::text AS tax_invoice_status,
-          tax_invoice_number, tax_invoice_date, trx_code`,
+        extra:
+          ', tax_invoice_status::text AS tax_invoice_status, tax_invoice_number, tax_invoice_date, trx_code',
       });
       const number =
         input.taxInvoiceNumber === undefined
@@ -307,7 +310,7 @@ export class CoretaxService {
     const ref = referenceData(input);
     await this.prisma.transaction(async (tx) => {
       const row = await this.lockPostedOrVoid(tx, table, id, {
-        extra: Prisma.sql`, withholding_total::text AS withholding_total`,
+        extra: ', withholding_total::text AS withholding_total',
         postedOnly: true,
       });
       if (!(Number(row.withholding_total) > 0))
@@ -321,9 +324,10 @@ export class CoretaxService {
         withholdingSlipNumber: ref.number,
         withholdingSlipDate: ref.date,
       };
-      if (table === 'sales_invoices')
-        await tx.salesInvoice.update({ where: { id }, data });
-      else await tx.purchaseBill.update({ where: { id }, data });
+      await (tx[MODEL[table]] as LedgerTx['salesInvoice']).update({
+        where: { id },
+        data,
+      });
     });
   }
 
@@ -337,9 +341,10 @@ export class CoretaxService {
     await this.prisma.transaction(async (tx) => {
       await this.lockPostedOrVoid(tx, table, id);
       const data = { returNumber: ref.number, returDate: ref.date };
-      if (table === 'sales_credit_notes')
-        await tx.salesCreditNote.update({ where: { id }, data });
-      else await tx.purchaseDebitNote.update({ where: { id }, data });
+      await (tx[MODEL[table]] as LedgerTx['salesCreditNote']).update({
+        where: { id },
+        data,
+      });
     });
   }
 
@@ -347,25 +352,27 @@ export class CoretaxService {
    *  postedOnly, anything but POSTED). */
   private async lockPostedOrVoid(
     tx: LedgerTx,
-    table: MetaTable,
+    table: TaxedTable,
     id: string,
-    opts: { extra?: Prisma.Sql; postedOnly?: boolean } = {},
+    opts: { extra?: string; postedOnly?: boolean } = {},
   ): Promise<LockedDoc> {
-    const rows = await tx.$queryRaw<LockedDoc[]>(Prisma.sql`
-      SELECT status::text AS status ${opts.extra ?? Prisma.empty}
-      FROM ${Prisma.raw(table)}
-      WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE`);
-    if (rows.length === 0)
+    const row = await lockLiveRow<LockedDoc>(
+      tx,
+      table,
+      id,
+      `status::text AS status${opts.extra ?? ''}`,
+    );
+    if (!row)
       throw new NotFoundDomainError(`${LABEL[table]} not found`, { id });
     const ok = opts.postedOnly
-      ? rows[0].status === 'POSTED'
-      : rows[0].status !== 'DRAFT';
+      ? row.status === 'POSTED'
+      : row.status !== 'DRAFT';
     if (!ok)
       throw new ValidationFailedError(
         `${LABEL[table]} must be ${opts.postedOnly ? 'POSTED' : 'POSTED or VOID'} to record Coretax data`,
-        { id, status: rows[0].status },
+        { id, status: row.status },
       );
-    return rows[0];
+    return row;
   }
 }
 
