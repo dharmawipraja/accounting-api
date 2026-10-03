@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-03
+
 ### Added
 
 - **Coretax (DJP) faktur keluaran XML export, NSFP and bukti potong records** —
@@ -294,6 +296,7 @@ Prisma 7 + PostgreSQL), conforming to SAK. Feature-complete and production-harde
   a frontend integration guide and agent brief (`docs/api/frontend-guide.md`,
   `docs/api/frontend-agent-brief.md`).
 
-[unreleased]: https://github.com/dharmawipraja/accounting-api/compare/v1.1.0...HEAD
+[unreleased]: https://github.com/dharmawipraja/accounting-api/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/dharmawipraja/accounting-api/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/dharmawipraja/accounting-api/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/dharmawipraja/accounting-api/releases/tag/v1.0.0
