@@ -43,6 +43,7 @@
   window is a concurrent refresh, not theft — a second replay revokes the session;
   default 5000, 0–30000, 0 = off),
   `THROTTLE_CHANGE_PASSWORD_LIMIT` (per-user change-password attempts/min, default 10),
+  `THROTTLE_CORETAX_EXPORT_LIMIT` (per-user Coretax XML exports/min, default 10),
   `JWT_ACCESS_TTL` / `JWT_REFRESH_TTL` (default `900s` / `7d`),
   `REQUEST_TIMEOUT_MS` (per-request cap → `408`, default 35000; keep
   `DB_STATEMENT_TIMEOUT_MS` < it < the 40s socket timeout),
@@ -108,6 +109,16 @@ $COMPOSE up -d --no-build
 `--no-build` matters: `api`/`migrate` keep a `build:` section for local builds, and
 without it compose could reuse a stale locally-built image.
 
+### A migration aborted the deploy (e.g. Coretax NPWP)
+If `migrate` exits non-zero, `api` stays stopped (Caddy answers 502) and nothing
+was changed. The 1.2.0 Coretax migration (`20261010000000_coretax`) aborts when a
+live partner / the company has an NPWP that is not 15/16 digits once `.`/`-`/spaces
+are stripped. **Run the preview query before deploying** and fix any row it
+returns; the query, the error format and the step-by-step recovery
+(fix rows → `prisma migrate resolve --rolled-back 20261010000000_coretax` →
+`$COMPOSE up -d --no-build`) are in
+[database-and-migrations.md](./database-and-migrations.md#coretax-npwp-normalization-20261010000000_coretax).
+
 ### Changed `Caddyfile` / `scripts/backup.sh`: recreate that service
 `caddy` mounts `./Caddyfile` and `backup` mounts `./scripts/backup.sh` as
 **single-file bind mounts**, which pin the file's inode. `git checkout` / `git pull`
@@ -151,12 +162,23 @@ caught), and a second run is a no-op (nothing differs). Run the same two lines
 yourself after a **manual** `git checkout` / `git pull` on the VM (e.g. a rollback)
 — they are safe to run any time (verified with a local prod-like Caddy: the
 Caddyfile replaced by `mv` → recreated, `/ready` 404; the next run printed no
-recreate). When the monitoring overlay is running (a `prometheus` container
-exists), CD does the same for **Prometheus** (`monitoring/prometheus.yml`,
-`alerts.yml`) and **Alertmanager** (`alertmanager*.yml`), so new alert rules take
-effect on deploy. `loki.yml` / `alloy.alloy` are still manual: after a change,
-recreate that overlay service the same way (`$COMPOSE -f
-docker-compose.monitoring.yml up -d --no-build --no-deps --force-recreate <service>`).
+recreate).
+
+**Monitoring overlay config** is different: each service mounts its config
+**directory** (`monitoring/prometheus/`, `alertmanager/`, `loki/`, `alloy/`,
+`grafana/`), not single files, so the container always sees the checked-out
+files — but the services only read them at start. When the overlay is running
+(a `prometheus` container exists), CD force-recreates each of `prometheus`,
+`alertmanager`, `loki`, `alloy`, `grafana` whose `monitoring/<service>/` directory
+(or `docker-compose.monitoring.yml`) differs between the previously checked-out
+and the deployed commit, so new alert rules / log pipelines take effect on
+deploy. A **re-run** of the same SHA (nothing to diff) recreates all five —
+cheap, and it converges after a deploy that failed half-way. If CD cannot
+inspect the overlay (typically `GRAFANA_ADMIN_PASSWORD` missing from the VM's
+`.env`, which the overlay requires), it logs a `WARN: cannot inspect the
+monitoring overlay` line and skips the refresh instead of failing silently. After
+a **manual** checkout, recreate a changed service yourself:
+`$COMPOSE -f docker-compose.monitoring.yml up -d --no-build --no-deps --force-recreate <service>`.
 
 ### Operator commands on a CD-managed VM
 CD exports `API_IMAGE` / `MIGRATE_IMAGE` **only inside its own SSH session**. In your
@@ -595,9 +617,9 @@ activation, in order:
    # ALERT_HEARTBEAT_URL=https://hc-ping.com/<uuid>  # optional dead-man's switch
    ```
 
-2. **Give Prometheus the same token in an untracked file.** `monitoring/prometheus.yml`
+2. **Give Prometheus the same token in an untracked file.** `monitoring/prometheus/prometheus.yml`
    (tracked, no secret) reads the scrape bearer token from
-   `credentials_file: /etc/prometheus/secrets/metrics_token`; the overlay mounts the
+   `credentials_file: /etc/prometheus-secrets/metrics_token`; the overlay mounts the
    git-ignored host dir `monitoring/secrets/` there read-only. Nothing tracked is
    edited, so CD's `git checkout --detach` is never blocked by operator config.
    Prometheus runs as `nobody` (uid/gid 65534), so the file must be readable by that
@@ -693,7 +715,7 @@ resume instead of re-reading.
 
 > **Metrics auth coupling (OPS-OBS-4):** in production `METRICS_TOKEN` MUST be set on
 > the api AND `monitoring/secrets/metrics_token` MUST hold the same value (step 2 above;
-> never paste the token into `monitoring/prometheus.yml`). `/metrics` is fail-closed:
+> never paste the token into `monitoring/prometheus/prometheus.yml`). `/metrics` is fail-closed:
 > with the token unset it answers `401` in production, a mismatched file gets `401`, and a
 > missing/unreadable file fails the scrape before it is sent — each way `up == 0` and the
 > `ApiDown` alert fires. The compose api always runs `NODE_ENV=production`, so this
@@ -736,9 +758,9 @@ environment):
   with a `/slack`-suffixed URL).
 
 The alertmanager entrypoint substitutes the URL into
-`monitoring/alertmanager-slack.yml` / `alertmanager-webhook.yml` at startup and
+`monitoring/alertmanager/alertmanager-slack.yml` / `alertmanager-webhook.yml` at startup and
 logs `alert delivery ACTIVE (...)`; with neither var set it falls back to the
-inert `monitoring/alertmanager.yml` and logs a WARN. Unresolved alerts re-notify
+inert `monitoring/alertmanager/alertmanager.yml` and logs a WARN. Unresolved alerts re-notify
 every 4h. Send a test by triggering a rule (e.g. stop the api so `ApiDown`
 fires) and confirm it lands in the channel.
 

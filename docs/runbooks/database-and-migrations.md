@@ -260,8 +260,9 @@ rename the DB index — Prisma still emits the default index name (e.g.
    (exit 2 = drift). Run it locally against a migrated database before pushing.
 6. **Name the folder later than every existing one.** Prisma applies migrations in
    folder-name order, and some existing folders are dated ahead of their commit
-   (latest `20261006000000_*`). A new folder must sort after the newest one, or a
-   fresh database applies it in a different order than an existing one.
+   (check with `command ls prisma/migrations | tail -2`). A new folder must sort
+   after the newest one, or a fresh database applies it in a different order than
+   an existing one.
 
 > ⚠️ **Do not let `prisma migrate dev` clobber a hand-authored migration.** If you
 > edit the schema after hand-writing a migration's SQL, `migrate dev` may try to
@@ -307,6 +308,59 @@ $COMPOSE up -d --no-build   # migrate → new api → caddy/backup
 #   $COMPOSE up -d --no-build --no-deps --force-recreate caddy   (deploy.md)
 # `up` runs `migrate` (prisma migrate deploy + accounting_app grants), THEN api/caddy/backup
 ```
+
+### A migration's pre-check aborted the deploy
+
+Some hand-authored migrations refuse to run on data they cannot fix safely:
+they `RAISE EXCEPTION` listing the offending rows **before changing anything**
+(the whole migration is one transaction), and `migrate` exits non-zero, so the
+new `api` never starts. Recovery is always: fix the listed rows, then
+`prisma migrate resolve --rolled-back <folder>` and re-run `prisma migrate
+deploy` (in prod: the commands under "Coretax NPWP normalization" below).
+
+#### Coretax NPWP normalization (`20261010000000_coretax`)
+
+**Trigger:** a **live** `business_partners` row (or the `company_settings` row)
+whose `npwp`, stripped of `.`, `-` and white space, is neither blank nor 15/16
+digits — e.g. a typo `01.234.567.8-901.00` (14 digits) or text like `N/A`. The
+error reads `coretax NPWP normalization aborted:` followed by one
+`<table> id <id>: npwp '<value>' ...` line per row. Every other value is
+fixed automatically (15 digits → `'0'` + 15, formatted → digits, blank →
+NULL; one `audit_log` row each, `GET /v1/audit?method=MIGRATION`).
+
+**Preview before deploying** (run against production with `psql`; any row
+returned would abort the migration):
+
+```sql
+SELECT 'company_settings' AS tbl, id, npwp FROM company_settings
+WHERE npwp IS NOT NULL
+  AND regexp_replace(npwp, '[.\-\s]', '', 'g') !~ '^([0-9]{15,16})?$'
+UNION ALL
+SELECT 'business_partners', id, npwp FROM business_partners
+WHERE deleted_at IS NULL AND npwp IS NOT NULL
+  AND regexp_replace(npwp, '[.\-\s]', '', 'g') !~ '^([0-9]{15,16})?$';
+```
+
+Fix those rows first (`UPDATE business_partners SET npwp = '<16 digits>' WHERE
+id = '<id>'`, or `npwp = NULL` when unknown) and the deploy goes through.
+
+**Recovery after an abort** (nothing was changed; the api is stopped):
+
+```bash
+COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+$COMPOSE logs migrate | grep -A20 'NPWP normalization aborted'   # the rows
+$COMPOSE exec -T db psql -U accounting -d accounting \
+  -c "UPDATE business_partners SET npwp = '<16 digits>' WHERE id = '<id>'"
+$COMPOSE run --rm --no-deps migrate \
+  node_modules/.bin/prisma migrate resolve --rolled-back 20261010000000_coretax
+$COMPOSE up -d --no-build   # migrate re-runs, then the api starts
+```
+
+(CD-managed VM: export the same `API_IMAGE` / `MIGRATE_IMAGE` first — see
+deploy.md "Operator commands on a CD-managed VM".) Rolling back the image
+instead also works — the old release runs on the unmigrated schema.
+`20261011000000_note_voided_on_check` follows the same pattern (a note whose
+`voided_on` is set iff it is not VOID; the app never writes one).
 
 Migrations are **forward-only** in prod. Rolling back the app image does not undo a
 migration — prefer a corrective forward migration, or restore from backup (see

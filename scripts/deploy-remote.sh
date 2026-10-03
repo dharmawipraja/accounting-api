@@ -9,7 +9,9 @@
 set -eu
 cd "$DEPLOY_PATH"
 # Keep the compose files / Caddyfile / scripts in step with the images.
+PREV_SHA=
 if [ -d .git ]; then
+  PREV_SHA=$(git rev-parse HEAD)
   git fetch --quiet origin
   git checkout --quiet --detach "$DEPLOY_SHA"
 fi
@@ -53,17 +55,32 @@ refresh_bind_mounts() {
 }
 refresh_bind_mounts "$COMPOSE" caddy /etc/caddy/Caddyfile Caddyfile
 refresh_bind_mounts "$COMPOSE" backup /backup.sh scripts/backup.sh
-# The monitoring overlay (when the operator runs it) has the same problem for
-# Prometheus rules/config and Alertmanager config: without this, a release that
-# changes monitoring/alerts.yml keeps the OLD rules running until a restart.
+# The monitoring overlay (when the operator runs it) mounts each service's
+# config as a DIRECTORY (monitoring/<service>/), so the container sees the
+# checked-out files, but the services only read them at start. Recreate a
+# service when its config dir (or the overlay compose file) changed between the
+# previous and the deployed commit; on a re-run (nothing to diff) recreate them
+# all — cheap, and converges after a deploy that failed half-way.
 MON="$COMPOSE -f docker-compose.monitoring.yml"
-if [ -n "$($MON ps -q prometheus 2>/dev/null)" ]; then
-  refresh_bind_mounts "$MON" prometheus \
-    /etc/prometheus/prometheus.yml monitoring/prometheus.yml \
-    /etc/prometheus/alerts.yml monitoring/alerts.yml
-  refresh_bind_mounts "$MON" alertmanager \
-    /etc/alertmanager/alertmanager.yml monitoring/alertmanager.yml \
-    /etc/alertmanager/alertmanager-slack.yml monitoring/alertmanager-slack.yml \
-    /etc/alertmanager/alertmanager-webhook.yml monitoring/alertmanager-webhook.yml
+# `ps` interpolates the overlay (GRAFANA_ADMIN_PASSWORD is required): report a
+# failure instead of silently treating it as "overlay not running". stderr goes
+# to a file, not into $mon_ps (a compose warning must not read as "running").
+mon_err=$(mktemp)
+if ! mon_ps=$($MON ps -q prometheus 2>"$mon_err"); then
+  echo "WARN: cannot inspect the monitoring overlay ($(cat "$mon_err")); skipping its config refresh." >&2
+  echo "WARN: set GRAFANA_ADMIN_PASSWORD in $DEPLOY_PATH/.env if the overlay runs here." >&2
+elif [ -z "$mon_ps" ]; then
+  echo "monitoring overlay not running: nothing to refresh"
+else
+  for svc in prometheus alertmanager loki alloy grafana; do
+    if [ -n "$PREV_SHA" ] && [ "$PREV_SHA" != "$DEPLOY_SHA" ] &&
+      git diff --quiet "$PREV_SHA" "$DEPLOY_SHA" -- \
+        "monitoring/$svc" docker-compose.monitoring.yml; then
+      echo "$svc: config unchanged"
+    else
+      echo "$svc: config changed (or re-run): recreating"
+      $MON up -d --no-build --no-deps --force-recreate "$svc"
+    fi
+  done
 fi
-
+rm -f "$mon_err"

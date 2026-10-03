@@ -39,6 +39,48 @@ All notable changes to this project are documented here. The format is based on
   since been deactivated (not deleted); invoices and bills stay strict.
 - **Zero-quantity original line** — returning from it answered `500` (division by
   zero); now `422 VALIDATION_FAILED`.
+- **Coretax faktur status transitions are enforced** — `PATCH
+  /v1/sales-invoices/:id/tax-invoice` returns `422` on a status move outside
+  `NONE`→`EXPORTED`|`APPROVED`, `EXPORTED`→`NONE`|`APPROVED`, `APPROVED`→`CANCELLED`
+  (`CANCELLED` is final; same-status writes allowed). Before, an `APPROVED` faktur
+  could be set back to `NONE` and land in the default export again (duplicate
+  upload to DJP).
+- **System account roles require their account shape on create** — every
+  `AccountRole` (not only `CASH`) must sit on a postable account of its type and
+  normal side (e.g. `AP_CONTROL` a credit-normal LIABILITY); `422` with the
+  required shape in `details` otherwise.
+- **Credit/debit notes: `voided_on` set iff VOID** is now a database CHECK
+  (migration `20261011000000_note_voided_on_check`, like invoices/bills/payments);
+  it aborts the deploy listing any violating row (none expected).
+- **Journal preview of advance payments** — `nature: PAYMENT` accepts `amount` and
+  empty/omitted `allocations`, and previews the customer/vendor advance line exactly
+  as the post books it (before, an advance could not be previewed and an `amount`
+  above the allocations was not shown).
+- **CORS exposes `Content-Disposition` and `X-Coretax-Invoice-Count`** so a browser
+  client can read the Coretax export's filename and invoice count.
+- `payment-advances` e2e race test now fails instead of silently passing when the
+  two applies never queue on the lock.
+
+### Changed
+
+- **AR/AP aging continuation** — `?afterPartnerId=` lists only partners after that
+  one; a truncated response carries `nextAfterPartnerId` to fetch the rest. Totals
+  still cover every open document on every page.
+- **Coretax export is rate-limited per user** — `GET
+  /v1/tax/coretax/faktur-keluaran` allows `THROTTLE_CORETAX_EXPORT_LIMIT` (default
+  10) calls per minute per user.
+- **Monitoring overlay mounts config directories** — config moved to
+  `monitoring/{prometheus,alertmanager,loki,alloy,grafana}/` and is mounted as
+  directories (a `git checkout` is now visible in running containers); the metrics
+  token mounts at `/etc/prometheus-secrets/` (host path `monitoring/secrets/`
+  unchanged). CD recreates each overlay service whose config directory changed (all
+  five on a re-run, and on this upgrade) and logs a `WARN` instead of silently
+  skipping when it cannot inspect the overlay (e.g. `GRAFANA_ADMIN_PASSWORD` unset).
+- CI `verify` job has a 45-minute timeout; the unused direct `testcontainers`
+  devDependency is removed (it still comes in via `@testcontainers/postgresql`).
+- Runbooks: the migration-folder naming rule no longer hard-codes the newest
+  folder; new recovery section for the Coretax NPWP migration abort (preview query
+  + steps) in database-and-migrations.md, linked from deploy.md.
 
 ## [1.2.0] - 2026-10-03
 

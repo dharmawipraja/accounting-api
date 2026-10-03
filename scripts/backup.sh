@@ -93,7 +93,7 @@ while true; do
 
   # Metrics: the local dump and the offsite copy are tracked SEPARATELY, so a
   # failing upload (expired credentials, age missing) alerts instead of being
-  # hidden behind a fresh local dump (OffsiteBackupStale in monitoring/alerts.yml).
+  # hidden behind a fresh local dump (OffsiteBackupStale in monitoring/prometheus/alerts.yml).
   mkdir -p "$BACKUP_METRICS_DIR"
   now=$(date +%s)
   offsite_configured=0
