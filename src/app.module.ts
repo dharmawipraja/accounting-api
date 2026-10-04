@@ -37,6 +37,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
 import { PasswordChangeGuard } from './auth/guards/password-change.guard';
 import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
 import { loginIpThrottler } from './common/guards/login-ip-throttle';
+import { reportExportThrottler } from './common/guards/report-export-throttle';
 import { AuditInterceptor } from './audit/audit.interceptor';
 import { RequestTimeoutInterceptor } from './common/interceptors/request-timeout.interceptor';
 import { HttpDrainService } from './common/http/http-drain.service';
@@ -90,6 +91,7 @@ import {
         const throttlers = [
           { ttl: THROTTLE_TTL_MS, limit: THROTTLE.global },
           loginIpThrottler(),
+          reportExportThrottler(),
         ];
         // null (test) → default in-memory store; otherwise share the one Redis client.
         return redis

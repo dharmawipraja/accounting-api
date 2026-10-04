@@ -25,6 +25,9 @@ export const THROTTLE = {
   // Per-user Coretax XML export (builds up to 1000 invoices x 100 lines in
   // memory per call).
   coretaxExport: Number(process.env.THROTTLE_CORETAX_EXPORT_LIMIT) || 10,
+  // Per-user report file exports (?format=csv|xlsx); JSON report calls are
+  // not counted (src/common/guards/report-export-throttle.ts).
+  reportExport: Number(process.env.THROTTLE_REPORT_EXPORT_LIMIT) || 30,
 } as const;
 
 /** Per-account failed-login ceiling (LoginFailureLimiter): after `limit`

@@ -5,3 +5,4 @@
 process.env.THROTTLE_LOGIN_IP_LIMIT = '30';
 process.env.LOGIN_FAILURE_LIMIT = '20';
 process.env.LOGIN_FAILURE_HARD_LIMIT = '100';
+process.env.THROTTLE_REPORT_EXPORT_LIMIT = '30';

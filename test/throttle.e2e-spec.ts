@@ -204,4 +204,17 @@ describe('Throttle policy (e2e)', () => {
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
   });
+
+  it('report file exports have their own per-user limit; JSON calls on the same route are not counted', async () => {
+    const tb = (query: string) =>
+      request(app.getHttpServer() as App)
+        .get(`/v1/ledger/trial-balance?asOf=2026-01-31${query}`)
+        .set('Authorization', `Bearer ${token}`);
+    // THROTTLE_REPORT_EXPORT_LIMIT default 30/min (pinned by throttle-default-env).
+    for (let i = 0; i < 30; i++) await tb('&format=csv').expect(200);
+    const blocked = await tb('&format=xlsx').expect(429);
+    expect(blocked.headers['retry-after']).toBeDefined();
+    // The JSON report on the same route still works.
+    await tb('').expect(200);
+  });
 });

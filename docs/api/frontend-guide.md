@@ -114,13 +114,14 @@ auth endpoints **per IP** (login additionally per email).
 | `POST /auth/logout`          | 30 / min  | IP                 |
 | `POST /auth/change-password` | 10 / min  | authenticated user |
 | `GET /tax/coretax/faktur-keluaran` | 10 / min | authenticated user |
+| Report file downloads (`?format=csv\|xlsx`) | 30 / min | authenticated user (JSON report calls not counted) |
 | All other endpoints          | 300 / min | authenticated user |
 
 Both login buckets apply at once: 10 attempts per account and 30 attempts per client
 IP (whatever emails it tries), per minute. Either one returns **429**.
 
 (Defaults; operators can override via `THROTTLE_LOGIN_LIMIT` / `THROTTLE_LOGIN_IP_LIMIT` / `THROTTLE_REFRESH_LIMIT`
-/ `THROTTLE_CHANGE_PASSWORD_LIMIT` / `THROTTLE_CORETAX_EXPORT_LIMIT` / `THROTTLE_LIMIT`. Health/readiness/metrics probes
+/ `THROTTLE_CHANGE_PASSWORD_LIMIT` / `THROTTLE_CORETAX_EXPORT_LIMIT` / `THROTTLE_REPORT_EXPORT_LIMIT` / `THROTTLE_LIMIT`. Health/readiness/metrics probes
 are not throttled.)
 
 On a **429**, back off and retry later: every 429 carries a standard `Retry-After`
@@ -1302,6 +1303,8 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing on the last page).
   comparative, income statement incl. comparative, trial balance incl.
   `preClosing`, general ledger, general-ledger book, AR/AP aging, cash flow)
   takes `&format=csv` or `&format=xlsx` with the same query params and roles;
+  downloads count against their own per-user limit (30/min, `429` + `Retry-After`)
+  — plain JSON report calls don't;
   absent = JSON (unchanged); any other value → `400`. The response is a download:
   `Content-Type: text/csv; charset=utf-8` (UTF-8 **BOM**, CRLF, RFC 4180 quoting)
   or `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, with

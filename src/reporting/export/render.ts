@@ -8,7 +8,8 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 import { IsIn, IsOptional } from 'class-validator';
-import { Workbook } from 'exceljs';
+import writeXlsxFile from 'write-excel-file/node';
+import type { CellObject, SheetData } from 'write-excel-file/node';
 
 /** A money cell: an exact decimal string (e.g. "-1500.0000"). Kept apart from
  *  text so it stays numeric (never formula-escaped) in CSV and XLSX. */
@@ -114,33 +115,34 @@ export function xlsxMoney(s: string): number | string {
 
 const MONEY_FORMAT = '#,##0.00;(#,##0.00)';
 
+/** Text is always typed as String, so text that looks like a formula is
+ *  stored as plain text, never evaluated. */
+const text = (value: string, extra: Partial<CellObject> = {}): CellObject => ({
+  value,
+  type: String,
+  ...extra,
+});
+
+function xlsxCell(c: Cell, bold: boolean): CellObject {
+  const weight = bold ? { fontWeight: 'bold' as const } : {};
+  if (typeof c === 'string') return text(c, weight);
+  const v = xlsxMoney(c.money);
+  return typeof v === 'number'
+    ? { value: v, type: Number, format: MONEY_FORMAT, ...weight }
+    : text(v, { align: 'right', ...weight });
+}
+
 export async function toXlsx(t: ReportTable): Promise<Buffer> {
-  const wb = new Workbook();
-  const headerRow = t.title.length + 2; // titles, blank, header
-  const ws = wb.addWorksheet('Report', {
-    views: [{ state: 'frozen', ySplit: headerRow }],
-  });
-  for (const x of t.title) ws.addRow([x]).font = { bold: true };
-  ws.addRow([]);
-  ws.addRow(t.header).font = { bold: true };
-  for (const r of t.rows) {
-    const row = ws.addRow(
-      r.cells.map((c) => (typeof c === 'string' ? c : xlsxMoney(c.money))),
-    );
-    r.cells.forEach((c, i) => {
-      if (typeof c !== 'string') {
-        const cell = row.getCell(i + 1);
-        cell.numFmt = MONEY_FORMAT;
-        if (typeof cell.value === 'string')
-          cell.alignment = { horizontal: 'right' };
-      }
-    });
-    if (r.bold) row.font = { bold: true };
-  }
-  for (const x of t.notes ?? []) ws.addRow([x]).font = { italic: true };
-  ws.columns.forEach((col, i) => {
+  const data: SheetData = [
+    ...t.title.map((x) => [text(x, { fontWeight: 'bold' })]),
+    [null],
+    t.header.map((h) => text(h, { fontWeight: 'bold' })),
+    ...t.rows.map((r) => r.cells.map((c) => xlsxCell(c, !!r.bold))),
+    ...(t.notes ?? []).map((x) => [text(x, { fontStyle: 'italic' })]),
+  ];
+  const columns = t.header.map((h, i) => {
     const longest = Math.max(
-      t.header[i]?.length ?? 0,
+      h.length,
       ...t.rows.map((r) => {
         const c = r.cells[i];
         return c === undefined
@@ -148,9 +150,13 @@ export async function toXlsx(t: ReportTable): Promise<Buffer> {
           : (typeof c === 'string' ? c : c.money).length;
       }),
     );
-    col.width = Math.min(Math.max(longest + 2, 10), 60);
+    return { width: Math.min(Math.max(longest + 2, 10), 60) };
   });
-  return Buffer.from(await wb.xlsx.writeBuffer());
+  return writeXlsxFile(data, {
+    sheet: 'Report',
+    columns,
+    stickyRowsCount: t.title.length + 2, // titles, blank, header
+  }).toBuffer();
 }
 
 /** JSON as-is, or the rendered file as an attachment named `<name>.<ext>`

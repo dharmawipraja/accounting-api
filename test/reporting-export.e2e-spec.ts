@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { type App } from 'supertest/types';
 import { INestApplication } from '@nestjs/common';
-import { Workbook } from 'exceljs';
+import { readXlsx } from './xlsx-read';
 import { AccountsService } from '../src/ledger/accounts/accounts.service';
 import { PeriodsService } from '../src/ledger/periods/periods.service';
 import { CompanyService } from '../src/company/company.service';
@@ -52,22 +52,7 @@ function parseCsv(text: string): string[][] {
 }
 
 async function parseXlsx(buf: Buffer): Promise<string[][]> {
-  const wb = new Workbook();
-  await wb.xlsx.load(buf as unknown as ArrayBuffer);
-  const ws = wb.worksheets[0];
-  const rows: string[][] = [];
-  for (let i = 1; i <= ws.rowCount; i++) {
-    const r = ws.getRow(i);
-    rows.push(
-      Array.from({ length: ws.columnCount }, (_, j) => {
-        const v = r.getCell(j + 1).value;
-        if (v === null || v === undefined) return '';
-        if (typeof v === 'string' || typeof v === 'number') return String(v);
-        throw new Error(`unexpected cell value at row ${i}`);
-      }),
-    );
-  }
-  return rows;
+  return Promise.resolve(readXlsx(buf).rows);
 }
 
 const binary = (

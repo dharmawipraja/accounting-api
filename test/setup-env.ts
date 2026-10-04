@@ -14,3 +14,5 @@ process.env.THROTTLE_LOGIN_IP_LIMIT ??= '1000';
 // Same for the per-account failed-login ceiling (specs probe many bad logins).
 process.env.LOGIN_FAILURE_LIMIT ??= '1000';
 process.env.LOGIN_FAILURE_HARD_LIMIT ??= '1000';
+// Specs download many report files; throttle.e2e-spec.ts pins the default.
+process.env.THROTTLE_REPORT_EXPORT_LIMIT ??= '1000';

@@ -1,5 +1,5 @@
 // src/reporting/export/export.spec.ts
-import { Workbook } from 'exceljs';
+import { readXlsx } from '../../../test/xlsx-read';
 import { m, ReportTable, toCsv, toXlsx, xlsxMoney } from './render';
 import {
   agingTable,
@@ -64,17 +64,23 @@ describe('toXlsx', () => {
         { cells: ['Total', m('1234567890123456.7891')], bold: true },
       ],
     });
-    const wb = new Workbook();
-    await wb.xlsx.load(buf as unknown as ArrayBuffer);
-    const ws = wb.worksheets[0];
-    expect(ws.views[0]).toMatchObject({ state: 'frozen', ySplit: 3 });
-    expect(ws.getCell('A3').font?.bold).toBe(true);
-    expect(ws.getCell('A4').value).toBe('=evil'); // a string, not a formula
-    expect(ws.getCell('A4').type).toBe(3); // ValueType.String
-    expect(ws.getCell('B4').value).toBe(-1500.5);
-    expect(ws.getCell('B4').numFmt).toBe('#,##0.00;(#,##0.00)');
-    expect(ws.getCell('B5').value).toBe('1234567890123456.7891');
-    expect(ws.getCell('A5').font?.bold).toBe(true);
+    const ws = readXlsx(buf);
+    expect(ws.frozenRows).toBe(3); // titles, blank, header
+    expect(ws.cell('A3')?.bold).toBe(true);
+    // Formula-looking text is stored as a string, never as a formula.
+    expect(ws.cell('A4')).toMatchObject({ value: '=evil', isString: true });
+    expect(ws.cell('B4')).toMatchObject({
+      value: -1500.5,
+      isString: false,
+      numFmt: '#,##0.00;(#,##0.00)',
+    });
+    // Beyond 15 significant digits: the exact decimal as right-aligned text.
+    expect(ws.cell('B5')).toMatchObject({
+      value: '1234567890123456.7891',
+      isString: true,
+      alignRight: true,
+    });
+    expect(ws.cell('A5')?.bold).toBe(true);
   });
 });
 

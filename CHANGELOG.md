@@ -21,10 +21,12 @@ All notable changes to this project are documented here. The format is based on
   `cash-flow` and `/v1/ledger/trial-balance` (incl. `preClosing`) returns an
   attachment (`<report>-<asOf|from_to>.<ext>`) instead of JSON; unknown format →
   `400`. CSV is UTF-8 with BOM, RFC 4180, formula-injection guarded; XLSX (via
-  `exceljs`) has bold headers/totals, a frozen header row and numeric money cells
+  `write-excel-file`, one dependency — `fflate` — and no overrides) has bold
+  headers/totals, a frozen header row and numeric money cells
   (`#,##0.00;(#,##0.00)`) — values beyond 15 significant digits are written as exact
   text. Truncated GL / aging pages carry a note row with the continuation token.
-  `exceljs`' `uuid` is overridden to `^11.1.1` (npm audit stays at 0).
+  File downloads have their own per-user limit, `THROTTLE_REPORT_EXPORT_LIMIT`
+  (default 30/min); JSON report calls on the same routes are not counted.
 - **Pre-closing trial balance** — `GET /v1/ledger/trial-balance?preClosing=true` leaves
   out the year-end closing entry dated on `asOf` (and its reopen reversal), so at a
   closed fiscal year-end P&L accounts show their balances, matching the Neraca's

@@ -44,6 +44,7 @@
   default 5000, 0–30000, 0 = off),
   `THROTTLE_CHANGE_PASSWORD_LIMIT` (per-user change-password attempts/min, default 10),
   `THROTTLE_CORETAX_EXPORT_LIMIT` (per-user Coretax XML exports/min, default 10),
+  `THROTTLE_REPORT_EXPORT_LIMIT` (per-user report CSV/XLSX downloads/min, default 30; JSON report calls are not counted),
   `JWT_ACCESS_TTL` / `JWT_REFRESH_TTL` (default `900s` / `7d`),
   `REQUEST_TIMEOUT_MS` (per-request cap → `408`, default 35000; keep
   `DB_STATEMENT_TIMEOUT_MS` < it < the 40s socket timeout),
