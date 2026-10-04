@@ -15,6 +15,15 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Partner statements (kartu piutang / kartu hutang)** —
+  `GET /v1/reports/partner-statement?partnerId=&side=customer|vendor&from=&to=`:
+  opening balance, every invoice/bill, payment, opening credit, credit/debit
+  note, credit application and refund in date order (voids and reversals as
+  reversing lines on their own dates, aging as-of semantics) with running
+  `balance` (AR/AP — ties to the partner's aging and control share),
+  `unappliedCredit` and `netBalance`; `?format=csv|xlsx`.
+- **Per-partner aging** — `?partnerId=` on `/v1/reports/ar-aging` and
+  `ap-aging`; totals then cover that partner only.
 - **CSV and XLSX export for every report** — `?format=csv|xlsx` on
   `/v1/reports/balance-sheet` (incl. comparative), `income-statement` (incl.
   comparative), `general-ledger`, `general-ledger/book`, `ar-aging`, `ap-aging`,

@@ -295,7 +295,9 @@ export async function assertNoBackdatedOverAllocation(
 }
 
 /** Every settlement of a document of `table`'s type as an as-of item, one row
- *  each `{ document_id, amount, date, status, voided_on, ref }`, live on
+ *  each `{ document_id, amount, date, status, voided_on, ref, kind,
+ *  payment_id, note_id, application_id }` (kind 'ALLOCATION' | 'APPLICATION'
+ *  | 'NOTE'; the ids link the source — the partner statement reads them), live on
  *  `[date, voided_on)` (status 'POSTED' = still live, 'VOID' = ended on
  *  voided_on):
  *  - a POSTED/VOID payment's allocations (date / voided_on of the payment);
@@ -320,7 +322,9 @@ export function settlementsSql(
   );
   return Prisma.sql`
     SELECT pa.${col} AS document_id, pa.amount, q.date,
-           q.status::text AS status, q.voided_on, q.ref
+           q.status::text AS status, q.voided_on, q.ref,
+           'ALLOCATION' AS kind, q.id AS payment_id, NULL::text AS note_id,
+           NULL::text AS application_id
     FROM payment_allocations pa
     JOIN payments q ON q.id = pa.payment_id
     WHERE pa.${col} IS NOT NULL AND q.deleted_at IS NULL
@@ -328,14 +332,16 @@ export function settlementsSql(
     UNION ALL
     SELECT ap.${col}, ap.amount, ap.date,
            CASE WHEN ap.reversed_on IS NULL THEN 'POSTED' ELSE 'VOID' END,
-           ap.reversed_on, COALESCE(q.ref, n.ref)
+           ap.reversed_on, COALESCE(q.ref, n.ref),
+           'APPLICATION', ap.payment_id, ap.${noteCol}, ap.id
     FROM payment_applications ap
     LEFT JOIN payments q ON q.id = ap.payment_id
     LEFT JOIN ${notes} n ON n.id = ap.${noteCol}
     WHERE ap.${col} IS NOT NULL
     UNION ALL
     SELECT n.original_id, n.credited_amount, n.date,
-           n.status::text, n.voided_on, n.ref
+           n.status::text, n.voided_on, n.ref,
+           'NOTE', NULL, n.id, NULL
     FROM ${notes} n
     WHERE n.deleted_at IS NULL AND n.status IN ('POSTED', 'VOID')
       AND n.credited_amount > 0`;

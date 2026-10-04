@@ -39,6 +39,13 @@ import {
   BalanceSheetQueryDto,
   IncomeStatementQueryDto,
 } from './dto/report-query.dto';
+import {
+  PartnerStatementQueryDto,
+  PartnerStatementResponseDto,
+} from './dto/partner-statement.dto';
+import { PartnerStatementService } from './partner-statement.service';
+import { safeFilePart } from './partner-statement';
+import { partnerStatementTable } from './export/partner-statement-table';
 
 @ApiTags('Reporting')
 @ApiBearerAuth()
@@ -50,6 +57,7 @@ export class ReportsController {
     private readonly generalLedgerSvc: GeneralLedgerService,
     private readonly agingSvc: AgingService,
     private readonly cashFlowSvc: CashFlowService,
+    private readonly partnerStatementSvc: PartnerStatementService,
   ) {}
 
   @ApiReportResponse(BalanceSheetDto)
@@ -136,6 +144,9 @@ export class ReportsController {
       'AR',
       asOfOrToday(q.asOf),
       q.afterPartnerId,
+      undefined,
+      undefined,
+      q.partnerId,
     );
     return exportOr(q.format, r, agingTable, `ar-aging-${r.asOf}`);
   }
@@ -147,6 +158,9 @@ export class ReportsController {
       'AP',
       asOfOrToday(q.asOf),
       q.afterPartnerId,
+      undefined,
+      undefined,
+      q.partnerId,
     );
     return exportOr(q.format, r, agingTable, `ap-aging-${r.asOf}`);
   }
@@ -157,5 +171,23 @@ export class ReportsController {
     const { from, to } = dateRange(q.from, q.to);
     const r = await this.cashFlowSvc.generate(from, to);
     return exportOr(q.format, r, cashFlowTable, `cash-flow-${r.from}_${r.to}`);
+  }
+
+  @ApiReportResponse(PartnerStatementResponseDto)
+  @Get('partner-statement')
+  async partnerStatement(@Query() q: PartnerStatementQueryDto) {
+    const { from, to } = dateRange(q.from, q.to, GL_MAX_RANGE_DAYS);
+    const r = await this.partnerStatementSvc.generate(
+      q.partnerId,
+      q.side,
+      from,
+      to,
+    );
+    return exportOr(
+      q.format,
+      r,
+      partnerStatementTable,
+      `partner-statement-${safeFilePart(r.partner.code)}-${r.from}_${r.to}`,
+    );
   }
 }

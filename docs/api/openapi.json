@@ -4986,6 +4986,16 @@
             }
           },
           {
+            "name": "partnerId",
+            "required": false,
+            "in": "query",
+            "description": "Only this partner: the listing AND the totals cover just its documents (422 if no such partner row). Composes with afterPartnerId.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
             "name": "format",
             "required": false,
             "in": "query",
@@ -5049,6 +5059,16 @@
             "required": false,
             "in": "query",
             "description": "Continue a truncated aging: list only partners after this one (a previous page's nextAfterPartnerId, same asOf). Totals still cover the whole report.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "partnerId",
+            "required": false,
+            "in": "query",
+            "description": "Only this partner: the listing AND the totals cover just its documents (422 if no such partner row). Composes with afterPartnerId.",
             "schema": {
               "format": "uuid",
               "type": "string"
@@ -5150,6 +5170,95 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CashFlowDto"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Reporting"
+        ]
+      }
+    },
+    "/v1/reports/partner-statement": {
+      "get": {
+        "operationId": "ReportsController_partnerStatement_v1",
+        "parameters": [
+          {
+            "name": "partnerId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "side",
+            "required": true,
+            "in": "query",
+            "description": "customer = kartu piutang (sales invoices, receipts, credit notes); vendor = kartu hutang (purchase bills, disbursements, debit notes).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "customer",
+                "vendor"
+              ]
+            }
+          },
+          {
+            "name": "format",
+            "required": false,
+            "in": "query",
+            "description": "Download the report as a file instead of JSON: csv (UTF-8 with BOM) or xlsx. Omit for JSON.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "csv",
+                "xlsx"
+              ]
+            }
+          },
+          {
+            "name": "from",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The report as JSON, or with ?format=csv|xlsx an attachment (Content-Disposition filename).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerStatementResponseDto"
                 }
               },
               "text/csv": {
@@ -10315,6 +10424,224 @@
           "kasAwal",
           "kasAkhir",
           "reconciles"
+        ]
+      },
+      "PartnerStatementPartnerDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string",
+            "example": "C-001"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name"
+        ]
+      },
+      "PartnerStatementLineDto": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "INVOICE",
+              "INVOICE_VOID",
+              "BILL",
+              "BILL_VOID",
+              "PAYMENT",
+              "PAYMENT_VOID",
+              "OPENING_CREDIT",
+              "OPENING_CREDIT_VOID",
+              "CREDIT_NOTE",
+              "CREDIT_NOTE_VOID",
+              "DEBIT_NOTE",
+              "DEBIT_NOTE_VOID",
+              "CREDIT_APPLICATION",
+              "CREDIT_APPLICATION_REVERSAL",
+              "REFUND",
+              "REFUND_REVERSAL"
+            ],
+            "description": "*_VOID / *_REVERSAL lines reverse an earlier line, dated on the void / reversal date."
+          },
+          "ref": {
+            "type": "string",
+            "nullable": true,
+            "description": "Number of the document / payment / note the line is about (for credit applications and refunds: the credit source — payment or note)."
+          },
+          "documentRef": {
+            "type": "string",
+            "nullable": true,
+            "description": "Number of the invoice / bill the line is or settles (null for payments, opening credit and refunds)."
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "debit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Movement of the AR/AP balance. Customer: debit increases what the partner owes us. Vendor: credit increases what we owe them."
+          },
+          "credit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "balance": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Running AR/AP (open-document) balance."
+          },
+          "unappliedCreditChange": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Signed change of the unapplied credit (advance / note excess): + adds credit, − applies or refunds it."
+          },
+          "unappliedCredit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Running unapplied credit."
+          },
+          "netBalance": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Running balance − unappliedCredit."
+          },
+          "documentId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "paymentId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "noteId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "applicationId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "The credit application / refund id."
+          }
+        },
+        "required": [
+          "date",
+          "type",
+          "ref",
+          "documentRef",
+          "description",
+          "debit",
+          "credit",
+          "balance",
+          "unappliedCreditChange",
+          "unappliedCredit",
+          "netBalance",
+          "documentId",
+          "paymentId",
+          "noteId",
+          "applicationId"
+        ]
+      },
+      "PartnerStatementResponseDto": {
+        "type": "object",
+        "properties": {
+          "partner": {
+            "$ref": "#/components/schemas/PartnerStatementPartnerDto"
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "customer",
+              "vendor"
+            ]
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "openingBalance": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "AR/AP balance as of the day before `from` (customer: the partner owes us; vendor: we owe them)."
+          },
+          "openingUnappliedCredit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "openingNetBalance": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PartnerStatementLineDto"
+            }
+          },
+          "totalDebit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "totalCredit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "closingBalance": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "AR/AP balance as of `to` = openingBalance + the lines' movements = the partner's AR/AP aging total as of `to`."
+          },
+          "unappliedCredit": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Unapplied credit as of `to` (customer advances + credit-note excess / our vendor prepayments + debit-note excess) — the partner's share of the advance account."
+          },
+          "netBalance": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "closingBalance − unappliedCredit."
+          }
+        },
+        "required": [
+          "partner",
+          "side",
+          "from",
+          "to",
+          "openingBalance",
+          "openingUnappliedCredit",
+          "openingNetBalance",
+          "lines",
+          "totalDebit",
+          "totalCredit",
+          "closingBalance",
+          "unappliedCredit",
+          "netBalance"
         ]
       },
       "CloseYearDto": {

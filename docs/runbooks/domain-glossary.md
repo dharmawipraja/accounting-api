@@ -709,7 +709,30 @@ so the total reconciles to the AR/AP control balance at that date. Unapplied adv
 are not AR/AP and are not in aging (see *Advance / unapplied payment*). Buckets and totals are computed in one SQL statement:
 totals aggregate **all** open documents, while the `AGING_MAX_DOCS` (10,000) cap cuts
 only at partner boundaries (`truncated: true`; `documentCount` = all open documents).
-- `AgingService.aging('AR' | 'AP', asOf)` (`src/reporting/aging.service.ts`).
+`?partnerId=` narrows the **whole** report — listing and totals — to one partner.
+- `AgingService.aging('AR' | 'AP', asOf, afterPartnerId?, …, partnerId?)` (`src/reporting/aging.service.ts`).
+
+### Partner statement (kartu piutang / kartu hutang)
+One partner's history on one side (`customer`: invoices, receipts, credit notes;
+`vendor`: bills, disbursements, debit notes) over `[from, to]`: an opening balance as of
+`from − 1`, then every event in date order with running balances. Each event sits on
+its own as-of date with the **aging's** live windows (`settlementsSql`): a document on
+its date and, if voided, a reversing `*_VOID` line on `voidedOn`; payments, notes,
+credit applications and refunds likewise on `[date, voidedOn | reversedOn)`. A void
+after `to` is therefore not on the statement and the document is still open as of `to`.
+Two balances are kept apart:
+- **`balance` / `closingBalance`** — AR/AP only (open documents). Equals the partner's
+  aging `totalOutstanding` as of `to` and its share of the control account.
+- **`unappliedCredit`** — unapplied advances, opening credit and note excess (on the
+  Uang Muka account, not AR/AP); a payment's allocated part moves `balance`, its
+  unallocated part moves this; an application moves both; a refund only this.
+- **`netBalance`** = `balance − unappliedCredit` (what the partner really owes / is owed).
+Customer: debit increases `balance`; vendor: credit does. A lump opening AR/AP posted
+as a journal (no documents) is not on any statement, as it is not in aging. The partner
+must exist (soft-deleted → 404) and carry the side's role flag now **or** have posted /
+voided documents or payments on that side (flags can be cleared once nothing is open).
+- `PartnerStatementService.generate` (`src/reporting/partner-statement.service.ts`);
+  running balances: `runStatement` (`src/reporting/partner-statement.ts`).
 
 ### General ledger (buku besar)
 One account's posted lines over a date range, with an opening balance and a per-line

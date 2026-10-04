@@ -42,15 +42,28 @@ export class AgingService {
 
   /** kind: 'AR' (sales_invoices + sales_invoice_id) | 'AP' (purchase_bills + purchase_bill_id).
    *  `afterPartnerId` continues a truncated report: only partners ordered
-   *  after it (by name, id) are listed. Totals always cover the whole report. */
+   *  after it (by name, id) are listed. Totals always cover the whole report.
+   *  `partnerId` restricts the WHOLE report (listing and totals) to that one
+   *  partner; the cursor composes with it unchanged. */
   async aging(
     kind: 'AR' | 'AP',
     asOf: Date,
     afterPartnerId?: string,
     maxDocs = AGING_MAX_DOCS,
     prefilter = true,
+    partnerId?: string,
   ) {
     const day = truncateToUtcDay(asOf);
+    let onlyPartner = Prisma.sql`true`;
+    if (partnerId) {
+      const p = await this.prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM business_partners WHERE id = ${partnerId}`;
+      if (p.length === 0)
+        throw new ValidationFailedError('partnerId is not a partner', {
+          partnerId,
+        });
+      onlyPartner = Prisma.sql`d.partner_id = ${partnerId}`;
+    }
     let after = Prisma.sql`true`;
     if (afterPartnerId) {
       const p = await this.prisma.$queryRaw<{ name: string }[]>`
@@ -123,7 +136,7 @@ export class AgingService {
           JOIN business_partners bp ON bp.id = d.partner_id
           WHERE d.deleted_at IS NULL AND d.date <= ${day}
             AND (d.status = 'POSTED' OR (d.status = 'VOID' AND d.voided_on > ${day}))
-            AND ${candidate}
+            AND ${onlyPartner} AND ${candidate}
         ) doc
         WHERE doc.total > doc.paid_as_of
       ),

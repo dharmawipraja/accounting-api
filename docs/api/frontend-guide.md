@@ -1288,8 +1288,32 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing on the last page).
   out — fetch them with `&afterPartnerId=<nextAfterPartnerId>` (same `asOf`;
   repeat until `truncated: false`). `totalsByBucket`, `totalOutstanding` and
   `documentCount` always cover **all** open documents, on every page. Unknown
-  `afterPartnerId` → `422`
-- `GET    /v1/reports/ap-aging?asOf=` · any · AP aging — same cap and totals
+  `afterPartnerId` → `422`. `&partnerId=<uuid>` restricts the report to one
+  partner — the listing **and** `totalsByBucket` / `totalOutstanding` /
+  `documentCount` then cover only that partner (composes with
+  `afterPartnerId`); an id that is no partner → `422`
+- `GET    /v1/reports/ap-aging?asOf=` · any · AP aging — same cap, totals and
+  `partnerId` filter
+- `GET    /v1/reports/partner-statement?partnerId=&side=customer|vendor&from=&to=`
+  · any · Kartu piutang (`customer`) / kartu hutang (`vendor`) — strict
+  `YYYY-MM-DD`, at most 366 days, more than 10,000 lines → `422` (narrow the
+  range). `openingBalance` (as of `from − 1`), then `lines[]` in date order:
+  `{date, type, ref, documentRef, description, debit, credit, balance,
+  unappliedCreditChange, unappliedCredit, netBalance, documentId, paymentId,
+  noteId, applicationId}`. `type`: `INVOICE`/`BILL`, `PAYMENT`,
+  `OPENING_CREDIT`, `CREDIT_NOTE`/`DEBIT_NOTE`, `CREDIT_APPLICATION`, `REFUND`,
+  and for each its reversal `*_VOID` / `*_REVERSAL`, dated on the void date
+  (a void after `to` does not appear — the document is open as of `to`, as in
+  aging). Two balances: `balance` / `closingBalance` = AR/AP only (== that
+  partner's aging `totalOutstanding` as of `to`; customer: debit increases it,
+  vendor: credit does) and `unappliedCredit` = advances / opening credit /
+  note excess (moved by `unappliedCreditChange`); `netBalance` = `balance −
+  unappliedCredit`. A payment's allocated part is in `debit`/`credit`, its
+  unallocated part in `unappliedCreditChange`; an application moves both; a
+  refund only the credit. Also `openingUnappliedCredit`, `openingNetBalance`,
+  `totalDebit`, `totalCredit`. Unknown or soft-deleted partner → `404`; a
+  partner that is not (and never was) on that side → `422`. Export filename
+  `partner-statement-<code>-<from>_<to>` (code reduced to `[A-Za-z0-9_-]`)
 - `GET    /v1/reports/cash-flow?from=&to=` · any · Arus Kas — closing entries
   excluded; opening-balance (Saldo Awal) entries dated inside the range are
   part of `kasAwal`, not operating/financing flows. **Intended:** `kasAwal` =
@@ -1311,7 +1335,7 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing on the last page).
   `Content-Disposition: attachment; filename="<report>-<asOf>.<ext>"` (or
   `<report>-<from>_<to>.<ext>`; names: `balance-sheet`, `income-statement`,
   `trial-balance`, `general-ledger`, `general-ledger-book`, `ar-aging`,
-  `ap-aging`, `cash-flow`). `Content-Disposition` is CORS-exposed. Layout: title
+  `ap-aging`, `cash-flow`, `partner-statement-<code>`). `Content-Disposition` is CORS-exposed. Layout: title
   rows, a blank row, one header row (frozen in XLSX), then lines with bold
   subtotal/total rows (Indonesian labels: `Total ASET`, `Laba Bersih`,
   `Saldo Akhir`, `Total Sisa`, …); comparative exports have current /

@@ -26,6 +26,14 @@ export class AgingQueryDto extends AsOfQueryDto {
   @IsOptional()
   @IsUUID()
   afterPartnerId?: string;
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Only this partner: the listing AND the totals cover just its documents (422 if no such partner row). Composes with afterPartnerId.',
+  })
+  @IsOptional()
+  @IsUUID()
+  partnerId?: string;
   @ExportFormatField() format?: ExportFormat;
 }
 
