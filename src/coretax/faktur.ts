@@ -12,7 +12,7 @@ import { NPWP_FORMAT } from '../common/validators/npwp';
  */
 
 /** One `GoodService` element, values already formatted. */
-export interface FakturGoodService {
+interface FakturGoodService {
   opt: string;
   code: string;
   name: string;
@@ -151,7 +151,7 @@ export function statutoryVatRate(
 }
 
 /** A posted invoice line as the export reads it (4dp money). */
-export interface CoretaxLineAmounts {
+interface CoretaxLineAmounts {
   quantity: Num;
   unitPrice: Num;
   discountAmount: Num;
@@ -194,14 +194,14 @@ export function goodServiceAmounts(
  *  engine rounds each code's total ONCE to whole rupiah (≤ 0.5 per code);
  *  the faktur rounds each line's TaxBase / OtherTaxBase / VAT to 2 dp
  *  (< 0.01 per line in VAT terms). Anything above is a real mismatch. */
-export function vatTolerance(ppnCodes: number, lines: number): Decimal {
+function vatTolerance(ppnCodes: number, lines: number): Decimal {
   return new Decimal(0.5).times(ppnCodes).plus(new Decimal(0.01).times(lines));
 }
 
 // ---------------------------------------------------------------------------
 // Assembly (validation + mapping) of one invoice.
 
-export type BuyerDocumentType = 'TIN' | 'NATIONAL_ID' | 'PASSPORT' | 'OTHER';
+type BuyerDocumentType = 'TIN' | 'NATIONAL_ID' | 'PASSPORT' | 'OTHER';
 
 /** XML `BuyerDocument` values (DJP Excel template REF-General). */
 const BUYER_DOCUMENT: Record<BuyerDocumentType, string> = {
@@ -220,7 +220,7 @@ export interface CoretaxSeller {
   defaultUnitCode: string | null;
 }
 
-export interface CoretaxBuyer {
+interface CoretaxBuyer {
   name: string;
   npwp: string | null;
   buyerDocumentType: BuyerDocumentType;
@@ -231,7 +231,7 @@ export interface CoretaxBuyer {
   email: string | null;
 }
 
-export interface CoretaxInvoiceLine extends CoretaxLineAmounts {
+interface CoretaxInvoiceLine extends CoretaxLineAmounts {
   lineNo: number;
   description: string;
   taxCodeIds: string[];

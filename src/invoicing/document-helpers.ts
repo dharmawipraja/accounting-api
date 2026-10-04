@@ -12,7 +12,7 @@ type DecimalLike = Prisma.Decimal | string;
 /** A line's discount as entered: a percent OR a fixed amount (the DTO makes
  *  them mutually exclusive). A stored row carries both — the entered percent
  *  and its resolved amount — so a non-null percent wins. */
-export type DiscountedLineInput = {
+type DiscountedLineInput = {
   quantity: DecimalLike;
   unitPrice: DecimalLike;
   discountPercent?: DecimalLike | null;
@@ -153,7 +153,7 @@ export function assertDueDateNotBefore(
 type PostableLine = TaxableLineInput;
 
 /** The document content a journal entry is derived from. */
-export interface PostableDraftContent {
+interface PostableDraftContent {
   date: Date;
   description: string | null;
   lines?: PostableLine[];

@@ -8,7 +8,7 @@ export class AccountBalanceDto {
   @ApiMoney({ description: 'normalBalance-signed net, 4 dp' }) balance!: string;
 }
 
-export class TrialBalanceRowDto {
+class TrialBalanceRowDto {
   @ApiProperty({ format: 'uuid' }) accountId!: string;
   @ApiProperty({ example: '1-1000' }) code!: string;
   @ApiProperty({ example: 'Kas' }) name!: string;

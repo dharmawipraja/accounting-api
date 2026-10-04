@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ApiMoney } from '../../common/openapi/api-money.decorator';
 
-export class JournalPreviewLineDto {
+class JournalPreviewLineDto {
   @ApiProperty({ format: 'uuid' }) accountId!: string;
   @ApiProperty({ example: '1-1210' }) accountCode!: string;
   @ApiProperty({ example: 'Piutang Usaha' }) accountName!: string;

@@ -28,13 +28,13 @@ import {
  * "another active CASH account remains" check. Kept out of the fiscal-year
  * range and the other 71_00x_001 keys (see domain-glossary.md lock table).
  */
-export const CASH_RETIRE_LOCK_KEY = 71_003_001;
+const CASH_RETIRE_LOCK_KEY = 71_003_001;
 
 /** Partial unique index (migration 20260618000000_account_role) allowing one
  *  holder per singleton role (every role except CASH). */
 const SINGLETON_ROLE_INDEX = 'accounts_singleton_role';
 
-export interface UpdateAccountInput {
+interface UpdateAccountInput {
   name?: string;
   cashFlowCategory?: Account['cashFlowCategory'];
   isActive?: boolean;
@@ -43,7 +43,7 @@ export interface UpdateAccountInput {
   role?: 'CASH';
 }
 
-export interface CreateAccountInput {
+interface CreateAccountInput {
   code: string;
   name: string;
   type: Account['type'];

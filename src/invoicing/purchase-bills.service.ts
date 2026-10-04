@@ -26,12 +26,12 @@ function duplicateVendorInvoice(
   );
 }
 
-export type PurchaseBillRow = PurchaseBill & { lines?: PurchaseBillLine[] };
+type PurchaseBillRow = PurchaseBill & { lines?: PurchaseBillLine[] };
 
-export type CreateBillInput = CreateDocumentInput & {
+type CreateBillInput = CreateDocumentInput & {
   vendorInvoiceNo?: string;
 };
-export type UpdateBillInput = UpdateDocumentInput & {
+type UpdateBillInput = UpdateDocumentInput & {
   /** `null` clears it; `undefined` keeps it. Normalized (trimmed) on write. */
   vendorInvoiceNo?: string | null;
 };

@@ -20,7 +20,7 @@ import { USER_ADMIN_LOCK_KEY } from '../common/concurrency/advisory-lock-keys';
 // Re-exported for existing importers; defined in the dependency-free keys module.
 export { USER_ADMIN_LOCK_KEY };
 
-export function toUserResponse(u: SafeUser): UserResponseDto {
+function toUserResponse(u: SafeUser): UserResponseDto {
   return {
     id: u.id,
     email: u.email,

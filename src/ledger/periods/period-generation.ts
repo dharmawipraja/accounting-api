@@ -9,9 +9,9 @@ import { fiscalYearStartDate } from '../../common/dates/fiscal-year';
  *  periods and regenerates them for the new start month). Distinct from the
  *  admin-pool key 71_001_001 and from the per-fiscal-year keys (the year number
  *  itself, e.g. 2026, taken by posting/close). */
-export const PERIOD_GENERATION_LOCK_KEY = 71_002_001;
+const PERIOD_GENERATION_LOCK_KEY = 71_002_001;
 
-export interface PeriodRow {
+interface PeriodRow {
   fiscalYear: number;
   sequence: number;
   name: string;
@@ -22,7 +22,7 @@ export interface PeriodRow {
 /** Pure: the 12 monthly period rows of a fiscal year for a start month (1-12).
  *  `name` is {fiscalYear}-{sequence}, NOT {calendarYear}-{calendarMonth}; for a
  *  non-January start, sequence 1 is the start month. */
-export function buildFiscalYearPeriods(
+function buildFiscalYearPeriods(
   fiscalYear: number,
   startMonth: number,
 ): PeriodRow[] {

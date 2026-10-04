@@ -53,7 +53,7 @@ export const GL_MAX_ACCOUNTS = 200;
 /** Keyset position of one ledger line in the report's total order
  *  (date, entry_number, entry id, line_no). Posted entries always carry an
  *  entry_number; entry id breaks any theoretical (date, number) tie. */
-export interface GlCursor {
+interface GlCursor {
   date: string; // YYYY-MM-DD
   entryNumber: number;
   entryId: string;
@@ -62,7 +62,7 @@ export interface GlCursor {
 
 /** A multi-account (book) position: the line cursor inside one account. The
  *  book's total order is (account code, then the line order above). */
-export interface GlBookCursor {
+interface GlBookCursor {
   accountId: string;
   line: GlCursor;
 }
@@ -138,7 +138,7 @@ const money = (d: Prisma.Decimal) => Money.of(d.toString());
 
 /** Which accounts a book request covers: explicit ids, or a code range of
  *  postable accounts (either bound optional). */
-export type GlSelection =
+type GlSelection =
   | { accountIds: string[] }
   | { fromCode?: string; toCode?: string };
 

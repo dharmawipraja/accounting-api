@@ -3,7 +3,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ApiMoney } from '../../common/openapi/api-money.decorator';
 import { PaginatedDto } from '../../common/openapi/paginated-dto';
 
-export class PaymentAllocationResponseDto {
+class PaymentAllocationResponseDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
   @ApiProperty({ format: 'uuid' }) paymentId!: string;
   @ApiProperty({ format: 'uuid', nullable: true }) salesInvoiceId!:

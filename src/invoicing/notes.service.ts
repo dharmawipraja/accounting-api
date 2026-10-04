@@ -75,12 +75,12 @@ export type NoteRow = SalesCreditNote & {
 };
 
 /** What a caller asks to return: original lines and quantities. */
-export interface NoteLineRequest {
+interface NoteLineRequest {
   originalLineId: string;
   quantity: string;
 }
 
-export interface CreateNoteRequest {
+interface CreateNoteRequest {
   originalId: string;
   date: Date;
   description?: string;
@@ -88,7 +88,7 @@ export interface CreateNoteRequest {
   createdBy: string;
 }
 
-export interface UpdateNoteRequest {
+interface UpdateNoteRequest {
   date?: Date;
   description?: string | null;
   lines?: NoteLineRequest[];
@@ -748,7 +748,6 @@ export class NotesService {
         noun: cfg.noun,
         table: cfg.table,
         holderField: cfg.holderField,
-        dateKey: 'noteDate',
         sourceType: cfg.sourceType,
         target: cfg.target,
       },
@@ -1001,7 +1000,7 @@ function withOriginalLines(
 }
 
 /** API shape of a note: 4dp money strings (lines and applications too). */
-export function presentNote(row: NoteRow) {
+function presentNote(row: NoteRow) {
   const { lines, applications } = row;
   return {
     ...serializeMoney(row, [

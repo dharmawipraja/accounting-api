@@ -286,14 +286,12 @@ export interface CreditSource {
   table: 'payments' | 'sales_credit_notes' | 'purchase_debit_notes';
   /** The PaymentApplication field naming the holder. */
   holderField: 'paymentId' | 'salesCreditNoteId' | 'purchaseDebitNoteId';
-  /** 422 details key for the holder's date. */
-  dateKey: string;
   sourceType: 'PAYMENT' | 'SALES_CREDIT_NOTE' | 'PURCHASE_DEBIT_NOTE';
   target: PaymentTarget;
 }
 
 /** The holder row as applyCredit / reverseCreditApplication read it. */
-export interface CreditHolder {
+interface CreditHolder {
   id: string;
   status: DocumentStatus;
   date: Date;
@@ -340,7 +338,7 @@ async function adjustUnapplied(
 
 /** What a holder's unapplied credit is used for: applied onto documents, or
  *  refunded in cash. */
-export type CreditUse = 'application' | 'refund';
+type CreditUse = 'application' | 'refund';
 
 /** POST /…/:id/refunds body, as the service takes it. */
 export interface CreditRefundInput {
@@ -354,7 +352,7 @@ export interface CreditRefundInput {
 /** Pre-lock holder rules for an application / refund (pure): the holder is
  *  POSTED and `date` is on/after its date (422). */
 export function assertCreditUsable(
-  source: Pick<CreditSource, 'noun' | 'dateKey'>,
+  source: Pick<CreditSource, 'noun'>,
   holder: Pick<CreditHolder, 'id' | 'status' | 'date'>,
   date: Date,
   use: CreditUse,
@@ -371,7 +369,7 @@ export function assertCreditUsable(
       {
         id,
         date: date.toISOString().slice(0, 10),
-        [source.dateKey]: holder.date.toISOString().slice(0, 10),
+        holderDate: holder.date.toISOString().slice(0, 10),
       },
     );
 }

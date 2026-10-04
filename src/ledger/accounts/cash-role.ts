@@ -45,7 +45,7 @@ export function assertRoleShape(
 
 /** The account attributes the CASH role rule looks at. `id` is absent on
  *  create (the account does not exist yet). */
-export interface CashCandidate {
+interface CashCandidate {
   id?: string;
   type: string;
   normalBalance: string;

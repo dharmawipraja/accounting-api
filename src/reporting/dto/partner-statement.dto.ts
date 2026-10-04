@@ -20,7 +20,7 @@ export class PartnerStatementQueryDto {
   @ExportFormatField() format?: ExportFormat;
 }
 
-export const STATEMENT_LINE_TYPES = [
+const STATEMENT_LINE_TYPES = [
   'INVOICE',
   'INVOICE_VOID',
   'BILL',
@@ -39,13 +39,13 @@ export const STATEMENT_LINE_TYPES = [
   'REFUND_REVERSAL',
 ] as const;
 
-export class PartnerStatementPartnerDto {
+class PartnerStatementPartnerDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
   @ApiProperty({ example: 'C-001' }) code!: string;
   @ApiProperty() name!: string;
 }
 
-export class PartnerStatementLineDto {
+class PartnerStatementLineDto {
   @ApiProperty({ type: String, format: 'date' }) date!: string;
   @ApiProperty({
     enum: STATEMENT_LINE_TYPES,

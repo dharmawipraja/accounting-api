@@ -9,7 +9,7 @@ import {
   TransactionalDocumentResponseDto,
 } from './transactional-document-response.dto';
 
-export class PurchaseBillLineResponseDto {
+class PurchaseBillLineResponseDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
   @ApiProperty({ format: 'uuid' }) purchaseBillId!: string;
   @ApiProperty({ example: 1 }) lineNo!: number;

@@ -11,7 +11,7 @@ import { Prisma, PrismaClient } from '@prisma/client';
  * `tombstoneData()`. The service layer still does its own findFirst existence
  * checks; this is defense-in-depth.
  */
-export const SOFT_DELETE_MODELS = new Set<Prisma.ModelName>([
+const SOFT_DELETE_MODELS = new Set<Prisma.ModelName>([
   'User',
   'Account',
   'JournalEntry',

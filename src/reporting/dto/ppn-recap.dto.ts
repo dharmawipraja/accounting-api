@@ -24,7 +24,7 @@ export class PpnRecapQueryDto {
   @ExportFormatField() format?: ExportFormat;
 }
 
-export class PpnTotalsDto {
+class PpnTotalsDto {
   @ApiProperty({ description: 'Number of documents (rows).' }) count!: number;
   @ApiMoney({ description: 'Σ DPP (TaxBase, per-line 2 dp as on the faktur).' })
   dpp!: string;
@@ -37,7 +37,7 @@ export class PpnTotalsDto {
   ppn!: string;
 }
 
-export class PpnKeluaranRowDto {
+class PpnKeluaranRowDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
   @ApiProperty({ type: String, nullable: true }) invoiceRef!: string | null;
   @ApiProperty({ type: String, format: 'date' }) date!: string;
@@ -71,7 +71,7 @@ export class PpnKeluaranRowDto {
   voidedOn!: string | null;
 }
 
-export class PpnMasukanRowDto {
+class PpnMasukanRowDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
   @ApiProperty({ type: String, nullable: true }) billRef!: string | null;
   @ApiProperty({ type: String, nullable: true })
@@ -88,7 +88,7 @@ export class PpnMasukanRowDto {
   voidedOn!: string | null;
 }
 
-export class PpnReturRowDto {
+class PpnReturRowDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
   @ApiProperty({ type: String, nullable: true }) ref!: string | null;
   @ApiProperty({ type: String, format: 'date' }) date!: string;
@@ -115,7 +115,7 @@ export class PpnReturRowDto {
   cancellation!: boolean;
 }
 
-export class PpnRecapFaktursDto {
+class PpnRecapFaktursDto {
   @ApiProperty({
     type: [PpnKeluaranRowDto],
     description: 'Invoices dated in the masa (incl. ones voided later).',
@@ -132,7 +132,7 @@ export class PpnRecapFaktursDto {
   @ApiProperty({ type: [PpnReturRowDto] }) returMasukan!: PpnReturRowDto[];
 }
 
-export class PpnUnreconciledEntryDto {
+class PpnUnreconciledEntryDto {
   @ApiProperty({ format: 'uuid' }) journalEntryId!: string;
   @ApiProperty({ type: String, nullable: true }) entryRef!: string | null;
   @ApiProperty({ type: String, format: 'date' }) date!: string;
@@ -145,14 +145,14 @@ export class PpnUnreconciledEntryDto {
   amount!: string;
 }
 
-export class PpnUnreconciledDto {
+class PpnUnreconciledDto {
   @ApiMoney() ppnKeluaran!: string;
   @ApiMoney() ppnMasukan!: string;
   @ApiProperty({ type: [PpnUnreconciledEntryDto] })
   entries!: PpnUnreconciledEntryDto[];
 }
 
-export class PpnLedgerTieDto {
+class PpnLedgerTieDto {
   @ApiMoney({
     description:
       'PPN Output accounts, credit − debit, of sales invoice / credit note journals (and their void reversals) dated in the masa.',

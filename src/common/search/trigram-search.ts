@@ -14,7 +14,7 @@ export function escapeLikePattern(q: string): string {
   return q.replace(/[\\%_]/g, '\\$&');
 }
 
-export interface TrigramJoin {
+interface TrigramJoin {
   /** Joined table (constant), e.g. 'business_partners'. */
   table: string;
   /** Joined table alias (constant), e.g. 'p'. */
@@ -25,7 +25,7 @@ export interface TrigramJoin {
   columns: string[];
 }
 
-export interface TrigramSearchInput {
+interface TrigramSearchInput {
   /** Base table (constant), e.g. 'sales_invoices'. */
   table: string;
   /** Base table alias (constant), e.g. 't'. */

@@ -34,20 +34,17 @@ const LINE_KEYS = [
   'taxExpenseLines',
 ] as const;
 
-export type IncomeStatement = { from: string; to: string } & Record<
+type IncomeStatement = { from: string; to: string } & Record<
   (typeof TOTAL_KEYS)[number],
   string
 > &
   Record<(typeof LINE_KEYS)[number], ReportLine[]>;
 
-export type IncomeStatementVariance = Record<
-  (typeof TOTAL_KEYS)[number],
-  string
-> &
+type IncomeStatementVariance = Record<(typeof TOTAL_KEYS)[number], string> &
   Record<(typeof LINE_KEYS)[number], VarianceLine[]>;
 
 /** current − comparative for every total, and per account for every section. */
-export function incomeStatementVariance(
+function incomeStatementVariance(
   cur: IncomeStatement,
   cmp: IncomeStatement,
 ): IncomeStatementVariance {

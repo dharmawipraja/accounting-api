@@ -2,7 +2,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ApiMoney } from '../../common/openapi/api-money.decorator';
 
-export class TaxBreakdownRowDto {
+class TaxBreakdownRowDto {
   @ApiProperty({ format: 'uuid' }) taxCodeId!: string;
   @ApiProperty({ example: 'PPN-OUT' }) code!: string;
   @ApiProperty({
@@ -14,7 +14,7 @@ export class TaxBreakdownRowDto {
   @ApiProperty({ format: 'uuid' }) accountId!: string;
 }
 
-export class CalculatedLineDto {
+class CalculatedLineDto {
   @ApiProperty({ format: 'uuid' }) accountId!: string;
   @ApiPropertyOptional({ type: String, example: '1000.0000' }) debit?: string;
   @ApiPropertyOptional({ type: String, example: '1000.0000' }) credit?: string;

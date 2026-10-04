@@ -321,7 +321,7 @@ describe('Credit refunds + opening credit (e2e)', () => {
       ValidationFailedError,
       /Refund date cannot be before the payment date/,
     );
-    expect(before.details).toMatchObject({ paymentDate: '2026-03-01' });
+    expect(before.details).toMatchObject({ holderDate: '2026-03-01' });
     await expectDomain(
       refund(p.id, '1', '2099-01-01'),
       ValidationFailedError,

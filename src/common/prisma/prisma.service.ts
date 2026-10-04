@@ -20,7 +20,7 @@ export type LedgerTx = Omit<
   '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends' | '$use'
 >;
 
-export interface TransactionOptions {
+interface TransactionOptions {
   maxWait?: number;
   timeout?: number;
   isolationLevel?: Prisma.TransactionIsolationLevel;

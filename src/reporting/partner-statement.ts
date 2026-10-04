@@ -41,7 +41,7 @@ export interface StatementLine {
   applicationId: string | null;
 }
 
-export interface StatementTotals {
+interface StatementTotals {
   openingBalance: string;
   openingUnappliedCredit: string;
   openingNetBalance: string;

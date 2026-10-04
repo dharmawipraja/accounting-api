@@ -13,7 +13,7 @@ import type { CellObject, SheetData } from 'write-excel-file/node';
 
 /** A money cell: an exact decimal string (e.g. "-1500.0000"). Kept apart from
  *  text so it stays numeric (never formula-escaped) in CSV and XLSX. */
-export interface MoneyCell {
+interface MoneyCell {
   money: string;
 }
 export type Cell = string | MoneyCell;
@@ -32,7 +32,7 @@ export interface ReportTable {
   notes?: string[];
 }
 
-export const EXPORT_FORMATS = ['csv', 'xlsx'] as const;
+const EXPORT_FORMATS = ['csv', 'xlsx'] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
 
 /** The optional `?format=` query field shared by every report DTO. */

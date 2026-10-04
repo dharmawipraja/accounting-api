@@ -3,7 +3,7 @@ import type { ThrottlerOptions } from '@nestjs/throttler';
 import { THROTTLE, THROTTLE_TTL_MS } from '../../config/throttle.config';
 
 /** Name of the per-user report FILE-export throttler (registered in AppModule). */
-export const REPORT_EXPORT_THROTTLER = 'reportExport';
+const REPORT_EXPORT_THROTTLER = 'reportExport';
 
 /** A report request asking for a file (`?format=csv|xlsx`, or any `format`
  *  value — an invalid one is a 400 anyway and still costs a request). JSON

@@ -15,7 +15,7 @@ import {
 } from './posted-entry.sql';
 import type { LedgerTx } from '../../common/prisma/prisma.service';
 
-export interface TrialBalanceRow {
+interface TrialBalanceRow {
   accountId: string;
   code: string;
   name: string;
@@ -47,7 +47,7 @@ export interface AccountBalanceRow {
 
 /** Report-view filters for `balancesAsOf` / `movementsBetween`. The defaults
  *  (all false) count every posted entry — the post-closing ledger view. */
-export interface BalanceQueryOpts {
+interface BalanceQueryOpts {
   /** Exclude CLOSING entries and REVERSAL entries whose reversal_of_id is a CLOSING entry.
    *  Takes precedence over `excludeClosingFrom` when both are set. */
   excludeClosing?: boolean;

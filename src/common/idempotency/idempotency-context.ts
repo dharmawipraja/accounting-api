@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 /** The idempotency key a request is executing under. */
-export interface IdempotencyContext {
+interface IdempotencyContext {
   userId: string;
   key: string;
   /** The reservation's fencing token (idempotency_keys.reservation_token).

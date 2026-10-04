@@ -8,7 +8,7 @@ export interface Paginated<T> {
   offset: number;
 }
 
-export interface ListPaginatedParams<TRow extends { id: string }, TOut> {
+interface ListPaginatedParams<TRow extends { id: string }, TOut> {
   q?: string;
   limit?: number;
   offset?: number;

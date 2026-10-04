@@ -19,7 +19,7 @@ import { MAX_LINE_ITEMS } from '../../common/dto/limits';
 import { AllocationDto } from './create-payment.dto';
 import { IsMoneyString } from '../../common/validators/is-money-string';
 
-export type PreviewNature = 'SALE' | 'PURCHASE' | 'PAYMENT';
+type PreviewNature = 'SALE' | 'PURCHASE' | 'PAYMENT';
 
 const TAXED: readonly PreviewNature[] = ['SALE', 'PURCHASE'];
 const PAYMENT: readonly PreviewNature[] = ['PAYMENT'];

@@ -1,6 +1,6 @@
 import { TaxKind } from '@prisma/client';
 
-export interface SeedTaxCode {
+interface SeedTaxCode {
   code: string;
   name: string;
   kind: TaxKind;

@@ -16,7 +16,7 @@ const SOURCE_TYPES = [
 ];
 const STATUSES = ['DRAFT', 'POSTED', 'REVERSED'];
 
-export class JournalLineResponseDto {
+class JournalLineResponseDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
   @ApiProperty({ format: 'uuid' }) journalEntryId!: string;
   @ApiProperty({ example: 1 }) lineNo!: number;
@@ -54,7 +54,7 @@ export class JournalEntryResponseDto {
   lines!: JournalLineResponseDto[];
 }
 
-export class JournalEntryListItemDto {
+class JournalEntryListItemDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
   @ApiProperty({ nullable: true }) entryRef!: string | null;
   @ApiProperty({ nullable: true }) entryNumber!: number | null;

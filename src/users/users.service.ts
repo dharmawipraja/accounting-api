@@ -10,7 +10,7 @@ import { mapUniqueViolation } from '../common/errors/map-unique-violation';
 import { normalizeEmail } from './normalize-email';
 import { passwordHasher } from './password-hashing';
 
-export interface CreateUserInput {
+interface CreateUserInput {
   email: string;
   password: string;
   name: string;

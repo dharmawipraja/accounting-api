@@ -25,7 +25,7 @@ const REVERSIBLE_HERE: ReadonlySet<JournalSourceType> = new Set([
   'OPENING',
 ]);
 
-export interface DraftInput {
+interface DraftInput {
   date: Date;
   description: string;
   lines: PostLineInput[];
@@ -46,7 +46,7 @@ export interface JournalEntryListItem {
   lineCount: number;
 }
 
-export interface JournalListFilter {
+interface JournalListFilter {
   q?: string;
   status?: JournalStatus;
   sourceType?: JournalSourceType;

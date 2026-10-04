@@ -9,7 +9,7 @@ export const CLI_AUDIT_METHOD = 'CLI';
  *  auto-fixed (path = the migration name, body `{ table, id, old, new }`,
  *  user_id NULL) — 20261005000000_identifier_code_ci_unique and
  *  20261005300000_users_email_nfc. SQL-only writer: keep in sync. */
-export const MIGRATION_AUDIT_METHOD = 'MIGRATION';
+const MIGRATION_AUDIT_METHOD = 'MIGRATION';
 
 /** Every `method` value an audit_log row can carry — the `?method=` filter of
  *  GET /v1/audit accepts exactly these. */

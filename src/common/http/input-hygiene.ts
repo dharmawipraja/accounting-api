@@ -30,7 +30,7 @@ export function containsInvalidCharacters(value: unknown): boolean {
   return false;
 }
 
-export const INVALID_CHARACTERS_MESSAGE =
+const INVALID_CHARACTERS_MESSAGE =
   'Request contains an invalid character (a lone UTF-16 surrogate or U+0000)';
 
 export interface HygieneRequest {

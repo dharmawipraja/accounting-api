@@ -41,14 +41,14 @@ export const POSTING_TX_OPTIONS = { maxWait: 5000, timeout: 20000 } as const;
  *  concurrent opening posts can't both pass the one-live-opening-entry check.
  *  Distinct from the other 71_00x_001 keys and the fiscal-year keys (see the
  *  domain-glossary.md lock table). */
-export const OPENING_LOCK_KEY = 71_004_001;
+const OPENING_LOCK_KEY = 71_004_001;
 
 /** Module-private mint key — external code cannot import it, so it cannot
  *  satisfy the token constructors' first parameter. */
 const PROTOCOL_MINT = Symbol('posting.protocol.mint');
 
 /** The original posted entry (with lines) a reversal is built from. */
-export type OriginalEntry = JournalEntry & {
+type OriginalEntry = JournalEntry & {
   lines: {
     lineNo: number;
     accountId: string;

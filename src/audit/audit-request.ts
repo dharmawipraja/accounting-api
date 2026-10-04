@@ -10,7 +10,7 @@ const MUTATING: Set<string> = new Set(MUTATING_METHODS);
 /** Set on the request once an audit row is (being) written for it, so the
  *  exception filter never writes a second row for a request the interceptor
  *  already covered. */
-export const AUDITED = Symbol('audit.recorded');
+const AUDITED = Symbol('audit.recorded');
 
 export interface AuditableRequest {
   method: string;
@@ -27,20 +27,17 @@ export interface AuditableRequest {
   [AUDITED]?: boolean;
 }
 
-export type AuditBase = Omit<
-  AuditEntry,
-  'statusCode' | 'durationMs' | 'entityId'
->;
+type AuditBase = Omit<AuditEntry, 'statusCode' | 'durationMs' | 'entityId'>;
 
 /** Size caps for request-derived audit fields (every row). The path includes
  *  the query string (up to the 16KB header limit) and params are caller input. */
-export const AUDIT_PATH_MAX = 512;
-export const AUDIT_PARAMS_MAX = 512;
+const AUDIT_PATH_MAX = 512;
+const AUDIT_PARAMS_MAX = 512;
 
 /** First `max` code points of `s` — never splits a surrogate pair, so the
  *  result is well-formed UTF-16 (a lone surrogate makes Postgres reject the
  *  jsonb value and would lose the audit row). Pure. */
-export function truncateCodePoints(s: string, max: number): string {
+function truncateCodePoints(s: string, max: number): string {
   if (s.length <= max) return s; // ≤ max UTF-16 units ⇒ ≤ max code points
   let out = '';
   let n = 0;
@@ -74,11 +71,11 @@ export const AUDIT_BODY_MAX_BYTES = 512 * 1024;
  *  input stays small (disk-fill DoS). */
 export const AUDIT_SMALL_BODY_MAX_BYTES = 8192;
 /** Preview length (code points of the JSON text) kept when a body is capped. */
-export const AUDIT_BODY_PREVIEW_CODE_POINTS = 1024;
+const AUDIT_BODY_PREVIEW_CODE_POINTS = 1024;
 
 /** Oversized-body marker stored instead of the body: a valid JSON OBJECT (the
  *  column is jsonb and API consumers read objects), never a string cut mid-JSON. */
-export interface TruncatedAuditBody {
+interface TruncatedAuditBody {
   _truncated: true;
   bytes: number;
   preview: string;

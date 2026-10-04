@@ -9,7 +9,7 @@ import {
 } from './transactional-document-response.dto';
 import { PaymentApplicationResponseDto } from './payment-response.dto';
 
-export class NoteLineResponseDto {
+class NoteLineResponseDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
   @ApiProperty({ format: 'uuid' }) noteId!: string;
   @ApiProperty({ example: 1 }) lineNo!: number;

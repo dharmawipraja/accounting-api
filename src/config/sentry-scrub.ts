@@ -1,5 +1,5 @@
 /** Minimal structural view of the parts of a Sentry event we scrub. */
-export interface ScrubbableEvent {
+interface ScrubbableEvent {
   request?: {
     data?: unknown;
     query_string?: unknown;

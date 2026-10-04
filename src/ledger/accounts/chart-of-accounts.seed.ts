@@ -6,7 +6,7 @@ import {
   NormalBalance,
 } from '@prisma/client';
 
-export interface SeedAccount {
+interface SeedAccount {
   code: string;
   name: string;
   type: AccountType;

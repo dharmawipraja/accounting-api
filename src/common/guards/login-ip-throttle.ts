@@ -6,7 +6,7 @@ import { THROTTLE, THROTTLE_TTL_MS } from '../../config/throttle.config';
 const LOGIN_IP_THROTTLE_KEY = 'throttle:login-ip';
 
 /** Name of the per-client-IP login throttler (registered in AppModule). */
-export const LOGIN_IP_THROTTLER = 'loginIp';
+const LOGIN_IP_THROTTLER = 'loginIp';
 
 /**
  * Opts a route into the per-client-IP login ceiling. The per-email bucket

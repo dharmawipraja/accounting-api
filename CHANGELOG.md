@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- **Credit apply/refund date error detail** — the `422` raised when an apply or
+  refund is dated before its payment / credit note / debit note now carries the
+  holder's date as `details.holderDate` for every holder kind (previously
+  `paymentDate` or `noteDate`).
+- **Internal:** about 145 exported symbols that nothing outside their own file
+  used are no longer exported (no behaviour change).
+
 ### Internal (tests)
 
 - **E2E runs on one shared Postgres container** — `test/global-setup.ts` migrates

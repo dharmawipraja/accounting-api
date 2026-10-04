@@ -11,7 +11,7 @@ import { SoftDeletableModel } from '../ledger/document-lifecycle.service';
 import type { ListModel } from '../common/pagination/paginated';
 
 /** A document line as read back from the DB (Decimal money columns). */
-export interface DocumentLineRow {
+interface DocumentLineRow {
   lineNo?: number;
   description: string;
   accountId: string;
@@ -115,7 +115,7 @@ export interface DocumentTotals {
 
 /** Common create-row data the shared module computes once; the descriptor's
  *  createRow merges any type-specific delta (e.g. vendorInvoiceNo). */
-export interface DocumentCreateCommon extends DocumentTotals {
+interface DocumentCreateCommon extends DocumentTotals {
   partnerId: string;
   date: Date;
   dueDate?: Date;
@@ -125,7 +125,7 @@ export interface DocumentCreateCommon extends DocumentTotals {
   lines: { create: DocumentLineCreateData[] };
 }
 
-export interface DocumentUpdateCommon extends DocumentTotals {
+interface DocumentUpdateCommon extends DocumentTotals {
   date: Date;
   /** Absent for a document type without a due date (notes). */
   dueDate?: Date | null;

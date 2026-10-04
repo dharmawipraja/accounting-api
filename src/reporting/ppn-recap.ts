@@ -31,7 +31,7 @@ export interface PpnCode {
   coretaxVatRate: string | null;
 }
 
-export interface PpnLineInput {
+interface PpnLineInput {
   quantity: string;
   unitPrice: string;
   discountAmount: string;
@@ -39,7 +39,7 @@ export interface PpnLineInput {
   taxCodeIds: string[];
 }
 
-export interface PpnBase {
+interface PpnBase {
   dpp: string;
   dppNilaiLain: string;
   /** Σ faktur VAT (per-line 2 dp, as in the XML); null when a code's
@@ -137,7 +137,7 @@ export function netPpn(faktur: Totals, batal: Totals, retur: Totals): string {
     .toString();
 }
 
-export type NetStatus = 'KURANG_BAYAR' | 'LEBIH_BAYAR' | 'NIHIL';
+type NetStatus = 'KURANG_BAYAR' | 'LEBIH_BAYAR' | 'NIHIL';
 
 /** Keluaran − Masukan: positive = kurang bayar (payable), negative = lebih
  *  bayar (overpaid — compensated / refunded per the SPT). */

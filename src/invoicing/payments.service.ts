@@ -63,7 +63,7 @@ const WITH_CHILDREN = {
   applications: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
 } as const satisfies Prisma.PaymentInclude;
 
-export interface CreatePaymentInput {
+interface CreatePaymentInput {
   direction: PaymentDirection;
   partnerId: string;
   date: Date;
@@ -532,7 +532,6 @@ function paymentCreditSource(direction: PaymentDirection): CreditSource {
     noun: 'payment',
     table: 'payments',
     holderField: 'paymentId',
-    dateKey: 'paymentDate',
     sourceType: 'PAYMENT',
     target: PAYMENT_TARGETS[direction],
   };

@@ -8,7 +8,7 @@ import {
   ValidationFailedError,
 } from '../errors/domain-errors';
 
-export type ReserveResult =
+type ReserveResult =
   | { replay: false; token: string }
   | { replay: true; response: unknown; httpStatus: number };
 

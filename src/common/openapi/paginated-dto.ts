@@ -1,7 +1,7 @@
 import { Type } from '@nestjs/common';
 import { ApiProperty } from '@nestjs/swagger';
 
-export interface PaginatedDtoOptions {
+interface PaginatedDtoOptions {
   /** Override the example value for the `total` field (default: 240). */
   totalExample?: number;
 }

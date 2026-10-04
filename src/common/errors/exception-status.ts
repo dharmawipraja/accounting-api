@@ -245,7 +245,7 @@ export const PAYLOAD_TOO_LARGE = {
  * first, and none sets `expose`). They are raised before routing (no guard
  * ran), so they are client errors, never incidents. Pure.
  */
-export function bodyParserClientStatus(err: unknown): number | undefined {
+function bodyParserClientStatus(err: unknown): number | undefined {
   if (typeof err !== 'object' || err === null) return undefined;
   const { type, status, statusCode, expose } = err as {
     type?: unknown;
@@ -267,7 +267,7 @@ export function isBodyParserClientError(err: unknown): boolean {
 }
 
 /** How `AllExceptionsFilter` answers, logs and reports one exception. */
-export interface ExceptionClass {
+interface ExceptionClass {
   status: number;
   envelope: {
     code: string;

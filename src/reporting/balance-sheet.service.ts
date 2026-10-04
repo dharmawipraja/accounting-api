@@ -14,13 +14,13 @@ import {
   varianceLines,
 } from './report-line';
 
-export interface ReportGroup {
+interface ReportGroup {
   subtype: string;
   lines: ReportLine[];
   subtotal: string;
 }
 
-export interface ReportSection {
+interface ReportSection {
   groups: ReportGroup[];
   total: string;
 }
@@ -60,7 +60,7 @@ const flatLines = (s: ReportSection) =>
   s.groups.flatMap((g) => g.lines.map((l) => ({ ...l, subtype: g.subtype })));
 
 /** current − comparative for every total, and per (subtype, account) line. */
-export function balanceSheetVariance(
+function balanceSheetVariance(
   cur: BalanceSheet,
   cmp: BalanceSheet,
 ): BalanceSheetVariance {

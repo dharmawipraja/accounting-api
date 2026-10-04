@@ -15,7 +15,7 @@ import {
 } from '../tax/tax.service';
 
 /** The note-only tax-engine options (see TaxableTransaction). */
-export type NoteTaxOptions = Pick<
+type NoteTaxOptions = Pick<
   TaxableTransaction,
   'allowInactiveCodes' | 'overrideAmounts'
 >;
@@ -38,7 +38,7 @@ import { nextDocumentNumber, sameTaxCalculation } from './document-helpers';
  *  from a fresh read (bounded — TaxedDocumentService.MAX_POST_ATTEMPTS). */
 export class DraftChangedError extends Error {}
 
-export interface PostTaxedDocParams {
+interface PostTaxedDocParams {
   nature: 'SALE' | 'PURCHASE';
   settlementAccountId: string;
   date: Date;

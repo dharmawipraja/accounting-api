@@ -23,7 +23,7 @@ export interface AllocationInput {
 }
 
 /** Normalized read of the document a payment allocation settles. */
-export interface TargetRow {
+interface TargetRow {
   id: string;
   partnerId: string;
   status: DocumentStatus;
@@ -35,7 +35,7 @@ export interface TargetRow {
 }
 
 /** One line of a payment's 2-line cash/control journal. */
-export interface PaymentJournalLine {
+interface PaymentJournalLine {
   accountId: string;
   debit?: string;
   credit?: string;
@@ -170,7 +170,7 @@ export function paymentDateViolation(
 }
 
 /** Throws the 422 for a paymentDateViolation. */
-export function assertPaymentDateNotBefore(
+function assertPaymentDateNotBefore(
   paymentDate: Date,
   document: { id: string; date: Date },
 ): void {
@@ -231,7 +231,7 @@ export function backdatedAllocationViolation(args: {
  *  shifts the calendar day. Runs under the document FOR UPDATE lock at post
  *  (unwindInTx takes the same lock, so every committed void is seen) and as a
  *  pre-check on the base client at create. */
-export async function allocationHistoryAfter(
+async function allocationHistoryAfter(
   db: LedgerTx,
   target: PaymentTarget,
   documentId: string,
@@ -441,7 +441,7 @@ export async function settleAllInTx(
  *  `settledBefore` is what THIS payment already allocated to the same document
  *  in earlier calls (the payment is still a DRAFT, so the history read does not
  *  count it). */
-export async function settleInTx(
+async function settleInTx(
   tx: LedgerTx,
   target: PaymentTarget,
   alloc: AllocationInput,

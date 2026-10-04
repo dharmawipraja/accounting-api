@@ -18,7 +18,7 @@ import { MAX_LINE_ITEMS } from '../../common/dto/limits';
 
 /** One returned line: which original line, how many. Price, discount
  *  (pro-rated), account and tax codes are copied from the original line. */
-export class NoteLineDto {
+class NoteLineDto {
   /** A line of the note's original invoice / bill. */
   @IsUUID() originalLineId!: string;
   /** Returned quantity, > 0 and ≤ the original quantity minus what other

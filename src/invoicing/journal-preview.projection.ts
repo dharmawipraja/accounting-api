@@ -8,7 +8,7 @@ export interface PreviewSourceLine {
 }
 
 /** An enriched, fully-normalized preview line (both sides present, 4dp strings). */
-export interface PreviewLine {
+interface PreviewLine {
   accountId: string;
   accountCode: string;
   accountName: string;

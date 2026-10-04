@@ -7,7 +7,7 @@ import {
 } from './credit-application';
 import { presentApplications } from './document-presenter';
 
-const source = { noun: 'payment', dateKey: 'paymentDate' };
+const source = { noun: 'payment' };
 const holder = {
   id: 'p1',
   status: 'POSTED' as const,
@@ -58,7 +58,7 @@ describe('credit rules (apply / refund)', () => {
     expect(e.details).toEqual({
       id: 'p1',
       date: '2026-03-09',
-      paymentDate: '2026-03-10',
+      holderDate: '2026-03-10',
     });
   });
 

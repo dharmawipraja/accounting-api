@@ -22,7 +22,7 @@ export interface RuleAccount {
   normalBalance: NormalBalance;
 }
 
-export interface AccountRuleViolation {
+interface AccountRuleViolation {
   message: string;
   details:
     | { accountId: string; role: AccountRole | null }
@@ -150,7 +150,7 @@ function throwIf(v: AccountRuleViolation | null): void {
  *  (422 VALIDATION_FAILED on the first offending line). Accounts that do not
  *  exist are skipped here — the postable-account check reports those. Runs on
  *  the base client (create/update/preview) or inside the post transaction. */
-export async function assertDocumentLineAccounts(
+async function assertDocumentLineAccounts(
   db: LedgerTx,
   nature: 'SALE' | 'PURCHASE',
   accountIds: string[],
@@ -248,7 +248,7 @@ export async function assertOpeningEquityAccount(
 }
 
 /** An invoice / bill: its line-account rule set and posting source type. */
-export interface DocumentAccountKind {
+interface DocumentAccountKind {
   nature: 'SALE' | 'PURCHASE';
   sourceType: TaxedSourceType;
 }

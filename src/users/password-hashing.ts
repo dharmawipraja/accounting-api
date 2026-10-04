@@ -6,9 +6,9 @@ import {
 } from '../common/concurrency/semaphore';
 
 /** Longest a caller queues for an argon2 permit before a 503 (ms). */
-export const ARGON2_QUEUE_TIMEOUT_MS = 5_000;
+const ARGON2_QUEUE_TIMEOUT_MS = 5_000;
 
-export interface PasswordHasher {
+interface PasswordHasher {
   hash(password: string): Promise<string>;
   verify(hash: string, password: string): Promise<boolean>;
 }

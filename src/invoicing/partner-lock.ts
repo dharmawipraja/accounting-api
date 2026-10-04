@@ -1,7 +1,7 @@
 import type { LedgerTx } from '../common/prisma/prisma.service';
 
 /** The partner flags the in-tx checks look at. */
-export interface LockedPartner {
+interface LockedPartner {
   isActive: boolean;
   isCustomer: boolean;
   isVendor: boolean;

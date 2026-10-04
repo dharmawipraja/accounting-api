@@ -12,7 +12,7 @@ export const NPWP_FORMAT = /^\d{16}$/;
  * 16-digit form of it (PMK 112/2022). Anything else is left as typed for the
  * `^\d{16}$` check to reject (400). Same rule as migration 20261010000000.
  */
-export function normalizeNpwp(value: string): string {
+function normalizeNpwp(value: string): string {
   const digits = value.replace(/[.\-\s]/g, '');
   return /^\d{15}$/.test(digits) ? `0${digits}` : digits;
 }

@@ -22,7 +22,7 @@ import {
 } from 'class-validator';
 
 /** Parse an `ms`-style duration ('900s', '15m', '7d') to milliseconds. */
-export function parseDurationMs(value: unknown): number | undefined {
+function parseDurationMs(value: unknown): number | undefined {
   if (typeof value !== 'string' || value.trim() === '') return undefined;
   try {
     const out = ms(value as StringValue) as number | undefined;
@@ -99,11 +99,11 @@ function IsProductionSafeCors(opts?: ValidationOptions) {
 }
 
 /** Access tokens: ≤ 1h (revocation is also checked per request via `sid`). */
-export const MAX_ACCESS_TTL_MS = 3_600_000;
+const MAX_ACCESS_TTL_MS = 3_600_000;
 /** Refresh tokens: ≤ 30 days. */
-export const MAX_REFRESH_TTL_MS = 30 * 86_400_000;
+const MAX_REFRESH_TTL_MS = 30 * 86_400_000;
 
-export enum NodeEnv {
+enum NodeEnv {
   Development = 'development',
   Production = 'production',
   Test = 'test',

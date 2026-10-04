@@ -48,12 +48,12 @@ interface LockedDoc {
   trx_code?: string | null;
 }
 
-export interface ReferenceInput {
+interface ReferenceInput {
   number: string | null;
   date: string | null;
 }
 
-export interface TaxInvoiceInput {
+interface TaxInvoiceInput {
   taxInvoiceNumber?: string | null;
   taxInvoiceDate?: string | null;
   status?: TaxInvoiceStatus;

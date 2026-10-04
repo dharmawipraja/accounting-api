@@ -2,25 +2,25 @@
 import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { ApiMoney } from '../../common/openapi/api-money.decorator';
 
-export class ReportLineDto {
+class ReportLineDto {
   @ApiProperty({ example: '4-1000' }) code!: string;
   @ApiProperty({ example: 'Pendapatan' }) name!: string;
   @ApiMoney() amount!: string;
 }
 
-export class ReportGroupDto {
+class ReportGroupDto {
   @ApiProperty({ example: 'CURRENT_ASSET' }) subtype!: string;
   @ApiProperty({ type: [ReportLineDto] }) lines!: ReportLineDto[];
   @ApiMoney() subtotal!: string;
 }
 
-export class ReportSectionDto {
+class ReportSectionDto {
   @ApiProperty({ type: [ReportGroupDto] }) groups!: ReportGroupDto[];
   @ApiMoney() total!: string;
 }
 
 /** One account (or synthetic line) in both periods. */
-export class VarianceLineDto {
+class VarianceLineDto {
   @ApiProperty({ example: '4-1000' }) code!: string;
   @ApiProperty({ example: 'Pendapatan' }) name!: string;
   @ApiMoney({ description: 'Amount in the main period' }) current!: string;
@@ -29,11 +29,11 @@ export class VarianceLineDto {
   @ApiMoney({ description: 'current − comparative' }) variance!: string;
 }
 
-export class BalanceSheetVarianceLineDto extends VarianceLineDto {
+class BalanceSheetVarianceLineDto extends VarianceLineDto {
   @ApiProperty({ example: 'CURRENT_ASSET' }) subtype!: string;
 }
 
-export class BalanceSheetVarianceDto {
+class BalanceSheetVarianceDto {
   @ApiMoney() totalAssets!: string;
   @ApiMoney() totalLiabilities!: string;
   @ApiMoney() totalEquity!: string;
@@ -51,7 +51,7 @@ export class BalanceSheetVarianceDto {
   equity!: BalanceSheetVarianceLineDto[];
 }
 
-export class IncomeStatementVarianceDto {
+class IncomeStatementVarianceDto {
   @ApiMoney() revenue!: string;
   @ApiMoney() cogs!: string;
   @ApiMoney() grossProfit!: string;
@@ -112,7 +112,7 @@ export class BalanceSheetDto {
   variance?: BalanceSheetVarianceDto;
 }
 
-export class BalanceSheetComparativeDto extends OmitType(BalanceSheetDto, [
+class BalanceSheetComparativeDto extends OmitType(BalanceSheetDto, [
   'comparative',
   'variance',
 ] as const) {}
@@ -154,19 +154,19 @@ export class IncomeStatementDto {
   variance?: IncomeStatementVarianceDto;
 }
 
-export class IncomeStatementComparativeDto extends OmitType(
-  IncomeStatementDto,
-  ['comparative', 'variance'] as const,
-) {}
+class IncomeStatementComparativeDto extends OmitType(IncomeStatementDto, [
+  'comparative',
+  'variance',
+] as const) {}
 
-export class GeneralLedgerAccountDto {
+class GeneralLedgerAccountDto {
   @ApiProperty({ format: 'uuid' }) id!: string;
   @ApiProperty({ example: '1-1000' }) code!: string;
   @ApiProperty({ example: 'Kas' }) name!: string;
   @ApiProperty({ enum: ['DEBIT', 'CREDIT'] }) normalBalance!: string;
 }
 
-export class GeneralLedgerLineDto {
+class GeneralLedgerLineDto {
   @ApiProperty({ type: String, format: 'date' }) date!: string;
   @ApiProperty({ nullable: true }) entryRef!: string | null;
   @ApiProperty({ nullable: true }) description!: string | null;
@@ -240,7 +240,7 @@ export class GeneralLedgerBookResponseDto {
   nextCursor!: string | null;
 }
 
-export class AgingDocumentDto {
+class AgingDocumentDto {
   @ApiProperty({ nullable: true }) ref!: string | null;
   @ApiProperty({ type: String, format: 'date' }) date!: string;
   @ApiProperty({ type: String, format: 'date', nullable: true })
@@ -252,7 +252,7 @@ export class AgingDocumentDto {
   bucket!: string;
 }
 
-export class AgingPartnerDto {
+class AgingPartnerDto {
   @ApiProperty({ format: 'uuid' }) partnerId!: string;
   @ApiProperty() partnerName!: string;
   @ApiProperty({ type: [AgingDocumentDto] }) documents!: AgingDocumentDto[];
@@ -305,18 +305,18 @@ export class AgingReportDto {
   documentCount!: number;
 }
 
-export class CashFlowLineDto {
+class CashFlowLineDto {
   @ApiProperty({ example: '1-2000' }) code!: string;
   @ApiProperty({ example: 'Piutang Usaha' }) name!: string;
   @ApiMoney() amount!: string;
 }
 
-export class CashFlowOperatingDto {
+class CashFlowOperatingDto {
   @ApiProperty({ type: [CashFlowLineDto] }) adjustments!: CashFlowLineDto[];
   @ApiMoney() total!: string;
 }
 
-export class CashFlowSectionDto {
+class CashFlowSectionDto {
   @ApiProperty({ type: [CashFlowLineDto] }) lines!: CashFlowLineDto[];
   @ApiMoney() total!: string;
 }

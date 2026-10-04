@@ -6,7 +6,7 @@ import {
 } from '@prisma/client';
 
 /** The account attributes the tax-code account rule looks at. */
-export interface TaxAccountCandidate {
+interface TaxAccountCandidate {
   id: string;
   role: AccountRole | null;
   subtype: AccountSubtype;
@@ -14,7 +14,7 @@ export interface TaxAccountCandidate {
   isPostable: boolean;
 }
 
-export interface TaxAccountViolation {
+interface TaxAccountViolation {
   message: string;
   details: Record<string, unknown> & {
     taxAccountId: string;

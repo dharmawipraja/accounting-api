@@ -24,9 +24,9 @@
  * oldest is evicted.
  */
 /** Default total anonymous audit rows per window (all IPs). */
-export const REJECTION_AUDIT_GLOBAL_LIMIT = 600;
+const REJECTION_AUDIT_GLOBAL_LIMIT = 600;
 
-export interface RejectionAuditLimiterOptions {
+interface RejectionAuditLimiterOptions {
   /** Rows per key (client IP, or user) per window (default 60). */
   limit?: number;
   /** Anonymous rows per window across all IPs (default 600). */

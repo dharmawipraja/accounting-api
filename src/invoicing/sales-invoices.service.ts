@@ -17,7 +17,7 @@ import {
   UpdateDocumentInput,
 } from './document-descriptor';
 
-export type SalesInvoiceRow = SalesInvoice & { lines?: SalesInvoiceLine[] };
+type SalesInvoiceRow = SalesInvoice & { lines?: SalesInvoiceLine[] };
 
 /** The Coretax faktur fields of a sales invoice line (null = company default). */
 interface CoretaxLineFields {
@@ -25,12 +25,12 @@ interface CoretaxLineFields {
   coretaxItemCode?: string | null;
   coretaxUnitCode?: string | null;
 }
-export type SalesInvoiceLineInput = DocumentLineInput & CoretaxLineFields;
-export type CreateInvoiceInput = CreateDocumentInput & {
+type SalesInvoiceLineInput = DocumentLineInput & CoretaxLineFields;
+type CreateInvoiceInput = CreateDocumentInput & {
   lines: SalesInvoiceLineInput[];
   trxCode?: string | null;
 };
-export type UpdateInvoiceInput = UpdateDocumentInput & {
+type UpdateInvoiceInput = UpdateDocumentInput & {
   lines?: SalesInvoiceLineInput[];
   /** `null` clears it; `undefined` keeps it. */
   trxCode?: string | null;

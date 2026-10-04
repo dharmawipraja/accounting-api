@@ -20,7 +20,7 @@ import type { CreateBusinessPartnerDto } from './dto/create-business-partner.dto
 import type { UpdateBusinessPartnerDto } from './dto/update-business-partner.dto';
 
 /** A partner role and the open items that depend on it. */
-export type PartnerRole = 'CUSTOMER' | 'VENDOR';
+type PartnerRole = 'CUSTOMER' | 'VENDOR';
 
 interface OpenItemCounts {
   /** Live DRAFT invoices + credit notes (customer) / bills + debit notes
