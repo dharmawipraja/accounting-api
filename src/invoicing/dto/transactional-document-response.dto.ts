@@ -3,7 +3,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { ApiMoney } from '../../common/openapi/api-money.decorator';
 
 /** Shared OpenAPI docs for the per-line discount fields of both line DTOs. */
-export const DISCOUNT_PERCENT_DOC = {
+const DISCOUNT_PERCENT_DOC = {
   nullable: true,
   example: '10.0000',
   description:
@@ -14,10 +14,26 @@ export const DISCOUNT_AMOUNT_DOC = {
   description:
     'Resolved line discount (4 dp string), taken off qty × unitPrice before tax.',
 };
-export const LINE_AMOUNT_DOC = {
+const LINE_AMOUNT_DOC = {
   description:
     'Net line amount = qty × unitPrice − discountAmount (4 dp): the tax base (DPP).',
 };
+
+/** Fields every document line response shares (invoice, bill, credit /
+ *  debit note). Subclasses add their parent id and kind-specific fields, and
+ *  may re-declare a field to give it a more specific description. */
+export class DocumentLineResponseDto {
+  @ApiProperty({ format: 'uuid' }) id!: string;
+  @ApiProperty({ example: 1 }) lineNo!: number;
+  @ApiProperty() description!: string;
+  @ApiProperty({ format: 'uuid' }) accountId!: string;
+  @ApiMoney({ description: 'Quantity, 4 dp string' }) quantity!: string;
+  @ApiMoney() unitPrice!: string;
+  @ApiMoney(DISCOUNT_PERCENT_DOC) discountPercent!: string | null;
+  @ApiMoney(DISCOUNT_AMOUNT_DOC) discountAmount!: string;
+  @ApiMoney(LINE_AMOUNT_DOC) amount!: string;
+  @ApiProperty({ type: [String], format: 'uuid' }) taxCodeIds!: string[];
+}
 
 /**
  * Shared fields between SalesInvoiceResponseDto and PurchaseBillResponseDto.

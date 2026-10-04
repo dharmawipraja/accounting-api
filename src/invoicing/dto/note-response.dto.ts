@@ -4,31 +4,22 @@ import { ApiMoney } from '../../common/openapi/api-money.decorator';
 import { PaginatedDto } from '../../common/openapi/paginated-dto';
 import {
   DISCOUNT_AMOUNT_DOC,
-  DISCOUNT_PERCENT_DOC,
-  LINE_AMOUNT_DOC,
+  DocumentLineResponseDto,
 } from './transactional-document-response.dto';
 import { PaymentApplicationResponseDto } from './payment-response.dto';
 
-class NoteLineResponseDto {
-  @ApiProperty({ format: 'uuid' }) id!: string;
+class NoteLineResponseDto extends DocumentLineResponseDto {
   @ApiProperty({ format: 'uuid' }) noteId!: string;
-  @ApiProperty({ example: 1 }) lineNo!: number;
   @ApiProperty({ format: 'uuid', description: 'The returned original line.' })
   originalLineId!: string;
-  @ApiProperty() description!: string;
-  @ApiProperty({ format: 'uuid' }) accountId!: string;
   @ApiMoney({ description: 'Returned quantity, 4 dp string' })
-  quantity!: string;
-  @ApiMoney() unitPrice!: string;
-  @ApiMoney(DISCOUNT_PERCENT_DOC) discountPercent!: string | null;
+  declare quantity: string;
   @ApiMoney({
     ...DISCOUNT_AMOUNT_DOC,
     description:
       'Resolved discount: the original percent on the returned gross, or the original fixed amount pro-rated by quantity (rounded once to 4 dp half-up).',
   })
-  discountAmount!: string;
-  @ApiMoney(LINE_AMOUNT_DOC) amount!: string;
-  @ApiProperty({ type: [String], format: 'uuid' }) taxCodeIds!: string[];
+  declare discountAmount: string;
 }
 
 /** A sales credit note (CN/…) or purchase debit note (DN/…). */
