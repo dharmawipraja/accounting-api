@@ -615,7 +615,27 @@ kode objek pajak per withholding).
 
 ### Retur (nota retur)
 A sales credit note / purchase debit note's Coretax retur reference
-(`returNumber/returDate`) — metadata only.
+(`returNumber/returDate`) — metadata only. In the PPN recap a retur reduces the PPN of
+the masa of the **note date** (retur keluaran reduces PPN Keluaran, retur masukan
+reduces PPN Masukan); voiding the note in a masa restores it there.
+
+### Masa pajak / rekap PPN Masa (SPT Masa PPN)
+The PPN tax period is the calendar month (*masa pajak*); the monthly VAT return is the
+SPT Masa PPN. The **rekap PPN Masa** sums the month's PPN Keluaran (output, from faktur
+keluaran = sales invoices) and PPN Masukan (input, from purchase bills), each net of
+*faktur batal* (voids) and *retur*, and nets them: Keluaran − Masukan.
+- `GET /v1/reports/ppn-recap?period=YYYY-MM` (`src/reporting/ppn-recap.ts` pure core,
+  `ppn-recap.service.ts`); DPP / DPP Nilai Lain reuse the Coretax faktur math, `ppn` is the
+  posted PPN, and `ledger.ties` proves the documents equal the PPN accounts' movement
+  (manual journals on those accounts → `unreconciledManualEntries`).
+- **Void rule:** ledger-tied — a void counts as *batal* in the masa of `voidedOn`. DJP
+  reports a cancelled faktur in its original masa via *pembetulan* (PER-03/PJ/2022, PMK
+  81/2024); a cross-month void raises a warning naming that masa.
+
+### Kurang bayar / lebih bayar / nihil
+The sign of the SPT Masa PPN: Keluaran − Masukan **> 0 = kurang bayar** (PPN payable to
+the state), **< 0 = lebih bayar** (overpaid — carried forward / compensated to the next
+masa or refunded, chosen in the SPT), **0 = nihil**. `netStatus` in the recap.
 
 ---
 

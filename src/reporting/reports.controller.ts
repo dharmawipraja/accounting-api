@@ -32,6 +32,9 @@ import {
 } from './general-ledger.service';
 import { AgingService } from './aging.service';
 import { CashFlowService } from './cash-flow.service';
+import { PpnRecapService } from './ppn-recap.service';
+import { PpnRecapQueryDto, PpnRecapResponseDto } from './dto/ppn-recap.dto';
+import { ppnRecapTable } from './export/ppn-recap-table';
 import { asOfOrToday, dateRange } from '../common/dates/query-dates';
 import { businessDate } from '../common/dates/business-date';
 import { ValidationFailedError } from '../common/errors/domain-errors';
@@ -58,6 +61,7 @@ export class ReportsController {
     private readonly agingSvc: AgingService,
     private readonly cashFlowSvc: CashFlowService,
     private readonly partnerStatementSvc: PartnerStatementService,
+    private readonly ppnRecapSvc: PpnRecapService,
   ) {}
 
   @ApiReportResponse(BalanceSheetDto)
@@ -189,5 +193,13 @@ export class ReportsController {
       partnerStatementTable,
       `partner-statement-${safeFilePart(r.partner.code)}-${r.from}_${r.to}`,
     );
+  }
+
+  /** Rekap PPN Masa (SPT Masa PPN) for one calendar month. */
+  @ApiReportResponse(PpnRecapResponseDto)
+  @Get('ppn-recap')
+  async ppnRecap(@Query() q: PpnRecapQueryDto) {
+    const r = await this.ppnRecapSvc.generate(q.period);
+    return exportOr(q.format, r, ppnRecapTable, `ppn-recap-${r.period}`);
   }
 }

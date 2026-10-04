@@ -24,6 +24,20 @@ All notable changes to this project are documented here. The format is based on
   `unappliedCredit` and `netBalance`; `?format=csv|xlsx`.
 - **Per-partner aging** — `?partnerId=` on `/v1/reports/ar-aging` and
   `ap-aging`; totals then cover that partner only.
+- **Monthly PPN recap (rekap PPN Masa)** — `GET /v1/reports/ppn-recap?period=YYYY-MM`
+  (any role; `?format=csv|xlsx`, file `ppn-recap-<YYYY-MM>`): PPN Keluaran
+  (POSTED/VOID sales invoices dated in the month with PPN Output codes: DPP,
+  DPP Nilai Lain and faktur VAT by the Coretax XML math, posted PPN), faktur
+  batal (voids in the month), retur (credit notes; note voids restore),
+  the same for PPN Masukan (bills, debit notes), `net` with
+  `KURANG_BAYAR`/`LEBIH_BAYAR`/`NIHIL`, per-document lists (NPWP/NIK,
+  trxCode, NSFP, status) for reconciling with Coretax, and a ledger tie-out:
+  the documents' movement on the PPN accounts must equal the recap (`ties`);
+  manual/other journals on those accounts are listed as
+  `unreconciledManualEntries`. Void rule: ledger-tied — a void counts in the
+  month of `voidedOn`; a cross-month void warns that DJP reports a cancelled
+  faktur in its original masa (pembetulan). Non-PKP companies get the recap
+  (with a warning), not a 422.
 - **CSV and XLSX export for every report** — `?format=csv|xlsx` on
   `/v1/reports/balance-sheet` (incl. comparative), `income-statement` (incl.
   comparative), `general-ledger`, `general-ledger/book`, `ar-aging`, `ap-aging`,

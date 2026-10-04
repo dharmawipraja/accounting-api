@@ -5285,6 +5285,69 @@
         ]
       }
     },
+    "/v1/reports/ppn-recap": {
+      "get": {
+        "operationId": "ReportsController_ppnRecap_v1",
+        "parameters": [
+          {
+            "name": "period",
+            "required": true,
+            "in": "query",
+            "description": "Masa pajak (calendar month) YYYY-MM, year 2000–2100.",
+            "schema": {
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "example": "2026-03",
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "required": false,
+            "in": "query",
+            "description": "Download the report as a file instead of JSON: csv (UTF-8 with BOM) or xlsx. Omit for JSON.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "csv",
+                "xlsx"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The report as JSON, or with ?format=csv|xlsx an attachment (Content-Disposition filename).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PpnRecapResponseDto"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Rekap PPN Masa (SPT Masa PPN) for one calendar month.",
+        "tags": [
+          "Reporting"
+        ]
+      }
+    },
     "/v1/close/year-end": {
       "post": {
         "operationId": "ClosingController_run_v1",
@@ -10642,6 +10705,554 @@
           "closingBalance",
           "unappliedCredit",
           "netBalance"
+        ]
+      },
+      "PpnTotalsDto": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "number",
+            "description": "Number of documents (rows)."
+          },
+          "dpp": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Σ DPP (TaxBase, per-line 2 dp as on the faktur)."
+          },
+          "dppNilaiLain": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Σ DPP Nilai Lain (OtherTaxBase: 11/12 × DPP for dppNilaiLain codes, else DPP)."
+          },
+          "ppn": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Σ posted PPN (what the ledger carries)."
+          }
+        },
+        "required": [
+          "count",
+          "dpp",
+          "dppNilaiLain",
+          "ppn"
+        ]
+      },
+      "PpnKeluaranRowDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "invoiceRef": {
+            "type": "string",
+            "nullable": true
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "partnerName": {
+            "type": "string"
+          },
+          "npwp": {
+            "type": "string",
+            "nullable": true
+          },
+          "buyerDocumentType": {
+            "type": "string",
+            "enum": [
+              "TIN",
+              "NATIONAL_ID",
+              "PASSPORT",
+              "OTHER"
+            ]
+          },
+          "buyerDocumentNumber": {
+            "type": "string",
+            "nullable": true,
+            "description": "NIK / passport / other ID when not TIN."
+          },
+          "trxCode": {
+            "type": "string",
+            "example": "04"
+          },
+          "dpp": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "dppNilaiLain": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "ppn": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Posted PPN (ledger)."
+          },
+          "fakturPpn": {
+            "type": "string",
+            "nullable": true,
+            "description": "Σ faktur VAT as the Coretax XML computes it (per line, 2 dp); may differ from ppn by rounding (≤ 0.5 per code). Null when a code’s Coretax presentation is inconsistent."
+          },
+          "taxInvoiceNumber": {
+            "type": "string",
+            "nullable": true,
+            "description": "NSFP"
+          },
+          "taxInvoiceStatus": {
+            "type": "string",
+            "enum": [
+              "NONE",
+              "EXPORTED",
+              "APPROVED",
+              "CANCELLED"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "POSTED",
+              "VOID"
+            ]
+          },
+          "voidedOn": {
+            "type": "string",
+            "nullable": true,
+            "format": "date"
+          }
+        },
+        "required": [
+          "id",
+          "invoiceRef",
+          "date",
+          "partnerName",
+          "npwp",
+          "buyerDocumentType",
+          "buyerDocumentNumber",
+          "trxCode",
+          "dpp",
+          "dppNilaiLain",
+          "ppn",
+          "fakturPpn",
+          "taxInvoiceNumber",
+          "taxInvoiceStatus",
+          "status",
+          "voidedOn"
+        ]
+      },
+      "PpnReturRowDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ref": {
+            "type": "string",
+            "nullable": true
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "originalRef": {
+            "type": "string",
+            "nullable": true,
+            "description": "Original invoice/bill ref."
+          },
+          "partnerName": {
+            "type": "string"
+          },
+          "npwp": {
+            "type": "string",
+            "nullable": true
+          },
+          "dpp": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Negative on a cancellation row."
+          },
+          "dppNilaiLain": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "ppn": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "returNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "returDate": {
+            "type": "string",
+            "nullable": true,
+            "format": "date"
+          },
+          "voidedOn": {
+            "type": "string",
+            "nullable": true,
+            "format": "date"
+          },
+          "cancellation": {
+            "type": "boolean",
+            "description": "True: the note was voided in this masa — the row restores the retur (amounts negated)."
+          }
+        },
+        "required": [
+          "id",
+          "ref",
+          "date",
+          "originalRef",
+          "partnerName",
+          "npwp",
+          "dpp",
+          "dppNilaiLain",
+          "ppn",
+          "returNumber",
+          "returDate",
+          "voidedOn",
+          "cancellation"
+        ]
+      },
+      "PpnMasukanRowDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "billRef": {
+            "type": "string",
+            "nullable": true
+          },
+          "vendorInvoiceNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "partnerName": {
+            "type": "string"
+          },
+          "npwp": {
+            "type": "string",
+            "nullable": true
+          },
+          "dpp": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "dppNilaiLain": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Equals dpp (PPN Masukan has no Nilai Lain)."
+          },
+          "ppn": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "POSTED",
+              "VOID"
+            ]
+          },
+          "voidedOn": {
+            "type": "string",
+            "nullable": true,
+            "format": "date"
+          }
+        },
+        "required": [
+          "id",
+          "billRef",
+          "vendorInvoiceNo",
+          "date",
+          "partnerName",
+          "npwp",
+          "dpp",
+          "dppNilaiLain",
+          "ppn",
+          "status",
+          "voidedOn"
+        ]
+      },
+      "PpnRecapFaktursDto": {
+        "type": "object",
+        "properties": {
+          "keluaran": {
+            "description": "Invoices dated in the masa (incl. ones voided later).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PpnKeluaranRowDto"
+            }
+          },
+          "batalKeluaran": {
+            "description": "Invoices voided in the masa (any date).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PpnKeluaranRowDto"
+            }
+          },
+          "returKeluaran": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PpnReturRowDto"
+            }
+          },
+          "masukan": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PpnMasukanRowDto"
+            }
+          },
+          "batalMasukan": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PpnMasukanRowDto"
+            }
+          },
+          "returMasukan": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PpnReturRowDto"
+            }
+          }
+        },
+        "required": [
+          "keluaran",
+          "batalKeluaran",
+          "returKeluaran",
+          "masukan",
+          "batalMasukan",
+          "returMasukan"
+        ]
+      },
+      "PpnUnreconciledEntryDto": {
+        "type": "object",
+        "properties": {
+          "journalEntryId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "entryRef": {
+            "type": "string",
+            "nullable": true
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "sourceType": {
+            "type": "string",
+            "example": "MANUAL"
+          },
+          "accountCode": {
+            "type": "string"
+          },
+          "side": {
+            "type": "string",
+            "enum": [
+              "KELUARAN",
+              "MASUKAN"
+            ]
+          },
+          "amount": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Keluaran: credit − debit; Masukan: debit − credit."
+          }
+        },
+        "required": [
+          "journalEntryId",
+          "entryRef",
+          "date",
+          "sourceType",
+          "accountCode",
+          "side",
+          "amount"
+        ]
+      },
+      "PpnUnreconciledDto": {
+        "type": "object",
+        "properties": {
+          "ppnKeluaran": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "ppnMasukan": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "Decimal monetary amount as a string, fixed 4 decimal places."
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PpnUnreconciledEntryDto"
+            }
+          }
+        },
+        "required": [
+          "ppnKeluaran",
+          "ppnMasukan",
+          "entries"
+        ]
+      },
+      "PpnLedgerTieDto": {
+        "type": "object",
+        "properties": {
+          "ppnKeluaran": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "PPN Output accounts, credit − debit, of sales invoice / credit note journals (and their void reversals) dated in the masa."
+          },
+          "ppnMasukan": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "PPN Input accounts, debit − credit, of purchase bill / debit note journals (and their void reversals) dated in the masa."
+          },
+          "unreconciledManualEntries": {
+            "description": "Movements from other journals (manual, opening…) on the PPN accounts — not in the recap.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PpnUnreconciledDto"
+              }
+            ]
+          },
+          "ties": {
+            "type": "boolean",
+            "description": "ppnKeluaran = ppnKeluaranNet AND ppnMasukan = ppnMasukanNet."
+          }
+        },
+        "required": [
+          "ppnKeluaran",
+          "ppnMasukan",
+          "unreconciledManualEntries",
+          "ties"
+        ]
+      },
+      "PpnRecapResponseDto": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string",
+            "example": "2026-03"
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "isPkp": {
+            "type": "boolean"
+          },
+          "ppnKeluaran": {
+            "description": "Faktur keluaran dated in the masa (gross).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PpnTotalsDto"
+              }
+            ]
+          },
+          "batalKeluaran": {
+            "description": "Invoices voided in the masa (faktur batal).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PpnTotalsDto"
+              }
+            ]
+          },
+          "returKeluaran": {
+            "description": "Sales credit notes (retur) dated in the masa, minus those voided in it.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PpnTotalsDto"
+              }
+            ]
+          },
+          "ppnMasukan": {
+            "description": "Purchase bills dated in the masa (gross).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PpnTotalsDto"
+              }
+            ]
+          },
+          "batalMasukan": {
+            "$ref": "#/components/schemas/PpnTotalsDto"
+          },
+          "returMasukan": {
+            "$ref": "#/components/schemas/PpnTotalsDto"
+          },
+          "ppnKeluaranNet": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "ppnKeluaran.ppn − batalKeluaran.ppn − returKeluaran.ppn"
+          },
+          "ppnMasukanNet": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "ppnMasukan.ppn − batalMasukan.ppn − returMasukan.ppn"
+          },
+          "net": {
+            "type": "string",
+            "example": "1000.0000",
+            "description": "ppnKeluaranNet − ppnMasukanNet; > 0 kurang bayar, < 0 lebih bayar."
+          },
+          "netStatus": {
+            "type": "string",
+            "enum": [
+              "KURANG_BAYAR",
+              "LEBIH_BAYAR",
+              "NIHIL"
+            ]
+          },
+          "fakturs": {
+            "$ref": "#/components/schemas/PpnRecapFaktursDto"
+          },
+          "ledger": {
+            "$ref": "#/components/schemas/PpnLedgerTieDto"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "period",
+          "from",
+          "to",
+          "isPkp",
+          "ppnKeluaran",
+          "batalKeluaran",
+          "returKeluaran",
+          "ppnMasukan",
+          "batalMasukan",
+          "returMasukan",
+          "ppnKeluaranNet",
+          "ppnMasukanNet",
+          "net",
+          "netStatus",
+          "fakturs",
+          "ledger",
+          "warnings"
         ]
       },
       "CloseYearDto": {

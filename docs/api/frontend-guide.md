@@ -1322,6 +1322,49 @@ tie (`reconciles`, `balanced`, GL opening + lines = closing on the last page).
   (e.g. a company that started bookkeeping mid-range) `kasAwal` is **not** the
   same as the Kas balance on `from − 1` — don't cross-check it against the
   trial balance of the previous day in that case. `reconciles` still ties.
+- `GET    /v1/reports/ppn-recap?period=YYYY-MM` · any · **Rekap PPN Masa** for
+  the SPT Masa PPN (masa = calendar month; bad format or a year outside
+  2000–2100 → `400`). Read on one snapshot. Response (`PpnRecapResponseDto`):
+  - `ppnKeluaran` — POSTED/VOID sales invoices **dated** in the month with a
+    PPN Output line (incl. ones voided later): `{ count, dpp, dppNilaiLain, ppn }`.
+    `dpp` / `dppNilaiLain` use the Coretax XML math (per line, 2 dp:
+    `TaxBase`, `OtherTaxBase` = 11/12 × DPP for DPP Nilai Lain codes); `ppn`
+    is the **posted** PPN (ledger).
+  - `batalKeluaran` — invoices **voided** in the month (`voidedOn`), any date.
+  - `returKeluaran` — sales credit notes dated in the month, minus notes
+    voided in it (cancellation rows are negative, `cancellation: true`).
+  - `ppnKeluaranNet` = `ppnKeluaran.ppn − batalKeluaran.ppn − returKeluaran.ppn`;
+    the same for `ppnMasukan` / `batalMasukan` / `returMasukan` /
+    `ppnMasukanNet` (purchase bills with PPN Input, debit notes).
+  - `net` = Keluaran net − Masukan net; `netStatus` `KURANG_BAYAR` (> 0,
+    payable) / `LEBIH_BAYAR` (< 0, overpaid — compensated per the SPT) /
+    `NIHIL`.
+  - `fakturs` — the rows behind each total: `keluaran` / `batalKeluaran`
+    (invoiceRef, date, partnerName, npwp, buyerDocumentType/Number (NIK…),
+    trxCode, dpp, dppNilaiLain, ppn, `fakturPpn` = Σ faktur VAT as in the
+    XML (may differ from `ppn` by rounding ≤ 0.5 per code), taxInvoiceNumber
+    (NSFP), taxInvoiceStatus, status, voidedOn); `masukan` / `batalMasukan`
+    (billRef, vendorInvoiceNo, vendor, npwp, dpp, ppn); `returKeluaran` /
+    `returMasukan` (ref, originalRef, returNumber/Date, amounts).
+  - `ledger` — tie-out: `ppnKeluaran` = credit − debit on the PPN Output
+    tax accounts from sales invoice / credit note journals and their void
+    reversals dated in the month (`ppnMasukan` likewise, debit − credit on PPN
+    Input accounts); `ties` is true when both equal the recap nets.
+    `unreconciledManualEntries` lists every other journal (manual, opening…)
+    on those accounts in the month with its amount — **not** in the recap.
+  - `warnings` — non-PKP company (the recap is still returned, normally
+    zeros), manual PPN journals, a mismatch, and each **cross-month void**.
+  - **Void rule (ledger-tied):** a document counts in the month of its date;
+    its void counts as *batal* in the month of `voidedOn` (same-month voids net
+    to zero), so a month's recap never changes after the fact and always ties
+    to the ledger. DJP instead reports a cancelled faktur in its **original**
+    masa through a *pembetulan* SPT (PER-03/PJ/2022 on faktur pembatalan;
+    carried into Coretax by PMK 81/2024) — the warning names that masa; file
+    the pembetulan there rather than netting the void in the later month.
+  - `&format=csv|xlsx` → `ppn-recap-<YYYY-MM>.<ext>`: sections PPN Keluaran /
+    Faktur Batal / Retur PPN Keluaran / PPN Keluaran Bersih, the same for PPN
+    Masukan, then `Kurang/(Lebih) Bayar`; notes carry the status, the tie
+    and the warnings.
 
 - **File export (CSV / XLSX)** — every report above (balance sheet incl.
   comparative, income statement incl. comparative, trial balance incl.

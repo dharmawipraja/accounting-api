@@ -8,6 +8,7 @@ import { AgingService } from './aging.service';
 import { CashFlowService } from './cash-flow.service';
 import { PartnerStatementService } from './partner-statement.service';
 import { ReportsController } from './reports.controller';
+import { PpnRecapService } from './ppn-recap.service';
 
 @Module({
   imports: [LedgerModule, CompanyModule],
@@ -18,6 +19,7 @@ import { ReportsController } from './reports.controller';
     AgingService,
     CashFlowService,
     PartnerStatementService,
+    PpnRecapService,
   ],
   controllers: [ReportsController],
   exports: [],
